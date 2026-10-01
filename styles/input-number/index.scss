@@ -1,0 +1,104 @@
+.lh-input-number {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--lh-border-color-base);
+  border-radius: 4px;
+  background-color: var(--lh-bg-color, #fff);
+  transition: border-color 0.2s;
+
+  &:hover {
+    border-color: var(--lh-primary-color-border, #c0c4cc);
+  }
+
+  &__input {
+    width: 48px;
+    height: 32px;
+    padding: 0;
+    text-align: center;
+    border: none;
+    outline: none;
+    font-size: 14px;
+    background-color: transparent;
+    color: var(--lh-text-primary);
+    line-height: 32px;
+
+    &::placeholder {
+      color: var(--lh-text-placeholder);
+    }
+
+    &:disabled {
+      background-color: var(--lh-disabled-bg-color, #f5f7fa);
+      cursor: not-allowed;
+    }
+  }
+
+  &__decrease,
+  &__increase {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--lh-text-regular);
+    font-size: 12px;
+    -webkit-user-select: none;
+    user-select: none;
+
+    &:hover {
+      color: var(--lh-primary-color, #409eff);
+    }
+
+    &:disabled {
+      color: var(--lh-disabled-text-color, #c0c4cc);
+      cursor: not-allowed;
+    }
+  }
+
+  &__decrease {
+    border-right: 1px solid var(--lh-border-color-light, #e4e7ed);
+    border-radius: 4px 0 0 4px;
+  }
+
+  &__increase {
+    border-left: 1px solid var(--lh-border-color-light, #e4e7ed);
+    border-radius: 0 4px 4px 0;
+  }
+
+  &--small {
+    .lh-input-number__input {
+      width: 40px;
+      height: 28px;
+      font-size: 12px;
+      line-height: 28px;
+    }
+
+    .lh-input-number__decrease,
+    .lh-input-number__increase {
+      width: 28px;
+      height: 28px;
+    }
+  }
+
+  &--large {
+    .lh-input-number__input {
+      width: 56px;
+      height: 40px;
+      font-size: 16px;
+      line-height: 40px;
+    }
+
+    .lh-input-number__decrease,
+    .lh-input-number__increase {
+      width: 40px;
+      height: 40px;
+    }
+  }
+
+  &--disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}

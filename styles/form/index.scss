@@ -1,0 +1,57 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-form {
+  display: block;
+  /* 表单常被放进工具栏等横向 flex 容器。flex 子项的 min-width 默认取 min-content
+     （标签宽度 + 输入框固有宽度 ≈ 320px），在窄屏下无法收缩导致溢出。
+     min-width: 0 解开这个下限，表单即可随容器收缩，内部表单项自带 min-width: 0 */
+  min-width: 0;
+
+  &--inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+}
+
+.lh-form-item {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 18px;
+
+  &__label {
+    flex: 0 0 auto;
+    padding: 7px 12px 0 0;
+    color: var(--lh-text-regular, #5a5a5a);
+    line-height: 20px;
+    text-align: right;
+  }
+
+  &__required {
+    margin-right: 4px;
+    color: var(--lh-danger-color, #b23a3a);
+  }
+
+  &__content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__error {
+    display: block;
+    margin-top: 4px;
+    color: var(--lh-danger-color, #b23a3a);
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  &--top {
+    display: block;
+
+    .lh-form-item__label {
+      display: block;
+      padding: 0 0 6px;
+      text-align: left;
+    }
+  }
+}

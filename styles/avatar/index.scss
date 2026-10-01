@@ -1,0 +1,77 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 头像样式 — 水墨人物
+// ==============================
+
+.lh-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: var(--lh-text-regular);
+  background-color: var(--lh-primary-color-bg);
+  border: 1px solid var(--lh-border-color-light);
+  font-weight: var(--lh-font-weight-primary);
+  line-height: 1;
+  user-select: none;
+  vertical-align: middle;
+
+  &--circle {
+    border-radius: var(--lh-border-radius-circle);
+  }
+
+  &--square {
+    border-radius: var(--lh-border-radius-base);
+  }
+
+  &__img {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  &__icon {
+    font-size: 0.6em;
+    line-height: 1;
+  }
+
+  &__text {
+    font-size: 0.45em;
+    line-height: 1;
+    color: var(--lh-primary-color);
+    transform: translateY(2%);
+  }
+
+  /* 尺寸 */
+  &--mini {
+    width: 24px;
+    height: 24px;
+    font-size: 24px;
+  }
+
+  &--small {
+    width: 32px;
+    height: 32px;
+    font-size: 32px;
+  }
+
+  &--medium {
+    width: 40px;
+    height: 40px;
+    font-size: 40px;
+  }
+
+  &--large {
+    width: 48px;
+    height: 48px;
+    font-size: 48px;
+  }
+
+  &--x-large {
+    width: 56px;
+    height: 56px;
+    font-size: 56px;
+  }
+}

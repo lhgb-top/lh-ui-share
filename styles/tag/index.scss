@@ -1,0 +1,100 @@
+.lh-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 4px;
+  border: 1px solid var(--lh-border-color-base);
+  background-color: var(--lh-bg-color, #f5f7fa);
+  color: var(--lh-text-regular);
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+
+  &__text {
+    flex: 1 1 auto;
+  }
+
+  &__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-left: 4px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--lh-text-secondary);
+    cursor: pointer;
+    border-radius: 50%;
+
+    &:hover {
+      color: var(--lh-text-primary);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  /* Types */
+  &--primary {
+    background-color: var(--lh-primary-color-bg);
+    border-color: color-mix(in srgb, var(--lh-primary-color) 35%, transparent);
+    color: var(--lh-primary-color, #409eff);
+  }
+
+  &--success {
+    background-color: var(--lh-success-color-bg);
+    border-color: color-mix(in srgb, var(--lh-success-color) 35%, transparent);
+    color: var(--lh-success-color, #67c23a);
+  }
+
+  &--warning {
+    background-color: var(--lh-warning-color-bg);
+    border-color: color-mix(in srgb, var(--lh-warning-color) 35%, transparent);
+    color: var(--lh-warning-color, #e6a23c);
+  }
+
+  &--danger {
+    background-color: var(--lh-danger-color-bg);
+    border-color: color-mix(in srgb, var(--lh-danger-color) 35%, transparent);
+    color: var(--lh-danger-color, #f56c6c);
+  }
+
+  &--info {
+    background-color: var(--lh-info-color-bg);
+    border-color: color-mix(in srgb, var(--lh-info-color) 35%, transparent);
+    color: var(--lh-info-color, #909399);
+  }
+
+  /* Sizes */
+  &--small {
+    height: 20px;
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  &--large {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  /* Variants */
+  &--round {
+    border-radius: 100px;
+  }
+
+  &--hit {
+    border-left: 3px solid var(--lh-primary-color, #409eff);
+  }
+
+  &--disabled {
+    opacity: 0.5;
+  }
+}

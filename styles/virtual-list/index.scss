@@ -1,0 +1,23 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-virtual-list {
+  position: relative;
+  display: block;
+  width: 100%;
+  overflow: auto;
+}
+
+.lh-virtual-list__phantom {
+  position: relative;
+}
+
+.lh-virtual-list__window {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+}
+
+.lh-virtual-list__item {
+  box-sizing: border-box;
+  overflow: hidden;
+}

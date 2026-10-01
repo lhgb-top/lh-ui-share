@@ -1,0 +1,105 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 气泡确认样式 — 朱砂落印
+// ==============================
+
+.lh-popconfirm {
+  display: inline-block;
+  // 在 grid / flex 容器中不要被默认的 stretch 拉伸，否则定位锚点比触发器宽、箭头指偏
+  justify-self: center;
+  align-self: center;
+}
+
+.lh-popconfirm__popper {
+  box-sizing: border-box;
+  min-width: 220px;
+  max-width: 90vw;
+  padding: var(--lh-popconfirm-padding, 16px);
+  font-family: var(--lh-font-family);
+  font-size: var(--lh-font-size-base);
+  line-height: var(--lh-line-height-primary);
+  color: var(--lh-text-regular, #5A5A5A);
+  background-color: var(--lh-popover-bg-color, #FAF6F0);
+  border: 1px solid var(--lh-popover-border-color, #E5E0D8);
+  border-radius: var(--lh-popover-border-radius, 2px);
+  box-shadow: var(--lh-box-shadow-base, 0 2px 12px 0 rgba(26, 26, 26, 0.08));
+}
+
+.lh-popconfirm__main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lh-spacing-sm, 8px);
+}
+
+.lh-popconfirm__icon {
+  flex: none;
+  width: var(--lh-popconfirm-icon-size, 16px);
+  height: var(--lh-popconfirm-icon-size, 16px);
+  margin-top: 2px;
+  vertical-align: middle;
+}
+
+.lh-popconfirm__title {
+  word-break: break-word;
+  color: var(--lh-popover-title-color, #2C2C2C);
+}
+
+.lh-popconfirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--lh-spacing-sm, 8px);
+  margin-top: var(--lh-spacing-md, 12px);
+}
+
+// 语气图标着色
+.lh-popconfirm__popper--info .lh-popconfirm__icon {
+  color: var(--lh-info-color, #7A7A7A);
+}
+
+.lh-popconfirm__popper--warning .lh-popconfirm__icon {
+  color: var(--lh-warning-color, #C4A35A);
+}
+
+.lh-popconfirm__popper--danger .lh-popconfirm__icon {
+  color: var(--lh-danger-color, #B23A3A);
+}
+
+// 箭头（与 Popover 同一套几何，跟随实际方位）
+.lh-popconfirm__arrow {
+  position: absolute;
+  width: var(--lh-popover-arrow-size, 8px);
+  height: var(--lh-popover-arrow-size, 8px);
+  pointer-events: none;
+  background-color: var(--lh-popover-bg-color, #FAF6F0);
+  transform: rotate(45deg);
+}
+
+.lh-popconfirm__popper--top & { bottom: calc(var(--lh-popover-arrow-size, 8px) / -2); left: var(--lh-arrow-offset, 50%); margin-left: calc(var(--lh-popover-arrow-size, 8px) / -2); }
+.lh-popconfirm__popper--bottom & { top: calc(var(--lh-popover-arrow-size, 8px) / -2); left: var(--lh-arrow-offset, 50%); margin-left: calc(var(--lh-popover-arrow-size, 8px) / -2); }
+.lh-popconfirm__popper--left & { right: calc(var(--lh-popover-arrow-size, 8px) / -2); top: var(--lh-arrow-offset, 50%); margin-top: calc(var(--lh-popover-arrow-size, 8px) / -2); }
+.lh-popconfirm__popper--right & { left: calc(var(--lh-popover-arrow-size, 8px) / -2); top: var(--lh-arrow-offset, 50%); margin-top: calc(var(--lh-popover-arrow-size, 8px) / -2); }
+
+// —— 进出过渡 ——
+
+.lh-popconfirm-fade-enter-active,
+.lh-popconfirm-fade-leave-active {
+  transition:
+    opacity var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out),
+    transform var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out);
+}
+
+.lh-popconfirm-fade-enter,
+.lh-popconfirm-fade-enter-from,
+.lh-popconfirm-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-popconfirm-fade-enter,
+.lh-popconfirm-fade-enter-from,
+  .lh-popconfirm-fade-leave-to {
+    transform: none;
+  }
+}

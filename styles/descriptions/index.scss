@@ -1,0 +1,83 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 描述列表样式 — 列陈其详
+// ==============================
+
+.lh-descriptions {
+  width: 100%;
+  font-size: var(--lh-font-size-base);
+  color: var(--lh-text-primary);
+
+  &__header {
+    margin-bottom: var(--lh-spacing-sm);
+    font-size: var(--lh-font-size-large);
+    font-weight: var(--lh-font-weight-bold);
+    color: var(--lh-text-primary);
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--lh-spacing-xs);
+  }
+
+  &__row {
+    // 语义化改用 dl/dt/dd 后消除 UA 默认外边距
+    margin: 0;
+    gap: var(--lh-spacing-xs);
+  }
+
+  &__label,
+  &__content {
+    // dt/dd 的 UA 默认外边距会顶乱 flex 行，统一归零
+    margin: 0;
+  }
+
+  &__label {
+    padding: var(--lh-spacing-xs) var(--lh-spacing-sm);
+    background-color: var(--lh-bg-color-disabled);
+    color: var(--lh-text-secondary);
+    border-radius: var(--lh-border-radius-small);
+    font-weight: var(--lh-font-weight-primary);
+    word-break: break-all;
+  }
+
+  &__content {
+    padding: var(--lh-spacing-xs) var(--lh-spacing-sm);
+    color: var(--lh-text-regular);
+    word-break: break-all;
+  }
+
+  &__filler {
+    padding: 0;
+  }
+
+  /* 带边框模式 */
+  &--border &__row {
+    gap: 0;
+  }
+
+  &--border &__label,
+  &--border &__content {
+    border: 1px solid var(--lh-border-color-light);
+    border-radius: 0;
+  }
+
+  &--border &__label {
+    border-right: none;
+  }
+
+  &--border &__content {
+    border-right: none;
+
+    &:last-child,
+    & + .lh-descriptions__filler {
+      border-right: 1px solid var(--lh-border-color-light);
+    }
+  }
+
+  &--border &__row + &__row {
+    margin-top: -1px;
+  }
+}

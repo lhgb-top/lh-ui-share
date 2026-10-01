@@ -1,0 +1,117 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  color: var(--lh-text-regular, #5a5a5a);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+
+  &__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+
+  &__box {
+    position: relative;
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--lh-border-color-base, #d8d3cc);
+    border-radius: 50%;
+    background: var(--lh-bg-color, #faf6f0);
+    transition: all 0.2s ease;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--lh-bg-color, #faf6f0);
+      transform: translate(-50%, -50%) scale(0);
+      transition: transform 0.2s ease;
+    }
+  }
+
+  &__label {
+    line-height: 20px;
+  }
+
+  &--checked {
+    .lh-radio__box {
+      border-color: var(--lh-primary-color, #2b4c7c);
+      background: var(--lh-primary-color, #2b4c7c);
+
+      &::after {
+        transform: translate(-50%, -50%) scale(1);
+      }
+    }
+  }
+
+  &--disabled {
+    color: var(--lh-text-disabled, #c8c8c8);
+    cursor: not-allowed;
+    opacity: 0.7;
+
+    .lh-radio__box {
+      background: var(--lh-bg-color-disabled, #f0f0f0);
+      border-color: var(--lh-disabled-border-color);
+
+      &::after {
+        background: var(--lh-text-disabled, #c8c8c8);
+      }
+    }
+  }
+
+  &--small {
+    font-size: 12px;
+    transform: scale(0.9);
+    transform-origin: left center;
+
+    .lh-radio__box {
+      width: 14px;
+      height: 14px;
+
+      &::after {
+        width: 6px;
+        height: 6px;
+      }
+    }
+  }
+
+  &--large {
+    font-size: 16px;
+
+    .lh-radio__box {
+      width: 18px;
+      height: 18px;
+
+      &::after {
+        width: 10px;
+        height: 10px;
+      }
+    }
+  }
+}
+
+.lh-radio-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 12px;
+
+  &--small {
+    gap: 8px;
+  }
+
+  &--large {
+    gap: 16px;
+  }
+}

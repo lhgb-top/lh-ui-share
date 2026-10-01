@@ -1,0 +1,167 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 抽屉样式 — 卷轴展轴
+// ==============================
+
+.lh-drawer {
+  position: fixed;
+  inset: 0;
+  font-family: var(--lh-font-family);
+  font-size: var(--lh-font-size-base);
+  color: var(--lh-text-primary, #2C2C2C);
+}
+
+.lh-drawer__mask {
+  position: absolute;
+  inset: 0;
+  background-color: var(--lh-bg-color-overlay, rgba(26, 26, 26, 0.4));
+}
+
+.lh-drawer__panel {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--lh-drawer-bg-color, #FAF6F0);
+  box-shadow: var(--lh-box-shadow-base, 0 2px 12px 0 rgba(26, 26, 26, 0.08));
+}
+
+// —— 四方向定位 ——
+
+.lh-drawer__panel--right {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  border-left: 1px solid var(--lh-drawer-border-color, #E5E0D8);
+}
+
+.lh-drawer__panel--left {
+  top: 0;
+  left: 0;
+  bottom: 0;
+  border-right: 1px solid var(--lh-drawer-border-color, #E5E0D8);
+}
+
+.lh-drawer__panel--top {
+  top: 0;
+  left: 0;
+  right: 0;
+  border-bottom: 1px solid var(--lh-drawer-border-color, #E5E0D8);
+}
+
+.lh-drawer__panel--bottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--lh-drawer-border-color, #E5E0D8);
+}
+
+// —— 头部 / 主体 / 底部 ——
+
+.lh-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lh-spacing-sm, 8px);
+  padding: var(--lh-drawer-header-padding, 16px);
+  border-bottom: 1px solid var(--lh-drawer-border-color, #E5E0D8);
+}
+
+.lh-drawer__title {
+  font-size: var(--lh-font-size-large, 18px);
+  font-weight: var(--lh-font-weight-bold, 600);
+  color: var(--lh-drawer-title-color, #2C2C2C);
+}
+
+.lh-drawer__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lh-drawer-close-size, 16px);
+  height: var(--lh-drawer-close-size, 16px);
+  padding: 0;
+  font-size: var(--lh-drawer-close-size, 16px);
+  line-height: 1;
+  color: var(--lh-text-secondary, #8A8A8A);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color var(--lh-transition-duration-fast, 0.25s);
+
+  &:hover {
+    color: var(--lh-text-primary, #2C2C2C);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
+    outline-offset: 2px;
+  }
+}
+
+.lh-drawer__body {
+  flex: 1;
+  padding: var(--lh-drawer-body-padding, 16px);
+  overflow: auto;
+  line-height: var(--lh-line-height-primary);
+}
+
+.lh-drawer__footer {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--lh-spacing-sm, 8px);
+  padding: var(--lh-drawer-footer-padding, 16px);
+  border-top: 1px solid var(--lh-drawer-border-color, #E5E0D8);
+}
+
+// —— 进出过渡：遮罩淡入、面板按方向滑动 ——
+
+.lh-drawer-fade-enter-active,
+.lh-drawer-fade-leave-active {
+  transition: opacity var(--lh-transition-duration-base, 0.3s) var(--lh-transition-function-ease-in-out);
+
+  .lh-drawer__panel {
+    transition: transform var(--lh-transition-duration-base, 0.3s) var(--lh-transition-function-ease-in-out);
+  }
+}
+
+.lh-drawer-fade-enter,
+.lh-drawer-fade-enter-from,
+.lh-drawer-fade-leave-to {
+  opacity: 0;
+}
+
+.lh-drawer-fade-enter,
+.lh-drawer-fade-enter-from .lh-drawer__panel--right,
+.lh-drawer-fade-leave-to .lh-drawer__panel--right {
+  transform: translateX(100%);
+}
+
+.lh-drawer-fade-enter,
+.lh-drawer-fade-enter-from .lh-drawer__panel--left,
+.lh-drawer-fade-leave-to .lh-drawer__panel--left {
+  transform: translateX(-100%);
+}
+
+.lh-drawer-fade-enter,
+.lh-drawer-fade-enter-from .lh-drawer__panel--top,
+.lh-drawer-fade-leave-to .lh-drawer__panel--top {
+  transform: translateY(-100%);
+}
+
+.lh-drawer-fade-enter,
+.lh-drawer-fade-enter-from .lh-drawer__panel--bottom,
+.lh-drawer-fade-leave-to .lh-drawer__panel--bottom {
+  transform: translateY(100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-drawer-fade-enter-active,
+  .lh-drawer-fade-leave-active {
+    transition: opacity var(--lh-transition-duration-fast, 0.25s);
+
+    .lh-drawer__panel {
+      transform: none;
+    }
+  }
+}

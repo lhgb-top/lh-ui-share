@@ -1,0 +1,83 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-collapse {
+  border-block: 1px solid var(--lh-collapse-border, var(--lh-border-color-lighter, #ebeef5));
+}
+
+.lh-collapse__item {
+  border-block-end: 1px solid var(--lh-collapse-border, var(--lh-border-color-lighter, #ebeef5));
+
+  &:last-child {
+    border-block-end: none;
+  }
+
+  &--disabled .lh-collapse__header {
+    color: var(--lh-disabled-text-color, #c0c4cc);
+    cursor: not-allowed;
+  }
+}
+
+.lh-collapse__header-wrap {
+  margin: 0;
+}
+
+.lh-collapse__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: var(--lh-collapse-header-padding, 14px 0);
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  color: var(--lh-collapse-header-color, var(--lh-text-primary, #303133));
+  text-align: start;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline-offset: -2px;
+    border-radius: 4px;
+  }
+}
+
+.lh-collapse__arrow {
+  flex-shrink: 0;
+  transition: transform var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out, ease);
+
+  .lh-collapse__item--active & {
+    transform: rotate(180deg);
+  }
+}
+
+/* 高度过渡：grid-template-rows 0fr/1fr 技巧，无需 JS 测高 */
+.lh-collapse__wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--lh-transition-duration-base, 0.3s) var(--lh-transition-function-ease-in-out, ease);
+
+  .lh-collapse__item--active & {
+    grid-template-rows: 1fr;
+  }
+}
+
+.lh-collapse__content {
+  min-height: 0;
+  overflow: hidden;
+  padding-inline: 0;
+  color: var(--lh-collapse-content-color, var(--lh-text-regular, #606266));
+  line-height: 1.6;
+}
+
+.lh-collapse__item--active .lh-collapse__content {
+  padding-block-end: var(--lh-spacing-base, 12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-collapse__wrap,
+  .lh-collapse__arrow {
+    transition: none;
+  }
+}

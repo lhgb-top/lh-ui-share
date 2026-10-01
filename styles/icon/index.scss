@@ -1,0 +1,34 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 图标样式 — 工笔细描
+// ==============================
+
+$lh-icon-color: var(--lh-text-regular, #5A5A5A) !default;
+
+.lh-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: $lh-icon-color;
+  line-height: 1;
+  vertical-align: middle;
+  transition: color 0.2s ease;
+
+  svg {
+    display: block;
+  }
+
+  // 支持旋转动画
+  &--loading {
+    svg {
+      animation: lh-icon-spin 1s linear infinite;
+    }
+  }
+}
+
+@keyframes lh-icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

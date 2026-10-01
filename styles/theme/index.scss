@@ -1,0 +1,15 @@
+// ==============================
+// 主题聚合入口
+//
+// CSS 变量的唯一定义处：
+//   - common/var.scss      明色 :root
+//   - common/var-dark.scss 暗色 [data-theme='dark'] / .dark
+//   - common/patterns.scss 花纹变量 :root
+//
+// 本文件只负责聚合，不再重复声明 :root，
+// 否则同一批变量会被输出多次（覆盖行为相同但产物冗余）。
+// ==============================
+
+@use './common/patterns.scss' as *;
+@use './common/var.scss' as *;
+@use './common/var-dark.scss' as *;

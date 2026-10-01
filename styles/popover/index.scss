@@ -1,0 +1,117 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 弹出框样式 — 水墨便签
+// ==============================
+
+.lh-popover {
+  display: inline-block;
+  // 在 grid / flex 容器中不要被默认的 stretch 拉伸：定位锚点是根元素，
+  // 一旦被拉得比内部触发器宽，弹出层与箭头就会按格中心对齐而非按触发器对齐
+  justify-self: center;
+  align-self: center;
+}
+
+.lh-popover__popper {
+  box-sizing: border-box;
+  min-width: 160px;
+  max-width: 90vw;
+  padding: var(--lh-popover-padding, 16px);
+  font-family: var(--lh-font-family);
+  font-size: var(--lh-font-size-base);
+  line-height: var(--lh-line-height-primary);
+  color: var(--lh-popover-content-color, #5A5A5A);
+  background-color: var(--lh-popover-bg-color, #FAF6F0);
+  border: 1px solid var(--lh-popover-border-color, #E5E0D8);
+  border-radius: var(--lh-popover-border-radius, 2px);
+  box-shadow: var(--lh-box-shadow-base, 0 2px 12px 0 rgba(26, 26, 26, 0.08));
+}
+
+.lh-popover__title {
+  margin-bottom: var(--lh-spacing-sm, 8px);
+  font-size: var(--lh-font-size-base);
+  font-weight: var(--lh-font-weight-bold, 600);
+  color: var(--lh-popover-title-color, #2C2C2C);
+}
+
+.lh-popover__content {
+  word-break: break-word;
+}
+
+// 箭头：与弹出层同色的实心三角，朝向触发器所在的一侧。
+// --lh-arrow-offset 由 useLhPopper 写入，指向触发器的交叉轴中心；
+// 内容很宽或被 shift 夹回时它仍指向被点击的元素，而不是弹出层自身的中点。
+.lh-popover__arrow {
+  position: absolute;
+  width: var(--lh-popover-arrow-size, 8px);
+  height: var(--lh-popover-arrow-size, 8px);
+  pointer-events: none;
+  background-color: var(--lh-popover-bg-color, #FAF6F0);
+  transform: rotate(45deg);
+}
+
+// —— 箭头位置随实际方位切换（flip 后类名同步更新） ——
+
+.lh-popover__popper--top,
+.lh-popover__popper--top-start,
+.lh-popover__popper--top-end {
+  .lh-popover__arrow {
+    bottom: calc(var(--lh-popover-arrow-size, 8px) / -2);
+    left: var(--lh-arrow-offset, 50%);
+    margin-left: calc(var(--lh-popover-arrow-size, 8px) / -2);
+  }
+}
+
+.lh-popover__popper--bottom,
+.lh-popover__popper--bottom-start,
+.lh-popover__popper--bottom-end {
+  .lh-popover__arrow {
+    top: calc(var(--lh-popover-arrow-size, 8px) / -2);
+    left: var(--lh-arrow-offset, 50%);
+    margin-left: calc(var(--lh-popover-arrow-size, 8px) / -2);
+  }
+}
+
+.lh-popover__popper--left,
+.lh-popover__popper--left-start,
+.lh-popover__popper--left-end {
+  .lh-popover__arrow {
+    right: calc(var(--lh-popover-arrow-size, 8px) / -2);
+    top: var(--lh-arrow-offset, 50%);
+    margin-top: calc(var(--lh-popover-arrow-size, 8px) / -2);
+  }
+}
+
+.lh-popover__popper--right,
+.lh-popover__popper--right-start,
+.lh-popover__popper--right-end {
+  .lh-popover__arrow {
+    left: calc(var(--lh-popover-arrow-size, 8px) / -2);
+    top: var(--lh-arrow-offset, 50%);
+    margin-top: calc(var(--lh-popover-arrow-size, 8px) / -2);
+  }
+}
+
+// —— 进出过渡 ——
+
+.lh-popover-fade-enter-active,
+.lh-popover-fade-leave-active {
+  transition:
+    opacity var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out),
+    transform var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out);
+}
+
+.lh-popover-fade-enter,
+.lh-popover-fade-enter-from,
+.lh-popover-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-popover-fade-enter,
+.lh-popover-fade-enter-from,
+  .lh-popover-fade-leave-to {
+    transform: none;
+  }
+}

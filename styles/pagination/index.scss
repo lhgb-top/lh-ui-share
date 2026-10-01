@@ -1,0 +1,179 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 分页样式 — 卷册翻页
+// 页码区为扁平无边框设计：页码 hover 淡底、当前页实底墨蓝；
+// 文档站等宿主的 .vp-doc ul（类+元素选择器）会压过单类名规则，
+// 用 nav ul 复合选择器 + li 直接规则双重兜底
+// ==============================
+
+nav ul.lh-pagination__pages {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  /* 宿主 .vp-doc li + li { margin-top: 8px } 的特异性（0,1,2）高于
+     组件内单类名 li 规则，必须用同等复合选择器压回去，否则第 2 项起
+     每个页码下移 8px、整行高度虚高，页码基线参差 */
+  li,
+  li + li {
+    margin: 0;
+    padding: 0;
+  }
+}
+
+.lh-pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--lh-spacing-sm, 8px);
+  font-family: var(--lh-font-family);
+  font-size: var(--lh-font-size-base);
+  color: var(--lh-text-regular, #5A5A5A);
+
+  &--disabled {
+    opacity: var(--lh-disabled-opacity, 0.5);
+  }
+
+  &__total {
+    color: var(--lh-text-secondary, #8A8A8A);
+    font-size: var(--lh-font-size-small);
+  }
+
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    height: 30px;
+    padding: 0 6px;
+    border: none;
+    border-radius: var(--lh-border-radius-small, 2px);
+    background-color: transparent;
+    font-family: inherit;
+    font-size: var(--lh-font-size-small);
+    color: var(--lh-text-regular, #5A5A5A);
+    cursor: pointer;
+    transition: color 0.2s ease, background-color 0.2s ease;
+
+    &:hover:not(:disabled) {
+      color: var(--lh-primary-color, #2B4C7C);
+      background-color: color-mix(in srgb, var(--lh-primary-color, #2B4C7C) 8%, transparent);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--lh-primary-color, #2B4C7C);
+      outline-offset: 1px;
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      color: var(--lh-disabled-text-color);
+      background-color: transparent;
+    }
+  }
+
+  &__page--active,
+  &__page--active:hover:not(:disabled) {
+    color: #fff;
+    background-color: var(--lh-primary-color, #2B4C7C);
+    font-weight: var(--lh-font-weight-primary);
+  }
+
+  &__pages {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--lh-spacing-xs, 4px);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    li {
+      display: inline-flex;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+  }
+
+  &__ellipsis {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    height: 30px;
+    font-size: var(--lh-font-size-small);
+    letter-spacing: 1px;
+    color: var(--lh-text-secondary, #8A8A8A);
+    user-select: none;
+  }
+
+  &__simple-text {
+    min-width: 56px;
+    text-align: center;
+    color: var(--lh-text-primary, #3A3A3A);
+  }
+
+  &__size {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--lh-spacing-xs, 4px);
+  }
+
+  &__size-label {
+    color: var(--lh-text-secondary, #8A8A8A);
+    font-size: var(--lh-font-size-small);
+  }
+
+  &__size-select {
+    height: 30px;
+    padding: 0 var(--lh-spacing-xs, 4px);
+    border: 1px solid var(--lh-border-color-base, #D8D3CC);
+    border-radius: var(--lh-border-radius-small, 2px);
+    background-color: var(--lh-bg-color, #FAF6F0);
+    font-family: inherit;
+    font-size: var(--lh-font-size-small);
+    color: var(--lh-text-regular, #5A5A5A);
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 2px solid var(--lh-primary-color, #2B4C7C);
+      outline-offset: 2px;
+    }
+  }
+
+  &__jumper {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--lh-spacing-xs, 4px);
+  }
+
+  &__jumper-label {
+    color: var(--lh-text-secondary, #8A8A8A);
+    font-size: var(--lh-font-size-small);
+  }
+
+  &__jumper-input {
+    width: 56px;
+    height: 30px;
+    padding: 0 var(--lh-spacing-xs, 4px);
+    border: 1px solid var(--lh-border-color-base, #D8D3CC);
+    border-radius: var(--lh-border-radius-small, 2px);
+    background-color: var(--lh-bg-color, #FAF6F0);
+    font-family: inherit;
+    font-size: var(--lh-font-size-small);
+    color: var(--lh-text-regular, #5A5A5A);
+    text-align: center;
+
+    &:focus-visible {
+      outline: 2px solid var(--lh-primary-color, #2B4C7C);
+      outline-offset: 2px;
+    }
+  }
+
+  &__jumper-suffix {
+    color: var(--lh-text-secondary, #8A8A8A);
+    font-size: var(--lh-font-size-small);
+  }
+}

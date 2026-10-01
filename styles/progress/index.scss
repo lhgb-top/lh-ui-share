@@ -1,0 +1,86 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 进度条样式 — 层层递进
+// ==============================
+
+.lh-progress {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  line-height: 1;
+
+  /* ---------- 线形 ---------- */
+  &__bar {
+    flex: 1;
+    overflow: hidden;
+    border-radius: var(--lh-border-radius-round);
+    background-color: var(--lh-bg-color-disabled);
+  }
+
+  &__bar-inner {
+    height: 100%;
+    border-radius: var(--lh-border-radius-round);
+    transition:
+      width var(--lh-transition-duration-slow) var(--lh-transition-function-ease-in-out),
+      background-color var(--lh-transition-duration-base);
+  }
+
+  &__text {
+    flex-shrink: 0;
+    margin-left: var(--lh-spacing-sm);
+    font-size: var(--lh-font-size-small);
+    color: var(--lh-text-regular);
+    white-space: nowrap;
+  }
+
+  &--success &__text {
+    color: var(--lh-success-color);
+  }
+
+  &--exception &__text {
+    color: var(--lh-danger-color);
+  }
+
+  &--warning &__text {
+    color: var(--lh-warning-color);
+  }
+
+  &--no-text &__text {
+    display: none;
+  }
+
+  /* ---------- 圆形 ---------- */
+  &--circle {
+    display: inline-flex;
+    width: auto;
+  }
+
+  &__circle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__circle svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  &__circle-track {
+    stroke: var(--lh-bg-color-disabled);
+  }
+
+  &__circle-value {
+    transition: stroke-dasharray var(--lh-transition-duration-slow) var(--lh-transition-function-ease-in-out);
+  }
+
+  &__circle-text {
+    position: absolute;
+    margin: 0;
+    font-size: var(--lh-font-size-small);
+    font-weight: var(--lh-font-weight-bold);
+    color: var(--lh-text-primary);
+  }
+}

@@ -1,0 +1,124 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-image {
+  display: inline-block;
+  overflow: hidden;
+  border-radius: var(--lh-border-radius-small, 6px);
+
+  &--previewable .lh-image__inner {
+    cursor: zoom-in;
+  }
+}
+
+.lh-image__inner {
+  display: block;
+  max-width: 100%;
+
+  &--contain { object-fit: contain; }
+  &--cover { object-fit: cover; }
+  &--fill { object-fit: fill; }
+  &--none { object-fit: none; }
+  &--scale-down { object-fit: scale-down; }
+}
+
+.lh-image__error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 120px;
+  min-height: 80px;
+  padding: 8px;
+  font-size: var(--lh-font-size-small, 13px);
+  color: var(--lh-image-error, var(--lh-text-placeholder, #c0c4cc));
+  background-color: var(--lh-bg-color-page, #f2f3f5);
+}
+
+/* 全屏预览器 */
+.lh-image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--lh-image-viewer-z-index, 2000);
+  background-color: var(--lh-image-viewer-mask, rgba(0, 0, 0, 72%));
+
+  &:focus {
+    outline: none;
+  }
+}
+
+.lh-image-viewer__canvas {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.lh-image-viewer__img {
+  max-width: 90%;
+  max-height: 90%;
+  transition: transform var(--lh-transition-duration-fast, 0.25s) ease;
+}
+
+.lh-image-viewer__toolbar,
+.lh-image-viewer__nav,
+.lh-image-viewer__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--lh-border-radius-small, 6px);
+  background-color: rgba(255, 255, 255, 12%);
+  color: #fff;
+  cursor: pointer;
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 24%);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #409eff);
+  }
+}
+
+.lh-image-viewer__toolbar {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 24px;
+  margin-inline: auto;
+  width: fit-content;
+  padding: 4px;
+  gap: 4px;
+}
+
+.lh-image-viewer__tool {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+}
+
+.lh-image-viewer__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 64px;
+  font-size: 22px;
+
+  &--prev { inset-inline-start: 16px; }
+  &--next { inset-inline-end: 16px; }
+}
+
+.lh-image-viewer__close {
+  position: absolute;
+  top: 16px;
+  inset-inline-end: 16px;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-image-viewer__img {
+    transition: none;
+  }
+}

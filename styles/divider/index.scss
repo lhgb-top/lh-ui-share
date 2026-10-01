@@ -1,0 +1,83 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-divider {
+  position: relative;
+  display: block;
+  border: 0;
+  background-color: var(--lh-border-color-light, var(--lh-border-color-base));
+
+  &--horizontal {
+    width: 100%;
+    height: 1px;
+    margin: 16px 0;
+  }
+
+  &--vertical {
+    display: inline-block;
+    align-self: stretch;
+    width: 1px;
+    height: 1em;
+    margin: 0 8px;
+    vertical-align: middle;
+  }
+
+  &--dashed {
+    background-color: transparent;
+    background-image: linear-gradient(
+      to right,
+      var(--lh-border-color-light, var(--lh-border-color-base)) 50%,
+      transparent 50%
+    );
+    background-size: 8px 1px;
+    background-repeat: repeat-x;
+  }
+
+  &--with-text {
+    display: flex;
+    align-items: center;
+    height: auto;
+    margin: 24px 0;
+    background-color: transparent;
+    background-image: none;
+
+    /* 线段由伪元素绘制，文案占据中段 */
+    &::before,
+    &::after {
+      content: '';
+      flex: 1 1 auto;
+      height: 1px;
+      background-color: var(--lh-border-color-light, var(--lh-border-color-base));
+    }
+  }
+
+  &--label-left::before {
+    flex: 0 0 5%;
+  }
+
+  &--label-right::after {
+    flex: 0 0 5%;
+  }
+
+  /* 虚线 + 文案：伪元素改虚线绘制 */
+  &--with-text.lh-divider--dashed {
+    &::before,
+    &::after {
+      background-color: transparent;
+      background-image: linear-gradient(
+        to right,
+        var(--lh-border-color-light, var(--lh-border-color-base)) 50%,
+        transparent 50%
+      );
+      background-size: 8px 1px;
+      background-repeat: repeat-x;
+    }
+  }
+
+  &__label {
+    padding: 0 12px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--lh-text-primary);
+    white-space: nowrap;
+  }
+}

@@ -1,0 +1,103 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-timeline {
+  margin: 0;
+  padding: var(--lh-spacing-sm, 8px) 0;
+  list-style: none;
+}
+
+.lh-timeline__item {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding-bottom: var(--lh-spacing-lg, 24px);
+
+  /* 连接线（伪元素，最后一项隐藏） */
+  &::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: 5px;
+    top: 14px;
+    bottom: 0;
+    width: 2px;
+    background-color: var(--lh-timeline-line, var(--lh-border-color-light, #e4e7ed));
+  }
+
+  &:not(.lh-timeline__item--last)::before {
+    display: block;
+  }
+
+  &--last::before {
+    display: none;
+  }
+
+  /* alternate 交替侧 */
+  &--right {
+    flex-direction: row-reverse;
+    text-align: end;
+  }
+
+  .lh-timeline--alternate & {
+    width: 50%;
+  }
+
+  .lh-timeline--alternate &--right {
+    margin-inline-start: 50%;
+  }
+}
+
+.lh-timeline__dot-wrap {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.lh-timeline__dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--lh-timeline-dot-bg, var(--lh-bg-color, #fff));
+  border: 2px solid var(--lh-timeline-dot, var(--lh-info-color, #909399));
+
+  /* 语义着色 */
+  .lh-timeline__item--primary & {
+    border-color: var(--lh-primary-color, #409eff);
+  }
+
+  .lh-timeline__item--success & {
+    border-color: var(--lh-success-color, #67c23a);
+  }
+
+  .lh-timeline__item--warning & {
+    border-color: var(--lh-warning-color, #e6a23c);
+  }
+
+  .lh-timeline__item--danger & {
+    border-color: var(--lh-danger-color, #f56c6c);
+  }
+
+  /* 空心节点 */
+  .lh-timeline__item--hollow & {
+    background-color: transparent;
+  }
+}
+
+.lh-timeline__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.lh-timeline__timestamp {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--lh-font-size-small, 13px);
+  color: var(--lh-timeline-timestamp, var(--lh-text-secondary, #909399));
+}
+
+.lh-timeline__content {
+  color: var(--lh-timeline-content, var(--lh-text-regular, #606266));
+  line-height: 1.6;
+}

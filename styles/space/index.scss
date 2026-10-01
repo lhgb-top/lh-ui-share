@@ -1,0 +1,24 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-space {
+  display: inline-flex;
+
+  &--horizontal {
+    flex-direction: row;
+  }
+
+  &--vertical {
+    flex-direction: column;
+  }
+
+  &--wrap {
+    flex-wrap: wrap;
+  }
+
+  &--small,
+  &--medium,
+  &--large {
+    // gap 由内联样式写入 spacing token，这里仅作缺省兜底
+    gap: var(--lh-spacing-medium, 16px);
+  }
+}

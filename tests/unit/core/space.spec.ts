@@ -1,0 +1,57 @@
+import { describe, it, expect } from 'vitest'
+import { getSpaceClassNames, resolveSpaceGaps } from '../../../src/core/space'
+
+describe('Space Core Logic', () => {
+  describe('getSpaceClassNames', () => {
+    it('returns base and direction classes', () => {
+      const classes = getSpaceClassNames({ direction: 'horizontal', wrap: false, size: 'medium' })
+      expect(classes).toContain('lh-space')
+      expect(classes).toContain('lh-space--horizontal')
+    })
+
+    it('adds wrap class only when requested', () => {
+      const wrapped = getSpaceClassNames({ direction: 'horizontal', wrap: true, size: 'medium' })
+      expect(wrapped).toContain('lh-space--wrap')
+
+      const unwrapped = getSpaceClassNames({ direction: 'horizontal', wrap: false, size: 'medium' })
+      expect(unwrapped).not.toContain('lh-space--wrap')
+    })
+
+    it('adds preset size class only for preset sizes', () => {
+      expect(
+        getSpaceClassNames({ direction: 'horizontal', wrap: false, size: 'small' }),
+      ).toContain('lh-space--small')
+      expect(
+        getSpaceClassNames({ direction: 'horizontal', wrap: false, size: 'custom' }),
+      ).not.toContain('lh-space--custom')
+    })
+  })
+
+  describe('resolveSpaceGaps', () => {
+    it('maps preset sizes to spacing tokens', () => {
+      expect(resolveSpaceGaps('small')).toEqual({
+        columnGap: 'var(--lh-spacing-small, 8px)',
+        rowGap: 'var(--lh-spacing-small, 8px)',
+        usesTokens: true,
+      })
+      expect(resolveSpaceGaps('medium').usesTokens).toBe(true)
+      expect(resolveSpaceGaps('large').usesTokens).toBe(true)
+    })
+
+    it('treats numbers as pixel values', () => {
+      expect(resolveSpaceGaps(12)).toEqual({
+        columnGap: '12px',
+        rowGap: '12px',
+        usesTokens: false,
+      })
+    })
+
+    it('supports independent horizontal and vertical gaps', () => {
+      expect(resolveSpaceGaps([8, 24])).toEqual({
+        columnGap: '8px',
+        rowGap: '24px',
+        usesTokens: false,
+      })
+    })
+  })
+})

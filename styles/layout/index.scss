@@ -1,0 +1,50 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-layout {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+
+  &--horizontal {
+    flex-direction: row;
+  }
+
+  &--vertical {
+    flex-direction: column;
+  }
+}
+
+.lh-layout-header {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: var(--lh-layout-header-height, 56px);
+  padding-inline: var(--lh-spacing-lg, 24px);
+  background-color: var(--lh-layout-header-bg, var(--lh-bg-color, #fff));
+  color: var(--lh-text-primary, #303133);
+  border-block-end: 1px solid var(--lh-layout-border, var(--lh-border-color-lighter, #ebeef5));
+}
+
+.lh-layout-aside {
+  flex-shrink: 0;
+  width: var(--lh-layout-aside-width, 220px);
+  overflow: auto;
+  background-color: var(--lh-layout-aside-bg, var(--lh-bg-color, #fff));
+  color: var(--lh-text-primary, #303133);
+  border-inline-end: 1px solid var(--lh-layout-border, var(--lh-border-color-lighter, #ebeef5));
+}
+
+.lh-layout-main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: var(--lh-spacing-lg, 24px);
+  background-color: var(--lh-layout-main-bg, var(--lh-bg-color-page, #f5f0eb));
+}
+
+.lh-layout-footer {
+  flex-shrink: 0;
+  padding: var(--lh-spacing-base, 12px) var(--lh-spacing-lg, 24px);
+  color: var(--lh-text-secondary, #8a8a8a);
+  border-block-start: 1px solid var(--lh-layout-border, var(--lh-border-color-lighter, #ebeef5));
+}

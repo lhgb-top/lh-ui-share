@@ -1,0 +1,154 @@
+// ==============================
+// lh-ui-plus 国风暗色主题
+// 深墨染夜，朱砂点朱
+// ==============================
+
+[data-theme='dark'],
+.dark {
+  // Primary (靛蓝 — 夜青花)
+  --lh-primary-color: #3D649E;
+  --lh-primary-color-hover: #5078AB;
+  --lh-primary-color-active: #2B4C7C;
+  --lh-primary-color-bg: #1A2430;
+  --lh-primary-color-border: #2A3A4A;
+
+  // Success (松花绿)
+  --lh-success-color: #6FA36E;
+  --lh-success-color-hover: #82B581;
+  --lh-success-color-active: #5B8C5A;
+  --lh-success-color-bg: #1A2A1A;
+
+  // Warning (藤黄)
+  --lh-warning-color: #D4B76F;
+  --lh-warning-color-hover: #E0C680;
+  --lh-warning-color-active: #C4A35A;
+  --lh-warning-color-bg: #2A251A;
+
+  // Danger (朱砂)
+  --lh-danger-color: #C45050;
+  --lh-danger-color-hover: #D46060;
+  --lh-danger-color-active: #B23A3A;
+  --lh-danger-color-bg: #2A1A1A;
+
+  // Info (黛色)
+  --lh-info-color: #8F8F8F;
+  --lh-info-color-hover: #A0A0A0;
+  --lh-info-color-active: #7A7A7A;
+  --lh-info-color-bg: #1A1A1A;
+
+  // Gold (金色 — 夜金辉)
+  --lh-gold-color: #D4A843;
+  --lh-gold-color-hover: #E8C35C;
+  --lh-gold-color-active: #B8860B;
+  --lh-gold-color-bg: #2A241A;
+  --lh-gold-color-border: #3A2E1A;
+
+  // Vermilion (朱砂 — 夜朱红)
+  --lh-vermilion-color: #E85D4A;
+  --lh-vermilion-color-hover: #FF7B6B;
+  --lh-vermilion-color-active: #C43A31;
+  --lh-vermilion-color-bg: #2A1A18;
+
+  // Jade (玉色 — 夜翠微)
+  --lh-jade-color: #7AAE7A;
+  --lh-jade-color-hover: #9CC89C;
+  --lh-jade-color-active: #5B8C5A;
+  --lh-jade-color-bg: #1A2A1A;
+
+  // Decoration (花纹装饰色 — 暗夜金)
+  --lh-decoration-color: rgba(212, 168, 67, 0.08);
+  // 暗色花纹背景色（白色调）
+  --lh-bg-pattern-color: rgba(255, 255, 255, 0.06);
+  // 暗色花纹混合模式（overlay 将黑色花纹在暗色背景上提亮）
+  --lh-bg-pattern-blend: overlay;
+
+  // Text (暖白墨韵)
+  --lh-text-primary: #E8E0D8;
+  --lh-text-regular: #C8C0B8;
+  --lh-text-secondary: #A09890;
+  --lh-text-placeholder: #7A7270;
+  --lh-text-disabled: #5A5250;
+
+  // Border (暗墨色)
+  --lh-border-color-base: #3A3530;
+  --lh-border-color-light: #302B28;
+  --lh-border-color-lighter: #2A2520;
+  --lh-border-color-extra-light: #242018;
+
+  // Background (深墨宣纸)
+  --lh-bg-color: #2A2520;
+  --lh-bg-color-page: #1E1A16;
+  --lh-bg-color-disabled: #242018;
+  --lh-bg-color-overlay: rgba(10, 8, 6, 0.7);
+
+  // Shadow
+  --lh-box-shadow-base: 0 2px 12px 0 rgba(0, 0, 0, 0.5);
+  --lh-box-shadow-light: 0 2px 4px 0 rgba(0, 0, 0, 0.4);
+  --lh-box-shadow-lighter: 0 0 4px 0 rgba(0, 0, 0, 0.3);
+
+  // Disabled
+  --lh-disabled-bg-color: #242018;
+  --lh-disabled-text-color: #5A5250;
+  --lh-disabled-border-color: #302B28;
+  --lh-disabled-opacity: 0.5;
+
+  // Overlay components（弹层类组件 — 深墨夜色）
+  --lh-popover-bg-color: #2A2520;
+  --lh-popover-border-color: #3A3530;
+  --lh-popover-title-color: #E8E0D8;
+  --lh-popover-content-color: #C8C0B8;
+
+  --lh-drawer-bg-color: #2A2520;
+  --lh-drawer-border-color: #3A3530;
+  --lh-drawer-title-color: #E8E0D8;
+
+  --lh-dropdown-bg-color: #2A2520;
+  --lh-dropdown-border-color: #3A3530;
+  --lh-dropdown-item-color: #C8C0B8;
+  --lh-dropdown-item-hover-bg-color: #242018;
+  --lh-dropdown-divider-color: #302B28;
+
+  // Imperative feedback（命令式反馈 — 深墨夜色）
+  --lh-message-bg: #2A2520;
+  --lh-message-border: #3A3530;
+  --lh-message-color: #C8C0B8;
+
+  --lh-notification-bg: #2A2520;
+  --lh-notification-border: #3A3530;
+  --lh-notification-title-color: #E8E0D8;
+  --lh-notification-content-color: #C8C0B8;
+
+  --lh-loading-bg: rgba(10, 8, 6, 62%);
+  --lh-loading-text-color: #C8C0B8;
+
+  // Wave E
+  --lh-timeline-line: #302B28;
+  --lh-collapse-border: #302B28;
+  --lh-segmented-bg: #242018;
+
+  // Wave F
+  --lh-menu-bg: #242018;
+  --lh-menu-border: #302B28;
+  --lh-menu-item-hover-bg: #302B28;
+
+  // Wave F：Table
+  --lh-table-bg: #242018;
+  --lh-table-header-bg: #2A2420;
+  --lh-table-border: #302B28;
+  --lh-table-row-hover-bg: #2A2420;
+
+  // Wave F：Layout
+  --lh-layout-header-bg: #242018;
+  --lh-layout-aside-bg: #242018;
+  --lh-layout-main-bg: #1C1815;
+  --lh-layout-border: #302B28;
+
+  // Wave F：Tree
+  --lh-tree-node-hover-bg: #2A2420;
+  --lh-tree-color: #D8D0C8;
+
+  // Wave F：Transfer / Upload
+  --lh-transfer-bg: #242018;
+  --lh-transfer-border: #302B28;
+  --lh-upload-bg: #242018;
+}

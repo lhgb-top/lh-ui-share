@@ -1,0 +1,33 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-row {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: var(--lh-row-gutter, 0);
+
+  &--nowrap {
+    grid-auto-flow: column;
+    grid-template-columns: unset;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  &--center { justify-items: center; }
+  &--end { justify-items: end; }
+  &--space-between { justify-content: space-between; }
+  &--space-around { justify-content: space-around; }
+  &--middle { align-items: center; }
+  &--bottom { align-items: end; }
+}
+
+.lh-col {
+  min-width: 0;
+}
+
+/* 文档演示单元（docs 专用最小样式） */
+.grid-demo-cell {
+  padding: 10px 12px;
+  background-color: var(--lh-bg-color-page, #f5f0eb);
+  border-radius: var(--lh-border-radius-small, 6px);
+  text-align: center;
+  font-size: var(--lh-font-size-small, 13px);
+}

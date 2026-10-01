@@ -1,0 +1,111 @@
+@use '../theme/common/index.scss' as *;
+
+/* 容器固定于视口顶部居中，pointer-events 穿透避免挡住页面交互 */
+.lh-message {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+
+  /* 多条消息各自声明的 offset 交给单条 margin-top，容器只兜底第一条 */
+  .lh-message__item:first-child {
+    margin-top: 0;
+  }
+}
+
+.lh-message__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: var(--lh-border-radius-base, 8px);
+  background-color: var(--lh-message-bg, var(--lh-bg-color, #fff));
+  color: var(--lh-message-color, var(--lh-text-regular, #606266));
+  box-shadow: var(--lh-message-shadow, 0 4px 16px rgba(0, 0, 0, 12%));
+  border: 1px solid var(--lh-message-border, var(--lh-border-color-lighter, #ebeef5));
+  font-size: 14px;
+  line-height: 1.6;
+  pointer-events: auto;
+
+  &--closable .lh-message__content {
+    margin-right: 4px;
+  }
+
+  &--warning {
+    color: var(--lh-warning-color, #e6a23c);
+  }
+
+  &--danger {
+    color: var(--lh-danger-color, #f56c6c);
+  }
+
+  &--success {
+    color: var(--lh-success-color, #67c23a);
+  }
+
+  &--loading {
+    color: var(--lh-primary-color, #409eff);
+  }
+
+  &--info {
+    color: var(--lh-info-color, #909399);
+  }
+}
+
+.lh-message__icon {
+  flex-shrink: 0;
+}
+
+.lh-message__content {
+  white-space: nowrap;
+}
+
+.lh-message__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+
+  &:hover {
+    opacity: 1;
+  }
+}
+
+/* 进出场：缩放淡入淡出，reduced-motion 降级为纯透明度 */
+.lh-message-zoom-enter-active,
+.lh-message-zoom-leave-active {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.lh-message-zoom-enter,
+.lh-message-zoom-enter-from,
+.lh-message-zoom-leave-to {
+  opacity: 0;
+  transform: translateY(-12px) scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-message-zoom-enter-active,
+  .lh-message-zoom-leave-active {
+    transition: opacity 0.2s ease;
+  }
+
+  .lh-message-zoom-enter,
+.lh-message-zoom-enter-from,
+  .lh-message-zoom-leave-to {
+    transform: none;
+  }
+}

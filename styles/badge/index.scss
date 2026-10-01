@@ -1,0 +1,96 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-badge {
+  position: relative;
+  display: inline-block;
+
+  &__content {
+    position: absolute;
+    top: 0;
+    right: -9px;
+    transform: translate(50%, -50%);
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    font-family: var(--lh-font-family);
+    font-size: 12px;
+    line-height: 1;
+    color: #fff;
+    padding: 0 6px;
+    min-width: 18px;
+    height: 18px;
+    background-color: var(--lh-danger-color);
+    white-space: nowrap;
+  }
+
+  /* Types */
+  &--primary .lh-badge__content {
+    background-color: var(--lh-primary-color);
+  }
+
+  &--success .lh-badge__content {
+    background-color: var(--lh-success-color);
+  }
+
+  &--warning .lh-badge__content {
+    background-color: var(--lh-warning-color);
+  }
+
+  &--danger .lh-badge__content {
+    background-color: var(--lh-danger-color);
+  }
+
+  &--info .lh-badge__content {
+    background-color: var(--lh-info-color);
+  }
+
+  /* 文档声明支持 default，缺此规则会回退为基类的 danger 红 */
+  &--default .lh-badge__content {
+    background-color: var(--lh-text-secondary);
+  }
+
+  /* Sizes */
+  &--small .lh-badge__content {
+    min-width: 16px;
+    height: 16px;
+    font-size: 11px;
+    padding: 0 5px;
+  }
+
+  &--large .lh-badge__content {
+    min-width: 20px;
+    height: 20px;
+    font-size: 13px;
+    padding: 0 7px;
+  }
+
+  /* Dot */
+  &--dot .lh-badge__content {
+    padding: 0;
+    min-width: 8px;
+    height: 8px;
+    width: 8px;
+    border-radius: 50%;
+  }
+
+  /* Hidden */
+  &--hidden {
+    display: none;
+  }
+}
+
+.lh-badge-zoom-enter-active,
+.lh-badge-zoom-leave-active {
+  animation: lh-badge-zoom 0.15s ease-in-out;
+}
+
+@keyframes lh-badge-zoom {
+  0% {
+    transform: translate(50%, -50%) scale(0);
+  }
+  100% {
+    transform: translate(50%, -50%) scale(1);
+  }
+}

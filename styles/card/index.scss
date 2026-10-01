@@ -1,0 +1,188 @@
+@use '../theme/common/index.scss' as *;
+
+/* 组件级变量：默认值取自全局 token，可通过 ConfigProvider themeVars 或组件 themeVars 定向覆盖 */
+.lh-card {
+  --lh-card-border-radius: calc(var(--lh-border-radius-base, 2px) + 2px);
+  --lh-card-bg: var(--lh-bg-color, #faf6f0);
+  --lh-card-border-color: var(--lh-border-color-light);
+  --lh-card-header-padding: 14px 20px;
+  --lh-card-body-padding: 18px 20px;
+  --lh-card-footer-padding: 12px 20px;
+  /* 墨影：与主题 box-shadow 同源的暖灰柔影，不用冷蓝黑破坏宣纸质感 */
+  --lh-card-shadow:
+    0 1px 2px rgba(26, 26, 26, 0.05),
+    0 4px 16px rgba(26, 26, 26, 0.07);
+  --lh-card-shadow-hover:
+    0 2px 6px rgba(26, 26, 26, 0.08),
+    0 12px 28px rgba(26, 26, 26, 0.12);
+  /* 加载占位：底色与高光都保证可感知，避免在宣纸底上若隐若现 */
+  --lh-card-loading-bg: var(--lh-border-color-light);
+  --lh-card-loading-highlight: color-mix(in srgb, var(--lh-bg-color, #faf6f0) 72%, var(--lh-border-color-light));
+
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--lh-card-border-radius);
+  border: 1px solid var(--lh-card-border-color);
+  background-color: var(--lh-card-bg);
+  color: var(--lh-text-regular);
+  overflow: hidden;
+  transition:
+    box-shadow var(--lh-transition-duration-base, 0.3s) var(--lh-transition-function-ease-in-out, ease),
+    transform var(--lh-transition-duration-base, 0.3s) var(--lh-transition-function-ease-in-out, ease),
+    border-color var(--lh-transition-duration-base, 0.3s) ease;
+
+  &--shadow-always {
+    box-shadow: var(--lh-card-shadow);
+  }
+
+  &--shadow-hover {
+    box-shadow: none;
+
+    &:hover {
+      box-shadow: var(--lh-card-shadow-hover);
+    }
+  }
+
+  &--shadow-never {
+    box-shadow: none;
+  }
+
+  &--clickable {
+    cursor: pointer;
+
+    &:hover {
+      transform: translateY(-2px);
+      border-color: color-mix(in srgb, var(--lh-primary-color) 24%, transparent);
+
+      /* hover 时主动补阴影（shadow-hover 变体自身 hover 才有） */
+      box-shadow: var(--lh-card-shadow-hover);
+    }
+
+    &:focus-visible {
+      outline: none;
+      border-color: var(--lh-primary-color);
+      box-shadow:
+        0 0 0 3px color-mix(in srgb, var(--lh-primary-color) 18%, transparent),
+        var(--lh-card-shadow-hover);
+    }
+  }
+
+  &__cover {
+    line-height: 0;
+    background-color: var(--lh-bg-color-page);
+  }
+
+  &__cover > * {
+    width: 100%;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: var(--lh-card-header-padding);
+
+    /* 分隔线：两端渐隐的墨痕，比生硬实线更贴合留白质感 */
+    background-image: linear-gradient(
+      to right,
+      transparent 0%,
+      var(--lh-card-border-color) 12%,
+      var(--lh-card-border-color) 88%,
+      transparent 100%
+    );
+    background-repeat: no-repeat;
+    background-position: bottom;
+    background-size: 100% 1px;
+  }
+
+  &__title {
+    font-size: var(--lh-font-size-large, 18px);
+    font-weight: var(--lh-font-weight-bold, 600);
+    letter-spacing: 0.02em;
+    color: var(--lh-text-primary);
+  }
+
+  &__extra {
+    font-size: var(--lh-font-size-small, 13px);
+    color: var(--lh-text-secondary);
+  }
+
+  &__body {
+    flex: 1 1 auto;
+    padding: var(--lh-card-body-padding);
+    font-size: var(--lh-font-size-base, 14px);
+    line-height: var(--lh-font-line-height-primary, 1.8);
+  }
+
+  &__footer {
+    padding: var(--lh-card-footer-padding);
+    background-color: color-mix(in srgb, var(--lh-bg-color-page, #f5f0eb) 40%, transparent);
+
+    /* 顶部渐隐分隔：与 header 墨痕呼应 */
+    background-image: linear-gradient(
+      to right,
+      transparent 0%,
+      var(--lh-card-border-color) 12%,
+      var(--lh-card-border-color) 88%,
+      transparent 100%
+    );
+    background-repeat: no-repeat;
+    background-position: top;
+    background-size: 100% 1px;
+  }
+
+  /* ── 加载态 ─────────────────────────────────────────── */
+  &--loading {
+    cursor: default;
+    pointer-events: none;
+  }
+
+  &__loading-line {
+    height: 14px;
+    border-radius: var(--lh-border-radius-small, 2px);
+    margin-bottom: 12px;
+
+    /* 流光扫过：渐变高光横移，视觉上比透明度闪烁柔和 */
+    background: linear-gradient(
+      100deg,
+      var(--lh-card-loading-bg) 35%,
+      var(--lh-card-loading-highlight) 50%,
+      var(--lh-card-loading-bg) 65%
+    );
+    background-size: 200% 100%;
+    animation: lh-card-shimmer 1.6s ease-in-out infinite;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+
+    &--wide {
+      width: 62%;
+      height: 16px;
+    }
+
+    &--narrow {
+      width: 38%;
+    }
+  }
+}
+
+@keyframes lh-card-shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -80% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-card--clickable:hover {
+    transform: none;
+  }
+
+  .lh-card__loading-line {
+    animation: none;
+  }
+}

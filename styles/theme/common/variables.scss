@@ -1,0 +1,247 @@
+// ==============================
+// lh-ui-plus 国风主题变量
+// 设计灵感：宣纸 · 水墨 · 朱砂 · 靛蓝
+// "素雅留白，墨韵含香"
+// ==============================
+
+// ——— Primary (靛蓝 — 青花瓷之蓝) ———
+$lh-primary: #2B4C7C !default;
+$lh-primary-hover: #3D649E !default;
+$lh-primary-active: #1F3A5F !default;
+$lh-primary-light: #E8EDF3 !default;
+$lh-primary-lighter: #D4DCE8 !default;
+
+// ——— Success (松花绿 — 竹影青翠) ———
+$lh-success: #5B8C5A !default;
+$lh-success-hover: #6FA36E !default;
+$lh-success-active: #4B7A4A !default;
+$lh-success-light: #EDF5EC !default;
+
+// ——— Warning (藤黄 — 秋叶金黄) ———
+$lh-warning: #C4A35A !default;
+$lh-warning-hover: #D4B76F !default;
+$lh-warning-active: #B3924A !default;
+$lh-warning-light: #FBF6EA !default;
+
+// ——— Danger / Error (朱砂 — 印泥朱红) ———
+$lh-danger: #B23A3A !default;
+$lh-danger-hover: #C45050 !default;
+$lh-danger-active: #9A3030 !default;
+$lh-danger-light: #FDF0F0 !default;
+
+// ——— Info (黛色 — 水墨淡彩) ———
+$lh-info: #7A7A7A !default;
+$lh-info-hover: #8F8F8F !default;
+$lh-info-active: #6A6A6A !default;
+$lh-info-light: #F2F2F2 !default;
+
+// ——— 新增：金色点缀（华贵古韵） ———
+$lh-gold: #B8860B !default;
+$lh-gold-hover: #D4A843 !default;
+$lh-gold-active: #9A7208 !default;
+$lh-gold-light: #FBF6EA !default;
+$lh-gold-lighter: #FDFAF3 !default;
+
+// ——— 新增：朱砂点缀（印泥朱红） ———
+$lh-vermilion: #C43A31 !default;
+$lh-vermilion-hover: #E85D4A !default;
+$lh-vermilion-active: #A92E26 !default;
+$lh-vermilion-light: #FDF0EE !default;
+
+// ——— 新增：玉色（翠竹清雅） ———
+$lh-jade: #5B8C5A !default;
+$lh-jade-hover: #7AAE7A !default;
+$lh-jade-active: #4B7A4A !default;
+$lh-jade-light: #EDF5EC !default;
+
+// ——— 新增：花纹装饰色 ———
+$lh-decoration-color: rgba(184, 134, 11, 0.12) !default;
+$lh-decoration-color-dark: rgba(212, 168, 67, 0.08) !default;
+
+// ——— Neutral ———
+$lh-white: #FAF6F0 !default;
+$lh-black: #1A1A1A !default;
+
+// ——— Text (墨色体系) ———
+$lh-text-primary: #2C2C2C !default;
+$lh-text-regular: #5A5A5A !default;
+$lh-text-secondary: #8A8A8A !default;
+$lh-text-placeholder: #B0B0B0 !default;
+$lh-text-disabled: #C8C8C8 !default;
+
+// ——— Border (素雅边框) ———
+$lh-border-color-base: #D8D3CC !default;
+$lh-border-color-light: #E5E0D8 !default;
+$lh-border-color-lighter: #EEE9E2 !default;
+$lh-border-color-extra-light: #F5F0EB !default;
+$lh-border-radius-base: 2px !default;
+$lh-border-radius-small: 2px !default;
+$lh-border-radius-round: 20px !default;
+$lh-border-radius-circle: 50% !default;
+
+// ——— Background (宣纸色系) ———
+$lh-bg-color: #FAF6F0 !default;
+$lh-bg-color-page: #F5F0EB !default;
+$lh-bg-color-disabled: #EDE8E0 !default;
+$lh-bg-color-overlay: rgba(26, 26, 26, 0.4) !default;
+
+// ——— Shadow (柔和墨影) ———
+$lh-box-shadow-base: 0 2px 12px 0 rgba(26, 26, 26, 0.08) !default;
+$lh-box-shadow-light: 0 2px 4px 0 rgba(26, 26, 26, 0.06) !default;
+$lh-box-shadow-lighter: 0 0 4px 0 rgba(26, 26, 26, 0.04) !default;
+
+// ——— Font (国风字体) ———
+$lh-font-family: 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif !default;
+$lh-font-size-extra-large: 20px !default;
+$lh-font-size-large: 18px !default;
+$lh-font-size-medium: 16px !default;
+$lh-font-size-base: 14px !default;
+$lh-font-size-small: 13px !default;
+$lh-font-size-extra-small: 12px !default;
+$lh-font-weight-primary: 400 !default;
+$lh-font-weight-bold: 600 !default;
+$lh-font-line-height-primary: 1.8 !default;
+
+// ——— Spacing ———
+$lh-spacing-xs: 4px !default;
+$lh-spacing-sm: 8px !default;
+$lh-spacing-md: 12px !default;
+$lh-spacing-base: 16px !default;
+$lh-spacing-lg: 20px !default;
+$lh-spacing-xl: 24px !default;
+$lh-spacing-xxl: 32px !default;
+
+// ——— Z-index ———
+$lh-z-index-normal: 1 !default;
+$lh-z-index-dropdown: 1000 !default;
+$lh-z-index-sticky: 1020 !default;
+$lh-z-index-fixed: 1030 !default;
+$lh-z-index-modal-backdrop: 1040 !default;
+$lh-z-index-modal: 1050 !default;
+$lh-z-index-popover: 1060 !default;
+$lh-z-index-tooltip: 2000 !default;
+
+// ——— Transitions ———
+$lh-transition-duration-fast: 0.25s !default;
+$lh-transition-duration-base: 0.3s !default;
+$lh-transition-duration-slow: 0.4s !default;
+$lh-transition-function-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1) !default;
+
+// ——— Disabled ———
+$lh-disabled-bg-color: $lh-bg-color-disabled !default;
+$lh-disabled-text-color: $lh-text-disabled !default;
+$lh-disabled-border-color: $lh-border-color-light !default;
+$lh-disabled-opacity: 0.5 !default;
+
+// ——— Overlay components（弹层类组件：Popover / Popconfirm / Drawer / Dropdown） ———
+$lh-popover-bg-color: $lh-white !default;
+$lh-popover-border-color: $lh-border-color-light !default;
+$lh-popover-border-radius: $lh-border-radius-base !default;
+$lh-popover-padding: $lh-spacing-base !default;
+$lh-popover-title-color: $lh-text-primary !default;
+$lh-popover-content-color: $lh-text-regular !default;
+$lh-popover-arrow-size: 8px !default;
+
+$lh-popconfirm-padding: $lh-spacing-base !default;
+$lh-popconfirm-icon-size: 16px !default;
+
+$lh-drawer-bg-color: $lh-white !default;
+$lh-drawer-border-color: $lh-border-color-light !default;
+$lh-drawer-header-padding: $lh-spacing-base !default;
+$lh-drawer-body-padding: $lh-spacing-base !default;
+$lh-drawer-footer-padding: $lh-spacing-base !default;
+$lh-drawer-title-color: $lh-text-primary !default;
+$lh-drawer-close-size: 16px !default;
+
+$lh-dropdown-bg-color: $lh-white !default;
+$lh-dropdown-border-color: $lh-border-color-light !default;
+$lh-dropdown-border-radius: $lh-border-radius-base !default;
+$lh-dropdown-padding: $lh-spacing-xs 0 !default;
+$lh-dropdown-item-height: 36px !default;
+$lh-dropdown-item-padding: 0 $lh-spacing-base !default;
+$lh-dropdown-item-color: $lh-text-regular !default;
+$lh-dropdown-item-hover-bg-color: $lh-bg-color-page !default;
+$lh-dropdown-divider-color: $lh-border-color-lighter !default;
+
+// ——— Imperative feedback（命令式反馈：Message / Notification / Loading） ———
+$lh-message-bg-color: $lh-white !default;
+$lh-message-border-color: $lh-border-color-lighter !default;
+$lh-message-content-color: $lh-text-regular !default;
+$lh-message-shadow: $lh-box-shadow-light !default;
+
+$lh-notification-bg-color: $lh-white !default;
+$lh-notification-border-color: $lh-border-color-lighter !default;
+$lh-notification-title-color: $lh-text-primary !default;
+$lh-notification-content-color: $lh-text-regular !default;
+$lh-notification-width: 320px !default;
+$lh-notification-gap: 16px !default;
+$lh-notification-shadow: $lh-box-shadow-light !default;
+
+$lh-loading-bg-color: rgba(255, 255, 255, 72%) !default;
+$lh-loading-text-color: $lh-text-regular !default;
+
+// ——— Wave E（数据与媒体增强） ———
+$lh-timeline-line: $lh-border-color-light !default;
+$lh-timeline-dot: $lh-info !default;
+$lh-timeline-timestamp: $lh-text-secondary !default;
+$lh-collapse-border: $lh-border-color-lighter !default;
+$lh-rate-active: $lh-warning !default;
+$lh-segmented-bg: $lh-bg-color-page !default;
+$lh-calendar-border: $lh-border-color-lighter !default;
+$lh-affix-z-index: 900 !default;
+$lh-backtop-z-index: 900 !default;
+
+// ——— Wave F：Menu 导航菜单 ———
+$lh-menu-bg: $lh-bg-color !default;
+$lh-menu-padding: 8px !default;
+$lh-menu-border: $lh-border-color-lighter !default;
+$lh-menu-height: 56px !default;
+$lh-menu-collapse-width: 64px !default;
+$lh-menu-item-height: 40px !default;
+$lh-menu-item-padding: 20px !default;
+$lh-menu-item-color: $lh-text-primary !default;
+$lh-menu-item-hover-bg: $lh-bg-color-page !default;
+$lh-menu-item-active-color: $lh-primary !default;
+$lh-menu-item-active-bg: rgba($lh-primary, 10%) !default;
+$lh-menu-arrow-color: $lh-text-secondary !default;
+$lh-menu-z-index: 2000 !default;
+
+// ——— Wave F：Table 表格 ———
+$lh-table-bg: $lh-bg-color !default;
+$lh-table-color: $lh-text-regular !default;
+$lh-table-header-bg: $lh-bg-color-page !default;
+$lh-table-header-color: $lh-text-primary !default;
+$lh-table-border: $lh-border-color-lighter !default;
+$lh-table-row-hover-bg: $lh-bg-color-page !default;
+$lh-table-stripe-bg: rgba($lh-bg-color-page, 60%) !default;
+$lh-table-cell-padding: 12px 12px !default;
+
+// ——— Wave F：Layout / Grid 布局 ———
+$lh-layout-header-height: 56px !default;
+$lh-layout-header-bg: $lh-bg-color !default;
+$lh-layout-aside-width: 220px !default;
+$lh-layout-aside-bg: $lh-bg-color !default;
+$lh-layout-main-bg: $lh-bg-color-page !default;
+$lh-layout-border: $lh-border-color-lighter !default;
+$lh-row-gutter: 0 !default;
+
+// ——— Wave F：Tree 树形控件 ———
+$lh-tree-color: $lh-text-primary !default;
+$lh-tree-padding: 4px 0 !default;
+$lh-tree-node-height: 34px !default;
+$lh-tree-node-hover-bg: $lh-bg-color-page !default;
+$lh-tree-node-selected-color: $lh-primary !default;
+$lh-tree-node-selected-bg: rgba($lh-primary, 10%) !default;
+$lh-tree-arrow-color: $lh-text-secondary !default;
+
+// ——— Wave F：Transfer / Upload ———
+$lh-transfer-panel-width: 220px !default;
+$lh-transfer-panel-height: 280px !default;
+$lh-transfer-bg: $lh-bg-color !default;
+$lh-transfer-border: $lh-border-color-lighter !default;
+$lh-upload-bg: $lh-bg-color !default;
+$lh-upload-border: $lh-border-color-base !default;
+$lh-upload-trigger-padding: 24px !default;
+
+// ——— Wave F：Anchor 锚点 ———
+$lh-anchor-color: $lh-text-regular !default;

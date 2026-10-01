@@ -1,0 +1,328 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 按钮样式 — 水墨之韵
+// ==============================
+
+$lh-button-height: 32px !default;
+$lh-button-height-large: 40px !default;
+$lh-button-height-small: 24px !default;
+$lh-button-height-mini: 20px !default;
+
+$lh-button-font-size: 14px !default;
+$lh-button-font-size-large: 14px !default;
+$lh-button-font-size-small: 12px !default;
+$lh-button-font-size-mini: 12px !default;
+
+$lh-button-padding: 12px 20px !default;
+$lh-button-padding-large: 16px 24px !default;
+$lh-button-padding-small: 8px 16px !default;
+$lh-button-padding-mini: 6px 12px !default;
+
+$lh-button-border-color: var(--lh-border-color-base, #D8D3CC) !default;
+$lh-button-text-color: var(--lh-text-regular, #5A5A5A) !default;
+$lh-button-disabled-opacity: 0.5 !default;
+$lh-button-disabled-bg: var(--lh-bg-color-disabled, #EDE8E0) !default;
+$lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
+
+.lh-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	white-space: nowrap;
+	cursor: pointer;
+	-webkit-user-select: none;
+	user-select: none;
+	vertical-align: middle;
+	text-decoration: none;
+	line-height: 1;
+	border: 1px solid $lh-button-border-color;
+	border-radius: 2px;
+	font-family: inherit;
+	font-weight: 400;
+	transition: all 0.25s ease;
+	outline: none;
+	position: relative;
+
+	// 花纹背景支持（通过 ConfigProvider 传入）
+	// 启用：--lh-bg-pattern: var(--lh-pattern-willow);
+	background-image: var(--lh-bg-pattern, none);
+	background-blend-mode: var(--lh-bg-pattern-blend, normal);
+	background-repeat: var(--lh-bg-pattern-repeat, repeat);
+	background-size: var(--lh-bg-pattern-size, auto);
+
+	/* 键盘焦点环：仅键盘导航时显示（鼠标点击不触发 :focus-visible），各类型变体统一 */
+	&:focus-visible {
+		outline: 2px solid var(--lh-primary-color, #2B4C7C);
+		outline-offset: 2px;
+	}
+
+	&__loading {
+		display: inline-flex;
+		align-items: center;
+		margin-right: 4px;
+	}
+
+	&__spinner {
+		animation: lh-button-spin 1s linear infinite;
+		width: 14px;
+		height: 14px;
+	}
+
+	&__path {
+		stroke: currentColor;
+		stroke-linecap: round;
+		stroke-dasharray: 90, 150;
+		animation: lh-button-dash 1.5s ease-in-out infinite;
+	}
+
+	&__icon + &__text,
+	&__loading + &__text {
+		margin-left: 4px;
+	}
+
+	// ——— Sizes ———
+
+	&--medium {
+		height: $lh-button-height;
+		padding: $lh-button-padding;
+		font-size: $lh-button-font-size;
+	}
+
+	&--large {
+		height: $lh-button-height-large;
+		padding: $lh-button-padding-large;
+		font-size: $lh-button-font-size-large;
+	}
+
+	&--small {
+		height: $lh-button-height-small;
+		padding: $lh-button-padding-small;
+		font-size: $lh-button-font-size-small;
+	}
+
+	&--mini {
+		height: $lh-button-height-mini;
+		padding: $lh-button-padding-mini;
+		font-size: $lh-button-font-size-mini;
+	}
+
+	// ——— Types ———
+
+	&--default,
+	&--blank {
+			color: $lh-button-text-color;
+			background-color: var(--lh-bg-color, #FAF6F0);
+			border-color: $lh-button-border-color;
+
+		&:hover,
+		&:focus {
+			color: #fff;
+			background-color: var(--lh-primary-color-active, #1F3A5F);
+			border-color: var(--lh-primary-color-active, #1F3A5F);
+		}
+	}
+
+	&--primary {
+		color: #fff;
+		background-color: var(--lh-primary-color, #2B4C7C);
+		border-color: var(--lh-primary-color, #2B4C7C);
+
+		&:hover,
+		&:focus {
+			background-color: var(--lh-primary-color-active, #1F3A5F);
+			border-color: var(--lh-primary-color-active, #1F3A5F);
+		}
+	}
+
+	&--success {
+		color: #fff;
+		background-color: var(--lh-success-color, #5B8C5A);
+		border-color: var(--lh-success-color, #5B8C5A);
+
+		&:hover,
+		&:focus {
+			background-color: var(--lh-success-color-active, #4B7A4A);
+			border-color: var(--lh-success-color-active, #4B7A4A);
+		}
+	}
+
+	&--warning {
+		color: #fff;
+		background-color: var(--lh-warning-color, #C4A35A);
+		border-color: var(--lh-warning-color, #C4A35A);
+
+		&:hover,
+		&:focus {
+			background-color: var(--lh-warning-color-active, #B3924A);
+			border-color: var(--lh-warning-color-active, #B3924A);
+		}
+	}
+
+	&--danger,
+	&--error {
+		color: #fff;
+		background-color: var(--lh-danger-color, #B23A3A);
+		border-color: var(--lh-danger-color, #B23A3A);
+
+		&:hover,
+		&:focus {
+			background-color: var(--lh-danger-color-active, #9A3030);
+			border-color: var(--lh-danger-color-active, #9A3030);
+		}
+	}
+
+	&--info {
+		color: #fff;
+		background-color: var(--lh-info-color, #7A7A7A);
+		border-color: var(--lh-info-color, #7A7A7A);
+
+		&:hover,
+		&:focus {
+			background-color: var(--lh-info-color-active, #6A6A6A);
+			border-color: var(--lh-info-color-active, #6A6A6A);
+		}
+	}
+
+	// ——— Plain ———
+
+	&--plain {
+		&.lh-button--primary {
+			color: var(--lh-primary-color, #2B4C7C);
+			background-color: rgba(43, 76, 124, 0.08);
+			border-color: var(--lh-primary-color, #2B4C7C);
+
+			&:hover,
+			&:focus {
+				color: #fff;
+				background-color: var(--lh-primary-color-active, #1F3A5F);
+				border-color: var(--lh-primary-color-active, #1F3A5F);
+			}
+		}
+
+		&.lh-button--success {
+			color: var(--lh-success-color, #5B8C5A);
+			background-color: rgba(91, 140, 90, 0.08);
+			border-color: var(--lh-success-color, #5B8C5A);
+
+			&:hover,
+			&:focus {
+				color: #fff;
+				background-color: var(--lh-success-color-active, #4B7A4A);
+				border-color: var(--lh-success-color-active, #4B7A4A);
+			}
+		}
+
+		&.lh-button--warning {
+			color: var(--lh-warning-color, #C4A35A);
+			background-color: rgba(196, 163, 90, 0.08);
+			border-color: var(--lh-warning-color, #C4A35A);
+
+			&:hover,
+			&:focus {
+				color: #fff;
+				background-color: var(--lh-warning-color-active, #B3924A);
+				border-color: var(--lh-warning-color-active, #B3924A);
+			}
+		}
+
+		&.lh-button--danger,
+		&.lh-button--error {
+			color: var(--lh-danger-color, #B23A3A);
+			background-color: rgba(178, 58, 58, 0.08);
+			border-color: var(--lh-danger-color, #B23A3A);
+
+			&:hover,
+			&:focus {
+				color: #fff;
+				background-color: var(--lh-danger-color-active, #9A3030);
+				border-color: var(--lh-danger-color-active, #9A3030);
+			}
+		}
+
+		&.lh-button--info {
+			color: var(--lh-info-color, #7A7A7A);
+			background-color: rgba(122, 122, 122, 0.08);
+			border-color: var(--lh-info-color, #7A7A7A);
+
+			&:hover,
+			&:focus {
+				color: #fff;
+				background-color: var(--lh-info-color-active, #6A6A6A);
+				border-color: var(--lh-info-color-active, #6A6A6A);
+			}
+		}
+
+		&.lh-button--default {
+			color: var(--lh-text-regular, #5A5A5A);
+			background-color: rgba(43, 76, 124, 0.04);
+			border-color: $lh-button-border-color;
+
+			&:hover,
+			&:focus {
+				color: #fff;
+				background-color: var(--lh-primary-color-active, #1F3A5F);
+				border-color: var(--lh-primary-color-active, #1F3A5F);
+			}
+		}
+	}
+
+	// ——— Shape modifiers ———
+
+	&--round {
+		border-radius: 20px;
+	}
+
+	&--circle {
+		border-radius: 50%;
+		width: var(--lh-btn-size, 32px);
+		height: var(--lh-btn-size, 32px);
+		padding: 0;
+	}
+
+	&--block {
+		display: flex;
+		width: 100%;
+	}
+
+	// ——— Disabled ———
+
+	&--disabled {
+		cursor: not-allowed;
+		opacity: $lh-button-disabled-opacity;
+	}
+}
+
+// ——— Animations ———
+
+@keyframes lh-button-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@keyframes lh-button-dash {
+	0% {
+		stroke-dasharray: 1, 200;
+		stroke-dashoffset: 0;
+	}
+
+	50% {
+		stroke-dasharray: 90, 150;
+		stroke-dashoffset: -40px;
+	}
+
+	100% {
+		stroke-dasharray: 90, 150;
+		stroke-dashoffset: -120px;
+	}
+}
+
+// ——— Reduced motion：系统减弱动态效果时停用加载动画 ———
+
+@media (prefers-reduced-motion: reduce) {
+	.lh-button__spinner,
+	.lh-button__path {
+		animation: none;
+	}
+}

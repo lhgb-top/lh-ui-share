@@ -1,0 +1,98 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 面包屑样式 — 导航足迹
+// ==============================
+
+// 文档站等宿主的 .vp-doc ol（类+元素选择器）会压过单类名规则，
+// 这里用 nav ol 复合选择器 + li 直接规则双重兜底
+nav ol.lh-breadcrumb__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  /* 宿主 .vp-doc li + li { margin-top: 8px } 的特异性高于组件内单类名规则，
+     不压回去的话第 2 项起每项下移 8px，横向列表基线参差 */
+  li,
+  li + li {
+    margin: 0;
+  }
+}
+
+.lh-breadcrumb {
+  font-family: var(--lh-font-family);
+  font-size: var(--lh-font-size-base);
+  color: var(--lh-text-regular, #5A5A5A);
+
+  &__list {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__item {
+    display: inline-flex;
+    align-items: center;
+    list-style: none;
+  }
+
+  &__ellipsis {
+    list-style: none;
+  }
+
+  &__link {
+    color: var(--lh-text-regular, #5A5A5A);
+    text-decoration: none;
+    transition: color 0.2s ease;
+
+    &:hover {
+      color: var(--lh-primary-color, #2B4C7C);
+    }
+
+    /* 键盘焦点环（鼠标点击不显示） */
+    &:focus-visible {
+      outline: 2px solid var(--lh-primary-color, #2B4C7C);
+      outline-offset: 2px;
+      border-radius: var(--lh-border-radius-small);
+    }
+  }
+
+  &__text {
+    color: var(--lh-text-primary, #3A3A3A);
+  }
+
+  // 当前页（末项）强调
+  &__item--last .lh-breadcrumb__text {
+    font-weight: var(--lh-font-weight-primary);
+  }
+
+  &__separator {
+    margin: 0 var(--lh-spacing-sm, 8px);
+    color: var(--lh-text-secondary, #8A8A8A);
+  }
+
+  &__ellipsis-btn {
+    padding: 2px var(--lh-spacing-xs, 4px);
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: 1;
+    color: var(--lh-text-secondary, #8A8A8A);
+    cursor: pointer;
+    border-radius: var(--lh-border-radius-small);
+    transition: color 0.2s ease;
+
+    &:hover {
+      color: var(--lh-primary-color, #2B4C7C);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--lh-primary-color, #2B4C7C);
+      outline-offset: 1px;
+    }
+  }
+}

@@ -1,0 +1,145 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-select {
+  position: relative;
+  display: inline-block;
+  width: 240px;
+  /* 与 lh-input 同理：240px 是宽松容器里的期望宽度，不是硬下限。窄屏表单/容器里
+     需要随容器收缩，否则触发器溢出（触发器内部是 width: 100%，会跟着根元素走） */
+  max-width: 100%;
+  color: var(--lh-text-primary, #2c2c2c);
+  font-size: 14px;
+
+  &__trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 32px;
+    padding: 0 10px 0 12px;
+    border: 1px solid var(--lh-border-color-base, #d8d3cc);
+    border-radius: 2px;
+    outline: none;
+    background: var(--lh-bg-color, #faf6f0);
+    cursor: pointer;
+
+    &:focus,
+    &:hover,
+    .lh-select--open & {
+      border-color: var(--lh-primary-color, #2b4c7c);
+    }
+  }
+
+  &__value {
+    /* 触发器是横向 flex，文本不设 min-width: 0 时无法收缩到 min-content 以下，
+       省略号永远不会生效，窄屏里会把右侧箭头/清空按钮顶出触发器 */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &--placeholder {
+      color: var(--lh-text-placeholder, #b0b0b0);
+    }
+  }
+
+  &__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 8px;
+  }
+
+  &__clear {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    color: var(--lh-text-secondary, #777);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  &__arrow {
+    color: var(--lh-text-secondary, #777);
+    line-height: 1;
+    transition: transform 0.2s ease;
+
+    .lh-select--open & {
+      transform: rotate(180deg);
+    }
+  }
+
+  &__dropdown {
+    position: absolute;
+    z-index: 10;
+    top: calc(100% + 4px);
+    right: 0;
+    left: 0;
+    max-height: 240px;
+    overflow: auto;
+    padding: 4px 0;
+    border: 1px solid var(--lh-border-color-light, #e5e0d8);
+    border-radius: 2px;
+    background: var(--lh-bg-color, #faf6f0);
+    box-shadow: 0 6px 16px rgba(44, 44, 44, 0.12);
+
+    &--teleported {
+      position: fixed;
+      top: auto;
+      right: auto;
+      left: auto;
+      z-index: 2000;
+    }
+  }
+
+  &__option {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+
+    &:hover,
+    &--highlighted,
+    &--selected {
+      color: var(--lh-primary-color, #2b4c7c);
+      background: var(--lh-primary-color-bg, rgba(43, 76, 124, 0.08));
+    }
+
+    &--disabled {
+      color: var(--lh-text-disabled, #c8c8c8);
+      cursor: not-allowed;
+    }
+  }
+
+  &__empty {
+    display: block;
+    padding: 10px 12px;
+    color: var(--lh-text-secondary, #777);
+    text-align: center;
+  }
+
+  &--small &__trigger {
+    min-height: 24px;
+    font-size: 12px;
+  }
+
+  &--large &__trigger {
+    min-height: 40px;
+    font-size: 16px;
+  }
+
+  &--disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+
+    .lh-select__trigger {
+      cursor: not-allowed;
+    }
+  }
+}

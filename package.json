@@ -1,0 +1,95 @@
+{
+  "name": "@lh-ui/share",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "lh-ui 家族唯一的框架无关共享层：core 纯函数 / theme / constants / locales / types / utils / 组件样式源",
+  "main": "lib/index.js",
+  "module": "es/index.js",
+  "types": "es/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./es/index.d.ts",
+      "import": "./es/index.js",
+      "require": "./lib/index.js"
+    },
+    "./core": {
+      "types": "./es/core/index.d.ts",
+      "import": "./es/core/index.js",
+      "require": "./lib/core/index.js"
+    },
+    "./core/*": {
+      "types": "./es/core/*/index.d.ts",
+      "import": "./es/core/*/index.js",
+      "require": "./lib/core/*/index.js"
+    },
+    "./constants": {
+      "types": "./es/constants/index.d.ts",
+      "import": "./es/constants/index.js",
+      "require": "./lib/constants/index.js"
+    },
+    "./locales": {
+      "types": "./es/locales/index.d.ts",
+      "import": "./es/locales/index.js",
+      "require": "./lib/locales/index.js"
+    },
+    "./theme": {
+      "types": "./es/theme/index.d.ts",
+      "import": "./es/theme/index.js",
+      "require": "./lib/theme/index.js"
+    },
+    "./types": {
+      "types": "./es/types/index.d.ts"
+    },
+    "./utils": {
+      "types": "./es/utils/index.d.ts",
+      "import": "./es/utils/index.js",
+      "require": "./lib/utils/index.js"
+    },
+    "./theme.css": "./dist/theme/index.css",
+    "./theme-dark.css": "./dist/theme/index-dark.css",
+    "./styles/*": "./styles/*/index.scss",
+    "./styles.css": "./dist/styles/index.css"
+  },
+  "files": [
+    "es",
+    "lib",
+    "dist",
+    "styles"
+  ],
+  "sideEffects": [
+    "**/*.css",
+    "**/*.scss"
+  ],
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "build": "vite build",
+    "build:styles": "node scripts/build-styles.mjs",
+    "build:dts": "tsc -p tsconfig.build.json",
+    "verify:dts": "node scripts/verify-dts.mjs",
+    "extract": "node scripts/extract-from-plus.mjs",
+    "lint": "eslint src tests scripts vite.config.ts vitest.config.ts",
+    "lint:fix": "eslint src tests scripts vite.config.ts vitest.config.ts --fix",
+    "format": "prettier --write .prettierrc.json .changeset/**/*.md",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "changeset": "changeset",
+    "changeset:status": "changeset status",
+    "prepublishOnly": "pnpm run build && pnpm run build:styles && pnpm run build:dts"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^3.0.3",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.1",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.12.0",
+    "jsdom": "^30.1.0",
+    "prettier": "^3.9.7",
+    "sass": "^1.104.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.0",
+    "vite": "^7.3.6",
+    "vitest": "^5.0.1"
+  }
+}

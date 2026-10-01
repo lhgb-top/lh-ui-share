@@ -1,0 +1,143 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-calendar {
+  display: inline-block;
+  padding: var(--lh-spacing-base, 12px);
+  border: 1px solid var(--lh-calendar-border, var(--lh-border-color-lighter, #ebeef5));
+  border-radius: var(--lh-border-radius-base, 8px);
+  background-color: var(--lh-calendar-bg, var(--lh-bg-color, #fff));
+}
+
+.lh-calendar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-end: var(--lh-spacing-sm, 8px);
+}
+
+.lh-calendar__title {
+  font-weight: 600;
+  color: var(--lh-calendar-title, var(--lh-text-primary, #303133));
+}
+
+.lh-calendar__actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.lh-calendar__nav-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 100%;
+}
+
+.lh-calendar__nav {
+  padding: 2px 8px;
+  border: none;
+  border-radius: var(--lh-border-radius-small, 6px);
+  background: transparent;
+  color: var(--lh-calendar-nav, var(--lh-text-regular, #606266));
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--lh-bg-color-page, #f2f3f5);
+  }
+}
+
+.lh-calendar__row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.lh-calendar__weekday {
+  padding: 4px 0;
+  font-size: var(--lh-font-size-small, 13px);
+  text-align: center;
+  color: var(--lh-calendar-weekday, var(--lh-text-secondary, #909399));
+}
+
+.lh-calendar__cell {
+  min-width: 36px;
+  padding: 6px 0;
+  border: none;
+  border-radius: var(--lh-border-radius-small, 6px);
+  background: transparent;
+  font: inherit;
+  font-size: var(--lh-font-size-small, 13px);
+  color: var(--lh-calendar-cell, var(--lh-text-regular, #606266));
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background-color: var(--lh-bg-color-page, #f2f3f5);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline-offset: -2px;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    color: var(--lh-disabled-text-color, #c0c4cc);
+  }
+
+  &--outside {
+    color: var(--lh-text-placeholder, #c0c4cc);
+    opacity: 0.6;
+  }
+
+  &--today {
+    color: var(--lh-primary-color, #409eff);
+    font-weight: 600;
+  }
+
+  &--selected {
+    background-color: var(--lh-primary-color, #409eff);
+    color: #fff;
+  }
+}
+
+/* input 触发模式 */
+.lh-calendar--input {
+  position: relative;
+  display: block;
+}
+
+.lh-calendar__input {
+  width: 100%;
+  padding: 7px 12px;
+  border: 1px solid var(--lh-calendar-border, var(--lh-border-color-lighter, #ebeef5));
+  border-radius: var(--lh-border-radius-base, 8px);
+  background-color: var(--lh-calendar-bg, var(--lh-bg-color, #fff));
+  color: var(--lh-calendar-cell, var(--lh-text-regular, #606266));
+  font: inherit;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline-offset: -1px;
+  }
+}
+
+.lh-calendar--input .lh-calendar__panels {
+  position: absolute;
+  top: calc(100% + 4px);
+  inset-inline-start: 0;
+  z-index: var(--lh-calendar-z-index, 900);
+}
+
+/* 多面板：flex 换行排列 */
+.lh-calendar__panels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  position: relative;
+}
+
+/* 一段时间：起止之间的日期 */
+.lh-calendar__cell--in-range {
+  background-color: color-mix(in srgb, var(--lh-primary-color, #409eff) 14%, transparent);
+  border-radius: 0;
+}

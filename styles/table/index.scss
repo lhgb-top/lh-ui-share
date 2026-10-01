@@ -1,0 +1,294 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-table {
+  position: relative;
+  background-color: var(--lh-table-bg, var(--lh-bg-color, #fff));
+  font-size: var(--lh-font-size-base, 14px);
+  color: var(--lh-table-color, var(--lh-text-regular, #606266));
+}
+
+.lh-table__header {
+  display: grid;
+  background-color: var(--lh-table-header-bg, var(--lh-bg-color-page, #f5f0eb));
+  font-weight: 600;
+  color: var(--lh-table-header-color, var(--lh-text-primary, #303133));
+}
+
+.lh-table__body {
+  position: relative;
+  overflow: auto;
+}
+
+.lh-table__row {
+  display: grid;
+  border-block-start: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #ebeef5));
+
+  &:hover {
+    background-color: var(--lh-table-row-hover-bg, var(--lh-bg-color-page, #f5f0eb));
+  }
+}
+
+.lh-table--stripe .lh-table__row:nth-child(even) {
+  background-color: var(--lh-table-stripe-bg, color-mix(in srgb, var(--lh-bg-color-page, #f5f0eb) 60%, transparent));
+}
+
+.lh-table__cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: var(--lh-table-cell-padding, 12px 12px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &--center {
+    justify-content: center;
+  }
+
+  &--right {
+    justify-content: flex-end;
+  }
+}
+
+.lh-table--small .lh-table__cell {
+  padding: 8px 12px;
+  font-size: var(--lh-font-size-small, 13px);
+}
+
+.lh-table--large .lh-table__cell {
+  padding: 16px 12px;
+}
+
+.lh-table--border {
+  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #ebeef5));
+
+  .lh-table__cell {
+    border-inline-end: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #ebeef5));
+  }
+}
+
+/* 固定列 */
+.lh-table__cell--fixed-left,
+.lh-table__cell--fixed-right {
+  position: sticky;
+  z-index: 1;
+  background-color: inherit;
+  background-color: var(--lh-table-bg, var(--lh-bg-color, #fff));
+}
+
+.lh-table__cell--fixed-left-last {
+  box-shadow: 4px 0 6px -4px rgba(0, 0, 0, 12%);
+}
+
+.lh-table__cell--fixed-right-first {
+  box-shadow: -4px 0 6px -4px rgba(0, 0, 0, 12%);
+}
+
+.lh-table__header .lh-table__cell--fixed-left,
+.lh-table__header .lh-table__cell--fixed-right {
+  background-color: var(--lh-table-header-bg, var(--lh-bg-color-page, #f5f0eb));
+}
+
+/* 排序 */
+.lh-table__sort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-weight: inherit;
+  color: inherit;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline-offset: 2px;
+  }
+}
+
+.lh-table__sort-icon {
+  color: var(--lh-text-placeholder, #b0b0b0);
+
+  &--active {
+    color: var(--lh-primary-color, #409eff);
+  }
+}
+
+/* 虚拟滚动 */
+.lh-table__phantom {
+  position: relative;
+}
+
+.lh-table__window {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+}
+
+/* 空态 */
+.lh-table__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+  color: var(--lh-text-secondary, #8a8a8a);
+}
+
+/* 多级表头：行容器透传，单元格由网格显式定位 */
+.lh-table__header-row {
+  display: contents;
+}
+
+/* 筛选 */
+.lh-table__filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: var(--lh-text-placeholder, #b0b0b0);
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline-offset: 2px;
+  }
+}
+
+.lh-table__filter-icon--active {
+  color: var(--lh-primary-color, #409eff);
+}
+
+.lh-table__filter-panel {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  min-inline-size: 180px;
+  padding: 8px;
+  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #ebeef5));
+  border-radius: 6px;
+  background-color: var(--lh-bg-color, #fff);
+  box-shadow: 0 6px 16px -4px rgba(0, 0, 0, 18%);
+}
+
+.lh-table__filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-block-size: 220px;
+  overflow: auto;
+  padding-block-end: 8px;
+}
+
+.lh-table__filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--lh-table-row-hover-bg, var(--lh-bg-color-page, #f5f0eb));
+  }
+
+  input {
+    accent-color: var(--lh-primary-color, #409eff);
+  }
+}
+
+.lh-table__filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-block-start: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #ebeef5));
+  padding-block-start: 8px;
+}
+
+.lh-table__filter-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #ebeef5));
+  border-radius: 4px;
+  background-color: transparent;
+  color: var(--lh-text-regular, #606266);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--lh-primary-color, #409eff);
+    color: var(--lh-primary-color, #409eff);
+  }
+
+  &--primary {
+    border-color: var(--lh-primary-color, #409eff);
+    background-color: var(--lh-primary-color, #409eff);
+    color: #fff;
+
+    &:hover {
+      background-color: var(--lh-primary-color, #409eff);
+      color: #fff;
+      opacity: 0.9;
+    }
+  }
+}
+
+.lh-table__filter-fade-enter-active,
+.lh-table__filter-fade-leave-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.lh-table__filter-fade-enter,
+.lh-table__filter-fade-enter-from,
+.lh-table__filter-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+/* 列宽拖拽 */
+.lh-table__cell--resizable {
+  position: relative;
+}
+
+.lh-table__resize-handle {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: -4px;
+  inline-size: 8px;
+  cursor: col-resize;
+  touch-action: none;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset-block: 25%;
+    inset-inline: 3px;
+    border-radius: 2px;
+    background-color: transparent;
+    transition: background-color 0.15s ease;
+  }
+
+  &:hover::after,
+  &:focus-visible::after {
+    background-color: var(--lh-primary-color, #409eff);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline-offset: -2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-table__row {
+    transition: none;
+  }
+
+  .lh-table__filter-fade-enter-active,
+  .lh-table__filter-fade-leave-active {
+    transition: none;
+  }
+}

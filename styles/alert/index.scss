@@ -1,0 +1,103 @@
+@use '../theme/common/index.scss' as *;
+
+/* 语义色浅底用 color-mix() 从主语义色派生，自动跟随主题与明暗模式 */
+.lh-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--lh-border-radius-base, 8px);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow: hidden;
+
+  &--info {
+    background-color: color-mix(in srgb, var(--lh-info-color, #909399) 12%, transparent);
+    color: var(--lh-info-color, #909399);
+  }
+
+  &--success {
+    background-color: color-mix(in srgb, var(--lh-success-color, #67c23a) 12%, transparent);
+    color: var(--lh-success-color, #67c23a);
+  }
+
+  &--warning {
+    background-color: color-mix(in srgb, var(--lh-warning-color, #e6a23c) 14%, transparent);
+    color: var(--lh-warning-color, #e6a23c);
+  }
+
+  &--danger {
+    background-color: color-mix(in srgb, var(--lh-danger-color, #f56c6c) 12%, transparent);
+    color: var(--lh-danger-color, #f56c6c);
+  }
+
+  /* 朴素样式：白底 + 语义色描边 */
+  &--plain {
+    &.lh-alert--info {
+      background-color: transparent;
+      border: 1px solid color-mix(in srgb, var(--lh-info-color, #909399) 40%, transparent);
+    }
+
+    &.lh-alert--success {
+      background-color: transparent;
+      border: 1px solid color-mix(in srgb, var(--lh-success-color, #67c23a) 40%, transparent);
+    }
+
+    &.lh-alert--warning {
+      background-color: transparent;
+      border: 1px solid color-mix(in srgb, var(--lh-warning-color, #e6a23c) 40%, transparent);
+    }
+
+    &.lh-alert--danger {
+      background-color: transparent;
+      border: 1px solid color-mix(in srgb, var(--lh-danger-color, #f56c6c) 40%, transparent);
+    }
+  }
+
+  &__icon {
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  &__content {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &__title {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  &__description {
+    margin: 0;
+    color: var(--lh-text-regular);
+  }
+
+  &__close {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    transition: background-color 0.15s;
+
+    &:hover {
+      background-color: rgba(0, 0, 0, 0.08);
+    }
+
+    /* 键盘焦点环（鼠标点击不显示） */
+    &:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 1px;
+    }
+  }
+}

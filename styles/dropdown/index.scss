@@ -1,0 +1,88 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 下拉菜单样式 — 水墨清单
+// ==============================
+
+.lh-dropdown {
+  display: inline-block;
+  // 在 grid / flex 容器中不要被默认的 stretch 拉伸，否则定位锚点比触发器宽、菜单对不齐
+  justify-self: center;
+  align-self: center;
+}
+
+.lh-dropdown__menu {
+  box-sizing: border-box;
+  min-width: 160px;
+  max-width: 90vw;
+  margin: 0;
+  padding: var(--lh-dropdown-padding, 4px 0);
+  list-style: none;
+  font-family: var(--lh-font-family);
+  font-size: var(--lh-font-size-base);
+  color: var(--lh-dropdown-item-color, #5A5A5A);
+  background-color: var(--lh-dropdown-bg-color, #FAF6F0);
+  border: 1px solid var(--lh-dropdown-border-color, #E5E0D8);
+  border-radius: var(--lh-dropdown-border-radius, 2px);
+  box-shadow: var(--lh-box-shadow-base, 0 2px 12px 0 rgba(26, 26, 26, 0.08));
+}
+
+.lh-dropdown__item {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  // 文档宿主 .vp-doc li 样式会泄漏进来，显式归零
+  margin: 0;
+  height: var(--lh-dropdown-item-height, 36px);
+  padding: var(--lh-dropdown-item-padding, 0 16px);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition: background-color var(--lh-transition-duration-fast, 0.25s);
+
+  &:hover:not(.lh-dropdown__item--disabled),
+  &:focus-visible {
+    background-color: var(--lh-dropdown-item-hover-bg-color, #F5F0EB);
+    color: var(--lh-text-primary, #2C2C2C);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
+    outline-offset: -2px;
+  }
+}
+
+.lh-dropdown__item--disabled {
+  color: var(--lh-text-disabled, #C8C8C8);
+  cursor: not-allowed;
+}
+
+.lh-dropdown__item--divided {
+  border-top: 1px solid var(--lh-dropdown-divider-color, #EEE9E2);
+}
+
+// —— 进出过渡 ——
+
+.lh-dropdown-fade-enter-active,
+.lh-dropdown-fade-leave-active {
+  transition:
+    opacity var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out),
+    transform var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out);
+}
+
+.lh-dropdown-fade-enter,
+.lh-dropdown-fade-enter-from,
+.lh-dropdown-fade-leave-to {
+  opacity: 0;
+  transform: scaleY(0.96);
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-dropdown-fade-enter,
+.lh-dropdown-fade-enter-from,
+  .lh-dropdown-fade-leave-to {
+    transform: none;
+  }
+}

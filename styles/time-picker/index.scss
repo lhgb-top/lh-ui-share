@@ -1,0 +1,170 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-time-picker {
+  position: relative;
+  display: inline-block;
+  /* 同 lh-date-picker：根元素加 max-width: 100%，避免触发器 min-width 把根撑破父容器 */
+  max-width: 100%;
+}
+
+.lh-time-picker__input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--lh-border-color-base);
+  border-radius: 4px;
+  background: var(--lh-bg-color);
+  cursor: pointer;
+  min-width: 180px;
+  transition: border-color 0.2s;
+}
+
+.lh-time-picker__input:hover {
+  border-color: var(--lh-primary-color-hover);
+}
+
+.lh-time-picker__input--disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.lh-time-picker__input-inner {
+  border: none;
+  outline: none;
+  background: none;
+  width: 100%;
+  font-size: 14px;
+  color: var(--lh-text-primary);
+}
+
+.lh-time-picker__value {
+  flex: 1;
+  font-size: 14px;
+  color: var(--lh-text-primary);
+}
+
+.lh-time-picker__clear {
+  margin-right: 4px;
+  cursor: pointer;
+  color: var(--lh-text-secondary);
+}
+
+.lh-time-picker__clear:hover {
+  color: var(--lh-primary-color);
+}
+
+.lh-time-picker__icon {
+  color: var(--lh-text-secondary);
+}
+
+/* 面板 */
+.lh-time-picker__panel {
+  background: var(--lh-bg-color);
+  border: 1px solid var(--lh-border-color-base);
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+.lh-time-picker-panel {
+  padding: 12px;
+  width: 280px;
+  user-select: none;
+}
+
+.lh-time-picker-panel__columns {
+  display: flex;
+  gap: 8px;
+}
+
+.lh-time-picker-panel__column {
+  flex: 1;
+  border: 1px solid var(--lh-border-color-light);
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.lh-time-picker-panel__column--selecting {
+  border-color: var(--lh-primary-color);
+}
+
+.lh-time-picker-panel__column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: var(--lh-bg-color-page);
+  border-bottom: 1px solid var(--lh-border-color-light);
+}
+
+.lh-time-picker-panel__column-title {
+  font-size: 12px;
+  color: var(--lh-text-secondary);
+}
+
+.lh-time-picker-panel__arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 16px;
+  margin: 0 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--lh-text-secondary);
+}
+
+.lh-time-picker-panel__arrow:hover {
+  color: var(--lh-primary-color);
+}
+
+.lh-time-picker-panel__column-body {
+  height: 160px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.lh-time-picker-panel__column-item {
+  height: 32px;
+  line-height: 32px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--lh-text-primary);
+  transition: background 0.2s;
+}
+
+.lh-time-picker-panel__column-item:hover {
+  background: var(--lh-primary-color-bg);
+}
+
+.lh-time-picker-panel__column-item--active {
+  background: var(--lh-primary-color-bg);
+  color: var(--lh-primary-color);
+  font-weight: 500;
+}
+
+.lh-time-picker-panel__column-item--disabled {
+  color: var(--lh-text-disabled);
+  cursor: not-allowed;
+}
+
+.lh-time-picker-panel__footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--lh-border-color-light);
+}
+
+.lh-fade-in-enter-active,
+.lh-fade-in-leave-active {
+  transition: opacity 0.15s;
+}
+
+.lh-fade-in-enter,
+.lh-fade-in-enter-from,
+.lh-fade-in-leave-to {
+  opacity: 0;
+}

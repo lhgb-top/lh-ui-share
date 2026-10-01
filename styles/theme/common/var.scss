@@ -1,0 +1,245 @@
+@use './variables' as *;
+
+// ==============================
+// lh-ui-plus 国风主题 CSS 变量
+// 将 SCSS 变量映射为 :root CSS 自定义属性
+// ==============================
+
+:root {
+  // Primary (靛蓝 — 青花瓷之蓝)
+  --lh-primary-color: #{$lh-primary};
+  --lh-primary-color-hover: #{$lh-primary-hover};
+  --lh-primary-color-active: #{$lh-primary-active};
+  --lh-primary-color-bg: #{$lh-primary-light};
+  --lh-primary-color-border: #{$lh-primary-lighter};
+
+  // Success (松花绿 — 竹影青翠)
+  --lh-success-color: #{$lh-success};
+  --lh-success-color-hover: #{$lh-success-hover};
+  --lh-success-color-active: #{$lh-success-active};
+  --lh-success-color-bg: #{$lh-success-light};
+
+  // Warning (藤黄 — 秋叶金黄)
+  --lh-warning-color: #{$lh-warning};
+  --lh-warning-color-hover: #{$lh-warning-hover};
+  --lh-warning-color-active: #{$lh-warning-active};
+  --lh-warning-color-bg: #{$lh-warning-light};
+
+  // Danger (朱砂 — 印泥朱红)
+  --lh-danger-color: #{$lh-danger};
+  --lh-danger-color-hover: #{$lh-danger-hover};
+  --lh-danger-color-active: #{$lh-danger-active};
+  --lh-danger-color-bg: #{$lh-danger-light};
+
+  // Info (黛色 — 水墨淡彩)
+  --lh-info-color: #{$lh-info};
+  --lh-info-color-hover: #{$lh-info-hover};
+  --lh-info-color-active: #{$lh-info-active};
+  --lh-info-color-bg: #{$lh-info-light};
+
+  // Gold (金色 — 华贵古韵)
+  --lh-gold-color: #{$lh-gold};
+  --lh-gold-color-hover: #{$lh-gold-hover};
+  --lh-gold-color-active: #{$lh-gold-active};
+  --lh-gold-color-bg: #{$lh-gold-light};
+  --lh-gold-color-border: #{$lh-gold-lighter};
+
+  // Vermilion (朱砂 — 印泥朱红)
+  --lh-vermilion-color: #{$lh-vermilion};
+  --lh-vermilion-color-hover: #{$lh-vermilion-hover};
+  --lh-vermilion-color-active: #{$lh-vermilion-active};
+  --lh-vermilion-color-bg: #{$lh-vermilion-light};
+
+  // Jade (玉色 — 翠竹清雅)
+  --lh-jade-color: #{$lh-jade};
+  --lh-jade-color-hover: #{$lh-jade-hover};
+  --lh-jade-color-active: #{$lh-jade-active};
+  --lh-jade-color-bg: #{$lh-jade-light};
+
+  // Decoration (花纹装饰色)
+  --lh-decoration-color: #{$lh-decoration-color};
+
+  // Text (墨色体系)
+  --lh-text-primary: #{$lh-text-primary};
+  --lh-text-regular: #{$lh-text-regular};
+  --lh-text-secondary: #{$lh-text-secondary};
+  --lh-text-placeholder: #{$lh-text-placeholder};
+  --lh-text-disabled: #{$lh-text-disabled};
+
+  // Border (素雅边框)
+  --lh-border-color-base: #{$lh-border-color-base};
+  --lh-border-color-light: #{$lh-border-color-light};
+  --lh-border-color-lighter: #{$lh-border-color-lighter};
+  --lh-border-color-extra-light: #{$lh-border-color-extra-light};
+  --lh-border-radius-base: #{$lh-border-radius-base};
+  --lh-border-radius-small: #{$lh-border-radius-small};
+  --lh-border-radius-round: #{$lh-border-radius-round};
+  --lh-border-radius-circle: #{$lh-border-radius-circle};
+
+  // Background (宣纸色系)
+  --lh-bg-color: #{$lh-bg-color};
+  --lh-bg-color-page: #{$lh-bg-color-page};
+  --lh-bg-color-disabled: #{$lh-bg-color-disabled};
+  --lh-bg-color-overlay: #{$lh-bg-color-overlay};
+
+  // Shadow (柔和墨影)
+  --lh-box-shadow-base: #{$lh-box-shadow-base};
+  --lh-box-shadow-light: #{$lh-box-shadow-light};
+  --lh-box-shadow-lighter: #{$lh-box-shadow-lighter};
+
+  // Font (国风字体)
+  --lh-font-family: #{$lh-font-family};
+  --lh-font-size-extra-large: #{$lh-font-size-extra-large};
+  --lh-font-size-large: #{$lh-font-size-large};
+  --lh-font-size-medium: #{$lh-font-size-medium};
+  --lh-font-size-base: #{$lh-font-size-base};
+  --lh-font-size-small: #{$lh-font-size-small};
+  --lh-font-size-extra-small: #{$lh-font-size-extra-small};
+  --lh-font-weight-primary: #{$lh-font-weight-primary};
+  --lh-font-weight-bold: #{$lh-font-weight-bold};
+  --lh-font-line-height-primary: #{$lh-font-line-height-primary};
+
+  // ——— Spacing ———
+  --lh-spacing-xs: #{$lh-spacing-xs};
+  --lh-spacing-sm: #{$lh-spacing-sm};
+  --lh-spacing-md: #{$lh-spacing-md};
+  --lh-spacing-base: #{$lh-spacing-base};
+  --lh-spacing-lg: #{$lh-spacing-lg};
+  --lh-spacing-xl: #{$lh-spacing-xl};
+  --lh-spacing-xxl: #{$lh-spacing-xxl};
+
+  // ——— Z-index ———
+  --lh-z-index-normal: #{$lh-z-index-normal};
+  --lh-z-index-dropdown: #{$lh-z-index-dropdown};
+  --lh-z-index-sticky: #{$lh-z-index-sticky};
+  --lh-z-index-fixed: #{$lh-z-index-fixed};
+  --lh-z-index-modal-backdrop: #{$lh-z-index-modal-backdrop};
+  --lh-z-index-modal: #{$lh-z-index-modal};
+  --lh-z-index-popover: #{$lh-z-index-popover};
+  --lh-z-index-tooltip: #{$lh-z-index-tooltip};
+
+  // ——— Transitions ———
+  --lh-transition-duration-fast: #{$lh-transition-duration-fast};
+  --lh-transition-duration-base: #{$lh-transition-duration-base};
+  --lh-transition-duration-slow: #{$lh-transition-duration-slow};
+  --lh-transition-function-ease-in-out: #{$lh-transition-function-ease-in-out};
+
+  // ——— Disabled ———
+  --lh-disabled-bg-color: #{$lh-disabled-bg-color};
+  --lh-disabled-text-color: #{$lh-disabled-text-color};
+  --lh-disabled-border-color: #{$lh-disabled-border-color};
+  --lh-disabled-opacity: #{$lh-disabled-opacity};
+
+  // ——— Overlay components（弹层类组件） ———
+  --lh-popover-bg-color: #{$lh-popover-bg-color};
+  --lh-popover-border-color: #{$lh-popover-border-color};
+  --lh-popover-border-radius: #{$lh-popover-border-radius};
+  --lh-popover-padding: #{$lh-popover-padding};
+  --lh-popover-title-color: #{$lh-popover-title-color};
+  --lh-popover-content-color: #{$lh-popover-content-color};
+  --lh-popover-arrow-size: #{$lh-popover-arrow-size};
+
+  --lh-popconfirm-padding: #{$lh-popconfirm-padding};
+  --lh-popconfirm-icon-size: #{$lh-popconfirm-icon-size};
+
+  --lh-drawer-bg-color: #{$lh-drawer-bg-color};
+  --lh-drawer-border-color: #{$lh-drawer-border-color};
+  --lh-drawer-header-padding: #{$lh-drawer-header-padding};
+  --lh-drawer-body-padding: #{$lh-drawer-body-padding};
+  --lh-drawer-footer-padding: #{$lh-drawer-footer-padding};
+  --lh-drawer-title-color: #{$lh-drawer-title-color};
+  --lh-drawer-close-size: #{$lh-drawer-close-size};
+
+  --lh-dropdown-bg-color: #{$lh-dropdown-bg-color};
+  --lh-dropdown-border-color: #{$lh-dropdown-border-color};
+  --lh-dropdown-border-radius: #{$lh-dropdown-border-radius};
+  --lh-dropdown-padding: #{$lh-dropdown-padding};
+  --lh-dropdown-item-height: #{$lh-dropdown-item-height};
+  --lh-dropdown-item-padding: #{$lh-dropdown-item-padding};
+  --lh-dropdown-item-color: #{$lh-dropdown-item-color};
+  --lh-dropdown-item-hover-bg-color: #{$lh-dropdown-item-hover-bg-color};
+  --lh-dropdown-divider-color: #{$lh-dropdown-divider-color};
+
+  // ——— Imperative feedback（命令式反馈：Message / Notification / Loading） ———
+  --lh-message-bg: #{$lh-message-bg-color};
+  --lh-message-border: #{$lh-message-border-color};
+  --lh-message-color: #{$lh-message-content-color};
+  --lh-message-shadow: #{$lh-message-shadow};
+
+  --lh-notification-bg: #{$lh-notification-bg-color};
+  --lh-notification-border: #{$lh-notification-border-color};
+  --lh-notification-title-color: #{$lh-notification-title-color};
+  --lh-notification-content-color: #{$lh-notification-content-color};
+  --lh-notification-width: #{$lh-notification-width};
+  --lh-notification-gap: #{$lh-notification-gap};
+  --lh-notification-shadow: #{$lh-notification-shadow};
+
+  --lh-loading-bg: #{$lh-loading-bg-color};
+  --lh-loading-text-color: #{$lh-loading-text-color};
+
+  // ——— Wave E（数据与媒体增强） ———
+  --lh-timeline-line: #{$lh-timeline-line};
+  --lh-timeline-dot: #{$lh-timeline-dot};
+  --lh-timeline-timestamp: #{$lh-timeline-timestamp};
+  --lh-collapse-border: #{$lh-collapse-border};
+  --lh-rate-active: #{$lh-rate-active};
+  --lh-segmented-bg: #{$lh-segmented-bg};
+  --lh-calendar-border: #{$lh-calendar-border};
+  --lh-affix-z-index: #{$lh-affix-z-index};
+  --lh-backtop-z-index: #{$lh-backtop-z-index};
+
+  // ——— Wave F：Menu 导航菜单 ———
+  --lh-menu-bg: #{$lh-menu-bg};
+  --lh-menu-padding: #{$lh-menu-padding};
+  --lh-menu-border: #{$lh-menu-border};
+  --lh-menu-height: #{$lh-menu-height};
+  --lh-menu-collapse-width: #{$lh-menu-collapse-width};
+  --lh-menu-item-height: #{$lh-menu-item-height};
+  --lh-menu-item-padding: #{$lh-menu-item-padding};
+  --lh-menu-item-color: #{$lh-menu-item-color};
+  --lh-menu-item-hover-bg: #{$lh-menu-item-hover-bg};
+  --lh-menu-item-active-color: #{$lh-menu-item-active-color};
+  --lh-menu-item-active-bg: #{$lh-menu-item-active-bg};
+  --lh-menu-arrow-color: #{$lh-menu-arrow-color};
+  --lh-menu-z-index: #{$lh-menu-z-index};
+
+  // ——— Wave F：Table 表格 ———
+  --lh-table-bg: #{$lh-table-bg};
+  --lh-table-color: #{$lh-table-color};
+  --lh-table-header-bg: #{$lh-table-header-bg};
+  --lh-table-header-color: #{$lh-table-header-color};
+  --lh-table-border: #{$lh-table-border};
+  --lh-table-row-hover-bg: #{$lh-table-row-hover-bg};
+  --lh-table-stripe-bg: #{$lh-table-stripe-bg};
+  --lh-table-cell-padding: #{$lh-table-cell-padding};
+
+  // ——— Wave F：Layout / Grid 布局 ———
+  --lh-layout-header-height: #{$lh-layout-header-height};
+  --lh-layout-header-bg: #{$lh-layout-header-bg};
+  --lh-layout-aside-width: #{$lh-layout-aside-width};
+  --lh-layout-aside-bg: #{$lh-layout-aside-bg};
+  --lh-layout-main-bg: #{$lh-layout-main-bg};
+  --lh-layout-border: #{$lh-layout-border};
+  --lh-row-gutter: #{$lh-row-gutter};
+
+  // ——— Wave F：Tree 树形控件 ———
+  --lh-tree-color: #{$lh-tree-color};
+  --lh-tree-padding: #{$lh-tree-padding};
+  --lh-tree-node-height: #{$lh-tree-node-height};
+  --lh-tree-node-hover-bg: #{$lh-tree-node-hover-bg};
+  --lh-tree-node-selected-color: #{$lh-tree-node-selected-color};
+  --lh-tree-node-selected-bg: #{$lh-tree-node-selected-bg};
+  --lh-tree-arrow-color: #{$lh-tree-arrow-color};
+
+  // ——— Wave F：Transfer / Upload ———
+  --lh-transfer-panel-width: #{$lh-transfer-panel-width};
+  --lh-transfer-panel-height: #{$lh-transfer-panel-height};
+  --lh-transfer-bg: #{$lh-transfer-bg};
+  --lh-transfer-border: #{$lh-transfer-border};
+  --lh-upload-bg: #{$lh-upload-bg};
+  --lh-upload-border: #{$lh-upload-border};
+  --lh-upload-trigger-padding: #{$lh-upload-trigger-padding};
+
+  // ——— Wave F：Anchor 锚点 ———
+  --lh-anchor-color: #{$lh-anchor-color};
+}

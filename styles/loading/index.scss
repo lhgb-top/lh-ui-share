@@ -1,0 +1,43 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background-color: var(--lh-loading-bg, rgba(255, 255, 255, 72%));
+  color: var(--lh-loading-color, var(--lh-primary-color, #409eff));
+  z-index: 10;
+
+  &--fullscreen {
+    position: fixed;
+  }
+
+  &--with-text {
+    font-size: 14px;
+  }
+}
+
+.lh-loading__text {
+  color: var(--lh-loading-text-color, var(--lh-text-regular, #606266));
+  margin: 0;
+}
+
+/* 遮罩淡入；reduced-motion 降级为直接显示 */
+@media (prefers-reduced-motion: no-preference) {
+  .lh-loading {
+    animation: lh-loading-fade 0.2s ease;
+  }
+}
+
+@keyframes lh-loading-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

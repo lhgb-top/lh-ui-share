@@ -1,0 +1,175 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 步骤条样式 — 行程阶段
+// ==============================
+
+// 文档站等宿主的 .vp-doc ol（类+元素选择器）会压过单类名规则，
+// 这里用 ol[role='list'] 复合选择器 + li 直接规则双重兜底
+ol[role='list'].lh-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  /* 宿主 .vp-doc li + li { margin-top: 8px } 的特异性高于组件内单类名规则，
+     不压回去的话第 2 步起整体下移 8px，连接线与圆圈错位 */
+  li,
+  li + li {
+    margin: 0;
+  }
+}
+
+.lh-steps {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  font-family: var(--lh-font-family);
+  font-size: var(--lh-font-size-base);
+  list-style: none;
+
+  // —— 水平方向 ——
+  &--horizontal {
+    .lh-steps__item {
+      display: flex;
+      flex: 1;
+      align-items: flex-start;
+      list-style: none;
+    }
+
+    // 连接线：非末项之后
+    .lh-steps__item:not(.lh-steps__item--last)::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      margin: 14px var(--lh-spacing-sm, 8px) 0;
+      background-color: var(--lh-border-color-base, #D8D3CC);
+    }
+
+    .lh-steps__item--finish:not(.lh-steps__item--last)::after,
+    .lh-steps__item--process:not(.lh-steps__item--last)::after {
+      background-color: var(--lh-primary-color, #2B4C7C);
+    }
+  }
+
+  // —— 垂直方向 ——
+  &--vertical {
+    flex-direction: column;
+
+    .lh-steps__item {
+      position: relative;
+      display: flex;
+      gap: var(--lh-spacing-md, 12px);
+      padding-bottom: var(--lh-spacing-lg, 16px);
+      list-style: none;
+    }
+
+    .lh-steps__item:not(.lh-steps__item--last)::before {
+      content: '';
+      position: absolute;
+      top: 28px;
+      bottom: 0;
+      left: 13px;
+      width: 1px;
+      background-color: var(--lh-border-color-base, #D8D3CC);
+    }
+
+    .lh-steps__item--finish:not(.lh-steps__item--last)::before,
+    .lh-steps__item--process:not(.lh-steps__item--last)::before {
+      background-color: var(--lh-primary-color, #2B4C7C);
+    }
+  }
+
+  &__head {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: inherit;
+    cursor: default;
+  }
+
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--lh-border-color-base, #D8D3CC);
+    border-radius: var(--lh-border-radius-circle);
+    font-size: var(--lh-font-size-small);
+    color: var(--lh-text-secondary, #8A8A8A);
+    background-color: var(--lh-bg-color, #FAF6F0);
+    transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+  }
+
+  &__item--process .lh-steps__icon {
+    color: #fff;
+    background-color: var(--lh-primary-color, #2B4C7C);
+    border-color: var(--lh-primary-color, #2B4C7C);
+  }
+
+  &__item--finish .lh-steps__icon {
+    color: var(--lh-success-color, #5B8C5A);
+    border-color: var(--lh-success-color, #5B8C5A);
+  }
+
+  &__item--error .lh-steps__icon {
+    color: var(--lh-danger-color, #B23A3A);
+    border-color: var(--lh-danger-color, #B23A3A);
+  }
+
+  &__item--clickable .lh-steps__head {
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 2px solid var(--lh-primary-color, #2B4C7C);
+      outline-offset: 2px;
+      border-radius: var(--lh-border-radius-circle);
+    }
+
+    &:hover .lh-steps__icon {
+      border-color: var(--lh-primary-color, #2B4C7C);
+      color: var(--lh-primary-color, #2B4C7C);
+    }
+  }
+
+  &__main {
+    min-width: 0;
+    margin-left: var(--lh-spacing-sm, 8px);
+    color: var(--lh-text-regular, #5A5A5A);
+  }
+
+  &--vertical &__main {
+    margin-left: 0;
+  }
+
+  &__title {
+    font-weight: var(--lh-font-weight-primary);
+    color: var(--lh-text-primary, #3A3A3A);
+    line-height: var(--lh-font-line-height-primary, 1.5);
+  }
+
+  &__item--wait .lh-steps__title {
+    color: var(--lh-text-secondary, #8A8A8A);
+    font-weight: 400;
+  }
+
+  &__item--process .lh-steps__title {
+    color: var(--lh-primary-color, #2B4C7C);
+  }
+
+  &__item--error .lh-steps__title {
+    color: var(--lh-danger-color, #B23A3A);
+  }
+
+  &__description {
+    margin-top: var(--lh-spacing-xs, 4px);
+    font-size: var(--lh-font-size-small);
+    color: var(--lh-text-secondary, #8A8A8A);
+  }
+}

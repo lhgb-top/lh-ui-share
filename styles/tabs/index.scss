@@ -1,0 +1,145 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 标签页样式 — 卷轴签注
+// ==============================
+
+.lh-tabs {
+  font-family: var(--lh-font-family);
+  font-size: var(--lh-font-size-base);
+
+  // bottom 位置：内容区在上、页签头在下
+  &--bottom {
+    display: flex;
+    flex-direction: column-reverse;
+  }
+
+  &__header {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--lh-spacing-xs, 4px);
+    border-bottom: 1px solid var(--lh-border-color-light, #E5E0D8);
+  }
+
+  &__tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--lh-spacing-xs, 4px);
+    padding: var(--lh-spacing-sm, 8px) var(--lh-spacing-md, 12px);
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: var(--lh-font-size-base);
+    color: var(--lh-text-regular, #5A5A5A);
+    cursor: pointer;
+    transition: color 0.2s ease;
+
+    &:hover:not(:disabled) {
+      color: var(--lh-primary-color, #2B4C7C);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--lh-primary-color, #2B4C7C);
+      outline-offset: -2px;
+      border-radius: var(--lh-border-radius-small);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      color: var(--lh-text-disabled, #B8B8B8);
+    }
+
+    // 线条外观：激活页签底部墨线
+    .lh-tabs--line &--active {
+      color: var(--lh-primary-color, #2B4C7C);
+      font-weight: var(--lh-font-weight-primary);
+
+      &::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -1px;
+        height: 2px;
+        background-color: var(--lh-primary-color, #2B4C7C);
+      }
+    }
+
+    // 卡片外观
+    .lh-tabs--card & {
+      border: 1px solid var(--lh-border-color-light, #E5E0D8);
+      border-bottom: none;
+      border-radius: var(--lh-border-radius-base) var(--lh-border-radius-base) 0 0;
+
+      &:not(:disabled):hover {
+        color: var(--lh-primary-color, #2B4C7C);
+      }
+    }
+
+    .lh-tabs--card &--active {
+      background-color: var(--lh-bg-color, #FAF6F0);
+      border-color: var(--lh-border-color-light, #E5E0D8);
+      // 盖住 header 的下边线，形成连通感
+      box-shadow: inset 0 1px 0 0 var(--lh-bg-color, #FAF6F0);
+      color: var(--lh-primary-color, #2B4C7C);
+      font-weight: var(--lh-font-weight-primary);
+    }
+  }
+
+  &__tab-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    font-size: var(--lh-font-size-extra-small);
+    line-height: 1;
+    border-radius: var(--lh-border-radius-circle);
+
+    &:hover {
+      background-color: rgba(0, 0, 0, 0.08);
+      color: var(--lh-danger-color, #B23A3A);
+    }
+  }
+
+  &__add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin-bottom: 4px;
+    border: 1px dashed var(--lh-border-color-base, #D8D3CC);
+    border-radius: var(--lh-border-radius-small);
+    background: none;
+    font-size: var(--lh-font-size-base);
+    color: var(--lh-text-secondary, #8A8A8A);
+    cursor: pointer;
+    transition: color 0.2s ease, border-color 0.2s ease;
+
+    &:hover {
+      color: var(--lh-primary-color, #2B4C7C);
+      border-color: var(--lh-primary-color, #2B4C7C);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--lh-primary-color, #2B4C7C);
+      outline-offset: 2px;
+    }
+  }
+
+  &__content {
+    padding: var(--lh-spacing-md, 12px) 0;
+  }
+}
+
+.lh-tab-pane {
+  font-family: var(--lh-font-family);
+  color: var(--lh-text-regular, #5A5A5A);
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
+    outline-offset: 2px;
+  }
+}

@@ -1,0 +1,7 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-affix {
+  &--fixed {
+    position: fixed;
+  }
+}

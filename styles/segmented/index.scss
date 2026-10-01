@@ -1,0 +1,55 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-segmented {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--lh-border-radius-base, 8px);
+  background-color: var(--lh-segmented-bg, var(--lh-bg-color-page, #f2f3f5));
+
+  &--block {
+    display: flex;
+
+    .lh-segmented__option {
+      flex: 1;
+    }
+  }
+
+  &--disabled {
+    opacity: var(--lh-disabled-opacity, 0.5);
+  }
+}
+
+.lh-segmented__option {
+  padding: var(--lh-segmented-option-padding, 5px 14px);
+  border: none;
+  border-radius: var(--lh-border-radius-small, 6px);
+  background: transparent;
+  font: inherit;
+  font-size: var(--lh-font-size-small, 13px);
+  color: var(--lh-segmented-color, var(--lh-text-regular, #606266));
+  cursor: pointer;
+  transition:
+    background-color var(--lh-transition-duration-fast, 0.25s) ease,
+    color var(--lh-transition-duration-fast, 0.25s) ease;
+
+  &:hover:not(:disabled) {
+    color: var(--lh-segmented-color-hover, var(--lh-text-primary, #303133));
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline-offset: 1px;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    color: var(--lh-disabled-text-color, #c0c4cc);
+  }
+
+  /* 选中项滑块底色（CSS 过渡即滑块位移效果） */
+  &--checked {
+    background-color: var(--lh-segmented-active, var(--lh-bg-color, #fff));
+    color: var(--lh-segmented-active-color, var(--lh-text-primary, #303133));
+    box-shadow: var(--lh-box-shadow-lighter, 0 0 4px rgba(0, 0, 0, 0.1));
+  }
+}

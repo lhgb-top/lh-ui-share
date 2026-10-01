@@ -1,0 +1,120 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 提示框样式 — 墨染素笺
+// ==============================
+
+$lh-tooltip-bg-dark: var(--lh-text-primary, #2C2C2C) !default;
+$lh-tooltip-bg-light: var(--lh-bg-color, #FAF6F0) !default;
+$lh-tooltip-text-dark: var(--lh-bg-color, #FAF6F0) !default;
+$lh-tooltip-text-light: var(--lh-text-regular, #5A5A5A) !default;
+$lh-tooltip-border-light: var(--lh-border-color-light, #E5E0D8) !default;
+$lh-tooltip-arrow-size: 6px !default;
+
+.lh-tooltip {
+  display: inline-flex;
+  position: relative;
+  // 在 grid / flex 容器中不要被默认的 stretch 拉伸，否则定位锚点比触发器宽、提示指偏
+  justify-self: center;
+  align-self: center;
+
+  &__popper {
+    position: fixed;
+    z-index: 2000;
+    padding: 6px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    border-radius: 2px;
+    word-break: break-word;
+    box-shadow: 0 2px 12px 0 rgba(26, 26, 26, 0.08);
+    max-width: 200px;
+
+    &--dark {
+      background-color: var(--lh-tooltip-bg, $lh-tooltip-bg-dark);
+      color: var(--lh-tooltip-text, $lh-tooltip-text-dark);
+    }
+
+    &--light {
+      background-color: var(--lh-tooltip-bg, $lh-tooltip-bg-light);
+      color: var(--lh-tooltip-text, $lh-tooltip-text-light);
+      border: 1px solid $lh-tooltip-border-light;
+    }
+  }
+
+  &__content {
+    display: inline-block;
+  }
+
+  &__arrow {
+    position: absolute;
+    width: 0;
+    height: 0;
+    border: $lh-tooltip-arrow-size solid transparent;
+  }
+
+  &__popper--top &__arrow {
+    bottom: -#{$lh-tooltip-arrow-size * 2};
+    left: var(--lh-arrow-offset, 50%);
+    margin-left: -#{$lh-tooltip-arrow-size};
+    border-top-color: var(--lh-tooltip-arrow-color, $lh-tooltip-bg-dark);
+  }
+
+  &__popper--bottom &__arrow {
+    top: -#{$lh-tooltip-arrow-size * 2};
+    left: var(--lh-arrow-offset, 50%);
+    margin-left: -#{$lh-tooltip-arrow-size};
+    border-bottom-color: var(--lh-tooltip-arrow-color, $lh-tooltip-bg-dark);
+  }
+
+  &__popper--left &__arrow {
+    right: -#{$lh-tooltip-arrow-size * 2};
+    top: var(--lh-arrow-offset, 50%);
+    margin-top: -#{$lh-tooltip-arrow-size};
+    border-left-color: var(--lh-tooltip-arrow-color, $lh-tooltip-bg-dark);
+  }
+
+  &__popper--right &__arrow {
+    left: -#{$lh-tooltip-arrow-size * 2};
+    top: var(--lh-arrow-offset, 50%);
+    margin-top: -#{$lh-tooltip-arrow-size};
+    border-right-color: var(--lh-tooltip-arrow-color, $lh-tooltip-bg-dark);
+  }
+
+  // Light 主题箭头颜色
+  &__popper--light {
+    &.lh-tooltip__popper--top .lh-tooltip__arrow {
+      border-top-color: var(--lh-tooltip-arrow-color, $lh-tooltip-border-light);
+    }
+    &.lh-tooltip__popper--bottom .lh-tooltip__arrow {
+      border-bottom-color: var(--lh-tooltip-arrow-color, $lh-tooltip-border-light);
+    }
+    &.lh-tooltip__popper--left .lh-tooltip__arrow {
+      border-left-color: var(--lh-tooltip-arrow-color, $lh-tooltip-border-light);
+    }
+    &.lh-tooltip__popper--right .lh-tooltip__arrow {
+      border-right-color: var(--lh-tooltip-arrow-color, $lh-tooltip-border-light);
+    }
+  }
+
+  // 内置主题色类型（通过 themeVars 自动覆盖）
+  &--primary,
+  &--success,
+  &--warning,
+  &--danger,
+  &--info {
+    background-color: var(--lh-tooltip-bg, var(--lh-primary-color));
+    color: var(--lh-tooltip-text, #fff);
+  }
+}
+
+// 过渡动画
+.lh-tooltip-fade-enter-active,
+.lh-tooltip-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.lh-tooltip-fade-enter,
+.lh-tooltip-fade-enter-from,
+.lh-tooltip-fade-leave-to {
+  opacity: 0;
+}

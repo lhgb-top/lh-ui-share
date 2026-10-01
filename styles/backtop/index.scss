@@ -1,0 +1,44 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-backtop {
+  position: fixed;
+  z-index: var(--lh-backtop-z-index, 900);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background-color: var(--lh-backtop-bg, var(--lh-bg-color, #fff));
+  color: var(--lh-backtop-color, var(--lh-text-regular, #606266));
+  box-shadow: var(--lh-box-shadow-light, 0 2px 4px rgba(0, 0, 0, 0.12));
+  cursor: pointer;
+
+  &:hover {
+    color: var(--lh-primary-color, #409eff);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline-offset: 2px;
+  }
+}
+
+.lh-backtop-fade-enter-active,
+.lh-backtop-fade-leave-active {
+  transition: opacity var(--lh-transition-duration-fast, 0.25s) ease;
+}
+
+.lh-backtop-fade-enter,
+.lh-backtop-fade-enter-from,
+.lh-backtop-fade-leave-to {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-backtop-fade-enter-active,
+  .lh-backtop-fade-leave-active {
+    transition: none;
+  }
+}

@@ -1,0 +1,150 @@
+.lh-slider {
+  position: relative;
+  width: 100%;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  -webkit-user-select: none;
+  user-select: none;
+
+  &__marks {
+    position: absolute;
+    width: 100%;
+    height: 0;
+    top: 0;
+    left: 0;
+  }
+
+  &__mark {
+    position: absolute;
+    transform: translateX(-50%);
+    font-size: 12px;
+    color: var(--lh-text-placeholder);
+    margin-top: 8px;
+    transition: color 0.2s;
+  }
+
+  &__track {
+    position: relative;
+    /* 根容器是横向 flex，右侧还有 showInput 数值列。用 width: 100% 会把轨道
+       撑满整行，数值列只能溢出行宽。改为 flex: 1 + min-width: 0 占据剩余空间 */
+    flex: 1;
+    min-width: 0;
+    height: 2px;
+    background-color: var(--lh-border-color-light, #e4e7ed);
+    border-radius: 1px;
+    cursor: pointer;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      height: 2px;
+    }
+  }
+
+  &__bar {
+    position: absolute;
+    height: 100%;
+    background-color: var(--lh-primary-color, #409eff);
+    border-radius: 1px;
+  }
+
+  &__button-wrapper {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__button {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background-color: #fff;
+    border: 2px solid var(--lh-primary-color, #409eff);
+    transition: transform 0.2s, box-shadow 0.2s;
+
+    &:hover {
+      transform: scale(1.2);
+      box-shadow: 0 0 4px var(--lh-primary-color, #409eff);
+    }
+  }
+
+  &__input {
+    margin-left: 12px;
+    min-width: 60px;
+    text-align: right;
+  }
+
+  &__input-text {
+    font-size: 13px;
+    color: var(--lh-text-regular);
+  }
+
+  &--disabled {
+    cursor: not-allowed;
+
+    .lh-slider__track {
+      cursor: not-allowed;
+    }
+
+    .lh-slider__button {
+      cursor: not-allowed;
+      background-color: var(--lh-disabled-bg-color, #f5f7fa);
+      border-color: var(--lh-disabled-text-color, #c0c4cc);
+
+      &:hover {
+        transform: none;
+        box-shadow: none;
+      }
+    }
+
+    .lh-slider__bar {
+      background-color: var(--lh-disabled-text-color, #c0c4cc);
+    }
+  }
+
+  &--small {
+    height: 30px;
+
+    .lh-slider__track {
+      height: 1px;
+    }
+
+    .lh-slider__button-wrapper {
+      width: 16px;
+      height: 16px;
+    }
+
+    .lh-slider__button {
+      width: 10px;
+      height: 10px;
+      border-width: 1px;
+    }
+  }
+
+  &--large {
+    height: 42px;
+
+    .lh-slider__track {
+      height: 3px;
+    }
+
+    .lh-slider__button-wrapper {
+      width: 24px;
+      height: 24px;
+    }
+
+    .lh-slider__button {
+      width: 18px;
+      height: 18px;
+      border-width: 3px;
+    }
+  }
+}

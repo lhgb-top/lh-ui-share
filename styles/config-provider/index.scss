@@ -1,0 +1,9 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-config-provider {
+  min-height: 0;
+  /* ConfigProvider 常作为横向 flex 容器的子项包裹一组组件；min-width 默认取
+     内部 min-content（如表单 320px）会在窄屏把容器撑破。解开下限后由内部
+     组件各自（lh-form / lh-input 已处理）随容器收缩 */
+  min-width: 0;
+}

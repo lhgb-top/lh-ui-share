@@ -1,0 +1,240 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-date-picker {
+  position: relative;
+  display: inline-block;
+  /* 根元素不设上限时，触发器的 min-width: 220px 会把 inline-block 根撑到 220px，
+     在窄屏或表单项内容区里溢出父容器。max-width: 100% 让根随确定宽度的父容器
+     收缩，内部触发器是块级会自动填满 */
+  max-width: 100%;
+}
+
+.lh-date-picker__input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--lh-border-color-base);
+  border-radius: 4px;
+  background: var(--lh-bg-color);
+  cursor: pointer;
+  min-width: 220px;
+  transition: border-color 0.2s;
+}
+
+.lh-date-picker__input:hover {
+  border-color: var(--lh-primary-color-hover);
+}
+
+.lh-date-picker__input--disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.lh-date-picker__input-inner {
+  border: none;
+  outline: none;
+  background: none;
+  width: 100%;
+  font-size: 14px;
+  color: var(--lh-text-primary);
+}
+
+.lh-date-picker__value {
+  flex: 1;
+  font-size: 14px;
+  color: var(--lh-text-primary);
+}
+
+.lh-date-picker__separator {
+  margin: 0 4px;
+  color: var(--lh-text-secondary);
+}
+
+.lh-date-picker__clear {
+  margin-right: 4px;
+  cursor: pointer;
+  color: var(--lh-text-secondary);
+}
+
+.lh-date-picker__icon {
+  color: var(--lh-text-secondary);
+}
+
+/* 面板 - 使用 position: fixed (inline via panelStyle) */
+.lh-date-picker__panel {
+  background: var(--lh-bg-color);
+  border: 1px solid var(--lh-border-color-base);
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+.lh-date-picker-panel {
+  padding: 12px;
+  width: 300px;
+  user-select: none;
+}
+
+.lh-date-picker-panel__header {
+  margin-bottom: 8px;
+}
+
+.lh-date-picker-panel__title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.lh-date-picker-panel__btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--lh-text-primary);
+  border-radius: 4px;
+}
+
+.lh-date-picker-panel__btn:hover:not(:disabled) {
+  background: var(--lh-primary-color-bg);
+}
+
+.lh-date-picker-panel__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.lh-date-picker-panel__title-text {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lh-text-primary);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.lh-date-picker-panel__title-text:hover {
+  background: var(--lh-primary-color-bg);
+}
+
+.lh-date-picker-panel__weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.lh-date-picker-panel__weekday {
+  font-size: 12px;
+  color: var(--lh-text-secondary);
+  padding: 4px 0;
+}
+
+.lh-date-picker-panel__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.lh-date-picker-panel__day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  font-size: 14px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: var(--lh-text-primary);
+}
+
+.lh-date-picker-panel__day:hover {
+  background: var(--lh-primary-color-bg);
+}
+
+.lh-date-picker-panel--other {
+  color: var(--lh-text-disabled);
+}
+
+.lh-date-picker-panel--today {
+  color: var(--lh-primary-color);
+  font-weight: 600;
+}
+
+.lh-date-picker-panel--selected {
+  background: var(--lh-primary-color);
+  color: #fff !important;
+}
+
+.lh-date-picker-panel--disabled {
+  cursor: not-allowed;
+  color: var(--lh-text-disabled);
+  opacity: 0.5;
+}
+
+/* 月份 / 年份选择网格 */
+.lh-date-picker-panel__month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.lh-date-picker-panel__month-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: var(--lh-text-primary);
+}
+
+.lh-date-picker-panel__month-cell:hover {
+  background: var(--lh-primary-color-bg);
+}
+
+.lh-date-picker-panel__year-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.lh-date-picker-panel__year-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: var(--lh-text-primary);
+}
+
+.lh-date-picker-panel__year-cell:hover {
+  background: var(--lh-primary-color-bg);
+}
+
+.lh-date-picker-panel__footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--lh-border-color-light);
+}
+
+/* 过渡动画 */
+.lh-fade-in-enter-active,
+.lh-fade-in-leave-active {
+  transition: opacity 0.2s;
+}
+
+.lh-fade-in-enter,
+.lh-fade-in-enter-from,
+.lh-fade-in-leave-to {
+  opacity: 0;
+}

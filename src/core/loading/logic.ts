@@ -1,0 +1,38 @@
+import type { LhLoadingState } from './types'
+
+/** 计算遮罩类名 */
+export function getLoadingClassNames(state: LhLoadingState): string[] {
+  const classes = ['lh-loading']
+  if (state.fullscreen) classes.push('lh-loading--fullscreen')
+  if (state.withText) classes.push('lh-loading--with-text')
+  return classes
+}
+
+/**
+ * 解析挂载目标：元素原样返回；字符串走 querySelector，未命中回退 body。
+ * 不传 target 即全屏（body）。
+ */
+export function resolveLoadingTarget(target: string | HTMLElement | undefined): HTMLElement {
+  if (!target) return document.body
+  if (target instanceof HTMLElement) return target
+  return document.querySelector<HTMLElement>(target) ?? document.body
+}
+
+/** 是否全屏遮罩（目标是 body 即视为全屏） */
+export function isLoadingFullscreen(target: HTMLElement): boolean {
+  return target === document.body
+}
+
+/**
+ * 指令挂载前确保目标可作为遮罩定位祖先：
+ * static 定位的元素补 position: relative，并记录原值供卸载时还原
+ */
+export function ensurePositioned(target: HTMLElement): { restore: () => void } {
+  const original = target.style.position
+  const computed = getComputedStyle(target).position
+  if (computed === 'static' || computed === '') {
+    target.style.position = 'relative'
+    return { restore: () => { target.style.position = original } }
+  }
+  return { restore: () => {} }
+}
