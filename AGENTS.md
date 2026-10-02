@@ -52,3 +52,9 @@ CI（`.github/workflows/ci.yml`，Node 20 + pnpm 10）按 `lint → typecheck �
 - 注释与提交信息用中文；Prettier：单引号、无分号、2 空格、printWidth 100（`pnpm format` 仅覆盖配置文件，其余手写对齐）。
 - 新增 core 组件：`src/core/<name>/{logic,types,index}.ts` 三件套 + `tests/unit/core/<name>.spec.ts` + `src/core/index.ts` 导出 + changeset。
 - 样式改动：只改 `styles/`，组件类名遵循 BEM `lh-*`，颜色一律 `var(--lh-*, fallback)`，不新增硬编码色值。
+
+## 构建注意
+
+- `pnpm build` 现为完整链（vite build → build:styles → build:dts）。此前 `build` 仅跑 vite，
+  会清空 es/ 导致 d.ts 丢失、下游（lh-ui-vue2）typecheck 报 TS7016——2026-10-02 踩坑后已修复脚本顺序。
+- 单独跑 `pnpm build:styles` 不影响 es/ 的声明文件。

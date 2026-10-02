@@ -62,7 +62,7 @@
   ],
   "packageManager": "pnpm@10.34.5",
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && pnpm build:styles && pnpm build:dts",
     "build:styles": "node scripts/build-styles.mjs",
     "build:dts": "tsc -p tsconfig.build.json",
     "verify:dts": "node scripts/verify-dts.mjs",
