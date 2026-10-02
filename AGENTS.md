@@ -11,11 +11,11 @@
 - `src/constants/`、`src/locales/`、`src/types/`、`src/utils/` —— 常量 / 语言包（LhLocale 为纯 emitter）/ 类型 / 纯工具（含 createNamespace）
 - `styles/` —— **组件 BEM 样式唯一源**：`<name>/index.scss` + `theme/common/*.scss`（令牌）
 - `tests/unit/` —— **core 单测唯一一份**（三库共享此结果，不重复拷贝）
-- `scripts/` —— extract-from-plus（一次性提取）/ build-styles / verify-dts
+- `scripts/` —— extract-from-plus（一次性提取）/ build-styles / normalize-styles（过渡类名双写，可重复执行）/ verify-dts
 
 ## 红线
 
-1. `src/` 内禁止 `import 'vue' | 'react' | '@dcloudio/*'` 及任何框架 API；响应式接线属于 UI 层（CI grep 门禁）。
+1. `src/` 内禁止 `import 'vue' | 'react' | '@dcloudio/*'` 及任何框架 API；响应式接线属于 UI 层。强制力来自 `pnpm verify:dts`（CI 末步）：它扫描 `es/**/*.d.ts`，命中 `vue` / `react` / `@dcloudio/*` / 旧别名（`lh-*`、`~/`）即失败，并要求每个 `src/**.ts` 都有镜像 `.d.ts`。
 2. `styles/` 是组件样式唯一源：禁止把样式拷贝到 UI 库手改；一切样式改动只在本仓库发生。
    过渡类名已**双写**（`-enter` 与 `-enter-from`、`-leave` 与 `-leave-from` 并列），同时服务 Vue2 / Vue3 / React。
 3. core 单测唯一一份在本仓库；UI 库不得复制。
@@ -36,6 +36,16 @@
 ## Verification is manual（验证手动）
 
 测试、构建、typecheck、lint 由**用户**运行，AI 不自动执行；AI 交付后列出命令清单，未确认的运行不得标 ✅。
+CI（`.github/workflows/ci.yml`，Node 20 + pnpm 10）按 `lint → typecheck → test → build → build:styles → build:dts → verify:dts` 顺序跑，任一步失败即拦截。
+
+## 注意 / Gotchas
+
+- `pnpm typecheck` 只含 `src/**`（`tsconfig.json` 的 include 不含 `tests/`，与 plus 对齐）：spec 的类型问题只在 vitest 运行时暴露，不报在 typecheck 里。
+- `pnpm lint` 不含 `styles/`（eslint 忽略 scss），样式没有 lint 兜底，手写时按 BEM 与令牌约定自查。
+- `src/locales/lang/README.md` 及 ja/ko/de/fr 语言文件注释里的 `packages/...`、`docs/.vitepress` 路径是旧 monorepo 残留，**已失效**；真实路径是 `src/locales/lang/`、`src/constants/index.ts`、`src/locales/index.ts`。
+- locales 现状：zh-CN / en-US 完整，ja-JP / ko-KR / de-DE / fr-FR 均为英文兜底骨架。
+- 单测环境为 jsdom（`vitest.config.ts`），spec 放 `tests/**/*.spec.ts`；`tests/unit/core/shared/` 下还有 focus-trap / popper 的共享单测。
+- 消费方优先用子路径导入（`@lh-ui/share/core/button`），`package.json` 的 `./core/*` 导出按目录自动匹配，新增 core 组件无需改导出映射；根入口 `src/index.ts` 仅作聚合。
 
 ## 约定
 
