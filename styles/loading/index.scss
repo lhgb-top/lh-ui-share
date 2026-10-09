@@ -9,7 +9,7 @@
   justify-content: center;
   gap: 10px;
   background-color: var(--lh-loading-bg, rgba(255, 255, 255, 72%));
-  color: var(--lh-loading-color, var(--lh-primary-color, #409eff));
+  color: var(--lh-loading-text-color, var(--lh-text-regular, #5A5A5A));
   z-index: 10;
 
   &--fullscreen {
@@ -22,14 +22,19 @@
 }
 
 .lh-loading__text {
-  color: var(--lh-loading-text-color, var(--lh-text-regular, #606266));
+  color: var(--lh-loading-text-color, var(--lh-text-regular, #5A5A5A));
   margin: 0;
 }
 
-/* 遮罩淡入；reduced-motion 降级为直接显示 */
+/* 遮罩淡入淡出；reduced-motion 降级为直接显示/消失 */
 @media (prefers-reduced-motion: no-preference) {
   .lh-loading {
     animation: lh-loading-fade 0.2s ease;
+  }
+
+  /* 服务式关闭（closeLoading）先挂 --leaving 播退场，动画结束后再卸载实例 */
+  .lh-loading--leaving {
+    animation: lh-loading-fade-out 0.2s ease forwards;
   }
 }
 
@@ -39,5 +44,14 @@
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes lh-loading-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
   }
 }

@@ -102,7 +102,7 @@ $lh-tooltip-arrow-size: 6px !default;
   &--warning,
   &--danger,
   &--info {
-    background-color: var(--lh-tooltip-bg, var(--lh-primary-color));
+    background-color: var(--lh-tooltip-bg, var(--lh-primary-color, #2B4C7C));
     color: var(--lh-tooltip-text, #fff);
   }
 }
@@ -118,3 +118,7 @@ $lh-tooltip-arrow-size: 6px !default;
 .lh-tooltip-fade-leave-to {
   opacity: 0;
 }
+
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-tooltip');

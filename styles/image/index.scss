@@ -29,7 +29,7 @@
   min-height: 80px;
   padding: 8px;
   font-size: var(--lh-font-size-small, 13px);
-  color: var(--lh-image-error, var(--lh-text-placeholder, #c0c4cc));
+  color: var(--lh-image-error, var(--lh-text-placeholder, #BFB8AF));
   background-color: var(--lh-bg-color-page, #f2f3f5);
 }
 
@@ -76,7 +76,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
   }
 }
 

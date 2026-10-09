@@ -6,26 +6,26 @@
 
 .lh-descriptions {
   width: 100%;
-  font-size: var(--lh-font-size-base);
-  color: var(--lh-text-primary);
+  font-size: var(--lh-font-size-base, 14px);
+  color: var(--lh-text-primary, #2C2C2C);
 
   &__header {
-    margin-bottom: var(--lh-spacing-sm);
-    font-size: var(--lh-font-size-large);
-    font-weight: var(--lh-font-weight-bold);
-    color: var(--lh-text-primary);
+    margin-bottom: var(--lh-spacing-sm, 8px);
+    font-size: var(--lh-font-size-large, 18px);
+    font-weight: var(--lh-font-weight-bold, 600);
+    color: var(--lh-text-primary, #2C2C2C);
   }
 
   &__body {
     display: flex;
     flex-direction: column;
-    gap: var(--lh-spacing-xs);
+    gap: var(--lh-spacing-xs, 4px);
   }
 
   &__row {
     // 语义化改用 dl/dt/dd 后消除 UA 默认外边距
     margin: 0;
-    gap: var(--lh-spacing-xs);
+    gap: var(--lh-spacing-xs, 4px);
   }
 
   &__label,
@@ -35,17 +35,17 @@
   }
 
   &__label {
-    padding: var(--lh-spacing-xs) var(--lh-spacing-sm);
-    background-color: var(--lh-bg-color-disabled);
-    color: var(--lh-text-secondary);
-    border-radius: var(--lh-border-radius-small);
-    font-weight: var(--lh-font-weight-primary);
+    padding: var(--lh-spacing-xs, 4px) var(--lh-spacing-sm, 8px);
+    background-color: var(--lh-bg-color-disabled, #EDE8E0);
+    color: var(--lh-text-secondary, #8A8A8A);
+    border-radius: var(--lh-border-radius-small, 2px);
+    font-weight: var(--lh-font-weight-primary, 400);
     word-break: break-all;
   }
 
   &__content {
-    padding: var(--lh-spacing-xs) var(--lh-spacing-sm);
-    color: var(--lh-text-regular);
+    padding: var(--lh-spacing-xs, 4px) var(--lh-spacing-sm, 8px);
+    color: var(--lh-text-regular, #5A5A5A);
     word-break: break-all;
   }
 
@@ -60,7 +60,7 @@
 
   &--border &__label,
   &--border &__content {
-    border: 1px solid var(--lh-border-color-light);
+    border: 1px solid var(--lh-border-color-light, #E5E0D8);
     border-radius: 0;
   }
 
@@ -73,7 +73,7 @@
 
     &:last-child,
     & + .lh-descriptions__filler {
-      border-right: 1px solid var(--lh-border-color-light);
+      border-right: 1px solid var(--lh-border-color-light, #E5E0D8);
     }
   }
 

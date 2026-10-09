@@ -23,26 +23,26 @@
   align-items: center;
   justify-content: center;
   padding: var(--lh-upload-trigger-padding, 24px);
-  border: 1px dashed var(--lh-upload-border, var(--lh-border-color-base, #d8d3cc));
+  border: 1px dashed var(--lh-upload-border, var(--lh-border-color-base, #D8D3CC));
   border-radius: var(--lh-border-radius-base, 8px);
   background-color: var(--lh-upload-bg, var(--lh-bg-color, #fff));
-  color: var(--lh-text-regular, #5a5a5a);
+  color: var(--lh-text-regular, #5A5A5A);
   text-align: center;
   cursor: pointer;
 
   &:hover {
-    border-color: var(--lh-primary-color, #409eff);
-    color: var(--lh-primary-color, #409eff);
+    border-color: var(--lh-primary-color, #2B4C7C);
+    color: var(--lh-primary-color, #2B4C7C);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
     outline-offset: 2px;
   }
 
   .lh-upload--dragover & {
-    border-color: var(--lh-primary-color, #409eff);
-    background-color: color-mix(in srgb, var(--lh-primary-color, #409eff) 8%, transparent);
+    border-color: var(--lh-primary-color, #2B4C7C);
+    background-color: color-mix(in srgb, var(--lh-primary-color, #2B4C7C) 8%, transparent);
   }
 }
 
@@ -65,15 +65,15 @@
   font-size: var(--lh-font-size-small, 13px);
 
   &:hover {
-    background-color: var(--lh-bg-color-page, #f5f0eb);
+    background-color: var(--lh-bg-color-page, #F5F0EB);
   }
 
   &--fail .lh-upload__file-name {
-    color: var(--lh-danger-color, #f56c6c);
+    color: var(--lh-danger-color, #B23A3A);
   }
 
   &--success .lh-upload__file-name {
-    color: var(--lh-success-color, #67c23a);
+    color: var(--lh-success-color, #5B8C5A);
   }
 }
 
@@ -87,16 +87,16 @@
 .lh-upload__file-size,
 .lh-upload__file-error {
   flex-shrink: 0;
-  color: var(--lh-text-secondary, #8a8a8a);
+  color: var(--lh-text-secondary, #8A8A8A);
 }
 
 .lh-upload__file-error {
-  color: var(--lh-danger-color, #f56c6c);
+  color: var(--lh-danger-color, #B23A3A);
 }
 
 .lh-upload__file-success {
   flex-shrink: 0;
-  color: var(--lh-success-color, #67c23a);
+  color: var(--lh-success-color, #5B8C5A);
 }
 
 .lh-upload__progress {
@@ -104,14 +104,14 @@
   min-width: 60px;
   height: 6px;
   border-radius: 3px;
-  background-color: var(--lh-border-color-lighter, #ebeef5);
+  background-color: var(--lh-border-color-lighter, #EEE9E2);
   overflow: hidden;
 }
 
 .lh-upload__progress-bar {
   display: block;
   height: 100%;
-  background-color: var(--lh-primary-color, #409eff);
+  background-color: var(--lh-primary-color, #2B4C7C);
   transition: width var(--lh-transition-duration-fast, 0.25s) ease;
 }
 
@@ -121,17 +121,17 @@
   padding: 0 4px;
   border: none;
   background: transparent;
-  color: var(--lh-text-secondary, #8a8a8a);
+  color: var(--lh-text-secondary, #8A8A8A);
   cursor: pointer;
 
   &:hover {
-    color: var(--lh-danger-color, #f56c6c);
+    color: var(--lh-danger-color, #B23A3A);
   }
 }
 
 .lh-upload__error {
   margin: 8px 0 0;
-  color: var(--lh-danger-color, #f56c6c);
+  color: var(--lh-danger-color, #B23A3A);
   font-size: var(--lh-font-size-small, 13px);
 }
 

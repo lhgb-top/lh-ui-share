@@ -20,8 +20,8 @@ nav ol.lh-breadcrumb__list {
 }
 
 .lh-breadcrumb {
-  font-family: var(--lh-font-family);
-  font-size: var(--lh-font-size-base);
+  font-family: var(--lh-font-family, 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif);
+  font-size: var(--lh-font-size-base, 14px);
   color: var(--lh-text-regular, #5A5A5A);
 
   &__list {
@@ -56,7 +56,7 @@ nav ol.lh-breadcrumb__list {
     &:focus-visible {
       outline: 2px solid var(--lh-primary-color, #2B4C7C);
       outline-offset: 2px;
-      border-radius: var(--lh-border-radius-small);
+      border-radius: var(--lh-border-radius-small, 2px);
     }
   }
 
@@ -66,7 +66,7 @@ nav ol.lh-breadcrumb__list {
 
   // 当前页（末项）强调
   &__item--last .lh-breadcrumb__text {
-    font-weight: var(--lh-font-weight-primary);
+    font-weight: var(--lh-font-weight-primary, 400);
   }
 
   &__separator {
@@ -83,7 +83,7 @@ nav ol.lh-breadcrumb__list {
     line-height: 1;
     color: var(--lh-text-secondary, #8A8A8A);
     cursor: pointer;
-    border-radius: var(--lh-border-radius-small);
+    border-radius: var(--lh-border-radius-small, 2px);
     transition: color 0.2s ease;
 
     &:hover {
@@ -94,5 +94,16 @@ nav ol.lh-breadcrumb__list {
       outline: 2px solid var(--lh-primary-color, #2B4C7C);
       outline-offset: 1px;
     }
+  }
+}
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-breadcrumb,
+  .lh-breadcrumb * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

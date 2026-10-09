@@ -1,6 +1,10 @@
-import { compareDate, isDateDisabled, isSameDay } from '../date-picker'
+import { compareDate, isDateDisabled, isSameDay } from '../shared/date'
 import type { LhCalendarRange } from './types'
+import type { LhAriaAttrs } from '../shared/a11y'
 
+// 通用日期原语已下沉到 core/shared/date，calendar 不再依赖 date-picker 的 logic。
+// generateCalendarDays 仍从 date-picker 引入：日历网格算法是 date-picker 的职责
+// （calendar 是它的日历视图），这层依赖是语义性的、非通用原语
 export { generateCalendarDays, isSameDay } from '../date-picker'
 
 /** 日历容器类名 */
@@ -22,14 +26,17 @@ export function shiftCalendarMonth(year: number, month: number, delta: number): 
 /** 范围约束下的禁用判定（无约束恒 false） */
 export function isCalendarDateDisabled(date: Date, range: LhCalendarRange | undefined): boolean {
   if (!range) return false
-  return isDateDisabled(date, range[0], range[1], null)
+  // 先归一区间，反序 range 不会导致全禁用
+  const [start, end] = normalizeCalendarSpan(range[0], range[1])
+  return isDateDisabled(date, start, end, null)
 }
 
-/** 把日期钳制进可选范围 */
+/** 把日期钳制进可选范围（反序 range 先归一，与 isCalendarDateDisabled 同规则） */
 export function clampDateToRange(date: Date, range: LhCalendarRange | undefined): Date {
   if (!range) return date
-  if (compareDate(date, range[0]) < 0) return range[0]
-  if (compareDate(date, range[1]) > 0) return range[1]
+  const [start, end] = normalizeCalendarSpan(range[0], range[1])
+  if (compareDate(date, start) < 0) return start
+  if (compareDate(date, end) > 0) return end
   return date
 }
 
@@ -60,4 +67,20 @@ export function toggleCalendarDate(dates: Date[], date: Date): Date[] {
   const rest = dates.filter((d) => !isSameDay(d, date))
   if (rest.length !== dates.length) return rest
   return [...rest, date].sort(compareDate)
+}
+
+/**
+ * 日期单元格的无障碍属性包：选中日输出 aria-current="date"，
+ * 禁用日输出 aria-disabled（复用 isCalendarDateDisabled 的判定）
+ */
+export function getCalendarCellAria(options: {
+  date: Date
+  selected: Date | null
+  range?: LhCalendarRange
+}): LhAriaAttrs {
+  const { date, selected, range } = options
+  const attrs: LhAriaAttrs = {}
+  if (isCalendarSelected(date, selected)) attrs['aria-current'] = 'date'
+  if (isCalendarDateDisabled(date, range)) attrs['aria-disabled'] = true
+  return attrs
 }

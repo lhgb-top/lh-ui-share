@@ -11,7 +11,11 @@ import {
   generateMonths,
   generateYears,
   isDateDisabled,
+  getDateAdapter,
   getDatePickerClassNames,
+  setDateAdapter,
+  getDatePickerPanelAria,
+  getDatePickerTriggerAria,
 } from '../../../src/core/date-picker'
 
 describe('DatePicker Core Logic', () => {
@@ -121,7 +125,65 @@ describe('DatePicker Core Logic', () => {
     })
 
     it('should return null on invalid input', () => {
-      expect(parseDate('', 'yyyy-MM-dd')).not.toBeNull()
+      expect(parseDate('', 'yyyy-MM-dd')).toBeNull()
+    })
+
+    it('should return null on overflow date', () => {
+      // 2023-02-30 不存在，回读校验应拒绝，而不是静默滚到 3 月
+      expect(parseDate('2023-02-30', 'yyyy-MM-dd')).toBeNull()
+    })
+
+    it('should return null on garbage string', () => {
+      expect(parseDate('not-a-date', 'yyyy-MM-dd')).toBeNull()
+    })
+
+    it('should round-trip MM/dd/yyyy', () => {
+      const formatted = '06/03/2024'
+      const parsed = parseDate(formatted, 'MM/dd/yyyy')
+      expect(parsed).not.toBeNull()
+      expect(parsed?.getFullYear()).toBe(2024)
+      expect(parsed?.getMonth()).toBe(5)
+      expect(parsed?.getDate()).toBe(3)
+      expect(formatDate(parsed!, 'MM/dd/yyyy')).toBe(formatted)
+    })
+
+    it('should parse time components in datetime format', () => {
+      // 回归：曾只取日期分量，时间分量被静默丢弃，datetime 往返丢失时刻
+      const parsed = parseDate('2023-01-01 10:30:45', 'yyyy-MM-dd HH:mm:ss')
+      expect(parsed).not.toBeNull()
+      expect(parsed?.getFullYear()).toBe(2023)
+      expect(parsed?.getMonth()).toBe(0)
+      expect(parsed?.getDate()).toBe(1)
+      expect(parsed?.getHours()).toBe(10)
+      expect(parsed?.getMinutes()).toBe(30)
+      expect(parsed?.getSeconds()).toBe(45)
+    })
+
+    it('should round-trip datetime format', () => {
+      const date = new Date(2024, 5, 3, 8, 5, 9)
+      const formatted = formatDate(date, 'yyyy-MM-dd HH:mm:ss')
+      const parsed = parseDate(formatted, 'yyyy-MM-dd HH:mm:ss')
+      expect(parsed).not.toBeNull()
+      expect(formatDate(parsed!, 'yyyy-MM-dd HH:mm:ss')).toBe(formatted)
+    })
+
+    it('should default time components to zero when the format omits them', () => {
+      // format 不含时间 token 时，时间分量按 0 补齐
+      const parsed = parseDate('2024-01-15', 'yyyy-MM-dd')
+      expect(parsed?.getHours()).toBe(0)
+      expect(parsed?.getMinutes()).toBe(0)
+      expect(parsed?.getSeconds()).toBe(0)
+    })
+
+    it('should reject a string shorter than the format requires', () => {
+      // format 含时间 token 但串里缺分量，属于「串与格式不对应」，返回 null
+      // 而不是静默把缺失分量补成 0——那会掩盖 value-format 与实际值不匹配的 bug
+      expect(parseDate('2024-01-15', 'yyyy-MM-dd HH:mm:ss')).toBeNull()
+    })
+
+    it('should return null on out-of-range time components', () => {
+      expect(parseDate('2024-01-01 25:00:00', 'yyyy-MM-dd HH:mm:ss')).toBeNull()
+      expect(parseDate('2024-01-01 00:99:00', 'yyyy-MM-dd HH:mm:ss')).toBeNull()
     })
   })
 
@@ -230,5 +292,75 @@ describe('DatePicker Core Logic', () => {
       const classes = getDatePickerClassNames({ size: 'medium', disabled: false, visible: true })
       expect(classes).toContain('lh-date-picker--visible')
     })
+  })
+
+  describe('round 2: 年份补零 / firstDayOfWeek / 日期适配器', () => {
+    it('pads years below 1000 so formatted output stays parseable', () => {
+      const text = formatDate(new Date(999, 0, 2), 'yyyy-MM-dd')
+      expect(text).toBe('0999-01-02')
+      expect(parseDate(text, 'yyyy-MM-dd')).not.toBeNull()
+      // 常规年份不受影响
+      expect(formatDate(new Date(2026, 0, 2), 'yyyy-MM-dd')).toBe('2026-01-02')
+    })
+
+    it('generateCalendarDays honors firstDayOfWeek', () => {
+      // 2025-06-01 是周日：周日起始时首格即当月 1 日；周一起始时首行需 6 格上月填充
+      const today = new Date(2025, 5, 15)
+      const sundayFirst = generateCalendarDays(2025, 5, null, null, null, today, 0)
+      const mondayFirst = generateCalendarDays(2025, 5, null, null, null, today, 1)
+      expect(sundayFirst[0].date.getDate()).toBe(1)
+      expect(mondayFirst[0].date.getDay()).toBe(1)
+      const leadingOf = (days: ReturnType<typeof generateCalendarDays>): number =>
+        days.findIndex((d) => d.isCurrentMonth)
+      expect(leadingOf(sundayFirst)).toBe(0)
+      expect(leadingOf(mondayFirst)).toBe(6)
+    })
+
+    it('setDateAdapter reroutes grid generation and restores with undefined', () => {
+      const today = new Date(2025, 5, 15)
+      const original = generateCalendarDays(2025, 5, null, null, null, today)
+      setDateAdapter({ ...getDateAdapter(), getFirstDayOfMonth: () => 1 })
+      const shifted = generateCalendarDays(2025, 5, null, null, null, today)
+      // 注入后首行前置填充变为 1 格（2025-05-31，周六）
+      expect(shifted[0].date.getDate()).toBe(31)
+      expect(shifted[0].date.getDay()).toBe(6)
+      expect(shifted).not.toEqual(original)
+      // 传 undefined 恢复默认实现
+      setDateAdapter(undefined)
+      expect(generateCalendarDays(2025, 5, null, null, null, today)).toEqual(original)
+    })
+
+    it('accepts an explicit adapter without touching the global singleton', () => {
+      const today = new Date(2025, 5, 15)
+      // 显式参数优先于全局单例：此处把周一启始透传进去
+      const explicit = generateCalendarDays(2025, 5, null, null, null, today, 0, {
+        ...getDateAdapter(),
+        getFirstDayOfMonth: () => 1,
+      })
+      expect(explicit[0].date.getDate()).toBe(31)
+      expect(explicit[0].date.getDay()).toBe(6)
+
+      // 全局状态未被污染：默认实现仍是周日启始（2025-06-01 为周日）
+      const after = generateCalendarDays(2025, 5, null, null, null, today)
+      expect(after[0].date.getDate()).toBe(1)
+      expect(after[0].date.getDay()).toBe(0)
+    })
+  })
+})
+describe('LhDatePicker accessibility', () => {
+  it('binds trigger aria attributes for a dialog popup', () => {
+    expect(getDatePickerTriggerAria(true, 'dp')).toEqual({
+      'aria-expanded': true,
+      'aria-controls': 'dp',
+      'aria-haspopup': 'dialog',
+    })
+    expect(getDatePickerTriggerAria(false)).toEqual({
+      'aria-expanded': false,
+      'aria-haspopup': 'dialog',
+    })
+  })
+
+  it('marks the panel as a dialog', () => {
+    expect(getDatePickerPanelAria('dp')).toEqual({ role: 'dialog', id: 'dp' })
   })
 })

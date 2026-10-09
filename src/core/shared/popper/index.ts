@@ -6,6 +6,8 @@
  * 入参全部是 rect 字面量，不触碰 DOM，可直接单测。
  */
 
+import { clamp, sanitizeNumber } from '../sanitize'
+
 /** 弹出层方位（方向 + 对齐） */
 export type LhPlacement =
   | 'top'
@@ -63,15 +65,22 @@ const PRIMARY_AXIS: Record<LhPlacementDir, 'x' | 'y'> = {
   right: 'x',
 }
 
+const PLACEMENT_DIRS: readonly string[] = ['top', 'bottom', 'left', 'right']
+
 /**
  * 解析方位为「方向 + 对齐」
+ *
+ * 运行时兜底：JS 侧可能传入类型联合之外的字符串（如 'top-middle'），
+ * 非法方向回退 'bottom'、非法对齐回退 'center'，避免垃圾值流进 BEM 类名。
  */
 export function parsePlacement(placement: LhPlacement): {
   dir: LhPlacementDir
   align: LhPlacementAlign
 } {
-  const [dir, align] = placement.split('-') as [LhPlacementDir, LhPlacementAlign | undefined]
-  return { dir, align: align ?? 'center' }
+  const [rawDir, rawAlign] = String(placement).split('-')
+  const dir = PLACEMENT_DIRS.includes(rawDir) ? (rawDir as LhPlacementDir) : 'bottom'
+  const align: LhPlacementAlign = rawAlign === 'start' || rawAlign === 'end' ? rawAlign : 'center'
+  return { dir, align }
 }
 
 /**
@@ -160,8 +169,17 @@ export function fitsInViewport(
   }
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
+/** rect 字段净化：非有限字段归 0，NaN rect 不再流入定位结果（`top: NaNpx`） */
+function safeRect(rect: DOMRectLike): DOMRectLike {
+  const n = (v: number): number => (Number.isFinite(v) ? v : 0)
+  return {
+    top: n(rect.top),
+    left: n(rect.left),
+    width: n(rect.width),
+    height: n(rect.height),
+    right: n(rect.right),
+    bottom: n(rect.bottom),
+  }
 }
 
 /**
@@ -170,6 +188,10 @@ function clamp(value: number, min: number, max: number): number {
  * 1. flip：主轴方向放不下时翻转方向（仅当翻转后放得下才翻）
  * 2. 按方位摆放
  * 3. shift：交叉轴方向夹回视口
+ * 4. 主轴夹回：flip 开启且两侧都放不下时（如 trigger 比 viewport 还高），
+ *    主轴也夹进视口；flip 关闭表示调用方接受溢出，不代为搬动
+ *
+ * 入参 rect 先做字段级非有限净化。
  *
  * @param trigger 触发器 rect
  * @param popper 弹出层 rect
@@ -181,19 +203,30 @@ export function computePosition(
   viewport: DOMRectLike,
   options: ComputePositionOptions = {}
 ): PopperPosition {
-  const gap = options.gap ?? 8
-  const padding = options.padding ?? 8
+  const gap = sanitizeNumber(options.gap, 8)
+  const padding = sanitizeNumber(options.padding, 8, { min: 0 })
+  const safeTrigger = safeRect(trigger)
+  const safePopper = safeRect(popper)
+  const safeViewport = safeRect(viewport)
   const { dir: rawDir, align } = parsePlacement(options.placement ?? 'bottom')
   let dir = rawDir
 
-  if (options.flip !== false && !fitsInViewport(dir, trigger, popper, viewport, gap, padding)) {
-    const flipped = flipDir(dir)
-    if (fitsInViewport(flipped, trigger, popper, viewport, gap, padding)) {
-      dir = flipped
-    }
+  const fitsOriginal = fitsInViewport(dir, safeTrigger, safePopper, safeViewport, gap, padding)
+  const fitsFlipped = fitsInViewport(
+    flipDir(dir),
+    safeTrigger,
+    safePopper,
+    safeViewport,
+    gap,
+    padding
+  )
+  const bothOverflow = !fitsOriginal && !fitsFlipped
+
+  if (options.flip !== false && !fitsOriginal && fitsFlipped) {
+    dir = flipDir(dir)
   }
 
-  const { top, left } = basePosition(dir, align, trigger, popper, gap)
+  const { top, left } = basePosition(dir, align, safeTrigger, safePopper, gap)
   let finalTop = top
   let finalLeft = left
 
@@ -201,20 +234,42 @@ export function computePosition(
     if (PRIMARY_AXIS[dir] === 'y') {
       finalLeft = clamp(
         left,
-        padding,
-        Math.max(padding, viewport.width - popper.width - padding)
+        safeViewport.left + padding,
+        Math.max(safeViewport.left + padding, safeViewport.right - safePopper.width - padding)
       )
     } else {
       finalTop = clamp(
         top,
-        padding,
-        Math.max(padding, viewport.height - popper.height - padding)
+        safeViewport.top + padding,
+        Math.max(safeViewport.top + padding, safeViewport.bottom - safePopper.height - padding)
       )
     }
   }
 
-  const posTop = Math.max(0, finalTop)
-  const posLeft = Math.max(0, finalLeft)
+  // 主轴夹回：flip 开启且两侧都放不下时才兜底，flip: false 的调用方接受溢出
+  if (options.flip !== false && bothOverflow) {
+    if (PRIMARY_AXIS[dir] === 'y') {
+      finalTop = clamp(
+        finalTop,
+        safeViewport.top + padding,
+        Math.max(safeViewport.top + padding, safeViewport.bottom - safePopper.height - padding)
+      )
+    } else {
+      finalLeft = clamp(
+        finalLeft,
+        safeViewport.left + padding,
+        Math.max(safeViewport.left + padding, safeViewport.right - safePopper.width - padding)
+      )
+    }
+  }
+
+  // 最后一道安全网：任何路径都不允许弹出层完全离开视口低侧
+  const posTop = Math.max(safeViewport.top + padding, finalTop)
+  const posLeft = Math.max(safeViewport.left + padding, finalLeft)
+
+  // 交叉轴箭头钳制的安全边界：padding 不应超过弹出层一半，否则上下界反转
+  const arrowPadY = Math.min(padding, safePopper.width / 2)
+  const arrowPadX = Math.min(padding, safePopper.height / 2)
 
   return {
     top: posTop,
@@ -225,14 +280,14 @@ export function computePosition(
     arrowOffset:
       PRIMARY_AXIS[dir] === 'y'
         ? clamp(
-            trigger.left + trigger.width / 2 - posLeft,
-            padding,
-            Math.max(padding, popper.width - padding)
+            safeTrigger.left + safeTrigger.width / 2 - posLeft,
+            arrowPadY,
+            Math.max(arrowPadY, safePopper.width - arrowPadY)
           )
         : clamp(
-            trigger.top + trigger.height / 2 - posTop,
-            padding,
-            Math.max(padding, popper.height - padding)
+            safeTrigger.top + safeTrigger.height / 2 - posTop,
+            arrowPadX,
+            Math.max(arrowPadX, safePopper.height - arrowPadX)
           ),
   }
 }

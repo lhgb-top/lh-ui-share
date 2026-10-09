@@ -1,7 +1,8 @@
 /**
  * 日本語 (Japanese)
  * 当前为骨架文件，默认使用英文作为兜底翻译。
- * 启用步骤：取消 packages/constants/index.ts 中 jaJP 的注释
+ * 已在 src/locales/locale.ts 注册、src/constants/index.ts 登记，
+ * 可直接 `lhlocale.setLocale('ja-JP')` 切换（当前返回英文兜底文案，翻译补全后生效）。
  */
 export default {
   // General
@@ -17,6 +18,9 @@ export default {
   datepicker: {
     now: 'Now',
     today: 'Today',
+    prevMonth: 'Previous month',
+    nextMonth: 'Next month',
+    placeholder: 'Select date',
     cancel: 'Cancel',
     clear: 'Clear',
     confirm: 'OK',
@@ -50,6 +54,7 @@ export default {
   // TimePicker
   timepicker: {
     now: 'Now',
+    placeholder: 'Select time',
     confirm: 'OK',
     cancel: 'Cancel',
     hour: 'H',
@@ -184,6 +189,7 @@ export default {
     rotate: 'Rotate',
     prev: 'Previous',
     next: 'Next',
+    close: 'Close image preview',
   },
 
   // Menu
@@ -230,5 +236,65 @@ export default {
   // Anchor
   anchor: {
     label: 'Anchor navigation',
+  },
+
+  // Accessibility labels (aria-label / screen reader announcements)
+  // 骨架文件：默认使用英文兜底，翻译补全后生效
+  ariaLabels: {
+    close: 'Close',
+    expand: 'Expand',
+    collapse: 'Collapse',
+    clear: 'Clear',
+    confirm: 'Confirm',
+    cancel: 'Cancel',
+    openDropdown: 'Open dropdown',
+    closeDropdown: 'Close dropdown',
+    openDialog: 'Open dialog',
+    closeDialog: 'Close dialog',
+    openMenu: 'Open menu',
+    closeMenu: 'Close menu',
+    previous: 'Previous',
+    next: 'Next',
+    previousMonth: 'Previous month',
+    nextMonth: 'Next month',
+    previousYear: 'Previous year',
+    nextYear: 'Next year',
+    selectDate: 'Select date',
+    selectTime: 'Select time',
+    hour: 'Hour',
+    minute: 'Minute',
+    second: 'Second',
+    page: 'Page {page}',
+    currentPage: 'Current page, page {page}',
+    previousPage: 'Previous page',
+    nextPage: 'Next page',
+    currentStep: 'Current step, step {step}: {title}',
+    step: 'Step {step}',
+    loading: 'Loading',
+    upload: 'Upload',
+    uploading: 'Uploading',
+    uploadSuccess: 'Upload succeeded',
+    uploadFailed: 'Upload failed',
+    removeFile: 'Remove file',
+    previewImage: 'Preview image',
+    previousImage: 'Previous image',
+    nextImage: 'Next image',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    rotate: 'Rotate',
+    reset: 'Reset',
+    switchOn: 'On',
+    switchOff: 'Off',
+    rating: 'Rating',
+    stars: '{n} stars',
+    sortAscending: 'Sort ascending',
+    sortDescending: 'Sort descending',
+    sort: 'Sort',
+    selectAll: 'Select all',
+    partialSelected: 'Partially selected',
+    moveToTarget: 'Move to target',
+    moveToSource: 'Move to source',
+    search: 'Search',
+    empty: 'No data',
   },
 } as const;

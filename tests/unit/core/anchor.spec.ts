@@ -42,4 +42,14 @@ describe('LhAnchor core', () => {
       'lh-anchor__link--active',
     ])
   })
+
+  it('terminates on cyclic anchor items (round 2)', () => {
+    // 回归：tree/cascader/table 都有环守卫，anchor 的递归被遗漏
+    const cyclic = [{ id: 'a', title: '甲', children: [] as never[] }] as Parameters<
+      typeof flattenAnchorItems
+    >[0]
+    cyclic[0].children = cyclic
+    expect(collectAnchorIds(cyclic)).toEqual(['a'])
+    expect(flattenAnchorItems(cyclic)).toHaveLength(1)
+  })
 })

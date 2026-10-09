@@ -8,6 +8,8 @@ import de_DE from './lang/de-DE'
 import fr_FR from './lang/fr-FR'
 import type { Leaves, LhLocaleMessages, LhLocaleType } from '../types/locale'
 import { LH_LANGUAGE_DEFAULT } from '../constants'
+import { deepMerge } from '../utils'
+import { formatMessage } from '../core/shared/format'
 
 export type { Leaves, LhLocaleMessageValue, LhLocaleMessages, LhLocaleType, LocaleOptions } from '../types/locale'
 
@@ -21,13 +23,26 @@ export type LocalePath = Leaves<typeof zh_CN>
 /**
  * `t()` 的调用签名：字面量键走精确重载（自动补全），动态路径走宽松重载
  *
- * 宽松重载保留 `const t = lhlocale.t` 解构、拼路径、未知键兜底测试等场景；
- * 两个重载的返回值一致，运行时行为完全相同。
+ * 第二参数两种用法：
+ * - 传 string：等价于原 fallback（未找到翻译时的兜底值）；
+ * - 传对象：按 `{key}` 占位符插值（见 formatMessage），未找到翻译时回退 path 本身。
  */
 export type LhTranslate = {
-  (path: LocalePath, fallback?: string): string
-  (path: string, fallback?: string): string
+  (path: LocalePath, fallbackOrParams?: string | Record<string, unknown>): string
+  (path: string, fallbackOrParams?: string | Record<string, unknown>): string
 }
+
+/** `tm()` 的调用签名：取数组文案（月份名 / 星期名等），t() 只返回字符串 */
+export type LhTranslateArray = (path: string, fallback?: string[]) => string[]
+
+/**
+ * 文案模板插值：'{key}' 占位符替换为 params 中的值，未知占位符原样保留。
+ *
+ * 实现已下沉到 core/shared/format（共享内核），此处再导出保持
+ * `@lh-ui/share/locales` 的导出面不变；rate / pagination 等 core 组件
+ * 直接从 shared 引入，不再反向依赖 locales 的单例。
+ */
+export { formatMessage } from '../core/shared/format'
 
 /** 语言变更监听器：接收自增后的版本号 */
 export type LhLocaleListener = (version: number) => void
@@ -69,6 +84,8 @@ class LhLocale {
   private current: LhLocaleType = LH_LANGUAGE_DEFAULT
   private messages: LhLocaleMessages = locales[LH_LANGUAGE_DEFAULT]
   private listeners = new Set<LhLocaleListener>()
+  /** 用户注册的语言包（use/add 写入），遮蔽内置注册表；内置包永不被覆写 */
+  private userLocales = new Map<string, LhLocaleMessages>()
   private _version = 0
 
   /** 版本号：任何语言变更都会自增（UI 适配层订阅它触发重渲染） */
@@ -88,39 +105,83 @@ class LhLocale {
   private bump(): void {
     this._version += 1
     for (const listener of this.listeners) {
-      listener(this._version)
+      try {
+        listener(this._version)
+      } catch (error) {
+        // 隔离坏订阅者：一个监听器抛错不能让后续监听器收不到变更
+        if (typeof console !== 'undefined') {
+          console.error('[lhlocale] listener error:', error)
+        }
+      }
     }
   }
 
+  /** 解析语言包：用户注册优先于内置注册表 */
+  private resolve(locale: string): LhLocaleMessages | undefined {
+    return this.userLocales.get(locale) ?? locales[locale]
+  }
+
   /**
-   * 设置语言
+   * 注册并切换语言
+   *
+   * messages 只登记进用户注册表，不再覆写内置注册表
+   * （此前 `locales[locale] = messages` 会永久销毁 'zh-CN' 等内置语言包）。
    */
   use(options: { locale: LhLocaleType; messages: LhLocaleMessages }): void {
+    this.userLocales.set(options.locale, options.messages)
     this.current = options.locale
     this.messages = options.messages
-    locales[options.locale] = options.messages
     this.bump()
   }
 
   /**
    * 根据路径获取翻译文案
    * @param path 点号分隔的路径，如 'input.placeholder'（字面量键有自动补全）
-   * @param fallback 未找到翻译时的兜底值
+   * @param fallbackOrParams string 兜底值，或 `{key}` 插值参数（见 formatMessage）
    *
    * 箭头函数属性：允许 `const t = lhlocale.t` 解构使用而不丢失 this。
    * 类型由 LhTranslate 重载提供：字面量键精确匹配，动态路径走宽松重载。
    */
-  t: LhTranslate = (path: string, fallback?: string): string => {
+  t: LhTranslate = (path: string, fallbackOrParams?): string => {
     const keys = path.split('.')
     let result: unknown = this.messages
 
     for (const key of keys) {
       if (!result || typeof result !== 'object') {
-        return fallback || path
+        result = undefined
+        break
       }
       result = (result as Record<string, unknown>)[key]
     }
-    return typeof result === 'string' ? result : fallback || path
+
+    const text =
+      typeof result === 'string'
+        ? result
+        : typeof fallbackOrParams === 'string'
+          ? fallbackOrParams
+          : path
+    const params =
+      fallbackOrParams && typeof fallbackOrParams === 'object' ? fallbackOrParams : undefined
+    return params ? formatMessage(text, params) : text
+  }
+
+  /**
+   * 根据路径获取数组文案（如 `datepicker.months`、`datepicker.weeks`）
+   *
+   * t() 只返回字符串，数组叶子经此访问；未命中或非数组返回 fallback（缺省 []）。
+   */
+  tm: LhTranslateArray = (path: string, fallback?: string[]): string[] => {
+    const keys = path.split('.')
+    let result: unknown = this.messages
+
+    for (const key of keys) {
+      if (!result || typeof result !== 'object') {
+        return fallback ?? []
+      }
+      result = (result as Record<string, unknown>)[key]
+    }
+
+    return Array.isArray(result) ? result.map((item) => String(item)) : (fallback ?? [])
   }
 
   /**
@@ -132,21 +193,29 @@ class LhLocale {
 
   /**
    * 设置当前语言（仅切换，不会加载新 messages）
+   *
+   * 未注册的语言回退默认语言包内容：getLocale() 报告请求的语言，
+   * t() 不再拿旧语言的文案，二者不脱节。
    */
   setLocale(locale: LhLocaleType): void {
     this.current = locale
-    const msgs = locales[locale]
-    if (msgs) {
-      this.messages = msgs
-    }
+    this.messages = this.resolve(locale) ?? locales[LH_LANGUAGE_DEFAULT]
     this.bump()
   }
 
   /**
-   * 添加自定义语言包
+   * 添加自定义语言包：与该语言「当前生效的包」（用户注册包优先，其次内置包）
+   * 深合并——部分文案覆盖、其余键保持可用，不再像旧实现那样整包替换。
+   * 目标是当前语言时立即生效并广播版本。
    */
   add(locale: string, messages: LhLocaleMessages): void {
-    locales[locale] = messages
+    const base = this.userLocales.get(locale) ?? locales[locale] ?? {}
+    const merged = deepMerge({}, base, messages) as LhLocaleMessages
+    this.userLocales.set(locale, merged)
+    if (locale === this.current) {
+      this.messages = merged
+      this.bump()
+    }
   }
 }
 

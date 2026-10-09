@@ -37,7 +37,9 @@ export function getScrollTop(target: HTMLElement | Window): number {
  * 元素无 scrollTo（旧 jsdom 等）时直接写 scrollTop。
  */
 export function backToTop(target: HTMLElement | Window, smooth: boolean): void {
+  // SSR / 非浏览器环境守卫：无 window 时直接降级为 auto（与 shared/popper 的守卫风格一致）
   const reducedMotion =
+    typeof window !== 'undefined' &&
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const behavior: ScrollBehavior = smooth && !reducedMotion ? 'smooth' : 'auto'

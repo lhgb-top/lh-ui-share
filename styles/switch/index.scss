@@ -1,3 +1,5 @@
+@use '../theme/common/index.scss' as *;
+
 .lh-switch {
   display: inline-flex;
   align-items: center;
@@ -6,11 +8,15 @@
   -webkit-user-select: none;
   user-select: none;
 
+  // 滑块与加载指示器的白色：轨道为彩色，滑块需要纯白形成对比，
+  // 不复用 --lh-white（宣纸白 #FAF6F0 会显脏）；独立令牌便于主题覆盖
+  --lh-switch-knob-color: #fff;
+
   &__core {
     position: relative;
     width: 40px;
     height: 22px;
-    background-color: var(--lh-border-color-base);
+    background-color: var(--lh-border-color-base, #D8D3CC);
     border-radius: 11px;
     transition: background-color 0.3s;
 
@@ -21,7 +27,7 @@
       left: 1px;
       width: 20px;
       height: 20px;
-      background-color: #fff;
+      background-color: var(--lh-switch-knob-color, #fff);
       border-radius: 50%;
       transition: transform 0.3s;
     }
@@ -34,7 +40,7 @@
     transform: translate(-50%, -50%);
     width: 14px;
     height: 14px;
-    border: 2px solid #fff;
+    border: 2px solid var(--lh-switch-knob-color, #fff);
     border-top-color: transparent;
     border-radius: 50%;
     animation: lh-switch-loading-spin 0.6s linear infinite;
@@ -42,11 +48,11 @@
 
   &__label {
     font-size: 14px;
-    color: var(--lh-text-primary);
+    color: var(--lh-text-primary, #2C2C2C);
   }
 
   &--checked &__core {
-    background-color: var(--lh-primary-color, #409eff);
+    background-color: var(--lh-primary-color, #2B4C7C);
 
     &::after {
       transform: translateX(18px);
@@ -94,5 +100,19 @@
 @keyframes lh-switch-loading-spin {
   to {
     transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-switch');
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-switch,
+  .lh-switch * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

@@ -6,7 +6,7 @@
    18% 是静态占位在纸白背景上仍清晰可辨的下限（10% 时接近隐形）。 */
 .lh-skeleton,
 .lh-skeleton-item {
-  --lh-skeleton-bg: color-mix(in srgb, var(--lh-text-regular) 18%, transparent);
+  --lh-skeleton-bg: color-mix(in srgb, var(--lh-text-regular, #5A5A5A) 18%, transparent);
   --lh-skeleton-highlight: color-mix(in srgb, white 55%, var(--lh-skeleton-bg));
   --lh-skeleton-radius: var(--lh-border-radius-small, 2px);
 }

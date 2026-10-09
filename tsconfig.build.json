@@ -1,6 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    // 发布的声明文件不得继承 vite/client 的环境类型（vite 不在 dependencies 里）：
+    // src/ 目前零处使用 import.meta.env，显式清空 types 防止日后泄漏进 .d.ts
+    "types": [],
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,

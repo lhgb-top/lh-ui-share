@@ -12,45 +12,45 @@
   overflow: hidden;
 
   &--info {
-    background-color: color-mix(in srgb, var(--lh-info-color, #909399) 12%, transparent);
-    color: var(--lh-info-color, #909399);
+    background-color: color-mix(in srgb, var(--lh-info-color, #7A7A7A) 12%, transparent);
+    color: var(--lh-info-color, #7A7A7A);
   }
 
   &--success {
-    background-color: color-mix(in srgb, var(--lh-success-color, #67c23a) 12%, transparent);
-    color: var(--lh-success-color, #67c23a);
+    background-color: color-mix(in srgb, var(--lh-success-color, #5B8C5A) 12%, transparent);
+    color: var(--lh-success-color, #5B8C5A);
   }
 
   &--warning {
-    background-color: color-mix(in srgb, var(--lh-warning-color, #e6a23c) 14%, transparent);
-    color: var(--lh-warning-color, #e6a23c);
+    background-color: color-mix(in srgb, var(--lh-warning-color, #C4A35A) 14%, transparent);
+    color: var(--lh-warning-color, #C4A35A);
   }
 
   &--danger {
-    background-color: color-mix(in srgb, var(--lh-danger-color, #f56c6c) 12%, transparent);
-    color: var(--lh-danger-color, #f56c6c);
+    background-color: color-mix(in srgb, var(--lh-danger-color, #B23A3A) 12%, transparent);
+    color: var(--lh-danger-color, #B23A3A);
   }
 
   /* 朴素样式：白底 + 语义色描边 */
   &--plain {
     &.lh-alert--info {
       background-color: transparent;
-      border: 1px solid color-mix(in srgb, var(--lh-info-color, #909399) 40%, transparent);
+      border: 1px solid color-mix(in srgb, var(--lh-info-color, #7A7A7A) 40%, transparent);
     }
 
     &.lh-alert--success {
       background-color: transparent;
-      border: 1px solid color-mix(in srgb, var(--lh-success-color, #67c23a) 40%, transparent);
+      border: 1px solid color-mix(in srgb, var(--lh-success-color, #5B8C5A) 40%, transparent);
     }
 
     &.lh-alert--warning {
       background-color: transparent;
-      border: 1px solid color-mix(in srgb, var(--lh-warning-color, #e6a23c) 40%, transparent);
+      border: 1px solid color-mix(in srgb, var(--lh-warning-color, #C4A35A) 40%, transparent);
     }
 
     &.lh-alert--danger {
       background-color: transparent;
-      border: 1px solid color-mix(in srgb, var(--lh-danger-color, #f56c6c) 40%, transparent);
+      border: 1px solid color-mix(in srgb, var(--lh-danger-color, #B23A3A) 40%, transparent);
     }
   }
 
@@ -72,7 +72,7 @@
 
   &__description {
     margin: 0;
-    color: var(--lh-text-regular);
+    color: var(--lh-text-regular, #5A5A5A);
   }
 
   &__close {
@@ -99,5 +99,16 @@
       outline: 2px solid currentColor;
       outline-offset: 1px;
     }
+  }
+}
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-alert,
+  .lh-alert * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

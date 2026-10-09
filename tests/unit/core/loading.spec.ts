@@ -4,6 +4,7 @@ import {
   getLoadingClassNames,
   isLoadingFullscreen,
   resolveLoadingTarget,
+  getLoadingAria,
 } from '../../../src/core/loading'
 
 describe('LhLoading core', () => {
@@ -45,5 +46,12 @@ describe('LhLoading core', () => {
     expect(positioned.style.position).toBe('absolute')
     untouched.restore()
     expect(positioned.style.position).toBe('absolute')
+  })
+})
+
+describe('LhLoading accessibility', () => {
+  it('marks the covered region as busy and hides the spinner', () => {
+    expect(getLoadingAria(true)).toEqual({ 'aria-hidden': true, 'aria-busy': true })
+    expect(getLoadingAria(false)).toEqual({})
   })
 })

@@ -2,6 +2,8 @@
  * Breadcrumb 组件纯函数逻辑（无框架依赖、无用户文案）
  */
 
+import type { LhAriaAttrs } from '../shared/a11y'
+
 import type { LhBreadcrumbCollapseState, LhBreadcrumbItemState } from './types'
 
 /**
@@ -34,4 +36,14 @@ export function getCollapsedHiddenIndexes(state: LhBreadcrumbCollapseState): num
   const hidden: number[] = []
   for (let i = 1; i < ellipsisIndex; i++) hidden.push(i)
   return hidden
+}
+
+/**
+ * 面包屑项的无障碍属性包：最后一项标记为当前位置（aria-current="page"）
+ *
+ * @param isLast 是否末项
+ * @param href 有链接时输出 role="link" 语义由 UI 层用原生 a 承载，无需此处输出
+ */
+export function getBreadcrumbItemAria(isLast: boolean): LhAriaAttrs {
+  return isLast ? { 'aria-current': 'page' } : {}
 }

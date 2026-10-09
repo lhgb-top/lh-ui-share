@@ -26,3 +26,4 @@ jobs:
       - run: pnpm build:styles
       - run: pnpm build:dts
       - run: node scripts/verify-dts.mjs
+      - run: node scripts/verify-styles.mjs

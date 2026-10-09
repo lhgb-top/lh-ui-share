@@ -3,6 +3,7 @@ import {
   getBreadcrumbItemClassNames,
   getCollapsedHiddenIndexes,
   getEllipsisBeforeIndex,
+  getBreadcrumbItemAria,
 } from '../../../src/core/breadcrumb'
 
 describe('core/breadcrumb', () => {
@@ -34,5 +35,12 @@ describe('core/breadcrumb', () => {
     expect(getEllipsisBeforeIndex({ total: 6, maxItems: 4 })).toBe(3)
     expect(getCollapsedHiddenIndexes({ total: 6, maxItems: 4 })).toEqual([1, 2])
     expect(getEllipsisBeforeIndex({ total: 2, maxItems: 2 })).toBe(-1)
+  })
+})
+
+describe('LhBreadcrumb accessibility', () => {
+  it('marks the last item as the current page', () => {
+    expect(getBreadcrumbItemAria(true)).toEqual({ 'aria-current': 'page' })
+    expect(getBreadcrumbItemAria(false)).toEqual({})
   })
 })

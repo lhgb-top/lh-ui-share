@@ -1,5 +1,6 @@
 import { LhIconName } from '../icon'
 import type { LhNotificationPosition, LhNotificationType } from './types'
+import type { LhAriaAttrs } from '../shared/a11y'
 
 /** 默认自动关闭时长（通知比消息停留更久） */
 export const LH_NOTIFICATION_DURATION_DEFAULT = 4500
@@ -53,7 +54,11 @@ export function groupNotificationsByPosition<T extends { position: LhNotificatio
     'bottom-right': [],
     'bottom-left': [],
   }
-  for (const item of items) groups[item.position].push(item)
+  for (const item of items) {
+    // 未知 position（JS 侧脏数据）兜底进默认的 top-right，不因单条脏数据崩掉整队分组
+    const position = groups[item.position] ? item.position : 'top-right'
+    groups[position].push(item)
+  }
   return groups
 }
 
@@ -72,4 +77,20 @@ export function computeStackOffsets(
     acc += height + gap
   }
   return offsets
+}
+
+/**
+ * 语义 → live region 角色映射（APG，与 message / alert 同范式）：
+ * - error/warning 性质立即播报 → role="alert"
+ * - 温和通知排队播报 → role="status"
+ */
+export function getNotificationRole(type: LhNotificationType): 'alert' | 'status' {
+  return type === 'warning' || type === 'danger' || type === 'error' ? 'alert' : 'status'
+}
+
+/**
+ * 通知项的无障碍属性包：role 来自 getNotificationRole
+ */
+export function getNotificationAria(type: LhNotificationType): LhAriaAttrs {
+  return { role: getNotificationRole(type) }
 }

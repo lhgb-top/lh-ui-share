@@ -2,6 +2,9 @@
 export {
   getThemePreset,
   getThemeVars,
+  registerTheme,
+  buildPresetStyleText,
+  PRESET_THEME_STYLE_ID,
   THEME_PRESETS,
   cerblue,
   songhua,

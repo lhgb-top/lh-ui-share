@@ -31,18 +31,45 @@
     display: none;
   }
 
-  /* alternate 交替侧 */
+  /* 交替侧修饰：alternate 布局在容器级统一编排（见 .lh-timeline--alternate） */
   &--right {
     flex-direction: row-reverse;
     text-align: end;
   }
+}
 
-  .lh-timeline--alternate & {
-    width: 50%;
+/* alternate 模式：dot 固定在容器中央轴，内容左右交替；轴线为容器级一条 */
+.lh-timeline--alternate {
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: var(--lh-spacing-sm, 8px);
+    bottom: var(--lh-spacing-sm, 8px);
+    left: 50%;
+    width: 2px;
+    transform: translateX(-50%);
+    background-color: var(--lh-timeline-line, var(--lh-border-color-light, #e4e7ed));
   }
 
-  .lh-timeline--alternate &--right {
-    margin-inline-start: 50%;
+  .lh-timeline__item {
+    width: 50%;
+
+    /* 每项自带的连接线关闭（中央一条已贯穿） */
+    &::before {
+      display: none;
+    }
+
+    /* 左侧项：内容贴轴右对齐，dot 落在盒右端（= 容器中央） */
+    flex-direction: row-reverse;
+
+    /* 右侧项：盒子推到右半，dot 落在盒左端（= 容器中央），内容恢复左对齐 */
+    &--right {
+      flex-direction: row;
+      text-align: start;
+      margin-inline-start: 50%;
+    }
   }
 }
 
@@ -60,23 +87,23 @@
   height: 12px;
   border-radius: 50%;
   background-color: var(--lh-timeline-dot-bg, var(--lh-bg-color, #fff));
-  border: 2px solid var(--lh-timeline-dot, var(--lh-info-color, #909399));
+  border: 2px solid var(--lh-timeline-dot, var(--lh-info-color, #7A7A7A));
 
   /* 语义着色 */
   .lh-timeline__item--primary & {
-    border-color: var(--lh-primary-color, #409eff);
+    border-color: var(--lh-primary-color, #2B4C7C);
   }
 
   .lh-timeline__item--success & {
-    border-color: var(--lh-success-color, #67c23a);
+    border-color: var(--lh-success-color, #5B8C5A);
   }
 
   .lh-timeline__item--warning & {
-    border-color: var(--lh-warning-color, #e6a23c);
+    border-color: var(--lh-warning-color, #C4A35A);
   }
 
   .lh-timeline__item--danger & {
-    border-color: var(--lh-danger-color, #f56c6c);
+    border-color: var(--lh-danger-color, #B23A3A);
   }
 
   /* 空心节点 */
@@ -94,10 +121,10 @@
   display: block;
   margin-bottom: 4px;
   font-size: var(--lh-font-size-small, 13px);
-  color: var(--lh-timeline-timestamp, var(--lh-text-secondary, #909399));
+  color: var(--lh-timeline-timestamp, var(--lh-text-secondary, #7A7A7A));
 }
 
 .lh-timeline__content {
-  color: var(--lh-timeline-content, var(--lh-text-regular, #606266));
+  color: var(--lh-timeline-content, var(--lh-text-regular, #5A5A5A));
   line-height: 1.6;
 }

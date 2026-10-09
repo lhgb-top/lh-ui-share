@@ -19,6 +19,6 @@
   &--medium,
   &--large {
     // gap 由内联样式写入 spacing token，这里仅作缺省兜底
-    gap: var(--lh-spacing-medium, 16px);
+    gap: var(--lh-spacing-base, 16px);
   }
 }

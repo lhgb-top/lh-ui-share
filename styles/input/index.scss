@@ -213,3 +213,17 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
     line-height: 1.2;
   }
 }
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-input');
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-input,
+  .lh-input * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+  }
+}

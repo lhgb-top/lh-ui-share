@@ -1,13 +1,14 @@
 /**
  * Deutsch (German)
  * 当前为骨架文件，默认使用英文作为兜底翻译。
- * 启用步骤：取消 packages/constants/index.ts 中 deDE 的注释
+ * 已在 src/locales/locale.ts 注册、src/constants/index.ts 登记，
+ * 可直接 `lhlocale.setLocale('de-DE')` 切换（当前返回英文兜底文案，翻译补全后生效）。
  */
 export default {
   common: { loading: 'Loading' },
   input: { placeholder: 'Please input', password: 'Password' },
-  datepicker: { now: 'Now', today: 'Today', cancel: 'Cancel', clear: 'Clear', confirm: 'OK', dateTableConfirm: 'Confirm', dateTableDeConfirm: 'Temporarily', year: 'Y', month: 'M', month1: 'Jan', month2: 'Feb', month3: 'Mar', month4: 'Apr', month5: 'May', month6: 'Jun', month7: 'Jul', month8: 'Aug', month9: 'Sep', month10: 'Oct', month11: 'Nov', month12: 'Dec', weeks: { sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' }, months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] },
-  timepicker: { now: 'Now', confirm: 'OK', cancel: 'Cancel', hour: 'H', minute: 'M', second: 'S' },
+  datepicker: { now: 'Now', today: 'Today', prevMonth: 'Previous month', nextMonth: 'Next month', placeholder: 'Select date', cancel: 'Cancel', clear: 'Clear', confirm: 'OK', dateTableConfirm: 'Confirm', dateTableDeConfirm: 'Temporarily', year: 'Y', month: 'M', month1: 'Jan', month2: 'Feb', month3: 'Mar', month4: 'Apr', month5: 'May', month6: 'Jun', month7: 'Jul', month8: 'Aug', month9: 'Sep', month10: 'Oct', month11: 'Nov', month12: 'Dec', weeks: { sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' }, months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] },
+  timepicker: { now: 'Now', placeholder: 'Select time', confirm: 'OK', cancel: 'Cancel', hour: 'H', minute: 'M', second: 'S' },
   cascader: { noMatch: 'No matching data', placeholder: 'Please select' },
   tag: { close: 'Close' },
   badge: { other: 'Others' },
@@ -59,6 +60,7 @@ export default {
     rotate: 'Rotate',
     prev: 'Previous',
     next: 'Next',
+    close: 'Close image preview',
   },
 
   // Menu
@@ -105,5 +107,65 @@ export default {
   // Anchor
   anchor: {
     label: 'Anchor navigation',
+  },
+
+  // Accessibility labels (aria-label / screen reader announcements)
+  // 骨架文件：默认使用英文兜底，翻译补全后生效
+  ariaLabels: {
+    close: 'Close',
+    expand: 'Expand',
+    collapse: 'Collapse',
+    clear: 'Clear',
+    confirm: 'Confirm',
+    cancel: 'Cancel',
+    openDropdown: 'Open dropdown',
+    closeDropdown: 'Close dropdown',
+    openDialog: 'Open dialog',
+    closeDialog: 'Close dialog',
+    openMenu: 'Open menu',
+    closeMenu: 'Close menu',
+    previous: 'Previous',
+    next: 'Next',
+    previousMonth: 'Previous month',
+    nextMonth: 'Next month',
+    previousYear: 'Previous year',
+    nextYear: 'Next year',
+    selectDate: 'Select date',
+    selectTime: 'Select time',
+    hour: 'Hour',
+    minute: 'Minute',
+    second: 'Second',
+    page: 'Page {page}',
+    currentPage: 'Current page, page {page}',
+    previousPage: 'Previous page',
+    nextPage: 'Next page',
+    currentStep: 'Current step, step {step}: {title}',
+    step: 'Step {step}',
+    loading: 'Loading',
+    upload: 'Upload',
+    uploading: 'Uploading',
+    uploadSuccess: 'Upload succeeded',
+    uploadFailed: 'Upload failed',
+    removeFile: 'Remove file',
+    previewImage: 'Preview image',
+    previousImage: 'Previous image',
+    nextImage: 'Next image',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    rotate: 'Rotate',
+    reset: 'Reset',
+    switchOn: 'On',
+    switchOff: 'Off',
+    rating: 'Rating',
+    stars: '{n} stars',
+    sortAscending: 'Sort ascending',
+    sortDescending: 'Sort descending',
+    sort: 'Sort',
+    selectAll: 'Select all',
+    partialSelected: 'Partially selected',
+    moveToTarget: 'Move to target',
+    moveToSource: 'Move to source',
+    search: 'Search',
+    empty: 'No data',
   },
 } as const;

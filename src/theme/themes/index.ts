@@ -1,4 +1,4 @@
-import type { ThemePreset, ThemePresetName } from '../types'
+import type { ThemePreset, ThemePresetName, ThemeVars } from '../types'
 
 /** 青花瓷主题配置 */
 const cerblue: ThemePreset = {
@@ -78,14 +78,58 @@ const golden: ThemePreset = {
 /** 所有预设主题列表 */
 export const THEME_PRESETS: ThemePreset[] = [cerblue, songhua, zhusha, shuimo, golden]
 
-/** 根据名称获取主题配置 */
+/**
+ * 注册（或覆盖）一个主题预设，供 getThemePreset / getThemeVars 按名取用。
+ *
+ * 同名覆盖：传入已有 name 时替换该预设（内置预设也可被覆盖）。
+ * 注意：vars 里的 CSS 变量只服务 JS 运行时消费（如 ConfigProvider 注入 style）；
+ * 组件 SCSS 用到的令牌仍在 styles/theme/common/variables.scss——
+ * 覆盖内置主题的 primary 色值时两边需同步修改（theme.spec 有一致性回归）。
+ */
+export function registerTheme(preset: ThemePreset): void {
+  const index = THEME_PRESETS.findIndex((t) => t.name === preset.name)
+  if (index >= 0) THEME_PRESETS[index] = preset
+  else THEME_PRESETS.push(preset)
+}
+
+/** 根据名称获取主题配置（未注册名称返回 undefined） */
 export function getThemePreset(name: ThemePresetName): ThemePreset | undefined {
   return THEME_PRESETS.find((t) => t.name === name)
 }
 
-/** 根据名称获取主题 CSS 变量 */
-export function getThemeVars(name: ThemePresetName): Record<string, string> | undefined {
+/** 根据名称获取主题 CSS 变量（未注册名称返回 undefined） */
+export function getThemeVars(name: ThemePresetName): ThemeVars | undefined {
   return getThemePreset(name)?.vars
 }
 
 export { cerblue, songhua, zhusha, shuimo, golden }
+
+/** 预设主题样式的注入元素 id（供 UI 层按 id 查找并替换 <style>） */
+export const PRESET_THEME_STYLE_ID = 'lh-preset-theme'
+
+/**
+ * 把预设 vars 拼成一段可注入的样式文本：
+ * - `:root` 块放预设的 `--lh-primary-*` 五个变量；
+ * - 暗色块重定义 `--lh-primary-color-bg` / `--lh-selected-color`，
+ *   让预设主色在暗色模式下依然有足够的底色透明度与文字对比度
+ *   （`var()` 引用会在应用元素上求值，天然跟随当前预设主色）。
+ *   selected 改为主色 40% 掺白：60% 在暗色面板上仅 3.86:1，50% 在悬停底上也只有 4.03:1，40% 达 5.2:1。
+ *
+ * 只能写 `<style>` 元素（特异性 0,1,0），**不能**写 `documentElement` 的内联
+ * style（特异性 1,0,0,0）——内联优先级高于一切样式表，会压过
+ * `var-dark.scss` 的整段暗色变量，导致暗色模式下配色失真。
+ */
+export function buildPresetStyleText(vars: Record<string, string>): string {
+  const rootLines = Object.entries(vars)
+    .map(([key, value]) => `  ${key}: ${value};`)
+    .join('\n')
+  return `:root {
+${rootLines}
+}
+
+[data-theme='dark'],
+.dark {
+  --lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent);
+  --lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff);
+}`
+}

@@ -12,16 +12,16 @@
   display: flex;
   align-items: center;
   padding: 8px 12px;
-  border: 1px solid var(--lh-border-color-base);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
   border-radius: 4px;
-  background: var(--lh-bg-color);
+  background: var(--lh-bg-color, #FAF6F0);
   cursor: pointer;
   min-width: 180px;
   transition: border-color 0.2s;
 }
 
 .lh-time-picker__input:hover {
-  border-color: var(--lh-primary-color-hover);
+  border-color: var(--lh-primary-color-hover, #3D649E);
 }
 
 .lh-time-picker__input--disabled {
@@ -35,33 +35,33 @@
   background: none;
   width: 100%;
   font-size: 14px;
-  color: var(--lh-text-primary);
+  color: var(--lh-text-primary, #2C2C2C);
 }
 
 .lh-time-picker__value {
   flex: 1;
   font-size: 14px;
-  color: var(--lh-text-primary);
+  color: var(--lh-text-primary, #2C2C2C);
 }
 
 .lh-time-picker__clear {
   margin-right: 4px;
   cursor: pointer;
-  color: var(--lh-text-secondary);
+  color: var(--lh-text-secondary, #8A8A8A);
 }
 
 .lh-time-picker__clear:hover {
-  color: var(--lh-primary-color);
+  color: var(--lh-primary-color, #2B4C7C);
 }
 
 .lh-time-picker__icon {
-  color: var(--lh-text-secondary);
+  color: var(--lh-text-secondary, #8A8A8A);
 }
 
 /* 面板 */
 .lh-time-picker__panel {
-  background: var(--lh-bg-color);
-  border: 1px solid var(--lh-border-color-base);
+  background: var(--lh-bg-color, #FAF6F0);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
   border-radius: 4px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
 }
@@ -79,14 +79,14 @@
 
 .lh-time-picker-panel__column {
   flex: 1;
-  border: 1px solid var(--lh-border-color-light);
+  border: 1px solid var(--lh-border-color-light, #E5E0D8);
   border-radius: 4px;
   overflow: hidden;
   cursor: pointer;
 }
 
 .lh-time-picker-panel__column--selecting {
-  border-color: var(--lh-primary-color);
+  border-color: var(--lh-primary-color, #2B4C7C);
 }
 
 .lh-time-picker-panel__column-header {
@@ -94,13 +94,13 @@
   align-items: center;
   justify-content: space-between;
   padding: 4px 8px;
-  background: var(--lh-bg-color-page);
-  border-bottom: 1px solid var(--lh-border-color-light);
+  background: var(--lh-bg-color-page, #F5F0EB);
+  border-bottom: 1px solid var(--lh-border-color-light, #E5E0D8);
 }
 
 .lh-time-picker-panel__column-title {
   font-size: 12px;
-  color: var(--lh-text-secondary);
+  color: var(--lh-text-secondary, #8A8A8A);
 }
 
 .lh-time-picker-panel__arrow {
@@ -113,11 +113,11 @@
   border: none;
   background: none;
   cursor: pointer;
-  color: var(--lh-text-secondary);
+  color: var(--lh-text-secondary, #8A8A8A);
 }
 
 .lh-time-picker-panel__arrow:hover {
-  color: var(--lh-primary-color);
+  color: var(--lh-primary-color, #2B4C7C);
 }
 
 .lh-time-picker-panel__column-body {
@@ -131,22 +131,22 @@
   line-height: 32px;
   text-align: center;
   font-size: 14px;
-  color: var(--lh-text-primary);
+  color: var(--lh-text-primary, #2C2C2C);
   transition: background 0.2s;
 }
 
 .lh-time-picker-panel__column-item:hover {
-  background: var(--lh-primary-color-bg);
+  background: var(--lh-primary-color-bg, #E8EDF3);
 }
 
 .lh-time-picker-panel__column-item--active {
-  background: var(--lh-primary-color-bg);
-  color: var(--lh-primary-color);
+  background: var(--lh-primary-color-bg, #E8EDF3);
+  color: var(--lh-primary-color, #2B4C7C);
   font-weight: 500;
 }
 
 .lh-time-picker-panel__column-item--disabled {
-  color: var(--lh-text-disabled);
+  color: var(--lh-text-disabled, #C8C8C8);
   cursor: not-allowed;
 }
 
@@ -155,7 +155,7 @@
   justify-content: space-between;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid var(--lh-border-color-light);
+  border-top: 1px solid var(--lh-border-color-light, #E5E0D8);
 }
 
 .lh-fade-in-enter-active,
@@ -167,4 +167,19 @@
 .lh-fade-in-enter-from,
 .lh-fade-in-leave-to {
   opacity: 0;
+}
+
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-time-picker');
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-time-picker,
+  .lh-time-picker * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+  }
 }

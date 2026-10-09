@@ -242,4 +242,10 @@
 
   // ——— Wave F：Anchor 锚点 ———
   --lh-anchor-color: #{$lh-anchor-color};
+
+  // ——— 无障碍：键盘焦点环（组件 scss 经 @include focus-ring 消费）———
+  // 焦点环色默认跟随主色；深色主题可在 var-dark 中单独覆盖
+  --lh-focus-color: #{$lh-primary};
+  --lh-focus-ring-width: 2px;
+  --lh-focus-ring-offset: 2px;
 }

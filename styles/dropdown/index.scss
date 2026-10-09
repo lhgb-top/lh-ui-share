@@ -18,8 +18,8 @@
   margin: 0;
   padding: var(--lh-dropdown-padding, 4px 0);
   list-style: none;
-  font-family: var(--lh-font-family);
-  font-size: var(--lh-font-size-base);
+  font-family: var(--lh-font-family, 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif);
+  font-size: var(--lh-font-size-base, 14px);
   color: var(--lh-dropdown-item-color, #5A5A5A);
   background-color: var(--lh-dropdown-bg-color, #FAF6F0);
   border: 1px solid var(--lh-dropdown-border-color, #E5E0D8);
@@ -67,8 +67,8 @@
 .lh-dropdown-fade-enter-active,
 .lh-dropdown-fade-leave-active {
   transition:
-    opacity var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out),
-    transform var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out);
+    opacity var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1)),
+    transform var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
 }
 
 .lh-dropdown-fade-enter,

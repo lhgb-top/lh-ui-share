@@ -23,8 +23,8 @@ ol[role='list'].lh-steps {
   display: flex;
   margin: 0;
   padding: 0;
-  font-family: var(--lh-font-family);
-  font-size: var(--lh-font-size-base);
+  font-family: var(--lh-font-family, 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif);
+  font-size: var(--lh-font-size-base, 14px);
   list-style: none;
 
   // —— 水平方向 ——
@@ -100,8 +100,8 @@ ol[role='list'].lh-steps {
     width: 28px;
     height: 28px;
     border: 1px solid var(--lh-border-color-base, #D8D3CC);
-    border-radius: var(--lh-border-radius-circle);
-    font-size: var(--lh-font-size-small);
+    border-radius: var(--lh-border-radius-circle, 50%);
+    font-size: var(--lh-font-size-small, 13px);
     color: var(--lh-text-secondary, #8A8A8A);
     background-color: var(--lh-bg-color, #FAF6F0);
     transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
@@ -129,7 +129,7 @@ ol[role='list'].lh-steps {
     &:focus-visible {
       outline: 2px solid var(--lh-primary-color, #2B4C7C);
       outline-offset: 2px;
-      border-radius: var(--lh-border-radius-circle);
+      border-radius: var(--lh-border-radius-circle, 50%);
     }
 
     &:hover .lh-steps__icon {
@@ -149,7 +149,7 @@ ol[role='list'].lh-steps {
   }
 
   &__title {
-    font-weight: var(--lh-font-weight-primary);
+    font-weight: var(--lh-font-weight-primary, 400);
     color: var(--lh-text-primary, #3A3A3A);
     line-height: var(--lh-font-line-height-primary, 1.5);
   }
@@ -169,7 +169,18 @@ ol[role='list'].lh-steps {
 
   &__description {
     margin-top: var(--lh-spacing-xs, 4px);
-    font-size: var(--lh-font-size-small);
+    font-size: var(--lh-font-size-small, 13px);
     color: var(--lh-text-secondary, #8A8A8A);
+  }
+}
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-steps,
+  .lh-steps * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

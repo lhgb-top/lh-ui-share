@@ -15,7 +15,7 @@
   flex-direction: column;
   width: var(--lh-transfer-panel-width, 220px);
   height: var(--lh-transfer-panel-height, 280px);
-  border: 1px solid var(--lh-transfer-border, var(--lh-border-color-lighter, #ebeef5));
+  border: 1px solid var(--lh-transfer-border, var(--lh-border-color-lighter, #EEE9E2));
   border-radius: var(--lh-border-radius-base, 8px);
   background-color: var(--lh-transfer-bg, var(--lh-bg-color, #fff));
   overflow: hidden;
@@ -27,7 +27,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 8px 12px;
-  border-block-end: 1px solid var(--lh-transfer-border, var(--lh-border-color-lighter, #ebeef5));
+  border-block-end: 1px solid var(--lh-transfer-border, var(--lh-border-color-lighter, #EEE9E2));
   font-size: var(--lh-font-size-small, 13px);
 }
 
@@ -39,7 +39,7 @@
 }
 
 .lh-transfer-panel__count {
-  color: var(--lh-text-secondary, #8a8a8a);
+  color: var(--lh-text-secondary, #8A8A8A);
 }
 
 .lh-transfer-panel__body {
@@ -54,13 +54,13 @@
 .lh-transfer-panel__search {
   width: 100%;
   padding: 4px 8px;
-  border: 1px solid var(--lh-border-color-base, #d8d3cc);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
   border-radius: var(--lh-border-radius-small, 6px);
   font: inherit;
   font-size: var(--lh-font-size-small, 13px);
 
   &:focus-visible {
-    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
     outline-offset: -1px;
   }
 }
@@ -84,11 +84,11 @@
   cursor: pointer;
 
   &:hover:not(.lh-transfer-panel__item--disabled) {
-    background-color: var(--lh-bg-color-page, #f5f0eb);
+    background-color: var(--lh-bg-color-page, #F5F0EB);
   }
 
   &--disabled {
-    color: var(--lh-disabled-text-color, #c8c8c8);
+    color: var(--lh-disabled-text-color, #C8C8C8);
     cursor: not-allowed;
   }
 }
@@ -96,7 +96,7 @@
 .lh-transfer-panel__empty {
   padding: 16px;
   text-align: center;
-  color: var(--lh-text-secondary, #8a8a8a);
+  color: var(--lh-text-secondary, #8A8A8A);
   font-size: var(--lh-font-size-small, 13px);
 }
 
@@ -109,20 +109,31 @@
 .lh-transfer__button {
   width: 32px;
   height: 32px;
-  border: 1px solid var(--lh-border-color-base, #d8d3cc);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
   border-radius: var(--lh-border-radius-small, 6px);
   background-color: var(--lh-bg-color, #fff);
-  color: var(--lh-text-regular, #5a5a5a);
+  color: var(--lh-text-regular, #5A5A5A);
   font-size: 16px;
   cursor: pointer;
 
   &:hover:not(:disabled) {
-    border-color: var(--lh-primary-color, #409eff);
-    color: var(--lh-primary-color, #409eff);
+    border-color: var(--lh-primary-color, #2B4C7C);
+    color: var(--lh-primary-color, #2B4C7C);
   }
 
   &:disabled {
     cursor: not-allowed;
-    color: var(--lh-disabled-text-color, #c8c8c8);
+    color: var(--lh-disabled-text-color, #C8C8C8);
+  }
+}
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-transfer,
+  .lh-transfer * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

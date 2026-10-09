@@ -14,26 +14,26 @@
   width: 100%;
   min-height: 32px;
   padding: 5px 12px;
-  border: 1px solid var(--lh-border-color-base, #d8d3cc);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
   border-radius: var(--lh-border-radius-base, 8px);
   background-color: var(--lh-bg-color, #fff);
   font: inherit;
   font-size: var(--lh-font-size-base, 14px);
-  color: var(--lh-text-primary, #303133);
+  color: var(--lh-text-primary, #2C2C2C);
   cursor: pointer;
 
   &:hover:not(:disabled) {
-    border-color: var(--lh-primary-color, #409eff);
+    border-color: var(--lh-primary-color, #2B4C7C);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
     outline-offset: -1px;
   }
 
   &:disabled {
     cursor: not-allowed;
-    color: var(--lh-disabled-text-color, #c8c8c8);
+    color: var(--lh-disabled-text-color, #C8C8C8);
   }
 }
 
@@ -45,12 +45,12 @@
 }
 
 .lh-tree-select__placeholder {
-  color: var(--lh-text-placeholder, #b0b0b0);
+  color: var(--lh-text-placeholder, #B0B0B0);
 }
 
 .lh-tree-select__arrow {
   flex-shrink: 0;
-  color: var(--lh-text-secondary, #8a8a8a);
+  color: var(--lh-text-secondary, #8A8A8A);
   transition: transform var(--lh-transition-duration-fast, 0.25s) ease;
 
   &--open {
@@ -65,7 +65,7 @@
   overflow: auto;
   padding: 4px 0;
   background-color: var(--lh-bg-color, #fff);
-  border: 1px solid var(--lh-border-color-lighter, #ebeef5);
+  border: 1px solid var(--lh-border-color-lighter, #EEE9E2);
   border-radius: var(--lh-border-radius-base, 8px);
   box-shadow: var(--lh-box-shadow-light, 0 2px 4px rgba(0, 0, 0, 0.12));
 }
@@ -74,4 +74,16 @@
   .lh-tree-select__arrow {
     transition: none;
   }
+}
+
+/* 面板淡入淡出：Vue3 用 -enter-from，Vue2 用 -enter（无 -from 后缀），此处双写兼容 */
+.lh-fade-in-enter-active,
+.lh-fade-in-leave-active {
+  transition: opacity 0.2s;
+}
+
+.lh-fade-in-enter,
+.lh-fade-in-enter-from,
+.lh-fade-in-leave-to {
+  opacity: 0;
 }

@@ -5,7 +5,7 @@
   padding: var(--lh-menu-padding, 8px) 0;
   list-style: none;
   background-color: var(--lh-menu-bg, var(--lh-bg-color, #fff));
-  border-inline-end: 1px solid var(--lh-menu-border, var(--lh-border-color-lighter, #ebeef5));
+  border-inline-end: 1px solid var(--lh-menu-border, var(--lh-border-color-lighter, #EEE9E2));
 
   &--horizontal {
     display: flex;
@@ -13,7 +13,7 @@
     height: var(--lh-menu-height, 56px);
     padding: 0;
     border-inline-end: none;
-    border-block-end: 1px solid var(--lh-menu-border, var(--lh-border-color-lighter, #ebeef5));
+    border-block-end: 1px solid var(--lh-menu-border, var(--lh-border-color-lighter, #EEE9E2));
   }
 
   &--collapse {
@@ -30,7 +30,7 @@
   height: var(--lh-menu-item-height, 40px);
   padding-inline: var(--lh-menu-item-padding, 20px);
   font-size: var(--lh-font-size-base, 14px);
-  color: var(--lh-menu-item-color, var(--lh-text-primary, #303133));
+  color: var(--lh-menu-item-color, var(--lh-text-primary, #2C2C2C));
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
@@ -40,17 +40,17 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
     outline-offset: -2px;
   }
 
   &--active {
-    color: var(--lh-menu-item-active-color, var(--lh-primary-color, #409eff));
-    background-color: var(--lh-menu-item-active-bg, color-mix(in srgb, var(--lh-primary-color, #409eff) 10%, transparent));
+    color: var(--lh-menu-item-active-color, var(--lh-primary-color, #2B4C7C));
+    background-color: var(--lh-menu-item-active-bg, color-mix(in srgb, var(--lh-primary-color, #2B4C7C) 10%, transparent));
   }
 
   &--disabled {
-    color: var(--lh-disabled-text-color, #c0c4cc);
+    color: var(--lh-disabled-text-color, #BFB8AF);
     cursor: not-allowed;
   }
 
@@ -74,7 +74,7 @@
   height: var(--lh-menu-item-height, 40px);
   padding-inline: var(--lh-menu-item-padding, 20px);
   font-size: var(--lh-font-size-base, 14px);
-  color: var(--lh-menu-item-color, var(--lh-text-primary, #303133));
+  color: var(--lh-menu-item-color, var(--lh-text-primary, #2C2C2C));
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
@@ -84,12 +84,12 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
     outline-offset: -2px;
   }
 
   .lh-sub-menu--disabled & {
-    color: var(--lh-disabled-text-color, #c0c4cc);
+    color: var(--lh-disabled-text-color, #BFB8AF);
     cursor: not-allowed;
   }
 
@@ -101,7 +101,7 @@
 
 .lh-sub-menu__arrow {
   flex-shrink: 0;
-  color: var(--lh-menu-arrow-color, var(--lh-text-secondary, #909399));
+  color: var(--lh-menu-arrow-color, var(--lh-text-secondary, #7A7A7A));
   transition: transform var(--lh-transition-duration-fast, 0.25s) ease;
 
   .lh-sub-menu--opened & {
@@ -146,7 +146,7 @@
   padding: var(--lh-spacing-xs, 4px) 0;
   list-style: none;
   background-color: var(--lh-menu-bg, var(--lh-bg-color, #fff));
-  border: 1px solid var(--lh-menu-border, var(--lh-border-color-lighter, #ebeef5));
+  border: 1px solid var(--lh-menu-border, var(--lh-border-color-lighter, #EEE9E2));
   border-radius: var(--lh-border-radius-base, 8px);
   box-shadow: var(--lh-box-shadow-light, 0 2px 4px rgba(0, 0, 0, 0.12));
   min-width: 180px;
@@ -177,7 +177,7 @@
 .lh-menu-item-group__title {
   padding: var(--lh-spacing-sm, 8px) var(--lh-menu-item-padding, 20px);
   font-size: var(--lh-font-size-small, 13px);
-  color: var(--lh-text-secondary, #909399);
+  color: var(--lh-text-secondary, #7A7A7A);
   white-space: nowrap;
 }
 

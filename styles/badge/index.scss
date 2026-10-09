@@ -14,41 +14,41 @@
     align-items: center;
     justify-content: center;
     border-radius: 10px;
-    font-family: var(--lh-font-family);
+    font-family: var(--lh-font-family, 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif);
     font-size: 12px;
     line-height: 1;
     color: #fff;
     padding: 0 6px;
     min-width: 18px;
     height: 18px;
-    background-color: var(--lh-danger-color);
+    background-color: var(--lh-danger-color, #B23A3A);
     white-space: nowrap;
   }
 
   /* Types */
   &--primary .lh-badge__content {
-    background-color: var(--lh-primary-color);
+    background-color: var(--lh-primary-color, #2B4C7C);
   }
 
   &--success .lh-badge__content {
-    background-color: var(--lh-success-color);
+    background-color: var(--lh-success-color, #5B8C5A);
   }
 
   &--warning .lh-badge__content {
-    background-color: var(--lh-warning-color);
+    background-color: var(--lh-warning-color, #C4A35A);
   }
 
   &--danger .lh-badge__content {
-    background-color: var(--lh-danger-color);
+    background-color: var(--lh-danger-color, #B23A3A);
   }
 
   &--info .lh-badge__content {
-    background-color: var(--lh-info-color);
+    background-color: var(--lh-info-color, #7A7A7A);
   }
 
   /* 文档声明支持 default，缺此规则会回退为基类的 danger 红 */
   &--default .lh-badge__content {
-    background-color: var(--lh-text-secondary);
+    background-color: var(--lh-text-secondary, #8A8A8A);
   }
 
   /* Sizes */

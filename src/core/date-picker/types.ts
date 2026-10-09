@@ -2,8 +2,10 @@ import type { LhComponentSize } from '../shared/types'
 
 /**
  * DatePicker 模式
+ *
+ * range 为日期段模式：面板内两次点击确定起止，绑定值为 `[Date, Date]`。
  */
-export type LhDatePickerMode = 'date' | 'month' | 'year' | 'datetime'
+export type LhDatePickerMode = 'date' | 'month' | 'year' | 'datetime' | 'range'
 
 /**
  * DatePicker 日期面板数据类型

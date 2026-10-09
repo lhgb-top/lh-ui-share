@@ -41,9 +41,9 @@
   padding: 14px 16px;
   border-radius: var(--lh-border-radius-base, 8px);
   background-color: var(--lh-notification-bg, var(--lh-bg-color, #fff));
-  color: var(--lh-notification-color, var(--lh-text-regular, #606266));
+  color: var(--lh-notification-content-color, var(--lh-text-regular, #5A5A5A));
   box-shadow: var(--lh-notification-shadow, 0 4px 16px rgba(0, 0, 0, 12%));
-  border: 1px solid var(--lh-notification-border, var(--lh-border-color-lighter, #ebeef5));
+  border: 1px solid var(--lh-notification-border, var(--lh-border-color-lighter, #EEE9E2));
   font-size: 14px;
   line-height: 1.6;
   pointer-events: auto;
@@ -53,19 +53,19 @@
   }
 
   &--success .lh-notification__icon {
-    color: var(--lh-success-color, #67c23a);
+    color: var(--lh-success-color, #5B8C5A);
   }
 
   &--warning .lh-notification__icon {
-    color: var(--lh-warning-color, #e6a23c);
+    color: var(--lh-warning-color, #C4A35A);
   }
 
   &--danger .lh-notification__icon {
-    color: var(--lh-danger-color, #f56c6c);
+    color: var(--lh-danger-color, #B23A3A);
   }
 
   &--info .lh-notification__icon {
-    color: var(--lh-info-color, #909399);
+    color: var(--lh-info-color, #7A7A7A);
   }
 }
 
@@ -82,12 +82,12 @@
 .lh-notification__title {
   display: block;
   font-weight: 600;
-  color: var(--lh-notification-title-color, var(--lh-text-primary, #303133));
+  color: var(--lh-notification-title-color, var(--lh-text-primary, #2C2C2C));
 }
 
 .lh-notification__content {
   margin: 4px 0 0;
-  color: var(--lh-notification-content-color, var(--lh-text-regular, #606266));
+  color: var(--lh-notification-content-color, var(--lh-text-regular, #5A5A5A));
 }
 
 .lh-notification__close {
@@ -106,7 +106,7 @@
   }
 }
 
-/* 进出场：贴顶从上滑入，贴底从下滑入；reduced-motion 降级为纯透明度 */
+/* 进出场：右侧贴边从右滑入、左侧贴边从左滑入；reduced-motion 降级为纯透明度 */
 .lh-notification-slide-enter-active,
 .lh-notification-slide-leave-active {
   transition:
@@ -114,27 +114,24 @@
     transform 0.28s ease;
 }
 
-.lh-notification--top-right .lh-notification-slide-enter,
-.lh-notification-slide-enter-from,
-.lh-notification--top-left .lh-notification-slide-enter,
-.lh-notification-slide-enter-from {
-  opacity: 0;
-  transform: translateX(24px);
+// 右侧贴边（top-right / bottom-right）：从右滑入
+.lh-notification--top-right,
+.lh-notification--bottom-right {
+  .lh-notification-slide-enter,
+  .lh-notification-slide-enter-from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
 }
 
-.lh-notification--bottom-right .lh-notification-slide-enter,
-.lh-notification-slide-enter-from,
-.lh-notification--bottom-left .lh-notification-slide-enter,
-.lh-notification-slide-enter-from {
-  opacity: 0;
-  transform: translateX(24px);
-}
-
-.lh-notification--top-left .lh-notification-slide-enter,
-.lh-notification-slide-enter-from,
-.lh-notification--bottom-left .lh-notification-slide-enter,
-.lh-notification-slide-enter-from {
-  transform: translateX(-24px);
+// 左侧贴边（top-left / bottom-left）：从左滑入
+.lh-notification--top-left,
+.lh-notification--bottom-left {
+  .lh-notification-slide-enter,
+  .lh-notification-slide-enter-from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
 }
 
 .lh-notification-slide-leave-to {
@@ -148,7 +145,18 @@
   }
 
   .lh-notification-slide-enter,
-.lh-notification-slide-enter-from {
+  .lh-notification-slide-enter-from {
     transform: none;
+  }
+}
+
+/* FLIP 平移：卡片增删时兄弟卡片平滑让位（transition-group 的 move 类） */
+.lh-notification-slide-move {
+  transition: transform 0.28s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-notification-slide-move {
+    transition: none;
   }
 }

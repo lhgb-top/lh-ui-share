@@ -2,6 +2,8 @@
  * Steps 组件纯函数逻辑（无框架依赖、无用户文案）
  */
 
+import type { LhAriaAttrs } from '../shared/a11y'
+
 import type { LhStepClassState, LhStepStatus, LhStepStatusState, LhStepsDirection } from './types'
 
 /**
@@ -32,4 +34,13 @@ export function getStepClassNames(state: LhStepClassState): string[] {
     state.isLast && 'lh-steps__item--last',
     state.clickable && 'lh-steps__item--clickable',
   ].filter(Boolean) as string[]
+}
+
+/**
+ * 步骤项的无障碍属性包：当前进行中的步骤输出 aria-current="step"
+ *
+ * @param status 步骤状态（process 为当前步）
+ */
+export function getStepAria(status: LhStepStatus): LhAriaAttrs {
+  return status === 'process' ? { 'aria-current': 'step' } : {}
 }

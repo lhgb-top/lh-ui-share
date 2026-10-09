@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { getSwitchClassNames, getSwitchLabel } from '../../../src/core/switch'
+import {
+  getSwitchClassNames,
+  getSwitchLabel,
+  getSwitchAria,
+} from '../../../src/core/switch'
 
 describe('Switch Core Logic', () => {
   it('should return base class', () => {
@@ -91,5 +95,25 @@ describe('Switch Core Logic', () => {
       inactiveText: 'OFF',
     }
     expect(getSwitchLabel(state)).toBe('OFF')
+  })
+})
+describe('switch accessibility', () => {
+  it('emits role=switch with the checked state', () => {
+    expect(getSwitchAria({ checked: true, disabled: false, loading: false })).toEqual({
+      role: 'switch',
+      'aria-checked': true,
+    })
+  })
+
+  it('marks disabled and loading switches as aria-disabled', () => {
+    expect(getSwitchAria({ checked: false, disabled: true, loading: false })).toEqual({
+      role: 'switch',
+      'aria-checked': false,
+      'aria-disabled': true,
+    })
+    expect(getSwitchAria({ checked: false, disabled: false, loading: true })).toHaveProperty(
+      'aria-disabled',
+      true,
+    )
   })
 })

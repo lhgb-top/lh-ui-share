@@ -1,3 +1,5 @@
+@use '../theme/common/index.scss' as *;
+
 .lh-tag {
   display: inline-flex;
   align-items: center;
@@ -6,9 +8,9 @@
   font-size: 12px;
   line-height: 1;
   border-radius: 4px;
-  border: 1px solid var(--lh-border-color-base);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
   background-color: var(--lh-bg-color, #f5f7fa);
-  color: var(--lh-text-regular);
+  color: var(--lh-text-regular, #5A5A5A);
   cursor: default;
   user-select: none;
   white-space: nowrap;
@@ -27,12 +29,12 @@
     padding: 0;
     border: none;
     background: transparent;
-    color: var(--lh-text-secondary);
+    color: var(--lh-text-secondary, #8A8A8A);
     cursor: pointer;
     border-radius: 50%;
 
     &:hover {
-      color: var(--lh-text-primary);
+      color: var(--lh-text-primary, #2C2C2C);
     }
 
     &:disabled {
@@ -43,33 +45,33 @@
 
   /* Types */
   &--primary {
-    background-color: var(--lh-primary-color-bg);
-    border-color: color-mix(in srgb, var(--lh-primary-color) 35%, transparent);
-    color: var(--lh-primary-color, #409eff);
+    background-color: var(--lh-primary-color-bg, #E8EDF3);
+    border-color: color-mix(in srgb, var(--lh-primary-color, #2B4C7C) 35%, transparent);
+    color: var(--lh-primary-color, #2B4C7C);
   }
 
   &--success {
-    background-color: var(--lh-success-color-bg);
-    border-color: color-mix(in srgb, var(--lh-success-color) 35%, transparent);
-    color: var(--lh-success-color, #67c23a);
+    background-color: var(--lh-success-color-bg, #EDF5EC);
+    border-color: color-mix(in srgb, var(--lh-success-color, #5B8C5A) 35%, transparent);
+    color: var(--lh-success-color, #5B8C5A);
   }
 
   &--warning {
-    background-color: var(--lh-warning-color-bg);
-    border-color: color-mix(in srgb, var(--lh-warning-color) 35%, transparent);
-    color: var(--lh-warning-color, #e6a23c);
+    background-color: var(--lh-warning-color-bg, #FBF6EA);
+    border-color: color-mix(in srgb, var(--lh-warning-color, #C4A35A) 35%, transparent);
+    color: var(--lh-warning-color, #C4A35A);
   }
 
   &--danger {
-    background-color: var(--lh-danger-color-bg);
-    border-color: color-mix(in srgb, var(--lh-danger-color) 35%, transparent);
-    color: var(--lh-danger-color, #f56c6c);
+    background-color: var(--lh-danger-color-bg, #FDF0F0);
+    border-color: color-mix(in srgb, var(--lh-danger-color, #B23A3A) 35%, transparent);
+    color: var(--lh-danger-color, #B23A3A);
   }
 
   &--info {
-    background-color: var(--lh-info-color-bg);
-    border-color: color-mix(in srgb, var(--lh-info-color) 35%, transparent);
-    color: var(--lh-info-color, #909399);
+    background-color: var(--lh-info-color-bg, #F2F2F2);
+    border-color: color-mix(in srgb, var(--lh-info-color, #7A7A7A) 35%, transparent);
+    color: var(--lh-info-color, #7A7A7A);
   }
 
   /* Sizes */
@@ -91,10 +93,13 @@
   }
 
   &--hit {
-    border-left: 3px solid var(--lh-primary-color, #409eff);
+    border-left: 3px solid var(--lh-primary-color, #2B4C7C);
   }
 
   &--disabled {
     opacity: 0.5;
   }
 }
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-tag');

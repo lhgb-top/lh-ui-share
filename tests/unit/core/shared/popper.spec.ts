@@ -7,6 +7,7 @@ import {
   fitsInViewport,
   computePosition,
   getWindowViewport,
+  isOutsideViewport,
   type DOMRectLike,
   type LhPlacement,
 } from '../../../../src/core/shared/popper'
@@ -178,8 +179,9 @@ describe('popper / computePosition', () => {
       placement: 'bottom-start',
       shift: false,
     })
-    // shift 关闭后不再夹回，但仍受非负约束
-    expect(pos.left).toBe(0)
+    // shift 关闭后不再做交叉轴夹回，仅剩最后一道安全网：
+    // 不允许弹出层越过视口低侧（地板含 padding，与其它钳制约定一致）
+    expect(pos.left).toBe(8)
   })
 
   it('never returns negative coordinates', () => {
@@ -238,6 +240,48 @@ describe('popper / computePosition', () => {
   })
 })
 
+describe('popper / clamping edge cases', () => {
+  it('clamps against a viewport that does not start at the origin', () => {
+    // 嵌套滚动容器 / iframe 场景：视口左上角不在 (0, 0)
+    const vp = rect(100, 50, 1000, 800) // top=100 left=50 right=1050 bottom=900
+    const trigger = rect(700, 60, 100, 40) // 靠右缘，交叉轴需向左夹回
+    const pos = computePosition(trigger, POPPER, vp, { placement: 'bottom-end' })
+    expect(pos.left).toBeLessThanOrEqual(vp.right - POPPER.width - 8)
+    expect(pos.left).toBeGreaterThanOrEqual(vp.left + 8)
+    expect(pos.top).toBeGreaterThanOrEqual(vp.top)
+  })
+
+  it('clamps the popper onto the viewport when both primary sides overflow', () => {
+    // 弹出层比整个视口还高：翻转无意义，主轴夹回把它顶到 padding 边缘，
+    // 而非整体伸出屏幕外（比视口高的弹出层不可能完全装进视口，断言钳制位置即可）
+    const huge = rect(0, 0, 200, 900)
+    const pos = computePosition(TRIGGER, huge, VIEWPORT, { placement: 'bottom' })
+    expect(pos.top).toBe(8)
+    expect(pos.left).toBeGreaterThanOrEqual(0)
+  })
+
+  it('treats non-finite gap and padding as the defaults', () => {
+    // NaN gap/padding 曾经把 clamp 边界污染成 NaN，导致位置全部失效
+    const pos = computePosition(TRIGGER, POPPER, VIEWPORT, {
+      placement: 'bottom',
+      gap: NaN,
+      padding: NaN,
+    })
+    expect(Number.isFinite(pos.top)).toBe(true)
+    expect(Number.isFinite(pos.left)).toBe(true)
+    expect(pos.top).toBe(TRIGGER.bottom + 8)
+  })
+
+  it('never applies a negative padding', () => {
+    const pos = computePosition(TRIGGER, POPPER, VIEWPORT, {
+      placement: 'bottom-end',
+      padding: -100,
+    })
+    expect(pos.left).toBeGreaterThanOrEqual(0)
+    expect(pos.left + POPPER.width).toBeLessThanOrEqual(VIEWPORT.right)
+  })
+})
+
 describe('popper / getWindowViewport', () => {
   it('returns a viewport-sized rect at the origin', () => {
     const v = getWindowViewport()
@@ -245,5 +289,54 @@ describe('popper / getWindowViewport', () => {
     expect(v.left).toBe(0)
     expect(v.right).toBe(v.width)
     expect(v.bottom).toBe(v.height)
+  })
+})
+
+describe('popper round 2: NaN 净化 / 非法 placement / flip 关闭语义', () => {
+  it('sanitizes NaN rect fields to 0 instead of leaking NaN into the result', () => {
+    // 回归：rect 字段 NaN 曾直接产出 top: NaNpx
+    const dirtyTrigger = { top: NaN, left: 400, width: 100, height: 40, right: 500, bottom: NaN }
+    const pos = computePosition(dirtyTrigger as unknown as DOMRectLike, POPPER, VIEWPORT, {
+      placement: 'bottom',
+    })
+    expect(Number.isFinite(pos.top)).toBe(true)
+    expect(Number.isFinite(pos.left)).toBe(true)
+    expect(Number.isFinite(pos.arrowOffset)).toBe(true)
+
+    const dirtyPopper = { top: 0, left: NaN, width: NaN, height: 100, right: NaN, bottom: 100 }
+    const pos2 = computePosition(TRIGGER, dirtyPopper as unknown as DOMRectLike, VIEWPORT)
+    expect(Number.isFinite(pos2.top)).toBe(true)
+    expect(Number.isFinite(pos2.left)).toBe(true)
+  })
+
+  it('falls back to bottom/center for placements outside the union (JS callers)', () => {
+    expect(parsePlacement('top-middle' as LhPlacement)).toEqual({ dir: 'top', align: 'center' })
+    expect(parsePlacement('sideways' as LhPlacement)).toEqual({ dir: 'bottom', align: 'center' })
+    expect(parsePlacement(undefined as unknown as LhPlacement)).toEqual({
+      dir: 'bottom',
+      align: 'center',
+    })
+  })
+
+  it('flip:false accepts primary-axis overflow instead of clamping', () => {
+    // 高触发器（top=100、bottom=800、视口 800）：bottom 放不下、top 也放不下（两侧均溢出）。
+    // flip 默认开启时会主轴夹回；flip:false 表示调用方接受溢出，不代为搬动。
+    const tall = rect(100, 400, 100, 700)
+    const pos = computePosition(tall, POPPER, VIEWPORT, { placement: 'bottom', flip: false })
+    expect(pos.placement).toBe('bottom')
+    expect(pos.top).toBe(800 + 8) // 原样放到视口底之外
+
+    // 默认（flip 开启）同样两侧溢出时主轴夹回视口内
+    const clamped = computePosition(tall, POPPER, VIEWPORT, { placement: 'bottom' })
+    expect(clamped.top).toBeLessThan(pos.top)
+  })
+
+  it('isOutsideViewport detects fully offscreen rects (round 2)', () => {
+    expect(isOutsideViewport(rect(-200, 400, 100, 100), VIEWPORT)).toBe(true) // 视口上方
+    expect(isOutsideViewport(rect(900, 400, 100, 100), VIEWPORT)).toBe(true) // 视口下方
+    expect(isOutsideViewport(rect(100, -300, 100, 100), VIEWPORT)).toBe(true) // 视口左侧
+    expect(isOutsideViewport(TRIGGER, VIEWPORT)).toBe(false) // 视口内
+    // 部分可见（跨界）不算离开视口
+    expect(isOutsideViewport(rect(-50, 400, 100, 100), VIEWPORT)).toBe(false)
   })
 })

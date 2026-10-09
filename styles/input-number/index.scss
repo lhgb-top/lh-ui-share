@@ -1,13 +1,15 @@
+@use '../theme/common/index.scss' as *;
+
 .lh-input-number {
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--lh-border-color-base);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
   border-radius: 4px;
   background-color: var(--lh-bg-color, #fff);
   transition: border-color 0.2s;
 
   &:hover {
-    border-color: var(--lh-primary-color-border, #c0c4cc);
+    border-color: var(--lh-primary-color-border, #BFB8AF);
   }
 
   &__input {
@@ -19,11 +21,11 @@
     outline: none;
     font-size: 14px;
     background-color: transparent;
-    color: var(--lh-text-primary);
+    color: var(--lh-text-primary, #2C2C2C);
     line-height: 32px;
 
     &::placeholder {
-      color: var(--lh-text-placeholder);
+      color: var(--lh-text-placeholder, #B0B0B0);
     }
 
     &:disabled {
@@ -42,17 +44,17 @@
     border: none;
     background: transparent;
     cursor: pointer;
-    color: var(--lh-text-regular);
+    color: var(--lh-text-regular, #5A5A5A);
     font-size: 12px;
     -webkit-user-select: none;
     user-select: none;
 
     &:hover {
-      color: var(--lh-primary-color, #409eff);
+      color: var(--lh-primary-color, #2B4C7C);
     }
 
     &:disabled {
-      color: var(--lh-disabled-text-color, #c0c4cc);
+      color: var(--lh-disabled-text-color, #BFB8AF);
       cursor: not-allowed;
     }
   }
@@ -100,5 +102,19 @@
   &--disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+}
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-input-number');
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-input-number,
+  .lh-input-number * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

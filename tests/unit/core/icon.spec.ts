@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { getIconSize, getIconSvg, getIconStyle } from '../../../src/core/icon/logic'
+import {
+  getIconSize,
+  getIconSvg,
+  getIconStyle,
+  getIconAria,
+} from '../../../src/core/icon/logic'
 
 describe('icon/core/logic', () => {
   describe('getIconSize', () => {
@@ -84,5 +89,18 @@ describe('icon/core/logic', () => {
       const style = getIconStyle({ size: undefined })
       expect(style.color).toBeUndefined()
     })
+  })
+})
+describe('LhIcon accessibility', () => {
+  it('hides decorative icons from assistive technology', () => {
+    expect(getIconAria()).toEqual({ 'aria-hidden': true })
+  })
+
+  it('exposes standalone icons with a label', () => {
+    expect(getIconAria({ decorative: false, label: '搜索' })).toEqual({
+      role: 'img',
+      'aria-label': '搜索',
+    })
+    expect(getIconAria({ decorative: false })).toEqual({})
   })
 })

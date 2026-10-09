@@ -8,7 +8,7 @@ Each framework UI layer (lh-ui-vue2 / lh-ui-react / lh-ui-uniapp) consumes this 
 
 ## Features
 
-- **Framework-agnostic component logic**: pure functions for 56 components (a `logic.ts` / `types.ts` / `index.ts` triple per component) + 5 shared kernels (`sx` / `pt` / `popper` / `focus-trap` / `types`). State in, classNames/styles out — no side effects, directly unit-testable.
+- **Framework-agnostic component logic**: pure functions for 55 components (a `logic.ts` / `types.ts` / `index.ts` triple per component) + 10 shared kernels (`sx` / `pt` / `popper` / `focus-trap` / `sanitize` / `virtual` / `format` / `date` / `delay` / `types`). State in, classNames/styles out — no side effects, directly unit-testable.
 - **Single source of truth for styles**: `styles/` is the only home for every component's BEM styles; transition classes are **dual-written** (`-enter` alongside `-enter-from`) so they serve Vue2 / Vue3 / React at once.
 - **Chinese-style theme system**: SCSS tokens (`variables.scss`, all `!default` and overridable) + 5 preset themes (Ceramic Blue / Pine Green / Vermilion / Ink Wash / Golden Autumn) + dark mode + 6 built-in patterns (willow / cloud / water / snow / plum / bamboo).
 - **Pure-emitter i18n**: `LhLocale` contains no framework reactivity — it drives updates via a monotonically increasing `version` and `subscribe`, letting each framework wire it up itself.
@@ -142,7 +142,7 @@ onUnmounted(unsubscribe)
 useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)
 ```
 
-> **Note**: `t()` only resolves a dot path to a string — it does **not** interpolate `{name}` placeholders. When nothing is found it returns `fallback` (or the path itself if omitted). The complete packs are currently `zh-CN` and `en-US`; ja-JP / ko-KR / de-DE / fr-FR are English-fallback skeletons.
+> **Note**: `t()` resolves a dot path to a string. When the second argument is an **object**, `{name}` placeholders are interpolated (e.g. `t('pagination.total', { total: 100 })` → `共 100 条`); unknown placeholders are left as-is. When it is a **string** it is used as `fallback` (returned when no translation is found; the path itself if omitted). The complete packs are currently `zh-CN` and `en-US`; ja-JP / ko-KR / de-DE / fr-FR are English-fallback skeletons.
 
 ### Utils — utilities
 
@@ -179,6 +179,10 @@ LH_LANGUAGE_CONST // { zhCN: 'zh-CN', enUS: 'en-US' }
 import '@lh-ui/share/styles/button'
 import '@lh-ui/share/styles/dialog'
 
+// Per-component compiled CSS (no SCSS pipeline needed; avoids loading the full bundle)
+import '@lh-ui/share/dist/button/style.css'
+import '@lh-ui/share/dist/dialog/style.css'
+
 // Or import the full compiled bundle at once
 import '@lh-ui/share/styles.css'
 ```
@@ -191,15 +195,17 @@ Class names follow BEM `lh-*`, and colors always use the `var(--lh-*, <fallback>
 | --- | --- |
 | `.` | Root aggregation entry (all sublayers) |
 | `./core` / `./core/*` | Component pure functions; `./core/button` etc. match by directory |
+| `./core/<component>/*` | Deep files inside a component (`./core/tooltip/logic`, `./core/date-picker/adapter`, …); auto-generated from the `es/` build output by `pnpm sync:exports` |
 | `./constants` | Constants |
-| `./locales` | i18n (`lhlocale` + language packs + types) |
+| `./locales` / `./locales/lang/*` | i18n (`lhlocale` + language packs + types); per-language deep import `./locales/lang/zh-CN` |
 | `./theme` | Theme presets and types |
 | `./types` | Types only (no runtime output) |
-| `./utils` | Utility functions |
+| `./utils` / `./utils/*` | Utility functions; deep files `./utils/css-var`, `./utils/namespace` |
 | `./theme.css` | `dist/theme/index.css` (light + dark + patterns) |
 | `./theme-dark.css` | `dist/theme/index-dark.css` (dark only) |
 | `./styles/*` | `styles/*/index.scss` (**raw SCSS source**) |
 | `./styles.css` | `dist/styles/index.css` (theme + all components, compiled) |
+| `./dist/*` | `dist/<component>/style.css` (**per-component compiled CSS** — import on demand without an SCSS pipeline) |
 
 ## Directory layout
 
@@ -212,7 +218,7 @@ src/locales/        Language packs (LhLocale is a pure emitter)
 src/types/ src/utils/  Types / pure utilities
 styles/             The single source for component BEM styles: <name>/index.scss + theme/common/*.scss (tokens)
 tests/unit/         The single copy of core unit tests (shared by the three libraries, never duplicated)
-scripts/            build-styles / normalize-styles / verify-dts / extract-from-plus
+scripts/            build-styles / normalize-styles / sync-exports / verify-dts / verify-styles / extract-from-plus
 ```
 
 ## Commands

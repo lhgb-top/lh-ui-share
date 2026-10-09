@@ -3,6 +3,7 @@ import {
   getSkeletonItemClassNames,
   getSkeletonClassNames,
   getSkeletonRowWidths,
+  getSkeletonAria,
 } from '../../../src/core/skeleton'
 
 describe('Skeleton Core Logic', () => {
@@ -40,5 +41,11 @@ describe('Skeleton Core Logic', () => {
     it('handles zero rows', () => {
       expect(getSkeletonRowWidths(0)).toEqual([])
     })
+  })
+})
+
+describe('LhSkeleton accessibility', () => {
+  it('hides placeholder content', () => {
+    expect(getSkeletonAria()).toEqual({ 'aria-hidden': true })
   })
 })

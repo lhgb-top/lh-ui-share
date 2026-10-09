@@ -22,14 +22,14 @@
   &__label {
     flex: 0 0 auto;
     padding: 7px 12px 0 0;
-    color: var(--lh-text-regular, #5a5a5a);
+    color: var(--lh-text-regular, #5A5A5A);
     line-height: 20px;
     text-align: right;
   }
 
   &__required {
     margin-right: 4px;
-    color: var(--lh-danger-color, #b23a3a);
+    color: var(--lh-danger-color, #B23A3A);
   }
 
   &__content {
@@ -40,7 +40,7 @@
   &__error {
     display: block;
     margin-top: 4px;
-    color: var(--lh-danger-color, #b23a3a);
+    color: var(--lh-danger-color, #B23A3A);
     font-size: 12px;
     line-height: 18px;
   }
@@ -55,3 +55,7 @@
     }
   }
 }
+
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-form');

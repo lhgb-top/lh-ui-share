@@ -14,7 +14,7 @@
 const FOCUSABLE_SELECTOR = [
   'a[href]',
   'button:not([disabled])',
-  'input:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
   'select:not([disabled])',
   'textarea:not([disabled])',
   'video[controls]',
@@ -96,12 +96,25 @@ export function saveActiveElement(): HTMLElement | null {
 }
 
 /**
- * 将焦点归还给定元素（已从文档移除时跳过）
+ * 将焦点归还给定元素（已从文档移除、或被 inert 锁定时跳过）
+ *
+ * 嵌套 overlay 场景下，外层 overlay 可能恰好 inert 了要归还的目标，
+ * 此时 focus() 静默无效，回退到 body 避免焦点散落。
  */
 export function restoreActiveElement(el: HTMLElement | null | undefined): void {
   if (!el) return
   if (typeof document === 'undefined') return
   if (!el.isConnected) return
+  if (isInertedByAncestor(el)) {
+    // 目标已被 inert，焦点不能落上去：移出当前焦点，让浏览器回到 body。
+    // 直接 body.focus() 在部分环境（如 jsdom）不会移动 activeElement，
+    // blur 当前焦点元素是规范保证的回退路径
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active !== document.body) {
+      active.blur()
+    }
+    return
+  }
   el.focus?.()
 }
 
@@ -126,19 +139,34 @@ export function trapTabKey(container: HTMLElement, event: KeyboardEvent): boolea
       ? document.activeElement
       : null
   const inside = active !== null && container.contains(active)
+  // 用列表索引而非引用边界判定：焦点可能落在容器内不在 Tab 序列中的元素上
+  // （如 tabindex="-1" 的容器自身），此时默认 Tab 会把焦点带出容器外
+  const idx = inside && active !== null ? list.indexOf(active) : -1
 
   if (event.shiftKey) {
-    if (active === first || !inside) {
+    if (idx <= 0) {
       event.preventDefault()
       last.focus()
       return true
     }
   } else {
-    if (active === last || !inside) {
+    if (idx === -1 || idx === list.length - 1) {
       event.preventDefault()
       first.focus()
       return true
     }
+  }
+  return false
+}
+
+/**
+ * 元素是否因自身或祖先的 inert 而不可交互
+ */
+function isInertedByAncestor(el: HTMLElement): boolean {
+  let node: HTMLElement | null = el
+  while (node) {
+    if (node.hasAttribute('inert')) return true
+    node = node.parentElement
   }
   return false
 }
@@ -150,11 +178,41 @@ export function supportsInert(): boolean {
   return typeof HTMLElement !== 'undefined' && 'inert' in HTMLElement.prototype
 }
 
+/** 节点 → 持有它 inert 的容器集合（支持嵌套 overlay 共享同一被锁节点） */
+const nodeOwners = new WeakMap<HTMLElement, Set<HTMLElement>>()
+/** 容器 → 它当前锁定的节点集合（解锁时按容器所有权精确释放） */
+const ownedNodes = new WeakMap<HTMLElement, Set<HTMLElement>>()
+
+/** 释放容器持有的全部 inert 所有权（无人持有时才移除 inert 属性） */
+function releaseOwned(container: HTMLElement): void {
+  const owned = ownedNodes.get(container)
+  if (!owned) return
+  owned.forEach((el) => {
+    const owners = nodeOwners.get(el)
+    if (!owners) return
+    owners.delete(container)
+    if (owners.size === 0) {
+      el.removeAttribute('inert')
+      nodeOwners.delete(el)
+    }
+  })
+  ownedNodes.delete(container)
+}
+
 /**
  * 给容器以外的 DOM 节点加 / 去 inert，阻止焦点流到覆盖层背后
  *
+ * - 遍历 container 的祖先链分叉：每层把不含 container 的兄弟子树 inert，
+ *   覆盖 overlay 未 teleport 到 body 的嵌套场景。
+ * - 所有权注册表保证幂等：重复加锁只登记所有权、不重复 setAttribute；
+ *   解锁时仅当被锁节点已无任何容器持有时才移除 inert，避免嵌套 overlay 互相误伤。
+ * - `locked` 是「额外豁免」清单：其中的节点不加 inert（如另一个仍打开的 overlay 容器）。
+ * - 容器已脱离文档却仍持有旧锁（卸载时漏调 unlock）时先释放残留所有权，
+ *   避免已移除子树的兄弟节点永远 inert；断连状态下加锁没有意义。
+ *
  * @param container 覆盖层根元素
  * @param active true 加锁、false 解锁
+ * @param locked 额外豁免不加 inert 的节点
  * @returns 被加锁的节点（解锁时用）
  */
 export function setInertOutside(
@@ -166,20 +224,40 @@ export function setInertOutside(
   if (typeof document === 'undefined' || !document.body) return locked
 
   if (active) {
-    const siblings: HTMLElement[] = []
-    const walker = document.body
-    Array.from(walker.children).forEach((child) => {
-      const el = child as HTMLElement
-      if (el === container || el.contains(container) || container.contains(el)) return
-      if (el.hasAttribute('inert')) return
-      el.setAttribute('inert', '')
-      siblings.push(el)
-    })
-    return siblings
+    if (!container.isConnected) {
+      releaseOwned(container)
+      return Array.from(new Set(locked))
+    }
+
+    const owned = ownedNodes.get(container) ?? new Set<HTMLElement>()
+    const exempt = new Set(locked)
+
+    // 从 container 向上走到 body，每层 inert 不含 container 的兄弟子树
+    let node: HTMLElement | null = container
+    while (node && node !== document.body) {
+      // 显式注解切断 TS 的推断循环（lib.dom 下 parentElement 与 contains 组合会触发 TS7022）
+      const parentEl: HTMLElement | null = node.parentElement
+      if (!parentEl) break
+      Array.from(parentEl.children).forEach((child) => {
+        const el = child as HTMLElement
+        if (el === node || el.contains(container) || container.contains(el)) return
+        if (exempt.has(el)) return
+        const owners = nodeOwners.get(el) ?? new Set<HTMLElement>()
+        if (owners.size === 0) {
+          el.setAttribute('inert', '')
+        }
+        owners.add(container)
+        nodeOwners.set(el, owners)
+        owned.add(el)
+      })
+      node = parentEl
+    }
+
+    ownedNodes.set(container, owned)
+    return Array.from(owned)
   }
 
-  locked.forEach((el) => {
-    if (el.isConnected) el.removeAttribute('inert')
-  })
+  // 解锁：仅释放本容器持有的所有权，无人持有时才移除 inert
+  releaseOwned(container)
   return []
 }

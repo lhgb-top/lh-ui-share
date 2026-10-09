@@ -27,32 +27,32 @@
   }
 
   &__ink-wash {
-    fill: var(--lh-border-color-lighter, var(--lh-border-color-light));
+    fill: var(--lh-border-color-lighter, var(--lh-border-color-light, #E5E0D8));
     opacity: 0.6;
   }
 
   &__ink-frame {
     fill: var(--lh-bg-color, #f5f7fa);
-    stroke: var(--lh-border-color-base);
+    stroke: var(--lh-border-color-base, #D8D3CC);
     stroke-width: 1.5;
   }
 
   &__ink-mountain {
     fill: none;
-    stroke: var(--lh-text-disabled);
+    stroke: var(--lh-text-disabled, #C8C8C8);
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
 
   &__ink-seal {
-    fill: var(--lh-border-color-base);
+    fill: var(--lh-border-color-base, #D8D3CC);
   }
 
   &__description {
     margin: 0;
     font-size: 14px;
-    color: var(--lh-text-secondary);
+    color: var(--lh-text-secondary, #8A8A8A);
   }
 
   &__actions {

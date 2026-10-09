@@ -10,6 +10,8 @@ export interface LhDividerState {
   dashed: boolean
   hasContent: boolean
   labelPosition: LhDividerLabelPosition
+  /** 边框样式（显式指定时优先于 dashed） */
+  borderStyle?: string
 }
 
 /** 语义角色：带文案的是真分割符，纯装饰的不进无障碍树 */

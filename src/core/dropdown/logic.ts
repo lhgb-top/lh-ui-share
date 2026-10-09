@@ -3,6 +3,8 @@
  */
 
 import type { LhPlacement } from '../shared/popper'
+import { getPopupTriggerAria } from '../shared/a11y'
+import type { LhAriaAttrs } from '../shared/a11y'
 
 /** 触发方式 */
 export type LhDropdownTrigger = 'hover' | 'click' | 'contextmenu'
@@ -53,4 +55,34 @@ export function getDropdownItemClass(state: {
 export function getDropdownMenuStyle(maxHeight: string | number | undefined): Record<string, string> {
   if (maxHeight === undefined || maxHeight === null || maxHeight === '') return {}
   return { maxHeight: typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight, overflow: 'auto' }
+}
+
+/**
+ * 触发器的无障碍属性包：下拉菜单以 menu 语义弹出
+ *
+ * @param visible 是否可见
+ * @param menuId 菜单元素 id（未传时不输出 aria-controls）
+ */
+export function getDropdownTriggerAria(visible: boolean, menuId?: string): LhAriaAttrs {
+  return getPopupTriggerAria({ expanded: visible, popupId: menuId, haspopup: 'menu' })
+}
+
+/**
+ * 菜单容器的无障碍属性包：role="menu"
+ *
+ * @param id 菜单元素 id，与触发器的 aria-controls 对应
+ */
+export function getDropdownMenuAria(id?: string): LhAriaAttrs {
+  const attrs: LhAriaAttrs = { role: 'menu' }
+  if (id) attrs.id = id
+  return attrs
+}
+
+/**
+ * 菜单项的无障碍属性包：role="menuitem"，禁用项输出 aria-disabled
+ */
+export function getDropdownItemAria(state: Pick<LhDropdownItemState, 'disabled'>): LhAriaAttrs {
+  const attrs: LhAriaAttrs = { role: 'menuitem' }
+  if (state.disabled) attrs['aria-disabled'] = true
+  return attrs
 }

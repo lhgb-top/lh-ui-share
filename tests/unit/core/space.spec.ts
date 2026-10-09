@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getSpaceClassNames, resolveSpaceGaps } from '../../../src/core/space'
+import { getSpaceClassNames, resolveSpaceAlignment, resolveSpaceGaps } from '../../../src/core/space'
 
 describe('Space Core Logic', () => {
   describe('getSpaceClassNames', () => {
@@ -52,6 +52,26 @@ describe('Space Core Logic', () => {
         rowGap: '24px',
         usesTokens: false,
       })
+    })
+
+    it('falls back deterministically for malformed tuples (round 2)', () => {
+      // 回归：JS 侧缺第二项（[8]）曾产出 "undefinedpx"
+      expect(resolveSpaceGaps([8] as unknown as [number, number])).toEqual({
+        columnGap: '8px',
+        rowGap: '8px',
+        usesTokens: false,
+      })
+      expect(resolveSpaceGaps([undefined, 12] as unknown as [number, number])).toEqual({
+        columnGap: '0px',
+        rowGap: '12px',
+        usesTokens: false,
+      })
+    })
+
+    it('resolveSpaceAlignment passes the alignment through (round 2)', () => {
+      // 对齐值直接作为 align-items 输出（baseline 与 flex 关键字原样）
+      expect(resolveSpaceAlignment('baseline')).toBe('baseline')
+      expect(resolveSpaceAlignment('center')).toBe('center')
     })
   })
 })

@@ -1,3 +1,5 @@
+@use '../theme/common/index.scss' as *;
+
 .lh-slider {
   position: relative;
   width: 100%;
@@ -18,8 +20,10 @@
   &__mark {
     position: absolute;
     transform: translateX(-50%);
+    /* 首尾刻度在 0%/100% 处可用宽度只剩半字，必须 nowrap 防止竖排换行 */
+    white-space: nowrap;
     font-size: 12px;
-    color: var(--lh-text-placeholder);
+    color: var(--lh-text-placeholder, #B0B0B0);
     margin-top: 8px;
     transition: color 0.2s;
   }
@@ -47,7 +51,7 @@
   &__bar {
     position: absolute;
     height: 100%;
-    background-color: var(--lh-primary-color, #409eff);
+    background-color: var(--lh-primary-color, #2B4C7C);
     border-radius: 1px;
   }
 
@@ -67,12 +71,12 @@
     height: 14px;
     border-radius: 50%;
     background-color: #fff;
-    border: 2px solid var(--lh-primary-color, #409eff);
+    border: 2px solid var(--lh-primary-color, #2B4C7C);
     transition: transform 0.2s, box-shadow 0.2s;
 
     &:hover {
       transform: scale(1.2);
-      box-shadow: 0 0 4px var(--lh-primary-color, #409eff);
+      box-shadow: 0 0 4px var(--lh-primary-color, #2B4C7C);
     }
   }
 
@@ -84,7 +88,7 @@
 
   &__input-text {
     font-size: 13px;
-    color: var(--lh-text-regular);
+    color: var(--lh-text-regular, #5A5A5A);
   }
 
   &--disabled {
@@ -97,7 +101,7 @@
     .lh-slider__button {
       cursor: not-allowed;
       background-color: var(--lh-disabled-bg-color, #f5f7fa);
-      border-color: var(--lh-disabled-text-color, #c0c4cc);
+      border-color: var(--lh-disabled-text-color, #BFB8AF);
 
       &:hover {
         transform: none;
@@ -106,7 +110,7 @@
     }
 
     .lh-slider__bar {
-      background-color: var(--lh-disabled-text-color, #c0c4cc);
+      background-color: var(--lh-disabled-text-color, #BFB8AF);
     }
   }
 
@@ -146,5 +150,19 @@
       height: 18px;
       border-width: 3px;
     }
+  }
+}
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-slider');
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-slider,
+  .lh-slider * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

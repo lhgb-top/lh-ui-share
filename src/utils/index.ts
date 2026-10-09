@@ -107,6 +107,8 @@ export function deepMerge<T extends Record<string, any>>(
 let _scrollbarWidth: number | undefined
 export function getScrollbarWidth(): number {
   if (_scrollbarWidth !== undefined) return _scrollbarWidth
+  // SSR / 非 DOM 环境（如 uniapp 的部分端）下没有 document，直接视为无滚动条
+  if (typeof document === 'undefined') return 0
   const outer = document.createElement('div')
   outer.style.visibility = 'hidden'
   outer.style.overflow = 'scroll'

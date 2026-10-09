@@ -14,36 +14,36 @@
   &__bar {
     flex: 1;
     overflow: hidden;
-    border-radius: var(--lh-border-radius-round);
-    background-color: var(--lh-bg-color-disabled);
+    border-radius: var(--lh-border-radius-round, 20px);
+    background-color: var(--lh-bg-color-disabled, #EDE8E0);
   }
 
   &__bar-inner {
     height: 100%;
-    border-radius: var(--lh-border-radius-round);
+    border-radius: var(--lh-border-radius-round, 20px);
     transition:
-      width var(--lh-transition-duration-slow) var(--lh-transition-function-ease-in-out),
-      background-color var(--lh-transition-duration-base);
+      width var(--lh-transition-duration-slow, 0.4s) var(--lh-transition-function-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1)),
+      background-color var(--lh-transition-duration-base, 0.3s);
   }
 
   &__text {
     flex-shrink: 0;
-    margin-left: var(--lh-spacing-sm);
-    font-size: var(--lh-font-size-small);
-    color: var(--lh-text-regular);
+    margin-left: var(--lh-spacing-sm, 8px);
+    font-size: var(--lh-font-size-small, 13px);
+    color: var(--lh-text-regular, #5A5A5A);
     white-space: nowrap;
   }
 
   &--success &__text {
-    color: var(--lh-success-color);
+    color: var(--lh-success-color, #5B8C5A);
   }
 
   &--exception &__text {
-    color: var(--lh-danger-color);
+    color: var(--lh-danger-color, #B23A3A);
   }
 
   &--warning &__text {
-    color: var(--lh-warning-color);
+    color: var(--lh-warning-color, #C4A35A);
   }
 
   &--no-text &__text {
@@ -69,18 +69,29 @@
   }
 
   &__circle-track {
-    stroke: var(--lh-bg-color-disabled);
+    stroke: var(--lh-bg-color-disabled, #EDE8E0);
   }
 
   &__circle-value {
-    transition: stroke-dasharray var(--lh-transition-duration-slow) var(--lh-transition-function-ease-in-out);
+    transition: stroke-dasharray var(--lh-transition-duration-slow, 0.4s) var(--lh-transition-function-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
   }
 
   &__circle-text {
     position: absolute;
     margin: 0;
-    font-size: var(--lh-font-size-small);
-    font-weight: var(--lh-font-weight-bold);
-    color: var(--lh-text-primary);
+    font-size: var(--lh-font-size-small, 13px);
+    font-weight: var(--lh-font-weight-bold, 600);
+    color: var(--lh-text-primary, #2C2C2C);
+  }
+}
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-progress,
+  .lh-progress * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

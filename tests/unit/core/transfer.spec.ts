@@ -47,9 +47,27 @@ describe('LhTransfer core', () => {
     expect(toLeft).toEqual(['a'])
   })
 
+  it('drops ghost checked keys that are not in the data', () => {
+    // 勾选集合里混入已不存在的键（上一次数据变更后未清理），不应被搬进源区
+    const toLeft = moveTransferKeys([], data, ['a', 'ghost'], 'right-to-left')
+    expect(toLeft).toEqual(['a'])
+    const toRight = moveTransferKeys(['a', 'ghost'], data, ['ghost'], 'left-to-right')
+    expect(toRight).toEqual(['a'])
+  })
+
   it('filters by case-insensitive substring', () => {
     expect(filterTransferItems(data, '甲').length).toBe(1)
     expect(filterTransferItems(data, '')).toBe(data)
+  })
+
+  it('filters items whose label is missing', () => {
+    // label 缺失时不应抛错，按空串处理（类型已放宽为 label?: string）
+    const partial: LhTransferItem[] = [
+      { key: 'x', label: '甲' },
+      { key: 'y', label: undefined },
+    ]
+    expect(filterTransferItems(partial, '甲').map((i) => i.key)).toEqual(['x'])
+    expect(filterTransferItems(partial, '').length).toBe(2)
   })
 
   it('computes class names', () => {

@@ -38,8 +38,11 @@ export function resolveSpaceGaps(size: LhSpaceSizeInput): {
     return { columnGap: `${size}px`, rowGap: `${size}px`, usesTokens: false }
   }
 
-  const [h, v] = size
-  return { columnGap: `${h}px`, rowGap: `${v}px`, usesTokens: false }
+  // JS 侧脏数据兜底：缺项/非数值回退确定值，避免 "undefinedpx"
+  const [h, v] = size as [unknown, unknown]
+  const hv = typeof h === 'number' && Number.isFinite(h) ? h : 0
+  const vv = typeof v === 'number' && Number.isFinite(v) ? v : hv
+  return { columnGap: `${hv}px`, rowGap: `${vv}px`, usesTokens: false }
 }
 
 /**

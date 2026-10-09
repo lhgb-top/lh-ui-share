@@ -27,8 +27,8 @@ nav ul.lh-pagination__pages {
   align-items: center;
   flex-wrap: wrap;
   gap: var(--lh-spacing-sm, 8px);
-  font-family: var(--lh-font-family);
-  font-size: var(--lh-font-size-base);
+  font-family: var(--lh-font-family, 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif);
+  font-size: var(--lh-font-size-base, 14px);
   color: var(--lh-text-regular, #5A5A5A);
 
   &--disabled {
@@ -37,7 +37,7 @@ nav ul.lh-pagination__pages {
 
   &__total {
     color: var(--lh-text-secondary, #8A8A8A);
-    font-size: var(--lh-font-size-small);
+    font-size: var(--lh-font-size-small, 13px);
   }
 
   &__btn {
@@ -51,7 +51,7 @@ nav ul.lh-pagination__pages {
     border-radius: var(--lh-border-radius-small, 2px);
     background-color: transparent;
     font-family: inherit;
-    font-size: var(--lh-font-size-small);
+    font-size: var(--lh-font-size-small, 13px);
     color: var(--lh-text-regular, #5A5A5A);
     cursor: pointer;
     transition: color 0.2s ease, background-color 0.2s ease;
@@ -68,7 +68,7 @@ nav ul.lh-pagination__pages {
 
     &:disabled {
       cursor: not-allowed;
-      color: var(--lh-disabled-text-color);
+      color: var(--lh-disabled-text-color, #C8C8C8);
       background-color: transparent;
     }
   }
@@ -77,7 +77,7 @@ nav ul.lh-pagination__pages {
   &__page--active:hover:not(:disabled) {
     color: #fff;
     background-color: var(--lh-primary-color, #2B4C7C);
-    font-weight: var(--lh-font-weight-primary);
+    font-weight: var(--lh-font-weight-primary, 400);
   }
 
   &__pages {
@@ -103,7 +103,7 @@ nav ul.lh-pagination__pages {
     justify-content: center;
     min-width: 30px;
     height: 30px;
-    font-size: var(--lh-font-size-small);
+    font-size: var(--lh-font-size-small, 13px);
     letter-spacing: 1px;
     color: var(--lh-text-secondary, #8A8A8A);
     user-select: none;
@@ -123,7 +123,7 @@ nav ul.lh-pagination__pages {
 
   &__size-label {
     color: var(--lh-text-secondary, #8A8A8A);
-    font-size: var(--lh-font-size-small);
+    font-size: var(--lh-font-size-small, 13px);
   }
 
   &__size-select {
@@ -133,7 +133,7 @@ nav ul.lh-pagination__pages {
     border-radius: var(--lh-border-radius-small, 2px);
     background-color: var(--lh-bg-color, #FAF6F0);
     font-family: inherit;
-    font-size: var(--lh-font-size-small);
+    font-size: var(--lh-font-size-small, 13px);
     color: var(--lh-text-regular, #5A5A5A);
     cursor: pointer;
 
@@ -151,7 +151,7 @@ nav ul.lh-pagination__pages {
 
   &__jumper-label {
     color: var(--lh-text-secondary, #8A8A8A);
-    font-size: var(--lh-font-size-small);
+    font-size: var(--lh-font-size-small, 13px);
   }
 
   &__jumper-input {
@@ -162,7 +162,7 @@ nav ul.lh-pagination__pages {
     border-radius: var(--lh-border-radius-small, 2px);
     background-color: var(--lh-bg-color, #FAF6F0);
     font-family: inherit;
-    font-size: var(--lh-font-size-small);
+    font-size: var(--lh-font-size-small, 13px);
     color: var(--lh-text-regular, #5A5A5A);
     text-align: center;
 
@@ -174,6 +174,17 @@ nav ul.lh-pagination__pages {
 
   &__jumper-suffix {
     color: var(--lh-text-secondary, #8A8A8A);
-    font-size: var(--lh-font-size-small);
+    font-size: var(--lh-font-size-small, 13px);
+  }
+}
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-pagination,
+  .lh-pagination * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

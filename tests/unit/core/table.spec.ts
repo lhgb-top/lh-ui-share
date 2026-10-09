@@ -4,6 +4,7 @@ import {
   clampColumnWidth,
   computeVisibleRange,
   cycleSortOrder,
+  getTableSortAria,
   filterTableRows,
   flattenLeafColumns,
   getCellValue,
@@ -34,6 +35,19 @@ describe('LhTable core', () => {
   it('clamps at the end of the list', () => {
     const range = computeVisibleRange(48 * 9, 240, 48, 10, 3)
     expect(range.end).toBe(10)
+  })
+
+  it('never lets start exceed end when scrollTop is past the last row', () => {
+    // 数据收缩后 scrollTop 尚未钳制的那一帧：first 钳到 total-1，区间不可反转
+    const range = computeVisibleRange(48 * 100, 240, 48, 10, 3)
+    expect(range.start).toBeLessThanOrEqual(range.end)
+    expect(range.end).toBeLessThanOrEqual(10)
+    expect(range.offsetY).toBe(range.start * 48)
+  })
+
+  it('sorts non-finite numeric values to the end', () => {
+    const rows = [{ n: 3 }, { n: NaN }, { n: 1 }, { n: Infinity }]
+    expect(sortTableRows(rows, 'n', 'asc').map((r) => r.n)).toEqual([1, 3, NaN, Infinity])
   })
 
   it('cycles sort order', () => {
@@ -84,6 +98,19 @@ describe('LhTable core', () => {
     expect(offsets[0].left).toBe(0)
     expect(offsets[1].left).toBe(100)
     expect(offsets[2]).toEqual({})
+    expect(offsets[3].right).toBe(0)
+  })
+
+  it('parses px string widths for sticky offsets', () => {
+    const offsets = getStickyOffsets([
+      { prop: 'a', label: 'A', width: '100px', fixed: 'left' },
+      { prop: 'b', label: 'B', width: ' 80.5px ', fixed: 'left' },
+      { prop: 'c', label: 'C', width: '20%', fixed: 'right' },
+      { prop: 'd', label: 'D', fixed: 'right' },
+    ])
+    expect(offsets[0].left).toBe(0)
+    expect(offsets[1].left).toBe(100)
+    // 非 px 字符串与缺失宽度按 0 计，偏移不累加
     expect(offsets[3].right).toBe(0)
   })
 
@@ -140,6 +167,36 @@ describe('LhTable core', () => {
     expect(flat.every((c) => c.level === 0 && c.rowspan === 1 && c.isLeaf)).toBe(true)
   })
 
+  it('advances leafStart across consecutive group columns', () => {
+    // 回归：组列在递归子列后不得再叠加 leafSpan，否则下一组的起点被双计（2 → 4）
+    const cells = buildHeaderCells([
+      {
+        prop: 'g1',
+        label: 'G1',
+        children: [
+          { prop: 'a', label: 'A' },
+          { prop: 'b', label: 'B' },
+        ],
+      },
+      {
+        prop: 'g2',
+        label: 'G2',
+        children: [
+          { prop: 'c', label: 'C' },
+          { prop: 'd', label: 'D' },
+        ],
+      },
+    ])
+    expect(cells.map((c) => [c.column.prop, c.leafStart])).toEqual([
+      ['g1', 0],
+      ['a', 0],
+      ['b', 1],
+      ['g2', 2],
+      ['c', 2],
+      ['d', 3],
+    ])
+  })
+
   it('computes header sticky offsets inheriting from fully-fixed leaf spans', () => {
     const leaf = [
       { prop: 'a', label: 'A', width: 100, fixed: 'left' as const },
@@ -187,5 +244,31 @@ describe('LhTable core', () => {
   it('clamps column width to the minimum', () => {
     expect(clampColumnWidth(10)).toBe(40)
     expect(clampColumnWidth(200)).toBe(200)
+  })
+
+  it('passes string widths through and falls back for non-finite numbers', () => {
+    expect(clampColumnWidth('20%')).toBe('20%')
+    expect(clampColumnWidth(NaN)).toBe(40)
+  })
+
+  it('terminates on cyclic column trees (round 2)', () => {
+    // 回归：getDepth/getLeafCount 有一环守卫，但两个 walk 闭包没有——
+    // 列树出现环（坏配置/脏数据）时曾在每次渲染表头时栈溢出
+    const parent: Parameters<typeof flattenLeafColumns>[0][number] = { prop: 'p', label: 'P', children: [] }
+    const child: Parameters<typeof flattenLeafColumns>[0][number] = { prop: 'c', label: 'C', children: [] }
+    parent.children = [child]
+    child.children = [parent]
+
+    expect(() => flattenLeafColumns([parent])).not.toThrow()
+    expect(() => buildHeaderCells([parent])).not.toThrow()
+  })
+})
+
+describe('LhTable accessibility', () => {
+  it('maps the sort state machine to aria-sort', () => {
+    expect(getTableSortAria({ sortOrder: 'asc', sortable: true })).toEqual({ 'aria-sort': 'ascending' })
+    expect(getTableSortAria({ sortOrder: 'desc', sortable: true })).toEqual({ 'aria-sort': 'descending' })
+    expect(getTableSortAria({ sortable: true })).toEqual({ 'aria-sort': 'none' })
+    expect(getTableSortAria({ sortOrder: 'asc' })).toEqual({})
   })
 })

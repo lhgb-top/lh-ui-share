@@ -1,8 +1,76 @@
+# ---------- 依赖 ----------
 node_modules/
+.pnpm-store/
+
+# ---------- 构建产物（pnpm build 生成，es/ 与 lib/ 为镜像结构，不入库）----------
 es/
 lib/
 dist/
 coverage/
+*.tsbuildinfo
+tsconfig.build.tsbuildinfo
+
+# ---------- 测试覆盖率 ----------
+*.lcov
+.nyc_output/
+test-results/
+playwright-report/
+
+# ---------- 日志 ----------
 *.log
-.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ---------- 打包产物 ----------
 *.tgz
+*.tar
+*.tar.gz
+*.zip
+
+# ---------- 环境变量 / 本地配置（可能含敏感信息）----------
+.env
+.env.local
+.env.*.local
+*.local
+.npmrc
+
+# ---------- 编辑器 / IDE ----------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.history/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ---------- 操作系统 ----------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ---------- 缓存 ----------
+.cache/
+.eslintcache
+.stylelintcache
+.parcel-cache/
+.vite/
+.turbo/
+*.pid
+*.seed
+.node_repl_history
+
+# ---------- 临时 / 一次性 scratch 脚本（双下划线前缀）----------
+scripts/__*
+tmp/
+temp/
+
+# ---------- AI 会话记录（不上传）----------
+.zcode/**
+AGENTS.md

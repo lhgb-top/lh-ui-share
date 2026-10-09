@@ -2,7 +2,7 @@
 
 .lh-tree {
   padding: var(--lh-tree-padding, 4px 0);
-  color: var(--lh-tree-color, var(--lh-text-primary, #303133));
+  color: var(--lh-tree-color, var(--lh-text-primary, #2C2C2C));
   font-size: var(--lh-font-size-base, 14px);
 }
 
@@ -16,21 +16,21 @@
   user-select: none;
 
   &:hover:not(.lh-tree-node--disabled) {
-    background-color: var(--lh-tree-node-hover-bg, var(--lh-bg-color-page, #f5f0eb));
+    background-color: var(--lh-tree-node-hover-bg, var(--lh-bg-color-page, #F5F0EB));
   }
 
   &:focus-visible {
-    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
     outline-offset: -2px;
   }
 
   &--selected {
-    color: var(--lh-tree-node-selected-color, var(--lh-primary-color, #409eff));
-    background-color: var(--lh-tree-node-selected-bg, color-mix(in srgb, var(--lh-primary-color, #409eff) 10%, transparent));
+    color: var(--lh-tree-node-selected-color, var(--lh-primary-color, #2B4C7C));
+    background-color: var(--lh-tree-node-selected-bg, color-mix(in srgb, var(--lh-primary-color, #2B4C7C) 10%, transparent));
   }
 
   &--disabled {
-    color: var(--lh-disabled-text-color, #c8c8c8);
+    color: var(--lh-disabled-text-color, #C8C8C8);
     cursor: not-allowed;
   }
 }
@@ -42,7 +42,7 @@
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  color: var(--lh-tree-arrow-color, var(--lh-text-secondary, #8a8a8a));
+  color: var(--lh-tree-arrow-color, var(--lh-text-secondary, #8A8A8A));
   transition: transform var(--lh-transition-duration-fast, 0.25s) ease;
 
   &--expanded {
@@ -75,14 +75,14 @@
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  border: 1px solid var(--lh-border-color-base, #d8d3cc);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
   border-radius: 3px;
   background-color: var(--lh-bg-color, #fff);
   cursor: pointer;
 
   &--checked {
-    border-color: var(--lh-primary-color, #409eff);
-    background-color: var(--lh-primary-color, #409eff);
+    border-color: var(--lh-primary-color, #2B4C7C);
+    background-color: var(--lh-primary-color, #2B4C7C);
 
     &::after {
       content: '';
@@ -95,8 +95,8 @@
   }
 
   &--indeterminate {
-    border-color: var(--lh-primary-color, #409eff);
-    background-color: var(--lh-primary-color, #409eff);
+    border-color: var(--lh-primary-color, #2B4C7C);
+    background-color: var(--lh-primary-color, #2B4C7C);
 
     &::after {
       content: '';
@@ -117,12 +117,23 @@
 .lh-tree__empty {
   padding: 24px;
   text-align: center;
-  color: var(--lh-text-secondary, #8a8a8a);
+  color: var(--lh-text-secondary, #8A8A8A);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .lh-tree-node__arrow {
     transition: none;
     animation: none;
+  }
+}
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-tree,
+  .lh-tree * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

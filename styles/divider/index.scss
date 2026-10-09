@@ -4,7 +4,7 @@
   position: relative;
   display: block;
   border: 0;
-  background-color: var(--lh-border-color-light, var(--lh-border-color-base));
+  background-color: var(--lh-border-color-light, var(--lh-border-color-base, #D8D3CC));
 
   &--horizontal {
     width: 100%;
@@ -25,7 +25,7 @@
     background-color: transparent;
     background-image: linear-gradient(
       to right,
-      var(--lh-border-color-light, var(--lh-border-color-base)) 50%,
+      var(--lh-border-color-light, var(--lh-border-color-base, #D8D3CC)) 50%,
       transparent 50%
     );
     background-size: 8px 1px;
@@ -46,7 +46,7 @@
       content: '';
       flex: 1 1 auto;
       height: 1px;
-      background-color: var(--lh-border-color-light, var(--lh-border-color-base));
+      background-color: var(--lh-border-color-light, var(--lh-border-color-base, #D8D3CC));
     }
   }
 
@@ -65,7 +65,7 @@
       background-color: transparent;
       background-image: linear-gradient(
         to right,
-        var(--lh-border-color-light, var(--lh-border-color-base)) 50%,
+        var(--lh-border-color-light, var(--lh-border-color-base, #D8D3CC)) 50%,
         transparent 50%
       );
       background-size: 8px 1px;
@@ -77,7 +77,7 @@
     padding: 0 12px;
     font-size: 14px;
     font-weight: 500;
-    color: var(--lh-text-primary);
+    color: var(--lh-text-primary, #2C2C2C);
     white-space: nowrap;
   }
 }

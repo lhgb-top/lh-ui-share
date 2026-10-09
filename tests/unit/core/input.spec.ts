@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { getWordCount, shouldShowWordLimit, clampString, getInputStyle } from '../../../src/core/input/logic'
+import {
+  getWordCount,
+  shouldShowWordLimit,
+  clampString,
+  getInputStyle,
+  getInputAria,
+} from '../../../src/core/input/logic'
 
 describe('input/core/logic', () => {
 	describe('getWordCount', () => {
@@ -13,6 +19,12 @@ describe('input/core/logic', () => {
 
 		it('handles empty string', () => {
 			expect(getWordCount({ value: '', maxlength: 50 })).toBe('0/50')
+		})
+
+		it('handles undefined value before mount', () => {
+			// 回归：react/uni 挂载前 value 可能为 undefined，曾直接崩溃
+			expect(getWordCount({ value: undefined as unknown as string, maxlength: 10 })).toBe('0/10')
+			expect(getWordCount({ value: undefined as unknown as string })).toBe('0/∞')
 		})
 	})
 
@@ -65,4 +77,15 @@ describe('input/core/logic', () => {
 			expect(getInputStyle('unknown')).toEqual({ padding: '8px 12px', fontSize: '14px' })
 		})
 	})
+})
+describe('input accessibility', () => {
+  it('binds label, description and validation semantics', () => {
+    expect(getInputAria({})).toEqual({})
+    expect(getInputAria({ label: '用户名', describedby: 'hint', invalid: true, required: true })).toEqual({
+      'aria-label': '用户名',
+      'aria-describedby': 'hint',
+      'aria-invalid': true,
+      'aria-required': true,
+    })
+  })
 })

@@ -27,6 +27,41 @@ describe('Statistic Core Logic', () => {
     expect(formatStatisticValue(Infinity, { precision: 2, separator: '' })).toBe('Infinity')
   })
 
+  it('preserves precision for big-number strings beyond MAX_SAFE_INTEGER', () => {
+    // Number 强转会把末位 3 丢成 2，字符串路径必须原样保留
+    expect(formatStatisticValue('9007199254740993', { precision: 0, separator: ',' })).toBe(
+      '9,007,199,254,740,993',
+    )
+    expect(formatStatisticValue('123456789012345678901', { precision: 0, separator: ' ' })).toBe(
+      '123 456 789 012 345 678 901',
+    )
+  })
+
+  it('pads decimals for big-number strings at fixed precision', () => {
+    expect(formatStatisticValue('9007199254740993', { precision: 2, separator: ',' })).toBe(
+      '9,007,199,254,740,993.00',
+    )
+  })
+
+  it('rounds big-number strings without Number coercion', () => {
+    expect(formatStatisticValue('9007199254740993.7', { precision: 0, separator: ',' })).toBe(
+      '9,007,199,254,740,994',
+    )
+    expect(formatStatisticValue('99999999999999999.99', { precision: 1, separator: '' })).toBe(
+      '100000000000000000.0',
+    )
+  })
+
+  it('respects sign for big-number strings', () => {
+    expect(formatStatisticValue('-9007199254740993', { precision: 0, separator: ',' })).toBe(
+      '-9,007,199,254,740,993',
+    )
+  })
+
+  it('keeps safe-range strings on the number path', () => {
+    expect(formatStatisticValue('182.50', { precision: 2, separator: ',' })).toBe('182.50')
+  })
+
   it('builds base class list', () => {
     expect(getStatisticClassNames()).toEqual(['lh-statistic'])
   })

@@ -5,8 +5,8 @@
 // ==============================
 
 .lh-tabs {
-  font-family: var(--lh-font-family);
-  font-size: var(--lh-font-size-base);
+  font-family: var(--lh-font-family, 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif);
+  font-size: var(--lh-font-size-base, 14px);
 
   // bottom 位置：内容区在上、页签头在下
   &--bottom {
@@ -30,7 +30,7 @@
     border: none;
     background: none;
     font-family: inherit;
-    font-size: var(--lh-font-size-base);
+    font-size: var(--lh-font-size-base, 14px);
     color: var(--lh-text-regular, #5A5A5A);
     cursor: pointer;
     transition: color 0.2s ease;
@@ -42,7 +42,7 @@
     &:focus-visible {
       outline: 2px solid var(--lh-primary-color, #2B4C7C);
       outline-offset: -2px;
-      border-radius: var(--lh-border-radius-small);
+      border-radius: var(--lh-border-radius-small, 2px);
     }
 
     &:disabled {
@@ -53,7 +53,7 @@
     // 线条外观：激活页签底部墨线
     .lh-tabs--line &--active {
       color: var(--lh-primary-color, #2B4C7C);
-      font-weight: var(--lh-font-weight-primary);
+      font-weight: var(--lh-font-weight-primary, 400);
 
       &::after {
         content: '';
@@ -70,7 +70,7 @@
     .lh-tabs--card & {
       border: 1px solid var(--lh-border-color-light, #E5E0D8);
       border-bottom: none;
-      border-radius: var(--lh-border-radius-base) var(--lh-border-radius-base) 0 0;
+      border-radius: var(--lh-border-radius-base, 2px) var(--lh-border-radius-base, 2px) 0 0;
 
       &:not(:disabled):hover {
         color: var(--lh-primary-color, #2B4C7C);
@@ -83,7 +83,7 @@
       // 盖住 header 的下边线，形成连通感
       box-shadow: inset 0 1px 0 0 var(--lh-bg-color, #FAF6F0);
       color: var(--lh-primary-color, #2B4C7C);
-      font-weight: var(--lh-font-weight-primary);
+      font-weight: var(--lh-font-weight-primary, 400);
     }
   }
 
@@ -93,9 +93,9 @@
     justify-content: center;
     width: 16px;
     height: 16px;
-    font-size: var(--lh-font-size-extra-small);
+    font-size: var(--lh-font-size-extra-small, 12px);
     line-height: 1;
-    border-radius: var(--lh-border-radius-circle);
+    border-radius: var(--lh-border-radius-circle, 50%);
 
     &:hover {
       background-color: rgba(0, 0, 0, 0.08);
@@ -111,9 +111,9 @@
     height: 28px;
     margin-bottom: 4px;
     border: 1px dashed var(--lh-border-color-base, #D8D3CC);
-    border-radius: var(--lh-border-radius-small);
+    border-radius: var(--lh-border-radius-small, 2px);
     background: none;
-    font-size: var(--lh-font-size-base);
+    font-size: var(--lh-font-size-base, 14px);
     color: var(--lh-text-secondary, #8A8A8A);
     cursor: pointer;
     transition: color 0.2s ease, border-color 0.2s ease;
@@ -135,11 +135,22 @@
 }
 
 .lh-tab-pane {
-  font-family: var(--lh-font-family);
+  font-family: var(--lh-font-family, 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif);
   color: var(--lh-text-regular, #5A5A5A);
 
   &:focus-visible {
     outline: 2px solid var(--lh-primary-color, #2B4C7C);
     outline-offset: 2px;
+  }
+}
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-tabs,
+  .lh-tabs * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

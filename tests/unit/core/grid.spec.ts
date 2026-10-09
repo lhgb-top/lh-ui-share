@@ -24,13 +24,17 @@ describe('LhGrid core', () => {
   })
 
   it('maps span + offset to grid-column', () => {
-    expect(getColStyle(8)).toEqual({ gridColumn: '1 / span 8' })
+    // 纯 span 走 auto-placement（显式起点会让同行多列全部从 1 开始，被 grid 推成竖排）
+    expect(getColStyle(8)).toEqual({ gridColumn: 'span 8' })
     expect(getColStyle({ span: 8, offset: 4 })).toEqual({ gridColumn: '5 / span 8' })
     expect(getColStyle(undefined)).toEqual({ gridColumn: 'span 24' })
   })
 
   it('keeps an offset-only column full width (used only for positioning)', () => {
-    expect(getColStyle({ offset: 6 })).toEqual({ gridColumn: '7 / span 24' })
+    // span 0 = 定位哨兵：从起点延伸到栅格末行，而不是 `span 24` 越界生成隐式轨道
+    expect(getColStyle({ offset: 6 })).toEqual({ gridColumn: '7 / 25' })
+    // 显式 span 仍按 span N 表达
+    expect(getColStyle({ offset: 6, span: 8 })).toEqual({ gridColumn: '7 / span 8' })
   })
 
   it('computes class names', () => {
@@ -41,6 +45,19 @@ describe('LhGrid core', () => {
       'lh-row--nowrap',
     ])
     expect(getGridColClassNames({ span: 8, offset: 2 })).toEqual(['lh-col', 'lh-col--8', 'lh-col--offset-2'])
+  })
+
+  it('align 的 center 走 --middle 别名，与 justify 的 center 不撞车', () => {
+    // justify/align 同为 center：两轴各一个修饰类，不重复
+    expect(getGridRowClassNames({ justify: 'center', align: 'center' })).toEqual([
+      'lh-row',
+      'lh-row--center',
+      'lh-row--middle',
+    ])
+  })
+
+  it('未知 justify/align 值不产出无样式定义的脏类', () => {
+    expect(getGridRowClassNames({ justify: 'foo', align: 'bar' })).toEqual(['lh-row'])
   })
   it('resolves breakpoints from viewport width (Tailwind thresholds)', () => {
     expect(resolveBreakpoint(0)).toBe('xs')

@@ -21,16 +21,16 @@
   display: block;
   padding: 4px 0 4px 12px;
   border-inline-start: 2px solid transparent;
-  color: var(--lh-anchor-color, var(--lh-text-regular, #5a5a5a));
+  color: var(--lh-anchor-color, var(--lh-text-regular, #5A5A5A));
   font-size: var(--lh-font-size-small, 13px);
   text-decoration: none;
 
   &:hover {
-    color: var(--lh-primary-color, #409eff);
+    color: var(--lh-primary-color, #2B4C7C);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
     outline-offset: -2px;
   }
 
@@ -43,8 +43,8 @@
   }
 
   &--active {
-    border-inline-start-color: var(--lh-primary-color, #409eff);
-    color: var(--lh-primary-color, #409eff);
+    border-inline-start-color: var(--lh-primary-color, #2B4C7C);
+    color: var(--lh-primary-color, #2B4C7C);
     font-weight: 600;
   }
 
@@ -55,6 +55,17 @@
   }
 
   .lh-anchor--horizontal &--active {
-    border-block-end-color: var(--lh-primary-color, #409eff);
+    border-block-end-color: var(--lh-primary-color, #2B4C7C);
+  }
+}
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-anchor,
+  .lh-anchor * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

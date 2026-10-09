@@ -3,6 +3,24 @@
   "type": "module",
   "version": "0.1.0",
   "description": "lh-ui 家族唯一的框架无关共享层：core 纯函数 / theme / constants / locales / types / utils / 组件样式源",
+  "keywords": [
+    "lh-ui",
+    "ui",
+    "components",
+    "design-system",
+    "theme",
+    "framework-agnostic",
+    "headless"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lhgb-top/lh-ui-share.git"
+  },
+  "homepage": "https://github.com/lhgb-top/lh-ui-share#readme",
+  "bugs": {
+    "url": "https://github.com/lhgb-top/lh-ui-share/issues"
+  },
   "main": "lib/index.js",
   "module": "es/index.js",
   "types": "es/index.d.ts",
@@ -16,6 +34,281 @@
       "types": "./es/core/index.d.ts",
       "import": "./es/core/index.js",
       "require": "./lib/core/index.js"
+    },
+    "./core/affix/*": {
+      "types": "./es/core/affix/*.d.ts",
+      "import": "./es/core/affix/*.js",
+      "require": "./lib/core/affix/*.js"
+    },
+    "./core/alert/*": {
+      "types": "./es/core/alert/*.d.ts",
+      "import": "./es/core/alert/*.js",
+      "require": "./lib/core/alert/*.js"
+    },
+    "./core/anchor/*": {
+      "types": "./es/core/anchor/*.d.ts",
+      "import": "./es/core/anchor/*.js",
+      "require": "./lib/core/anchor/*.js"
+    },
+    "./core/avatar/*": {
+      "types": "./es/core/avatar/*.d.ts",
+      "import": "./es/core/avatar/*.js",
+      "require": "./lib/core/avatar/*.js"
+    },
+    "./core/backtop/*": {
+      "types": "./es/core/backtop/*.d.ts",
+      "import": "./es/core/backtop/*.js",
+      "require": "./lib/core/backtop/*.js"
+    },
+    "./core/badge/*": {
+      "types": "./es/core/badge/*.d.ts",
+      "import": "./es/core/badge/*.js",
+      "require": "./lib/core/badge/*.js"
+    },
+    "./core/breadcrumb/*": {
+      "types": "./es/core/breadcrumb/*.d.ts",
+      "import": "./es/core/breadcrumb/*.js",
+      "require": "./lib/core/breadcrumb/*.js"
+    },
+    "./core/button/*": {
+      "types": "./es/core/button/*.d.ts",
+      "import": "./es/core/button/*.js",
+      "require": "./lib/core/button/*.js"
+    },
+    "./core/calendar/*": {
+      "types": "./es/core/calendar/*.d.ts",
+      "import": "./es/core/calendar/*.js",
+      "require": "./lib/core/calendar/*.js"
+    },
+    "./core/card/*": {
+      "types": "./es/core/card/*.d.ts",
+      "import": "./es/core/card/*.js",
+      "require": "./lib/core/card/*.js"
+    },
+    "./core/cascader/*": {
+      "types": "./es/core/cascader/*.d.ts",
+      "import": "./es/core/cascader/*.js",
+      "require": "./lib/core/cascader/*.js"
+    },
+    "./core/checkbox/*": {
+      "types": "./es/core/checkbox/*.d.ts",
+      "import": "./es/core/checkbox/*.js",
+      "require": "./lib/core/checkbox/*.js"
+    },
+    "./core/collapse/*": {
+      "types": "./es/core/collapse/*.d.ts",
+      "import": "./es/core/collapse/*.js",
+      "require": "./lib/core/collapse/*.js"
+    },
+    "./core/date-picker/*": {
+      "types": "./es/core/date-picker/*.d.ts",
+      "import": "./es/core/date-picker/*.js",
+      "require": "./lib/core/date-picker/*.js"
+    },
+    "./core/descriptions/*": {
+      "types": "./es/core/descriptions/*.d.ts",
+      "import": "./es/core/descriptions/*.js",
+      "require": "./lib/core/descriptions/*.js"
+    },
+    "./core/dialog/*": {
+      "types": "./es/core/dialog/*.d.ts",
+      "import": "./es/core/dialog/*.js",
+      "require": "./lib/core/dialog/*.js"
+    },
+    "./core/divider/*": {
+      "types": "./es/core/divider/*.d.ts",
+      "import": "./es/core/divider/*.js",
+      "require": "./lib/core/divider/*.js"
+    },
+    "./core/drawer/*": {
+      "types": "./es/core/drawer/*.d.ts",
+      "import": "./es/core/drawer/*.js",
+      "require": "./lib/core/drawer/*.js"
+    },
+    "./core/dropdown/*": {
+      "types": "./es/core/dropdown/*.d.ts",
+      "import": "./es/core/dropdown/*.js",
+      "require": "./lib/core/dropdown/*.js"
+    },
+    "./core/empty/*": {
+      "types": "./es/core/empty/*.d.ts",
+      "import": "./es/core/empty/*.js",
+      "require": "./lib/core/empty/*.js"
+    },
+    "./core/form/*": {
+      "types": "./es/core/form/*.d.ts",
+      "import": "./es/core/form/*.js",
+      "require": "./lib/core/form/*.js"
+    },
+    "./core/grid/*": {
+      "types": "./es/core/grid/*.d.ts",
+      "import": "./es/core/grid/*.js",
+      "require": "./lib/core/grid/*.js"
+    },
+    "./core/icon/*": {
+      "types": "./es/core/icon/*.d.ts",
+      "import": "./es/core/icon/*.js",
+      "require": "./lib/core/icon/*.js"
+    },
+    "./core/image/*": {
+      "types": "./es/core/image/*.d.ts",
+      "import": "./es/core/image/*.js",
+      "require": "./lib/core/image/*.js"
+    },
+    "./core/input/*": {
+      "types": "./es/core/input/*.d.ts",
+      "import": "./es/core/input/*.js",
+      "require": "./lib/core/input/*.js"
+    },
+    "./core/input-number/*": {
+      "types": "./es/core/input-number/*.d.ts",
+      "import": "./es/core/input-number/*.js",
+      "require": "./lib/core/input-number/*.js"
+    },
+    "./core/loading/*": {
+      "types": "./es/core/loading/*.d.ts",
+      "import": "./es/core/loading/*.js",
+      "require": "./lib/core/loading/*.js"
+    },
+    "./core/menu/*": {
+      "types": "./es/core/menu/*.d.ts",
+      "import": "./es/core/menu/*.js",
+      "require": "./lib/core/menu/*.js"
+    },
+    "./core/message/*": {
+      "types": "./es/core/message/*.d.ts",
+      "import": "./es/core/message/*.js",
+      "require": "./lib/core/message/*.js"
+    },
+    "./core/notification/*": {
+      "types": "./es/core/notification/*.d.ts",
+      "import": "./es/core/notification/*.js",
+      "require": "./lib/core/notification/*.js"
+    },
+    "./core/pagination/*": {
+      "types": "./es/core/pagination/*.d.ts",
+      "import": "./es/core/pagination/*.js",
+      "require": "./lib/core/pagination/*.js"
+    },
+    "./core/popconfirm/*": {
+      "types": "./es/core/popconfirm/*.d.ts",
+      "import": "./es/core/popconfirm/*.js",
+      "require": "./lib/core/popconfirm/*.js"
+    },
+    "./core/popover/*": {
+      "types": "./es/core/popover/*.d.ts",
+      "import": "./es/core/popover/*.js",
+      "require": "./lib/core/popover/*.js"
+    },
+    "./core/progress/*": {
+      "types": "./es/core/progress/*.d.ts",
+      "import": "./es/core/progress/*.js",
+      "require": "./lib/core/progress/*.js"
+    },
+    "./core/radio/*": {
+      "types": "./es/core/radio/*.d.ts",
+      "import": "./es/core/radio/*.js",
+      "require": "./lib/core/radio/*.js"
+    },
+    "./core/rate/*": {
+      "types": "./es/core/rate/*.d.ts",
+      "import": "./es/core/rate/*.js",
+      "require": "./lib/core/rate/*.js"
+    },
+    "./core/segmented/*": {
+      "types": "./es/core/segmented/*.d.ts",
+      "import": "./es/core/segmented/*.js",
+      "require": "./lib/core/segmented/*.js"
+    },
+    "./core/select/*": {
+      "types": "./es/core/select/*.d.ts",
+      "import": "./es/core/select/*.js",
+      "require": "./lib/core/select/*.js"
+    },
+    "./core/skeleton/*": {
+      "types": "./es/core/skeleton/*.d.ts",
+      "import": "./es/core/skeleton/*.js",
+      "require": "./lib/core/skeleton/*.js"
+    },
+    "./core/slider/*": {
+      "types": "./es/core/slider/*.d.ts",
+      "import": "./es/core/slider/*.js",
+      "require": "./lib/core/slider/*.js"
+    },
+    "./core/space/*": {
+      "types": "./es/core/space/*.d.ts",
+      "import": "./es/core/space/*.js",
+      "require": "./lib/core/space/*.js"
+    },
+    "./core/spinner/*": {
+      "types": "./es/core/spinner/*.d.ts",
+      "import": "./es/core/spinner/*.js",
+      "require": "./lib/core/spinner/*.js"
+    },
+    "./core/statistic/*": {
+      "types": "./es/core/statistic/*.d.ts",
+      "import": "./es/core/statistic/*.js",
+      "require": "./lib/core/statistic/*.js"
+    },
+    "./core/steps/*": {
+      "types": "./es/core/steps/*.d.ts",
+      "import": "./es/core/steps/*.js",
+      "require": "./lib/core/steps/*.js"
+    },
+    "./core/switch/*": {
+      "types": "./es/core/switch/*.d.ts",
+      "import": "./es/core/switch/*.js",
+      "require": "./lib/core/switch/*.js"
+    },
+    "./core/table/*": {
+      "types": "./es/core/table/*.d.ts",
+      "import": "./es/core/table/*.js",
+      "require": "./lib/core/table/*.js"
+    },
+    "./core/tabs/*": {
+      "types": "./es/core/tabs/*.d.ts",
+      "import": "./es/core/tabs/*.js",
+      "require": "./lib/core/tabs/*.js"
+    },
+    "./core/tag/*": {
+      "types": "./es/core/tag/*.d.ts",
+      "import": "./es/core/tag/*.js",
+      "require": "./lib/core/tag/*.js"
+    },
+    "./core/time-picker/*": {
+      "types": "./es/core/time-picker/*.d.ts",
+      "import": "./es/core/time-picker/*.js",
+      "require": "./lib/core/time-picker/*.js"
+    },
+    "./core/timeline/*": {
+      "types": "./es/core/timeline/*.d.ts",
+      "import": "./es/core/timeline/*.js",
+      "require": "./lib/core/timeline/*.js"
+    },
+    "./core/tooltip/*": {
+      "types": "./es/core/tooltip/*.d.ts",
+      "import": "./es/core/tooltip/*.js",
+      "require": "./lib/core/tooltip/*.js"
+    },
+    "./core/transfer/*": {
+      "types": "./es/core/transfer/*.d.ts",
+      "import": "./es/core/transfer/*.js",
+      "require": "./lib/core/transfer/*.js"
+    },
+    "./core/tree/*": {
+      "types": "./es/core/tree/*.d.ts",
+      "import": "./es/core/tree/*.js",
+      "require": "./lib/core/tree/*.js"
+    },
+    "./core/upload/*": {
+      "types": "./es/core/upload/*.d.ts",
+      "import": "./es/core/upload/*.js",
+      "require": "./lib/core/upload/*.js"
+    },
+    "./core/virtual-list/*": {
+      "types": "./es/core/virtual-list/*.d.ts",
+      "import": "./es/core/virtual-list/*.js",
+      "require": "./lib/core/virtual-list/*.js"
     },
     "./core/*": {
       "types": "./es/core/*/index.d.ts",
@@ -32,6 +325,11 @@
       "import": "./es/locales/index.js",
       "require": "./lib/locales/index.js"
     },
+    "./locales/lang/*": {
+      "types": "./es/locales/lang/*.d.ts",
+      "import": "./es/locales/lang/*.js",
+      "require": "./lib/locales/lang/*.js"
+    },
     "./theme": {
       "types": "./es/theme/index.d.ts",
       "import": "./es/theme/index.js",
@@ -40,15 +338,27 @@
     "./types": {
       "types": "./es/types/index.d.ts"
     },
+    "./types/components/*": {
+      "types": "./es/types/components/*.d.ts"
+    },
     "./utils": {
       "types": "./es/utils/index.d.ts",
       "import": "./es/utils/index.js",
       "require": "./lib/utils/index.js"
     },
+    "./utils/*": {
+      "types": "./es/utils/*.d.ts",
+      "import": "./es/utils/*.js",
+      "require": "./lib/utils/*.js"
+    },
     "./theme.css": "./dist/theme/index.css",
     "./theme-dark.css": "./dist/theme/index-dark.css",
-    "./styles/*": "./styles/*/index.scss",
-    "./styles.css": "./dist/styles/index.css"
+    "./styles.css": "./dist/styles/index.css",
+    "./dist/*": "./dist/*",
+    "./styles/theme/index.scss": "./styles/theme/index.scss",
+    "./styles/theme/common/*.scss": "./styles/theme/common/*.scss",
+    "./styles/theme/common/*": "./styles/theme/common/*.scss",
+    "./styles/*": "./styles/*/index.scss"
   },
   "files": [
     "es",
@@ -60,12 +370,17 @@
     "**/*.css",
     "**/*.scss"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "packageManager": "pnpm@10.34.5",
   "scripts": {
-    "build": "vite build && pnpm build:styles && pnpm build:dts",
+    "build": "vite build && pnpm build:styles && pnpm build:dts && pnpm sync:exports",
     "build:styles": "node scripts/build-styles.mjs",
     "build:dts": "tsc -p tsconfig.build.json",
+    "sync:exports": "node scripts/sync-exports.mjs",
     "verify:dts": "node scripts/verify-dts.mjs",
+    "verify:styles": "node scripts/verify-styles.mjs",
     "extract": "node scripts/extract-from-plus.mjs",
     "lint": "eslint src tests scripts vite.config.ts vitest.config.ts",
     "lint:fix": "eslint src tests scripts vite.config.ts vitest.config.ts --fix",
@@ -75,7 +390,7 @@
     "test:watch": "vitest",
     "changeset": "changeset",
     "changeset:status": "changeset status",
-    "prepublishOnly": "pnpm run build && pnpm run build:styles && pnpm run build:dts"
+    "prepublishOnly": "pnpm run build && pnpm run verify:dts && pnpm run verify:styles"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.3",
@@ -91,5 +406,9 @@
     "typescript-eslint": "^8.70.0",
     "vite": "^7.3.6",
     "vitest": "^5.0.1"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

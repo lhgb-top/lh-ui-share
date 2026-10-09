@@ -3,6 +3,7 @@ import {
   getStepClassNames,
   getStepStatus,
   getStepsClassNames,
+  getStepAria,
 } from '../../../src/core/steps'
 
 describe('core/steps', () => {
@@ -33,5 +34,13 @@ describe('core/steps', () => {
       'lh-steps__item--last',
       'lh-steps__item--clickable',
     ])
+  })
+})
+
+describe('LhSteps accessibility', () => {
+  it('marks the in-progress step', () => {
+    expect(getStepAria('process')).toEqual({ 'aria-current': 'step' })
+    expect(getStepAria('wait')).toEqual({})
+    expect(getStepAria('finish')).toEqual({})
   })
 })

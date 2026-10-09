@@ -1,12 +1,18 @@
 import type { LhAnchorItem, LhFlatAnchorItem } from './types'
 
-/** 扁平化锚点（深度优先，保持文档顺序） */
-export function flattenAnchorItems(items: LhAnchorItem[], level = 0): LhFlatAnchorItem[] {
+/** 扁平化锚点（深度优先，保持文档顺序）。祖先链判重保护循环引用 */
+export function flattenAnchorItems(
+  items: LhAnchorItem[],
+  level = 0,
+  seen: Set<LhAnchorItem> = new Set()
+): LhFlatAnchorItem[] {
   const result: LhFlatAnchorItem[] = []
   for (const item of items) {
+    if (seen.has(item)) continue
+    seen.add(item)
     result.push({ id: item.id, title: item.title, level })
     if (item.children?.length) {
-      result.push(...flattenAnchorItems(item.children, level + 1))
+      result.push(...flattenAnchorItems(item.children, level + 1, seen))
     }
   }
   return result

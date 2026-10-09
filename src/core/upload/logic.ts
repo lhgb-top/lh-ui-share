@@ -1,13 +1,23 @@
 import type { LhUploadFile, LhUploadFileStatus } from './types'
+import { ariaDescribedby } from '../shared/a11y'
+import type { LhAriaAttrs } from '../shared/a11y'
 
 /** 默认大小上限 5MB */
 export const LH_UPLOAD_MAX_SIZE = 5 * 1024 * 1024
 
-/** 生成文件 uid */
-let uidSeed = 0
-export function createUploadUid(): string {
-  uidSeed += 1
-  return `lh-upload-${Date.now()}-${uidSeed}`
+/**
+ * 生成文件 uid
+ *
+ * 不再使用模块级自增种子：share 被三库各自打包，同毫秒内不同库实例
+ * 会产出同号 uid（Date.now 相同 + 种子各自从 0 起）。改用 crypto.randomUUID，
+ * 无该 API 的环境（部分 uniapp 运行时）回退到时间戳 + 随机数。
+ */
+export function createUploadUid(prefix: string = 'lh-upload'): string {
+  const random =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  return `${prefix}-${random}`
 }
 
 /** 人类可读大小 */
@@ -29,8 +39,9 @@ export function createUploadFile(file: File, uid: string = createUploadUid()): L
   }
 }
 
-/** 校验：超出大小限制 */
+/** 校验：超出大小限制（maxSize 非有限数时视为无限制） */
 export function exceedsMaxSize(file: File, maxSize: number): boolean {
+  if (!Number.isFinite(maxSize)) return false
   return file.size > maxSize
 }
 
@@ -52,15 +63,24 @@ export function normalizeUploadAccept(accept?: string | string[] | null): string
     .filter((part) => part.length > 0)
 }
 
-/** 校验：扩展名不在允许列表（accept 支持 '.png' 与 'image/*' 两种写法） */
-export function isExtensionRejected(fileName: string, accept: string[]): boolean {
+/**
+ * 校验：文件是否被 accept 规则拒绝（支持 '.png' 扩展名、'image/*' 通配、'image/png' 具体 MIME）。
+ *
+ * MIME 规则必须比对文件的真实 type（`file.type`），文件名无法承载该信息。
+ * 注意：原生 `<input accept>` 只是建议性过滤（用户可切到「所有文件」），
+ * core 层的校验是最后一道防线，不能对通配规则恒真放行。
+ *
+ * @returns true 表示文件不在 accept 允许范围内
+ */
+export function isFileRejected(file: { name: string; type: string }, accept: string[]): boolean {
   if (accept.length === 0) return false
-  const lower = fileName.toLowerCase()
+  const name = file.name.toLowerCase()
+  const type = file.type.toLowerCase()
   return !accept.some((pattern) => {
     const rule = pattern.toLowerCase().trim()
-    if (rule.startsWith('.')) return lower.endsWith(rule)
-    if (rule.endsWith('/*')) return true // MIME 通配在 core 层不做真实类型嗅探，由浏览器 accept 兜底
-    return lower.endsWith(`.${rule}`)
+    if (rule.startsWith('.')) return name.endsWith(rule)
+    if (rule.endsWith('/*')) return type.startsWith(rule.slice(0, -1))
+    return type === rule
   })
 }
 
@@ -89,4 +109,22 @@ export function getUploadClassNames(state: { dragOver: boolean; disabled: boolea
 /** 文件项类名 */
 export function getUploadFileClassNames(status: LhUploadFileStatus): string[] {
   return ['lh-upload__file', `lh-upload__file--${status}`]
+}
+
+/**
+ * 上传文件的无障碍属性包：把文件状态描述（上传中 / 成功 / 失败）关联到文件项
+ *
+ * @param statusId 状态描述元素 id（由 UI 层渲染「上传失败」等提示并绑定）
+ */
+export function getUploadFileAria(statusId?: string): LhAriaAttrs {
+  return ariaDescribedby(statusId)
+}
+
+/**
+ * 拖拽上传区域的无障碍属性包：role="button"，禁用时输出 aria-disabled
+ */
+export function getUploadDropzoneAria(disabled?: boolean): LhAriaAttrs {
+  const attrs: LhAriaAttrs = { role: 'button' }
+  if (disabled) attrs['aria-disabled'] = true
+  return attrs
 }

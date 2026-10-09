@@ -13,10 +13,18 @@ import { join, resolve } from 'node:path'
 
 const srcDir = resolve(__dirname, 'src')
 
-/** 入口：根入口 + core 各组件目录 + 各子层（constants/locales/theme/utils） */
+/**
+ * 入口：根入口 + core 聚合入口 + core 各组件目录 + 各子层（constants/locales/theme/utils）
+ *
+ * 注意：src/core/index.ts 是聚合文件而非目录，不会被下面的目录遍历收录，
+ * 必须单独加入，否则 package.json 的 `./core` 子路径导出指向的
+ * es/core/index.js / lib/core/index.js 不会产出。
+ */
 function collectEntries() {
   const entries = [join(srcDir, 'index.ts')]
   const coreDir = join(srcDir, 'core')
+  const coreIndex = join(coreDir, 'index.ts')
+  if (existsSync(coreIndex)) entries.push(coreIndex)
   for (const name of readdirSync(coreDir).sort()) {
     const dir = join(coreDir, name)
     if (statSync(dir).isDirectory() && existsSync(join(dir, 'index.ts'))) {

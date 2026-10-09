@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mergePt } from '../../../src/core/shared/pt'
-import { sxToStyle } from '../../../src/core/shared/sx'
+import { mergeSx, sxToStyle } from '../../../src/core/shared/sx'
 
 describe('shared/pt - mergePt', () => {
   it('returns baseClass when pt is undefined', () => {
@@ -105,6 +105,13 @@ describe('shared/sx - sxToStyle', () => {
     expect(sxToStyle({ p: 4 })).toEqual({ padding: '32px' })
   })
 
+  it('converts spacing given as strings verbatim (no NaNpx)', () => {
+    // 回归：spacingToPx 曾对任何输入做 `${value * 8}px`，字符串相乘得到 "NaNpx"
+    const style = sxToStyle({ mt: '2rem', p: 'var(--gap)' })
+    expect(style.marginTop).toBe('2rem')
+    expect(style.padding).toBe('var(--gap)')
+  })
+
   it('converts display and flex properties', () => {
     const style = sxToStyle({
       display: 'flex',
@@ -118,5 +125,38 @@ describe('shared/sx - sxToStyle', () => {
     expect(style.alignItems).toBe('center')
     expect(style.justifyContent).toBe('space-between')
     expect(style.flex).toBe('1 1 0%')
+  })
+
+  it('longhand beats shorthand regardless of key order', () => {
+    // 回归：m/p 简写曾无条件最后写入，覆盖长手且与键序无关
+    const longhandFirst = sxToStyle({ mt: 4, m: 2 })
+    const shorthandFirst = sxToStyle({ m: 2, mt: 4 })
+    expect(longhandFirst).toEqual({ margin: '16px', marginTop: '32px' })
+    expect(shorthandFirst).toEqual({ margin: '16px', marginTop: '32px' })
+
+    const padA = sxToStyle({ pt: 4, p: 2 })
+    const padB = sxToStyle({ p: 2, pt: 4 })
+    expect(padA).toEqual({ padding: '16px', paddingTop: '32px' })
+    expect(padB).toEqual(padA)
+  })
+
+  it('axis group beats shorthand but loses to longhand', () => {
+    const style = sxToStyle({ my: 1, m: 2, mb: 3 })
+    expect(style.margin).toBe('16px')
+    expect(style.marginTop).toBe('8px')
+    expect(style.marginBottom).toBe('24px')
+  })
+
+  it('mergeSx composes default + caller sx with later-wins shallow merge', () => {
+    const merged = mergeSx({ mt: 1, display: 'flex' }, undefined, { mt: 3, w: 100 })
+    expect(sxToStyle(merged)).toEqual({
+      width: '100px',
+      marginTop: '24px',
+      display: 'flex',
+    })
+    expect(merged.mt).toBe(3)
+    expect(merged.display).toBe('flex')
+    expect(merged.w).toBe(100)
+    expect(mergeSx(null, undefined)).toEqual({})
   })
 })

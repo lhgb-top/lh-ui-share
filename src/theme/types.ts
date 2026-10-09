@@ -5,6 +5,9 @@ export type ThemePresetName =
   | 'zhusha'     // 朱砂（印泥朱红）
   | 'shuimo'     // 水墨黑白
   | 'golden'     // 藤黄（秋叶金黄）
+  // `string & {}` 保持字面量的自动补全，同时开放任意自定义名称（配合 registerTheme 注册）；
+  // 未注册的名称在 getThemePreset / getThemeVars 中返回 undefined
+  | (string & {})
 
 /** 主题预设配置接口 */
 export interface ThemePreset {

@@ -6,6 +6,8 @@ import {
   groupNotificationsByPosition,
   isRightPosition,
   isTopPosition,
+  getNotificationAria,
+  getNotificationRole,
 } from '../../../src/core/notification'
 
 describe('LhNotification core', () => {
@@ -47,5 +49,25 @@ describe('LhNotification core', () => {
   it('computes cumulative stacking offsets with a gap', () => {
     expect(computeStackOffsets([40, 60, 30], 10)).toEqual([0, 50, 120])
     expect(computeStackOffsets([])).toEqual([])
+  })
+
+  it('routes unknown positions into top-right instead of throwing (round 2)', () => {
+    // 回归：JS 侧脏 position（undefined / 非法串）曾让 groups[item.position] 为
+    // undefined → TypeError，殃及整队合法通知的分组
+    const dirty = [{ id: 1, position: 'nowhere' }] as Parameters<
+      typeof groupNotificationsByPosition
+    >[0]
+    const groups = groupNotificationsByPosition(dirty)
+    expect(groups['top-right']).toHaveLength(1)
+    expect(groups['top-right'][0].id).toBe(1)
+  })
+})
+
+describe('LhNotification accessibility', () => {
+  it('maps semantics to live region roles like alert and message do', () => {
+    expect(getNotificationRole('danger')).toBe('alert')
+    expect(getNotificationRole('warning')).toBe('alert')
+    expect(getNotificationRole('info')).toBe('status')
+    expect(getNotificationAria('error')).toEqual({ role: 'alert' })
   })
 })

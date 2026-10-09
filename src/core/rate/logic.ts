@@ -1,19 +1,14 @@
+import { sanitizeNumber } from '../shared/sanitize'
+import { formatMessage } from '../shared/format'
 import type { LhRateState } from './types'
-
-/** 模板插值：'{n}' 占位符替换，未知占位符原样保留（与 pagination 的 formatMessage 同规则） */
-function interpolate(template: string, params: Record<string, string>): string {
-  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
-    key in params ? String(params[key]) : match,
-  )
-}
+import type { LhAriaAttrs } from '../shared/a11y'
 
 /** 默认星数 */
 export const LH_RATE_MAX_DEFAULT = 5
 
-/** 钳制评分到 [0, max]；非数值归 0 */
+/** 钳制评分到 [0, max]；非数值归 0（max 非有限时自动忽略上界） */
 export function clampRate(value: number | undefined, max: number): number {
-  if (typeof value !== 'number' || Number.isNaN(value)) return 0
-  return Math.min(Math.max(value, 0), max)
+  return sanitizeNumber(value, 0, { min: 0, max })
 }
 
 /** 步进：半星模式按 0.5，否则 1（direction: 1 增 / -1 减），结果钳制 */
@@ -40,7 +35,7 @@ export function getStarFill(value: number, index: number, allowHalf: boolean): '
 
 /** aria 文案：`{n} 星`（`{n}` 支持小数，如 4.5） */
 export function getRateAriaText(value: number, template: string): string {
-  return interpolate(template, { n: String(Math.round(value * 10) / 10) })
+  return formatMessage(template, { n: String(Math.round(value * 10) / 10) })
 }
 
 /** 只读展示类名 */
@@ -49,4 +44,28 @@ export function getRateClassNames(state: LhRateState & { readonly: boolean; disa
   if (state.readonly) classes.push('lh-rate--readonly')
   if (state.disabled) classes.push('lh-rate--disabled')
   return classes
+}
+
+/**
+ * 评分的无障碍属性包：role="slider" + aria-valuenow/min/max
+ *
+ * 评分是滑块语义（APG rating 常用 slider 实现），
+ * 可读文案由 aria-valuetext 承载（复用 getRateAriaText 的格式化结果）。
+ */
+export function getRateAria(options: {
+  value: number
+  max: number
+  disabled?: boolean
+  ariaValueText?: string
+}): LhAriaAttrs {
+  const { value, max, disabled, ariaValueText } = options
+  const attrs: LhAriaAttrs = {
+    role: 'slider',
+    'aria-valuenow': value,
+    'aria-valuemin': 0,
+    'aria-valuemax': max,
+  }
+  if (disabled) attrs['aria-disabled'] = true
+  if (ariaValueText) attrs['aria-valuetext'] = ariaValueText
+  return attrs
 }

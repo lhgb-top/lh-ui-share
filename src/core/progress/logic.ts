@@ -1,4 +1,5 @@
 import type { LhProgressState, LhProgressStatus } from './types'
+import type { LhAriaAttrs } from '../shared/a11y'
 
 /**
  * 将任意数值钳制到 [0, 100]
@@ -62,4 +63,25 @@ export function getProgressColor(
  */
 export function formatPercentText(percentage: number): string {
   return `${Math.round(percentage)}%`
+}
+
+/**
+ * 进度条的无障碍属性包：role="progressbar" + 值域语义
+ *
+ * @param percentage 百分比（0-100）
+ * @param label 可达名称（如「上传进度」），无可见文字时必需
+ */
+export function getProgressAria(options: {
+  percentage: number
+  label?: string
+}): LhAriaAttrs {
+  const { percentage, label } = options
+  const attrs: LhAriaAttrs = {
+    role: 'progressbar',
+    'aria-valuenow': percentage,
+    'aria-valuemin': 0,
+    'aria-valuemax': 100,
+  }
+  if (label) attrs['aria-label'] = label
+  return attrs
 }

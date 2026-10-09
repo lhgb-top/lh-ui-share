@@ -4,6 +4,9 @@ import {
   getNextActiveName,
   getTabsClassNames,
   resolveActiveName,
+  getTablistAria,
+  getTabAria,
+  getTabpanelAria,
 } from '../../../src/core/tabs'
 import type { LhTabRecord } from '../../../src/core/tabs'
 
@@ -76,5 +79,32 @@ describe('core/tabs', () => {
   it('returns null when removal leaves no enabled tabs', () => {
     const single: LhTabRecord[] = [{ name: 'a', label: 'A', disabled: false }]
     expect(getNameAfterRemove(single, 'a', 'a')).toBe(null)
+  })
+})
+
+describe('LhTabs accessibility', () => {
+  it('marks the tablist', () => {
+    expect(getTablistAria('tl')).toEqual({ role: 'tablist', id: 'tl' })
+  })
+
+  it('binds tab aria attributes', () => {
+    expect(getTabAria({ active: true, panelId: 'p1', id: 't1' })).toEqual({
+      role: 'tab',
+      id: 't1',
+      'aria-controls': 'p1',
+      'aria-selected': true,
+    })
+    expect(getTabAria({ active: false, disabled: true })).toEqual({
+      role: 'tab',
+      'aria-disabled': true,
+    })
+  })
+
+  it('binds tabpanel aria attributes', () => {
+    expect(getTabpanelAria({ id: 'p1', tabId: 't1' })).toEqual({
+      role: 'tabpanel',
+      id: 'p1',
+      'aria-labelledby': 't1',
+    })
   })
 })

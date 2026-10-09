@@ -47,10 +47,15 @@ export interface LhTimePickerState {
 /**
  * TimePicker 选项配置
  */
+/**
+ * TimePicker 选项配置
+ *
+ * `step` 可选，缺省由 getHourStep/getMinuteStep/getSecondStep 兜底为 1。
+ */
 export interface LhTimePickerOptions {
-  hours?: { step: number; disabledHours: () => number[] }
-  minutes?: { step: number; disabledMinutes: (hour: number) => number[] }
-  seconds?: { step: number; disabledSeconds: (hour: number, minute: number) => number[] }
+  hours?: { step?: number; disabledHours?: () => number[] }
+  minutes?: { step?: number; disabledMinutes?: (hour: number) => number[] }
+  seconds?: { step?: number; disabledSeconds?: (hour: number, minute: number) => number[] }
 }
 
 /**

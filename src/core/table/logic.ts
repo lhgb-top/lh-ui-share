@@ -1,3 +1,4 @@
+import type { LhAriaAttrs } from '../shared/a11y'
 import type {
   LhTableCellSticky,
   LhTableColumn,
@@ -6,6 +7,7 @@ import type {
   LhTableSortOrder,
   LhTableVisibleRange,
 } from './types'
+import { computeRange } from '../shared/virtual'
 
 /** 虚拟滚动默认行高 */
 export const LH_TABLE_ROW_HEIGHT = 48
@@ -14,10 +16,12 @@ export const LH_TABLE_ROW_HEIGHT = 48
 export const LH_TABLE_OVERSCAN = 3
 
 /**
- * 计算虚拟滚动的可视区间（纯函数，无 DOM 依赖）
+ * 计算虚拟滚动的可视区间（委托共享内核算法，与 VirtualList 同源，修复同步）
  *
  * totalHeight 供占位元素撑高；offsetY 供窗口容器 translateY；
  * [start, end) 为实际渲染的行下标区间。
+ *
+ * @deprecated 保留兼容别名（vue2 等下游在用）；新代码直接用共享内核 `computeRange`
  */
 export function computeVisibleRange(
   scrollTop: number,
@@ -26,15 +30,7 @@ export function computeVisibleRange(
   total: number,
   overscan: number = LH_TABLE_OVERSCAN,
 ): LhTableVisibleRange {
-  if (rowHeight <= 0 || total <= 0) {
-    return { start: 0, end: 0, offsetY: 0, totalHeight: 0 }
-  }
-  const totalHeight = total * rowHeight
-  const first = Math.floor(Math.max(0, scrollTop) / rowHeight)
-  const visibleCount = Math.ceil(Math.max(0, viewportHeight) / rowHeight)
-  const start = Math.max(0, first - overscan)
-  const end = Math.min(total, start + visibleCount + overscan * 2)
-  return { start, end, offsetY: start * rowHeight, totalHeight }
+  return computeRange(scrollTop, viewportHeight, rowHeight, total, overscan)
 }
 
 /** 排序方向循环：无 → asc → desc → 无 */
@@ -60,7 +56,15 @@ export function sortTableRows(
     if (av == null && bv == null) return 0
     if (av == null) return 1
     if (bv == null) return -1
-    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
+    if (typeof av === 'number' && typeof bv === 'number') {
+      // NaN 不参与比较（其排序结果由实现决定、不确定），统一按「空值排末尾」处理
+      const avFinite = Number.isFinite(av)
+      const bvFinite = Number.isFinite(bv)
+      if (!avFinite && !bvFinite) return 0
+      if (!avFinite) return 1
+      if (!bvFinite) return -1
+      return (av - bv) * dir
+    }
     return String(av).localeCompare(String(bv)) * dir
   })
 }
@@ -85,12 +89,21 @@ export function getGridTemplate(columns: LhTableColumn[]): string {
 
 /**
  * 计算固定列的 sticky 偏移：左侧从左累加、右侧从右累加。
- * 未声明宽度的固定列不参与偏移（调用方应约束固定列必须有宽度）。
+ *
+ * 宽度支持数字与 `'Npx'` 字符串；其他字符串单位（如 '20%'）无法换算为固定偏移，
+ * 固定列应避免使用——这类列按 0 累加，调用方需自行保证布局可接受。
+ * 未声明宽度的固定列不参与偏移。
  */
 export function getStickyOffsets(columns: LhTableColumn[]): LhTableCellSticky[] {
   const offsets: LhTableCellSticky[] = columns.map(() => ({}))
-  const widthOf = (column: LhTableColumn): number =>
-    typeof column.width === 'number' ? column.width : 0
+  const widthOf = (column: LhTableColumn): number => {
+    if (typeof column.width === 'number') return column.width
+    if (typeof column.width === 'string') {
+      const px = /^(\d+(?:\.\d+)?)px$/.exec(column.width.trim())
+      if (px) return parseFloat(px[1])
+    }
+    return 0
+  }
 
   let left = 0
   for (let i = 0; i < columns.length; i++) {
@@ -145,28 +158,46 @@ export function getTableCellClassNames(state: {
 // 多级表头
 // ============================================================================
 
-/** 该列的叶子后代数（无 children 时为 1） */
-function getLeafCount(column: LhTableColumn): number {
+/** 该列的叶子后代数（无 children 时为 1）。祖先链判重保护循环引用 */
+function getLeafCount(column: LhTableColumn, seen: Set<LhTableColumn> = new Set()): number {
   if (!column.children?.length) return 1
-  return column.children.reduce((sum, child) => sum + getLeafCount(child), 0)
+  return column.children.reduce((sum, child) => {
+    if (seen.has(child)) return sum
+    const nextSeen = new Set(seen)
+    nextSeen.add(child)
+    return sum + getLeafCount(child, nextSeen)
+  }, 0)
 }
 
-/** 该列树的最大深度（无 children 时为 1） */
-function getDepth(column: LhTableColumn): number {
+/** 该列树的最大深度（无 children 时为 1）。祖先链判重保护循环引用 */
+function getDepth(column: LhTableColumn, seen: Set<LhTableColumn> = new Set()): number {
   if (!column.children?.length) return 1
-  return 1 + Math.max(...column.children.map(getDepth))
+  return (
+    1 +
+    Math.max(
+      ...column.children.map((child) => {
+        if (seen.has(child)) return 0
+        const nextSeen = new Set(seen)
+        nextSeen.add(child)
+        return getDepth(child, nextSeen)
+      }),
+    )
+  )
 }
 
-/** 递归取全部叶子列（表体按此渲染，保证列数与表头叶子数一致） */
+/** 递归取全部叶子列（表体按此渲染，保证列数与表头叶子数一致）。祖先链判重保护循环引用 */
 export function flattenLeafColumns(columns: LhTableColumn[]): LhTableColumn[] {
   const result: LhTableColumn[] = []
-  const walk = (list: LhTableColumn[]): void => {
+  const walk = (list: LhTableColumn[], seen: Set<LhTableColumn>): void => {
     for (const column of list) {
-      if (column.children?.length) walk(column.children)
+      if (seen.has(column)) continue
+      const nextSeen = new Set(seen)
+      nextSeen.add(column)
+      if (column.children?.length) walk(column.children, nextSeen)
       else result.push(column)
     }
   }
-  walk(columns)
+  walk(columns, new Set())
   return result
 }
 
@@ -177,12 +208,16 @@ export function flattenLeafColumns(columns: LhTableColumn[]): LhTableColumn[] {
  * 使任意不平衡的列树也不会留下悬空格。平铺配置输出一行、rowspan 全为 1。
  */
 export function buildHeaderCells(columns: LhTableColumn[]): LhTableHeaderCell[] {
-  const maxDepth = columns.length ? Math.max(...columns.map(getDepth)) : 1
+  const maxDepth = columns.length ? Math.max(...columns.map((c) => getDepth(c))) : 1
   const cells: LhTableHeaderCell[] = []
   let leafCursor = 0
 
-  const walk = (list: LhTableColumn[], level: number): void => {
+  const walk = (list: LhTableColumn[], level: number, seen: Set<LhTableColumn>): void => {
     for (const column of list) {
+      // 祖先链判重保护循环引用（与 getDepth/getLeafCount 同模式）
+      if (seen.has(column)) continue
+      const nextSeen = new Set(seen)
+      nextSeen.add(column)
       const leafSpan = getLeafCount(column)
       if (column.children?.length) {
         cells.push({
@@ -194,7 +229,9 @@ export function buildHeaderCells(columns: LhTableColumn[]): LhTableHeaderCell[] 
           colspan: leafSpan,
           isLeaf: false,
         })
-        walk(column.children, level + 1)
+        // cursor 的推进由子列递归完成（每个叶子 +1），组列不再叠加 leafSpan，
+        // 否则下一个组列的起点会被重复累加（估值组会从 2 跳到 4）
+        walk(column.children, level + 1, nextSeen)
       } else {
         cells.push({
           column,
@@ -206,12 +243,12 @@ export function buildHeaderCells(columns: LhTableColumn[]): LhTableHeaderCell[] 
           colspan: 1,
           isLeaf: true,
         })
+        leafCursor += leafSpan
       }
-      leafCursor += leafSpan
     }
   }
 
-  walk(columns, 0)
+  walk(columns, 0, new Set())
   return cells
 }
 
@@ -263,7 +300,40 @@ export function filterTableRows(
 /** 拖宽下限（px），再窄单元格内容无法容纳 */
 export const LH_TABLE_MIN_COL_WIDTH = 40
 
-/** 钳制列宽到下限（非数字原样返回，交给调用方避免覆盖字符串宽度） */
-export function clampColumnWidth(width: number): number {
+/**
+ * 钳制列宽到下限（非数字原样返回，交给调用方避免覆盖字符串宽度）。
+ *
+ * 非有限数（NaN 等，拖拽过程中可能出现）返回下限本身，避免 NaN 往下游传。
+ *
+ * 重载保证「数进数出、字符串进字符串出」，调用方不必为同构变换再做类型断言。
+ */
+export function clampColumnWidth<W extends number | string>(width: W): W
+export function clampColumnWidth(width: number | string): number | string
+export function clampColumnWidth(width: number | string): number | string {
+  if (typeof width !== 'number') return width
+  if (!Number.isFinite(width)) return LH_TABLE_MIN_COL_WIDTH
   return Math.max(width, LH_TABLE_MIN_COL_WIDTH)
+}
+
+/**
+ * 排序列的表头无障碍属性包：aria-sort 与 cycleSortOrder 的状态机对齐
+ *
+ * - 'asc' → aria-sort="ascending"
+ * - 'desc' → aria-sort="descending"
+ * - 未排序 → aria-sort="none"（显式声明「该列可排序但当前未排序」）
+ * - 该列不支持排序 → 不输出任何属性
+ *
+ * @param sortOrder 该列当前排序态（undefined 表示未参与排序）
+ * @param sortable 该列是否可排序
+ */
+export function getTableSortAria(options: {
+  sortOrder?: LhTableSortOrder
+  sortable?: boolean
+}): LhAriaAttrs {
+  const { sortOrder, sortable } = options
+  if (!sortable) return {}
+  return {
+    'aria-sort':
+      sortOrder === 'asc' ? 'ascending' : sortOrder === 'desc' ? 'descending' : 'none',
+  }
 }

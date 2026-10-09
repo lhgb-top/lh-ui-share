@@ -7,7 +7,7 @@
   /* 与 lh-input 同理：240px 是宽松容器里的期望宽度，不是硬下限。窄屏表单/容器里
      需要随容器收缩，否则触发器溢出（触发器内部是 width: 100%，会跟着根元素走） */
   max-width: 100%;
-  color: var(--lh-text-primary, #2c2c2c);
+  color: var(--lh-text-primary, #2C2C2C);
   font-size: 14px;
 
   &__trigger {
@@ -17,16 +17,16 @@
     width: 100%;
     min-height: 32px;
     padding: 0 10px 0 12px;
-    border: 1px solid var(--lh-border-color-base, #d8d3cc);
+    border: 1px solid var(--lh-border-color-base, #D8D3CC);
     border-radius: 2px;
     outline: none;
-    background: var(--lh-bg-color, #faf6f0);
+    background: var(--lh-bg-color, #FAF6F0);
     cursor: pointer;
 
     &:focus,
     &:hover,
     .lh-select--open & {
-      border-color: var(--lh-primary-color, #2b4c7c);
+      border-color: var(--lh-primary-color, #2B4C7C);
     }
   }
 
@@ -39,7 +39,7 @@
     white-space: nowrap;
 
     &--placeholder {
-      color: var(--lh-text-placeholder, #b0b0b0);
+      color: var(--lh-text-placeholder, #B0B0B0);
     }
   }
 
@@ -80,9 +80,9 @@
     max-height: 240px;
     overflow: auto;
     padding: 4px 0;
-    border: 1px solid var(--lh-border-color-light, #e5e0d8);
+    border: 1px solid var(--lh-border-color-light, #E5E0D8);
     border-radius: 2px;
-    background: var(--lh-bg-color, #faf6f0);
+    background: var(--lh-bg-color, #FAF6F0);
     box-shadow: 0 6px 16px rgba(44, 44, 44, 0.12);
 
     &--teleported {
@@ -107,12 +107,12 @@
     &:hover,
     &--highlighted,
     &--selected {
-      color: var(--lh-primary-color, #2b4c7c);
+      color: var(--lh-primary-color, #2B4C7C);
       background: var(--lh-primary-color-bg, rgba(43, 76, 124, 0.08));
     }
 
     &--disabled {
-      color: var(--lh-text-disabled, #c8c8c8);
+      color: var(--lh-text-disabled, #C8C8C8);
       cursor: not-allowed;
     }
   }
@@ -143,3 +143,36 @@
     }
   }
 }
+
+/* 下拉开合：淡入 + 轻微下移，与 date-picker/tree-select 的 lh-fade-in 观感一致；
+   类名双写兼容 Vue2（-enter）与 Vue3（-enter-from） */
+.lh-select-fade-enter-active,
+.lh-select-fade-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.lh-select-fade-enter,
+.lh-select-fade-enter-from,
+.lh-select-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-select-fade-enter-active,
+  .lh-select-fade-leave-active {
+    transition: opacity 0.15s ease;
+  }
+
+  .lh-select-fade-enter,
+  .lh-select-fade-enter-from,
+  .lh-select-fade-leave-to {
+    transform: none;
+  }
+}
+
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-select');

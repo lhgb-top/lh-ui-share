@@ -6,6 +6,7 @@ import {
   getCircleCircumference,
   getProgressColor,
   formatPercentText,
+  getProgressAria,
 } from '../../../src/core/progress'
 
 describe('Progress Core Logic', () => {
@@ -70,5 +71,17 @@ describe('Progress Core Logic', () => {
   it('formats percent text as rounded integer', () => {
     expect(formatPercentText(66.6)).toBe('67%')
     expect(formatPercentText(0)).toBe('0%')
+  })
+})
+
+describe('LhProgress accessibility', () => {
+  it('emits role=progressbar with the value range', () => {
+    expect(getProgressAria({ percentage: 60, label: '上传进度' })).toEqual({
+      role: 'progressbar',
+      'aria-valuenow': 60,
+      'aria-valuemin': 0,
+      'aria-valuemax': 100,
+      'aria-label': '上传进度',
+    })
   })
 })

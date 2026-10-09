@@ -26,9 +26,9 @@
   padding: 10px 16px;
   border-radius: var(--lh-border-radius-base, 8px);
   background-color: var(--lh-message-bg, var(--lh-bg-color, #fff));
-  color: var(--lh-message-color, var(--lh-text-regular, #606266));
+  color: var(--lh-message-color, var(--lh-text-regular, #5A5A5A));
   box-shadow: var(--lh-message-shadow, 0 4px 16px rgba(0, 0, 0, 12%));
-  border: 1px solid var(--lh-message-border, var(--lh-border-color-lighter, #ebeef5));
+  border: 1px solid var(--lh-message-border, var(--lh-border-color-lighter, #EEE9E2));
   font-size: 14px;
   line-height: 1.6;
   pointer-events: auto;
@@ -38,23 +38,23 @@
   }
 
   &--warning {
-    color: var(--lh-warning-color, #e6a23c);
+    color: var(--lh-warning-color, #C4A35A);
   }
 
   &--danger {
-    color: var(--lh-danger-color, #f56c6c);
+    color: var(--lh-danger-color, #B23A3A);
   }
 
   &--success {
-    color: var(--lh-success-color, #67c23a);
+    color: var(--lh-success-color, #5B8C5A);
   }
 
   &--loading {
-    color: var(--lh-primary-color, #409eff);
+    color: var(--lh-primary-color, #2B4C7C);
   }
 
   &--info {
-    color: var(--lh-info-color, #909399);
+    color: var(--lh-info-color, #7A7A7A);
   }
 }
 
@@ -107,5 +107,16 @@
 .lh-message-zoom-enter-from,
   .lh-message-zoom-leave-to {
     transform: none;
+  }
+}
+
+/* FLIP 平移：列表增删时兄弟元素平滑让位（transition-group 的 move 类） */
+.lh-message-zoom-move {
+  transition: transform 0.25s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-message-zoom-move {
+    transition: none;
   }
 }

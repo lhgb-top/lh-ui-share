@@ -48,9 +48,11 @@ export function moveTransferKeys(
   direction: 'left-to-right' | 'right-to-left',
 ): Array<string | number> {
   const byKey = new Map(data.map((item) => [item.key, item]))
-  const movable = checked.filter((key) => !byKey.get(key)?.disabled)
+  // 幽灵键（不在 data 中的勾选键）无法移动，也不能参与搬运
+  const movable = checked.filter((key) => byKey.has(key) && !byKey.get(key)?.disabled)
   if (direction === 'left-to-right') {
-    return sourceKeys.filter((key) => !movable.includes(key))
+    // 源区同样清掉幽灵键：它们既不能搬走，也不该留在源区污染下一帧
+    return sourceKeys.filter((key) => byKey.has(key) && !movable.includes(key))
   }
   const next = [...sourceKeys]
   for (const key of movable) {
@@ -76,7 +78,7 @@ export function getTransferCheckAllState(
 export function filterTransferItems(items: LhTransferItem[], query: string): LhTransferItem[] {
   if (!query) return items
   const lower = query.toLowerCase()
-  return items.filter((item) => item.label.toLowerCase().includes(lower))
+  return items.filter((item) => String(item.label ?? '').toLowerCase().includes(lower))
 }
 
 /** 容器类名 */

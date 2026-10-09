@@ -7,8 +7,8 @@
 .lh-drawer {
   position: fixed;
   inset: 0;
-  font-family: var(--lh-font-family);
-  font-size: var(--lh-font-size-base);
+  font-family: var(--lh-font-family, 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif);
+  font-size: var(--lh-font-size-base, 14px);
   color: var(--lh-text-primary, #2C2C2C);
 }
 
@@ -102,7 +102,7 @@
   flex: 1;
   padding: var(--lh-drawer-body-padding, 16px);
   overflow: auto;
-  line-height: var(--lh-line-height-primary);
+  line-height: var(--lh-font-line-height-primary, 1.8);
 }
 
 .lh-drawer__footer {
@@ -118,10 +118,10 @@
 
 .lh-drawer-fade-enter-active,
 .lh-drawer-fade-leave-active {
-  transition: opacity var(--lh-transition-duration-base, 0.3s) var(--lh-transition-function-ease-in-out);
+  transition: opacity var(--lh-transition-duration-base, 0.3s) var(--lh-transition-function-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
 
   .lh-drawer__panel {
-    transition: transform var(--lh-transition-duration-base, 0.3s) var(--lh-transition-function-ease-in-out);
+    transition: transform var(--lh-transition-duration-base, 0.3s) var(--lh-transition-function-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
   }
 }
 

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { canClose, getDialogStyle, getDialogPopperClass } from '../../../src/core/dialog/logic'
+import {
+  canClose,
+  getDialogStyle,
+  getDialogPopperClass,
+  shouldTrapFocus,
+  getDialogAria,
+} from '../../../src/core/dialog/logic'
 
 describe('dialog/core/logic', () => {
 	describe('canClose', () => {
@@ -63,6 +69,24 @@ describe('dialog/core/logic', () => {
 		it('does not add visible class when hidden', () => {
 			const classes = getDialogPopperClass({ visible: false })
 			expect(classes).not.toContain('lh-dialog__popper--visible')
+		})
+	})
+
+	describe('focus trap wiring', () => {
+		it('traps focus only when visible and scroll-locked', () => {
+			expect(shouldTrapFocus({ visible: true, lockScroll: true })).toBe(true)
+			expect(shouldTrapFocus({ visible: true, lockScroll: false })).toBe(false)
+			expect(shouldTrapFocus({ visible: false, lockScroll: true })).toBe(false)
+		})
+
+		it('emits dialog aria attributes', () => {
+			expect(getDialogAria({ id: 'd1', titleId: 't1' })).toEqual({
+				role: 'dialog',
+				'aria-modal': true,
+				id: 'd1',
+				'aria-labelledby': 't1',
+			})
+			expect(getDialogAria()).toEqual({ role: 'dialog', 'aria-modal': true })
 		})
 	})
 })

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   clampValue,
+  getSliderThumbAria,
   snapToStep,
   clampAndSnap,
   getValueFromPosition,
@@ -164,6 +165,38 @@ describe('Slider Core Logic', () => {
       expect(result[0].value).toBe(0)
       expect(result[1].value).toBe(50)
       expect(result[2].value).toBe(100)
+    })
+  })
+
+  it('falls back to pure clamping for invalid steps (round 2)', () => {
+    // 回归：step=0 时 (v-min) % 0 为 NaN，曾把 NaN 一路送进滑块值
+    expect(clampAndSnap(50, 0, 100, 0)).toBe(50)
+    expect(clampAndSnap(50, 0, 100, NaN)).toBe(50)
+    expect(clampAndSnap(50, 0, 100, -10)).toBe(50)
+    // 合法 step 不受影响
+    expect(clampAndSnap(50, 0, 100, 10)).toBe(50)
+  })
+})
+describe('slider accessibility', () => {
+  it('emits role=slider with the value range', () => {
+    expect(getSliderThumbAria({ value: 30, min: 0, max: 100 })).toEqual({
+      role: 'slider',
+      'aria-valuenow': 30,
+      'aria-valuemin': 0,
+      'aria-valuemax': 100,
+    })
+  })
+
+  it('adds orientation, disabled and readable value text', () => {
+    expect(
+      getSliderThumbAria({ value: 30, min: 0, max: 100, vertical: true, ariaValueText: '30%' }),
+    ).toEqual({
+      role: 'slider',
+      'aria-valuenow': 30,
+      'aria-valuemin': 0,
+      'aria-valuemax': 100,
+      'aria-orientation': 'vertical',
+      'aria-valuetext': '30%',
     })
   })
 })

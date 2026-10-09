@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { getPopperClass, getPopperStyle, getDefaultDelay } from '../../../src/core/tooltip/logic'
+import {
+  getPopperClass,
+  getPopperStyle,
+  getDefaultDelay,
+  getTooltipPopperAria,
+  getTooltipTriggerAria,
+} from '../../../src/core/tooltip/logic'
 
 describe('tooltip/core/logic', () => {
 	describe('getPopperClass', () => {
@@ -39,4 +45,16 @@ describe('tooltip/core/logic', () => {
 			expect(getDefaultDelay(undefined, 300)).toEqual({ show: 200, hide: 300 })
 		})
 	})
+})
+
+describe('tooltip accessibility', () => {
+  it('marks the popper as a tooltip with an id', () => {
+    expect(getTooltipPopperAria('t1')).toEqual({ role: 'tooltip', id: 't1' })
+    expect(getTooltipPopperAria()).toEqual({ role: 'tooltip' })
+  })
+
+  it('links the trigger via aria-describedby', () => {
+    expect(getTooltipTriggerAria('t1')).toEqual({ 'aria-describedby': 't1' })
+    expect(getTooltipTriggerAria()).toEqual({})
+  })
 })

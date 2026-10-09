@@ -7,6 +7,9 @@ import {
   isMenuOpen,
   moveMenuFocus,
   toggleMenuOpen,
+  getMenuAria,
+  getMenuItemAria,
+  getSubMenuAria,
 } from '../../../src/core/menu'
 
 describe('LhMenu core', () => {
@@ -70,5 +73,32 @@ describe('LhMenu core', () => {
     // 不在列表中回退首项；全禁用返回 null
     expect(moveMenuFocus(items, el(0), 1)).toBe(items[0])
     expect(moveMenuFocus([el(-1)], null, 1)).toBeNull()
+  })
+})
+
+describe('LhMenu accessibility', () => {
+  it('marks the menu container', () => {
+    expect(getMenuAria('m1')).toEqual({ role: 'menu', id: 'm1' })
+  })
+
+  it('binds menuitem aria attributes', () => {
+    expect(getMenuItemAria({})).toEqual({ role: 'menuitem' })
+    expect(getMenuItemAria({ disabled: true })).toEqual({
+      role: 'menuitem',
+      'aria-disabled': true,
+    })
+  })
+
+  it('announces submenu expansion', () => {
+    expect(getSubMenuAria({ opened: true, menuId: 'sub' })).toEqual({
+      role: 'menuitem',
+      'aria-expanded': true,
+      'aria-controls': 'sub',
+    })
+    expect(getSubMenuAria({ opened: false, disabled: true })).toEqual({
+      role: 'menuitem',
+      'aria-expanded': false,
+      'aria-disabled': true,
+    })
   })
 })

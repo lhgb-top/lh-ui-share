@@ -4,14 +4,14 @@
   position: relative;
   background-color: var(--lh-table-bg, var(--lh-bg-color, #fff));
   font-size: var(--lh-font-size-base, 14px);
-  color: var(--lh-table-color, var(--lh-text-regular, #606266));
+  color: var(--lh-table-color, var(--lh-text-regular, #5A5A5A));
 }
 
 .lh-table__header {
   display: grid;
-  background-color: var(--lh-table-header-bg, var(--lh-bg-color-page, #f5f0eb));
+  background-color: var(--lh-table-header-bg, var(--lh-bg-color-page, #F5F0EB));
   font-weight: 600;
-  color: var(--lh-table-header-color, var(--lh-text-primary, #303133));
+  color: var(--lh-table-header-color, var(--lh-text-primary, #2C2C2C));
 }
 
 .lh-table__body {
@@ -21,15 +21,15 @@
 
 .lh-table__row {
   display: grid;
-  border-block-start: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #ebeef5));
+  border-block-start: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2));
 
   &:hover {
-    background-color: var(--lh-table-row-hover-bg, var(--lh-bg-color-page, #f5f0eb));
+    background-color: var(--lh-table-row-hover-bg, var(--lh-bg-color-page, #F5F0EB));
   }
 }
 
 .lh-table--stripe .lh-table__row:nth-child(even) {
-  background-color: var(--lh-table-stripe-bg, color-mix(in srgb, var(--lh-bg-color-page, #f5f0eb) 60%, transparent));
+  background-color: var(--lh-table-stripe-bg, color-mix(in srgb, var(--lh-bg-color-page, #F5F0EB) 60%, transparent));
 }
 
 .lh-table__cell {
@@ -60,10 +60,10 @@
 }
 
 .lh-table--border {
-  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #ebeef5));
+  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2));
 
   .lh-table__cell {
-    border-inline-end: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #ebeef5));
+    border-inline-end: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2));
   }
 }
 
@@ -86,7 +86,7 @@
 
 .lh-table__header .lh-table__cell--fixed-left,
 .lh-table__header .lh-table__cell--fixed-right {
-  background-color: var(--lh-table-header-bg, var(--lh-bg-color-page, #f5f0eb));
+  background-color: var(--lh-table-header-bg, var(--lh-bg-color-page, #F5F0EB));
 }
 
 /* 排序 */
@@ -103,16 +103,16 @@
   cursor: pointer;
 
   &:focus-visible {
-    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
     outline-offset: 2px;
   }
 }
 
 .lh-table__sort-icon {
-  color: var(--lh-text-placeholder, #b0b0b0);
+  color: var(--lh-text-placeholder, #B0B0B0);
 
   &--active {
-    color: var(--lh-primary-color, #409eff);
+    color: var(--lh-primary-color, #2B4C7C);
   }
 }
 
@@ -133,7 +133,7 @@
   align-items: center;
   justify-content: center;
   padding: 40px 0;
-  color: var(--lh-text-secondary, #8a8a8a);
+  color: var(--lh-text-secondary, #8A8A8A);
 }
 
 /* 多级表头：行容器透传，单元格由网格显式定位 */
@@ -149,17 +149,17 @@
   border: none;
   background: transparent;
   font: inherit;
-  color: var(--lh-text-placeholder, #b0b0b0);
+  color: var(--lh-text-placeholder, #B0B0B0);
   cursor: pointer;
 
   &:focus-visible {
-    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
     outline-offset: 2px;
   }
 }
 
 .lh-table__filter-icon--active {
-  color: var(--lh-primary-color, #409eff);
+  color: var(--lh-primary-color, #2B4C7C);
 }
 
 .lh-table__filter-panel {
@@ -168,7 +168,7 @@
   inset-inline-start: 0;
   min-inline-size: 180px;
   padding: 8px;
-  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #ebeef5));
+  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2));
   border-radius: 6px;
   background-color: var(--lh-bg-color, #fff);
   box-shadow: 0 6px 16px -4px rgba(0, 0, 0, 18%);
@@ -192,11 +192,11 @@
   cursor: pointer;
 
   &:hover {
-    background-color: var(--lh-table-row-hover-bg, var(--lh-bg-color-page, #f5f0eb));
+    background-color: var(--lh-table-row-hover-bg, var(--lh-bg-color-page, #F5F0EB));
   }
 
   input {
-    accent-color: var(--lh-primary-color, #409eff);
+    accent-color: var(--lh-primary-color, #2B4C7C);
   }
 }
 
@@ -204,30 +204,30 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  border-block-start: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #ebeef5));
+  border-block-start: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2));
   padding-block-start: 8px;
 }
 
 .lh-table__filter-btn {
   padding: 4px 12px;
-  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #ebeef5));
+  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2));
   border-radius: 4px;
   background-color: transparent;
-  color: var(--lh-text-regular, #606266);
+  color: var(--lh-text-regular, #5A5A5A);
   cursor: pointer;
 
   &:hover {
-    border-color: var(--lh-primary-color, #409eff);
-    color: var(--lh-primary-color, #409eff);
+    border-color: var(--lh-primary-color, #2B4C7C);
+    color: var(--lh-primary-color, #2B4C7C);
   }
 
   &--primary {
-    border-color: var(--lh-primary-color, #409eff);
-    background-color: var(--lh-primary-color, #409eff);
+    border-color: var(--lh-primary-color, #2B4C7C);
+    background-color: var(--lh-primary-color, #2B4C7C);
     color: #fff;
 
     &:hover {
-      background-color: var(--lh-primary-color, #409eff);
+      background-color: var(--lh-primary-color, #2B4C7C);
       color: #fff;
       opacity: 0.9;
     }
@@ -273,11 +273,11 @@
 
   &:hover::after,
   &:focus-visible::after {
-    background-color: var(--lh-primary-color, #409eff);
+    background-color: var(--lh-primary-color, #2B4C7C);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--lh-primary-color, #409eff);
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
     outline-offset: -2px;
   }
 }

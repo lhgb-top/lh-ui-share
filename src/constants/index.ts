@@ -41,22 +41,22 @@ export const LH_SIZE_DEFAULT = LH_SIZE_CONST.medium;
  *
  * 添加新语言步骤：
  * 1. 在此常量中添加语言代码
- * 2. 在 packages/locales/lang/ 创建对应的语言文件
- * 3. 在 docs/.vitepress/config.ts 的 locales 中添加配置
+ * 2. 在 src/locales/lang/ 创建对应的语言文件
+ * 3. 在 src/locales/locale.ts 的 locales 注册表中导入并挂载
  */
 export const LH_LANGUAGE_CONST = {
     /** @alias 简体中文 */
     zhCN: 'zh-CN',
     /** @alias 英文 */
     enUS: 'en-US',
-    /** @alias 日本語 (TODO: 待实现) */
-    // jaJP: 'ja-JP',
-    /** @alias 한국어 (TODO: 待实现) */
-    // koKR: 'ko-KR',
-    /** @alias Deutsch (TODO: 待实现) */
-    // deDE: 'de-DE',
-    /** @alias Français (TODO: 待实现) */
-    // frFR: 'fr-FR',
+    /** @alias 日本語 */
+    jaJP: 'ja-JP',
+    /** @alias 한국어 */
+    koKR: 'ko-KR',
+    /** @alias Deutsch */
+    deDE: 'de-DE',
+    /** @alias Français */
+    frFR: 'fr-FR',
 } as const;
 
 /**

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   backToTop,
   supportsScrollEnd,
@@ -45,5 +45,15 @@ describe('LhBackTop core', () => {
     expect(supportsScrollEnd(document.createElement('div'))).toBe(false)
     expect(supportsScrollEnd({ scrollend: () => {} } as unknown as Window)).toBe(true)
     expect(LH_BACKTOP_SCROLLEND_DELAY).toBe(150)
+  })
+
+  it('does not throw when window is undefined (SSR)', () => {
+    // 回归：reducedMotion 曾直接 typeof window.matchMedia，SSR 下 window 未定义即 ReferenceError
+    vi.stubGlobal('window', undefined)
+    const el = document.createElement('div')
+    el.scrollTop = 500
+    expect(() => backToTop(el, true)).not.toThrow()
+    expect(el.scrollTop).toBe(0)
+    vi.unstubAllGlobals()
   })
 })

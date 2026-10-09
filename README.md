@@ -8,7 +8,7 @@
 
 ## 特性
 
-- **框架无关的组件逻辑**：56 个组件的纯函数（`logic.ts` / `types.ts` / `index.ts` 三件套）+ 5 个共享内核（`sx` / `pt` / `popper` / `focus-trap` / `types`）。状态进、类名/样式出，零副作用，可直接单测。
+- **框架无关的组件逻辑**：55 个组件的纯函数（`logic.ts` / `types.ts` / `index.ts` 三件套）+ 10 个共享内核（`sx` / `pt` / `popper` / `focus-trap` / `sanitize` / `virtual` / `format` / `date` / `delay` / `types`）。状态进、类名/样式出，零副作用，可直接单测。
 - **样式唯一源**：`styles/` 是全部组件 BEM 样式的唯一来源；过渡类名已**双写**（`-enter` 与 `-enter-from` 并列），同时服务 Vue2 / Vue3 / React。
 - **国风主题系统**：SCSS 令牌（`variables.scss`，全部 `!default` 可覆盖）+ 5 个预设主题（青花瓷 / 松花绿 / 朱砂 / 水墨 / 藤黄）+ 暗色模式 + 6 种内置纹理（柳 / 云 / 水 / 雪 / 梅 / 竹）。
 - **纯 emitter 国际化**：`LhLocale` 不含任何框架响应式，靠 `version` 自增 + `subscribe` 供各框架自行接线。
@@ -142,7 +142,7 @@ onUnmounted(unsubscribe)
 useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)
 ```
 
-> **注意**：`t()` 只按点路径取字符串，**不做 `{name}` 占位符插值**；取不到时返回 `fallback`（未传则返回路径本身）。当前完整语言包为 `zh-CN` / `en-US`，ja-JP / ko-KR / de-DE / fr-FR 为英文兜底骨架。
+> **注意**：`t()` 按点路径取字符串，第二参数传**对象**时按 `{name}` 占位符插值（如 `t('pagination.total', { total: 100 })` → `共 100 条`），未知占位符原样保留；传**字符串**时作为 `fallback`（取不到翻译时返回它，未传则返回路径本身）。当前完整语言包为 `zh-CN` / `en-US`，ja-JP / ko-KR / de-DE / fr-FR 为英文兜底骨架。
 
 ### Utils —— 工具
 
@@ -179,6 +179,10 @@ LH_LANGUAGE_CONST // { zhCN: 'zh-CN', enUS: 'en-US' }
 import '@lh-ui/share/styles/button'
 import '@lh-ui/share/styles/dialog'
 
+// 单组件编译产物（无 SCSS 管道时按组件引入，避免加载全量包）
+import '@lh-ui/share/dist/button/style.css'
+import '@lh-ui/share/dist/dialog/style.css'
+
 // 或一次引入全量编译产物
 import '@lh-ui/share/styles.css'
 ```
@@ -191,15 +195,17 @@ import '@lh-ui/share/styles.css'
 | --- | --- |
 | `.` | 根聚合入口（全部子层） |
 | `./core` / `./core/*` | 组件纯函数；`./core/button` 等按目录匹配 |
+| `./core/<组件>/*` | 组件内深文件（`./core/tooltip/logic`、`./core/date-picker/adapter` 等），由 `pnpm sync:exports` 按 `es/` 产物自动生成 |
 | `./constants` | 常量 |
-| `./locales` | 国际化（`lhlocale` + 语言包 + 类型） |
+| `./locales` / `./locales/lang/*` | 国际化（`lhLocale` + 语言包 + 类型）；按语言深引入 `./locales/lang/zh-CN` |
 | `./theme` | 主题预设与类型 |
 | `./types` | 仅类型（无运行时产物） |
-| `./utils` | 工具函数 |
+| `./utils` / `./utils/*` | 工具函数；深文件 `./utils/css-var`、`./utils/namespace` |
 | `./theme.css` | `dist/theme/index.css`（明色 + 暗色 + 纹理） |
 | `./theme-dark.css` | `dist/theme/index-dark.css`（仅暗色） |
 | `./styles/*` | `styles/*/index.scss`（**原始 SCSS 源码**） |
 | `./styles.css` | `dist/styles/index.css`（主题 + 全部组件，编译产物） |
+| `./dist/*` | `dist/<组件>/style.css`（**单组件编译产物**，无 SCSS 管道时按需引入） |
 
 ## 目录结构
 
@@ -212,7 +218,7 @@ src/locales/        语言包（LhLocale 为纯 emitter）
 src/types/ src/utils/  类型 / 纯工具
 styles/             组件 BEM 样式唯一源：<name>/index.scss + theme/common/*.scss（令牌）
 tests/unit/         core 单测唯一一份（三库共享，不重复拷贝）
-scripts/            build-styles / normalize-styles / verify-dts / extract-from-plus
+scripts/            build-styles / normalize-styles / sync-exports / verify-dts / verify-styles / extract-from-plus
 ```
 
 ## 命令

@@ -13,7 +13,6 @@
 
 ## 添加新语言
 
-1. 在 `packages/locales/lang/` 创建语言文件（如 `ru-RU.ts`）
-2. 在 `packages/constants/index.ts` 中 `LH_LANGUAGE_CONST` 取消或添加对应条目
-3. 在 `packages/locales/index.ts` 中 import 并注册到 locales 对象
-4. 在 `docs/.vitepress/config.ts` 的locales 中添加对应的站点配置
+1. 在 `src/locales/lang/` 创建语言文件（如 `ru-RU.ts`）
+2. 在 `src/constants/index.ts` 的 `LH_LANGUAGE_CONST` 中添加对应条目
+3. 在 `src/locales/locale.ts` 的 `locales` 注册表中导入并挂载（`LhLocaleType` 由常量自动推导，无需改类型）

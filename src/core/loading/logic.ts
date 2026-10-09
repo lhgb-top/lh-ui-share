@@ -1,4 +1,6 @@
 import type { LhLoadingState } from './types'
+import { getDecorativeAria } from '../shared/a11y'
+import type { LhAriaAttrs } from '../shared/a11y'
 
 /** 计算遮罩类名 */
 export function getLoadingClassNames(state: LhLoadingState): string[] {
@@ -35,4 +37,16 @@ export function ensurePositioned(target: HTMLElement): { restore: () => void } {
     return { restore: () => { target.style.position = original } }
   }
   return { restore: () => {} }
+}
+
+/**
+ * 加载遮罩的无障碍属性包：
+ * - 旋转图标为装饰图形 → aria-hidden
+ * - 被遮罩区域标记 aria-busy="true"，读屏软件在加载完成前不播报其陈旧内容
+ *
+ * @param busy 是否正在加载（false 时返回空对象，供 UI 层无条件 v-bind）
+ */
+export function getLoadingAria(busy = true): LhAriaAttrs {
+  if (!busy) return {}
+  return { ...getDecorativeAria(true), 'aria-busy': true }
 }

@@ -6,7 +6,14 @@ import type { LhDividerRole, LhDividerState } from './types'
 export function getDividerClassNames(state: LhDividerState): string[] {
   const classes = ['lh-divider']
   classes.push(`lh-divider--${state.direction}`)
-  if (state.dashed) classes.push('lh-divider--dashed')
+  // borderStyle 显式指定时优先于 dashed；仅虚线/点线有对应样式，其余值按默认实线渲染
+  if (state.borderStyle != null) {
+    if (state.borderStyle === 'dashed' || state.borderStyle === 'dotted') {
+      classes.push(`lh-divider--${state.borderStyle}`)
+    }
+  } else if (state.dashed) {
+    classes.push('lh-divider--dashed')
+  }
   if (state.hasContent) {
     classes.push('lh-divider--with-text')
     classes.push(`lh-divider--label-${state.labelPosition}`)

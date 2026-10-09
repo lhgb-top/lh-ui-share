@@ -1,0 +1,64 @@
+// ==============================
+// 无障碍样式原语
+//
+// 焦点环与屏幕阅读器隐藏的工具样式，供组件 scss 经
+// @use '../theme/common/index.scss' as * 引用（common/index 转发本文件）。
+// ==============================
+
+///
+/// 键盘焦点环：仅 :focus-visible 时显示（鼠标点击不触发），保证键盘用户可见的落点反馈
+///
+/// 用法：`@include focus-ring;` 或指定选择器 `@include focus-ring('.lh-xxx__inner');`
+///
+@mixin focus-ring($selector: null) {
+  // 分支写开而非用 if()：Sass 已弃用 if() 函数，且显式 & 在插值里能正确解析父选择器
+  @if $selector {
+    #{$selector}:focus-visible {
+      outline: var(--lh-focus-ring-width, 2px) solid var(--lh-focus-color, var(--lh-primary-color, #2b4c7c));
+      outline-offset: var(--lh-focus-ring-offset, 2px);
+    }
+  } @else {
+    &:focus-visible {
+      outline: var(--lh-focus-ring-width, 2px) solid var(--lh-focus-color, var(--lh-primary-color, #2b4c7c));
+      outline-offset: var(--lh-focus-ring-offset, 2px);
+    }
+  }
+}
+
+///
+/// 屏幕阅读器隐藏：视觉不可见但保留给辅助技术
+///
+/// 与 display:none 的区别：后者会把元素从可访问性树移除，
+/// 表单的隐藏 label、表格的描述等需要被读屏播报但不需要显示的场景用本 mixin。
+///
+@mixin visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+///
+/// 还原 visually-hidden（需要「隐藏→某些条件下显示」的场景成对使用）
+///
+@mixin not-visually-hidden {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  white-space: normal;
+}
+
+// 屏幕阅读器专用工具类：供 UI 层在需要时直接挂 class
+.lh-sr-only {
+  @include visually-hidden;
+}

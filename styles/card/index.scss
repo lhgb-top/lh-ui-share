@@ -3,8 +3,8 @@
 /* 组件级变量：默认值取自全局 token，可通过 ConfigProvider themeVars 或组件 themeVars 定向覆盖 */
 .lh-card {
   --lh-card-border-radius: calc(var(--lh-border-radius-base, 2px) + 2px);
-  --lh-card-bg: var(--lh-bg-color, #faf6f0);
-  --lh-card-border-color: var(--lh-border-color-light);
+  --lh-card-bg: var(--lh-bg-color, #FAF6F0);
+  --lh-card-border-color: var(--lh-border-color-light, #E5E0D8);
   --lh-card-header-padding: 14px 20px;
   --lh-card-body-padding: 18px 20px;
   --lh-card-footer-padding: 12px 20px;
@@ -16,15 +16,15 @@
     0 2px 6px rgba(26, 26, 26, 0.08),
     0 12px 28px rgba(26, 26, 26, 0.12);
   /* 加载占位：底色与高光都保证可感知，避免在宣纸底上若隐若现 */
-  --lh-card-loading-bg: var(--lh-border-color-light);
-  --lh-card-loading-highlight: color-mix(in srgb, var(--lh-bg-color, #faf6f0) 72%, var(--lh-border-color-light));
+  --lh-card-loading-bg: var(--lh-border-color-light, #E5E0D8);
+  --lh-card-loading-highlight: color-mix(in srgb, var(--lh-bg-color, #FAF6F0) 72%, var(--lh-border-color-light, #E5E0D8));
 
   display: flex;
   flex-direction: column;
   border-radius: var(--lh-card-border-radius);
   border: 1px solid var(--lh-card-border-color);
   background-color: var(--lh-card-bg);
-  color: var(--lh-text-regular);
+  color: var(--lh-text-regular, #5A5A5A);
   overflow: hidden;
   transition:
     box-shadow var(--lh-transition-duration-base, 0.3s) var(--lh-transition-function-ease-in-out, ease),
@@ -52,7 +52,7 @@
 
     &:hover {
       transform: translateY(-2px);
-      border-color: color-mix(in srgb, var(--lh-primary-color) 24%, transparent);
+      border-color: color-mix(in srgb, var(--lh-primary-color, #2B4C7C) 24%, transparent);
 
       /* hover 时主动补阴影（shadow-hover 变体自身 hover 才有） */
       box-shadow: var(--lh-card-shadow-hover);
@@ -60,16 +60,16 @@
 
     &:focus-visible {
       outline: none;
-      border-color: var(--lh-primary-color);
+      border-color: var(--lh-primary-color, #2B4C7C);
       box-shadow:
-        0 0 0 3px color-mix(in srgb, var(--lh-primary-color) 18%, transparent),
+        0 0 0 3px color-mix(in srgb, var(--lh-primary-color, #2B4C7C) 18%, transparent),
         var(--lh-card-shadow-hover);
     }
   }
 
   &__cover {
     line-height: 0;
-    background-color: var(--lh-bg-color-page);
+    background-color: var(--lh-bg-color-page, #F5F0EB);
   }
 
   &__cover > * {
@@ -100,12 +100,12 @@
     font-size: var(--lh-font-size-large, 18px);
     font-weight: var(--lh-font-weight-bold, 600);
     letter-spacing: 0.02em;
-    color: var(--lh-text-primary);
+    color: var(--lh-text-primary, #2C2C2C);
   }
 
   &__extra {
     font-size: var(--lh-font-size-small, 13px);
-    color: var(--lh-text-secondary);
+    color: var(--lh-text-secondary, #8A8A8A);
   }
 
   &__body {
@@ -117,7 +117,7 @@
 
   &__footer {
     padding: var(--lh-card-footer-padding);
-    background-color: color-mix(in srgb, var(--lh-bg-color-page, #f5f0eb) 40%, transparent);
+    background-color: color-mix(in srgb, var(--lh-bg-color-page, #F5F0EB) 40%, transparent);
 
     /* 顶部渐隐分隔：与 header 墨痕呼应 */
     background-image: linear-gradient(

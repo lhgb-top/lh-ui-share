@@ -21,8 +21,8 @@
   height: var(--lh-layout-header-height, 56px);
   padding-inline: var(--lh-spacing-lg, 24px);
   background-color: var(--lh-layout-header-bg, var(--lh-bg-color, #fff));
-  color: var(--lh-text-primary, #303133);
-  border-block-end: 1px solid var(--lh-layout-border, var(--lh-border-color-lighter, #ebeef5));
+  color: var(--lh-text-primary, #2C2C2C);
+  border-block-end: 1px solid var(--lh-layout-border, var(--lh-border-color-lighter, #EEE9E2));
 }
 
 .lh-layout-aside {
@@ -30,8 +30,8 @@
   width: var(--lh-layout-aside-width, 220px);
   overflow: auto;
   background-color: var(--lh-layout-aside-bg, var(--lh-bg-color, #fff));
-  color: var(--lh-text-primary, #303133);
-  border-inline-end: 1px solid var(--lh-layout-border, var(--lh-border-color-lighter, #ebeef5));
+  color: var(--lh-text-primary, #2C2C2C);
+  border-inline-end: 1px solid var(--lh-layout-border, var(--lh-border-color-lighter, #EEE9E2));
 }
 
 .lh-layout-main {
@@ -39,12 +39,12 @@
   min-width: 0;
   overflow: auto;
   padding: var(--lh-spacing-lg, 24px);
-  background-color: var(--lh-layout-main-bg, var(--lh-bg-color-page, #f5f0eb));
+  background-color: var(--lh-layout-main-bg, var(--lh-bg-color-page, #F5F0EB));
 }
 
 .lh-layout-footer {
   flex-shrink: 0;
   padding: var(--lh-spacing-base, 12px) var(--lh-spacing-lg, 24px);
-  color: var(--lh-text-secondary, #8a8a8a);
-  border-block-start: 1px solid var(--lh-layout-border, var(--lh-border-color-lighter, #ebeef5));
+  color: var(--lh-text-secondary, #8A8A8A);
+  border-block-start: 1px solid var(--lh-layout-border, var(--lh-border-color-lighter, #EEE9E2));
 }

@@ -75,8 +75,9 @@ $lh-pattern-bamboo: url("data:image/svg+xml,#{$lh-pattern-bamboo-svg}") !default
 // 或通过 ConfigProvider 的 themeVars 传入
 // ==============================
 @mixin apply-pattern {
-  background-image: var(--lh-bg-pattern);
-  background-repeat: var(--lh-bg-pattern-repeat);
-  background-size: var(--lh-bg-pattern-size);
+  // 花纹默认不启用：这三个令牌由用户/ConfigProvider 传入，缺省即无花纹，故不设 fallback
+  background-image: var(--lh-bg-pattern); /* no-fallback */
+  background-repeat: var(--lh-bg-pattern-repeat); /* no-fallback */
+  background-size: var(--lh-bg-pattern-size); /* no-fallback */
   background-blend-mode: var(--lh-bg-pattern-blend, normal);
 }

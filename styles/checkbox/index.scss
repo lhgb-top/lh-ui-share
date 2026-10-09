@@ -5,7 +5,7 @@
   align-items: center;
   gap: 6px;
   min-height: 24px;
-  color: var(--lh-text-regular, #5a5a5a);
+  color: var(--lh-text-regular, #5A5A5A);
   cursor: pointer;
   -webkit-user-select: none;
   user-select: none;
@@ -22,9 +22,9 @@
     display: inline-block;
     width: 16px;
     height: 16px;
-    border: 1px solid var(--lh-border-color-base, #d8d3cc);
+    border: 1px solid var(--lh-border-color-base, #D8D3CC);
     border-radius: 2px;
-    background: var(--lh-bg-color, #faf6f0);
+    background: var(--lh-bg-color, #FAF6F0);
     transition: all 0.2s ease;
   }
 
@@ -35,8 +35,8 @@
   &--checked,
   &--indeterminate {
     .lh-checkbox__box {
-      border-color: var(--lh-primary-color, #2b4c7c);
-      background: var(--lh-primary-color, #2b4c7c);
+      border-color: var(--lh-primary-color, #2B4C7C);
+      background: var(--lh-primary-color, #2B4C7C);
 
       &::after {
         position: absolute;
@@ -63,7 +63,7 @@
   }
 
   &--disabled {
-    color: var(--lh-text-disabled, #c8c8c8);
+    color: var(--lh-text-disabled, #C8C8C8);
     cursor: not-allowed;
     opacity: 0.7;
   }
@@ -90,5 +90,20 @@
 
   &--large {
     gap: 16px;
+  }
+}
+
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-checkbox');
+
+
+/* ——— Reduced motion：系统减弱动态效果时跳过本组件的过渡与动画 ——— */
+@media (prefers-reduced-motion: reduce) {
+  .lh-checkbox,
+  .lh-checkbox * {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }
