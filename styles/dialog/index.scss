@@ -144,6 +144,29 @@ $lh-dialog-border-color: var(--lh-border-color-light, #E5E0D8) !default;
       margin-left: 8px;
     }
   }
+
+  // center：标题、正文、底栏文字居中（对应 center prop）
+  &--center {
+    .lh-dialog__header {
+      justify-content: center;
+      text-align: center;
+
+      // 关闭按钮绝对定位，避免挤压居中后的标题
+      .lh-dialog__close {
+        position: absolute;
+        top: 15px;
+        right: $lh-dialog-padding;
+      }
+    }
+
+    .lh-dialog__body {
+      text-align: center;
+    }
+
+    .lh-dialog__footer {
+      text-align: center;
+    }
+  }
 }
 
 // 过渡动画

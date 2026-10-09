@@ -117,7 +117,8 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 
 		&:hover,
 		&:focus {
-			color: #fff;
+			/* 主色底上的文字不写死 #fff：金色/松花等浅主色下 #fff 对比度不足 AA */
+			color: var(--lh-color-on-primary, #fff);
 			background-color: var(--lh-primary-color-active, #1F3A5F);
 			border-color: var(--lh-primary-color-active, #1F3A5F);
 		}

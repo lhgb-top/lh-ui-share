@@ -91,11 +91,14 @@
   &--today {
     color: var(--lh-primary-color, #2B4C7C);
     font-weight: 600;
+    /* 内描边环形标记：水墨等深主色预设下“仅颜色”标记不可辨，加环保证可见 */
+    box-shadow: inset 0 0 0 1px var(--lh-primary-color, #2B4C7C);
   }
 
   &--selected {
     background-color: var(--lh-primary-color, #2B4C7C);
-    color: #fff;
+    /* 主色底上的文字不写死 #fff：金色/松花等浅主色下 #fff 对比度不足 AA */
+    color: var(--lh-color-on-primary, #fff);
   }
 }
 

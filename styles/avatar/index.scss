@@ -35,6 +35,12 @@
   &__icon {
     font-size: 0.6em;
     line-height: 1;
+
+    // LhIcon 内部 SVG 以属性形式给定固定像素宽高，需用 CSS 覆盖才能跟随头像字号缩放
+    svg {
+      width: 1em;
+      height: 1em;
+    }
   }
 
   &__text {

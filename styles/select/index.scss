@@ -104,11 +104,22 @@
     cursor: pointer;
     text-align: left;
 
-    &:hover,
-    &--highlighted,
-    &--selected {
+    // 悬停用中性底色，只提示“可点”，与选中态区分
+    &:hover {
+      background: var(--lh-hover-bg-color, rgba(0, 0, 0, 0.05));
+    }
+
+    // 键盘高亮：主色底 + 主色文字（视觉上不同于悬停，也不同于选中）
+    &--highlighted {
       color: var(--lh-primary-color, #2B4C7C);
       background: var(--lh-primary-color-bg, rgba(43, 76, 124, 0.08));
+    }
+
+    // 选中态文字用 active 深色变体，保证各预设下 ≥4.5:1
+    &--selected {
+      color: var(--lh-selected-color, #1F3A5F);
+      background: var(--lh-primary-color-bg, rgba(43, 76, 124, 0.08));
+      font-weight: 600;
     }
 
     &--disabled {

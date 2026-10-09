@@ -44,12 +44,19 @@ function listScss(dir) {
 
 /**
  * 去掉注释，避免注释里的示例色值/令牌被误报。
- * 行级 `no-fallback` 标记需保留供第 2 项按行判断，因此先按行剥离行注释，
- * 再整体剥离块注释（块注释内的示例天然不需要 fallback，直接剥掉）。
+ *
+ * 用等长空白替换注释而非删除：第 2 项在剥离结果上遍历，却用其索引 i 回 raw
+ * 取整行做 `no-fallback` 行级豁免（raw.lastIndexOf('\n', i)）。删除式剥离会让
+ * 二者长度不一致、索引错位，取到非 var() 所在行——已标注 no-fallback 行级标记
+ * 的行仍被误报，且行越靠后累积偏移越大越严重。等长替换保持行列严格对齐，
+ * 行级标记即可正确命中，同时注释内容仍不参与匹配（与删除等价）。
  */
 function stripComments(src) {
-  const noLineComments = src.replace(/(^|[^:])\/\/.*$/gm, '$1')
-  return noLineComments.replace(/\/\*[\s\S]*?\*\//g, '')
+  const noLineComments = src.replace(
+    /(^|[^:])\/\/.*$/gm,
+    (m, pre) => pre + ' '.repeat(m.length - pre.length),
+  )
+  return noLineComments.replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
 }
 
 /**

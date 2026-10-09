@@ -1,7 +1,7 @@
 {
   "name": "@lh-ui/share",
   "type": "module",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "lh-ui 家族唯一的框架无关共享层：core 纯函数 / theme / constants / locales / types / utils / 组件样式源",
   "keywords": [
     "lh-ui",
@@ -99,6 +99,11 @@
       "types": "./es/core/collapse/*.d.ts",
       "import": "./es/core/collapse/*.js",
       "require": "./lib/core/collapse/*.js"
+    },
+    "./core/config/*": {
+      "types": "./es/core/config/*.d.ts",
+      "import": "./es/core/config/*.js",
+      "require": "./lib/core/config/*.js"
     },
     "./core/date-picker/*": {
       "types": "./es/core/date-picker/*.d.ts",

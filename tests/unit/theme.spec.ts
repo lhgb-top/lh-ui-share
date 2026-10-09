@@ -39,7 +39,23 @@ describe('theme / THEME_PRESETS', () => {
       '--lh-primary-color-border',
     ]
     for (const preset of THEME_PRESETS) {
-      expect(Object.keys(preset.vars).sort()).toEqual([...required].sort())
+      // 浅主色预设可额外声明 --lh-color-on-primary / --lh-selected-color（见下条测试），
+      // 故只断言「包含」必需键集，不要求键集完全相等
+      expect(Object.keys(preset.vars)).toEqual(expect.arrayContaining(required))
+    }
+  })
+
+  // 浅主色预设的对比度兜底：白字在浅主色底上不足 AA（songhua 3.93:1 / golden 3.25:1），
+  // 必须改用墨字；同时 active 色作选中文字在悬停底上也不足，需单独加深 selected。
+  // 深主色预设（cerblue 8.65 / zhusha 5.90 / shuimo 13.97）白字已达标，无需额外声明。
+  it('light-primary presets declare on-primary / selected overrides for AA contrast', () => {
+    const lightPrimary = ['songhua', 'golden']
+    for (const preset of THEME_PRESETS) {
+      const isLight = lightPrimary.includes(preset.name)
+      const hasOnPrimary = '--lh-color-on-primary' in preset.vars
+      const hasSelected = '--lh-selected-color' in preset.vars
+      expect(hasOnPrimary).toBe(isLight)
+      expect(hasSelected).toBe(isLight)
     }
   })
 

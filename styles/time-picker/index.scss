@@ -136,12 +136,14 @@
 }
 
 .lh-time-picker-panel__column-item:hover {
-  background: var(--lh-primary-color-bg, #E8EDF3);
+  /* 中性悬停底色，与选中（激活）态的主色底区分 */
+  background: var(--lh-hover-bg-color, rgba(0, 0, 0, 0.05));
 }
 
 .lh-time-picker-panel__column-item--active {
   background: var(--lh-primary-color-bg, #E8EDF3);
-  color: var(--lh-primary-color, #2B4C7C);
+  /* 选中态文字用 active 深色变体，保证各预设下 ≥4.5:1 */
+  color: var(--lh-selected-color, #1F3A5F);
   font-weight: 500;
 }
 

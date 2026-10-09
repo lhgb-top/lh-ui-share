@@ -115,11 +115,14 @@
     transition: background var(--lh-transition-duration-fast, 0.25s);
 
     &:hover {
-      background: var(--lh-primary-color-bg, #E8EDF3);
+      /* 中性悬停底色，与激活（选中）态的主色底区分 */
+      background: var(--lh-hover-bg-color, rgba(0, 0, 0, 0.05));
     }
 
     &--active {
-      color: var(--lh-primary-color, #2B4C7C);
+      background: var(--lh-primary-color-bg, #E8EDF3);
+      /* 选中态文字用 active 深色变体，保证各预设下 ≥4.5:1 */
+      color: var(--lh-selected-color, #1F3A5F);
       font-weight: var(--lh-font-weight-bold, 600);
     }
 
@@ -140,11 +143,14 @@
     cursor: pointer;
 
     &:hover {
-      background: var(--lh-primary-color-bg, #E8EDF3);
+      /* 中性悬停底色，与激活（选中）态的主色底区分 */
+      background: var(--lh-hover-bg-color, rgba(0, 0, 0, 0.05));
     }
 
     &--active {
-      color: var(--lh-primary-color, #2B4C7C);
+      background: var(--lh-primary-color-bg, #E8EDF3);
+      /* 选中态文字用 active 深色变体，保证各预设下 ≥4.5:1 */
+      color: var(--lh-selected-color, #1F3A5F);
       font-weight: var(--lh-font-weight-bold, 600);
     }
   }

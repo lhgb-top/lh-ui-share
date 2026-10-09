@@ -88,7 +88,8 @@
       content: '';
       width: 4px;
       height: 8px;
-      border: solid #fff;
+      /* 主色底上的勾不写死 #fff：金色/松花等浅主色下 #fff 对比度不足 AA */
+      border: solid var(--lh-color-on-primary, #fff);
       border-width: 0 2px 2px 0;
       transform: rotate(45deg) translateY(-1px);
     }
@@ -102,7 +103,8 @@
       content: '';
       width: 8px;
       height: 2px;
-      background-color: #fff;
+      /* 同上：半选横杠用主色底上的文字色 */
+      background-color: var(--lh-color-on-primary, #fff);
     }
   }
 }

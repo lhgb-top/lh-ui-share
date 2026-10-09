@@ -24,9 +24,14 @@ const songhua: ThemePreset = {
   vars: {
     '--lh-primary-color': '#5B8C5A',
     '--lh-primary-color-hover': '#7BB079',
-    '--lh-primary-color-active': '#4B7A4A',
+    // 按压底色：与主色同明度、更饱和的深松绿，墨字对比 4.75:1（原 #4B7A4A 仅 3.70:1）
+    '--lh-primary-color-active': '#4F8F4C',
     '--lh-primary-color-bg': '#E8F5E8',
     '--lh-primary-color-border': '#D0E8CF',
+    // 松花属浅主色，白字对比度仅 3.93:1，改用墨字（4.73:1）
+    '--lh-color-on-primary': '#101410',
+    // active 色在悬停底上作选中文字仅 3.48:1，选中态单独加深（按钮 active 底色不受影响）
+    '--lh-selected-color': '#456F44',
   },
 }
 
@@ -69,9 +74,14 @@ const golden: ThemePreset = {
   vars: {
     '--lh-primary-color': '#B8860B',
     '--lh-primary-color-hover': '#D4A843',
-    '--lh-primary-color-active': '#9A7208',
+    // 按压底色：墨字对比 4.70:1（原 #9A7208 仅 3.94:1；选中文字已由 --lh-selected-color 承担）
+    '--lh-primary-color-active': '#A87F0A',
     '--lh-primary-color-bg': '#FBF6EA',
     '--lh-primary-color-border': '#F0E8D0',
+    // 藤黄属浅主色，白字对比度仅 3.25:1，改用墨字（5.31:1）
+    '--lh-color-on-primary': '#1E1A16',
+    // active 色在白底/页面上作选中文字仅 3.41:1，加深至 #82600A（悬停底 5.37:1）
+    '--lh-selected-color': '#82600A',
   },
 }
 
@@ -109,11 +119,14 @@ export const PRESET_THEME_STYLE_ID = 'lh-preset-theme'
 
 /**
  * 把预设 vars 拼成一段可注入的样式文本：
- * - `:root` 块放预设的 `--lh-primary-*` 五个变量；
+ * - `:root` 块放预设声明的全部变量（基础五个 `--lh-primary-*`，浅主色预设额外的
+ *   `--lh-color-on-primary` / `--lh-selected-color`）；
  * - 暗色块重定义 `--lh-primary-color-bg` / `--lh-selected-color`，
  *   让预设主色在暗色模式下依然有足够的底色透明度与文字对比度
  *   （`var()` 引用会在应用元素上求值，天然跟随当前预设主色）。
  *   selected 改为主色 40% 掺白：60% 在暗色面板上仅 3.86:1，50% 在悬停底上也只有 4.03:1，40% 达 5.2:1。
+ *   该暗色块在注入文本中位于 `:root` 块之后，同特异性下后者胜，
+ *   故浅主色预设在 `:root` 里声明的 `--lh-selected-color` 明色值不会泄漏进暗色。
  *
  * 只能写 `<style>` 元素（特异性 0,1,0），**不能**写 `documentElement` 的内联
  * style（特异性 1,0,0,0）——内联优先级高于一切样式表，会压过

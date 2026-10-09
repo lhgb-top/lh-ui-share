@@ -1,7 +1,7 @@
 @use './variables' as *;
 
 // ==============================
-// lh-ui-plus 国风主题 CSS 变量
+// lh-ui-share 国风主题 CSS 变量
 // 将 SCSS 变量映射为 :root CSS 自定义属性
 // ==============================
 
@@ -12,6 +12,14 @@
   --lh-primary-color-active: #{$lh-primary-active};
   --lh-primary-color-bg: #{$lh-primary-light};
   --lh-primary-color-border: #{$lh-primary-lighter};
+
+  // 主色底上的文字色（金色/松花等浅主色下不应写死 #fff）
+  --lh-color-on-primary: #{$lh-on-primary};
+  // 列表/面板项的中性悬停底色（区分于选中态主色底）
+  --lh-hover-bg-color: #{$lh-hover-bg};
+  // 选中态文字色：直接引用 active 深色变体（不做 SCSS 编译期烤死），
+  // 各预设的 active 在其 bg 上的对比度已验证 ≥4.5:1
+  --lh-selected-color: var(--lh-primary-color-active);
 
   // Success (松花绿 — 竹影青翠)
   --lh-success-color: #{$lh-success};

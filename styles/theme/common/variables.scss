@@ -1,5 +1,5 @@
 // ==============================
-// lh-ui-plus 国风主题变量
+// lh-ui-share 国风主题变量
 // 设计灵感：宣纸 · 水墨 · 朱砂 · 靛蓝
 // "素雅留白，墨韵含香"
 // ==============================
@@ -10,6 +10,11 @@ $lh-primary-hover: #3D649E !default;
 $lh-primary-active: #1F3A5F !default;
 $lh-primary-light: #E8EDF3 !default;
 $lh-primary-lighter: #D4DCE8 !default;
+
+// 主色底上的文字色：预设主色深浅不一，写死 #fff 在金色/松花等浅主色底上对比度不足 AA
+$lh-on-primary: #fff !default;
+// 列表/面板项的中性悬停底色（暗色模式翻转为白色低透明度，见 var-dark.scss）
+$lh-hover-bg: rgba(0, 0, 0, 0.05) !default;
 
 // ——— Success (松花绿 — 竹影青翠) ———
 $lh-success: #5B8C5A !default;
@@ -160,7 +165,9 @@ $lh-dropdown-padding: $lh-spacing-xs 0 !default;
 $lh-dropdown-item-height: 36px !default;
 $lh-dropdown-item-padding: 0 $lh-spacing-base !default;
 $lh-dropdown-item-color: $lh-text-regular !default;
-$lh-dropdown-item-hover-bg-color: $lh-bg-color-page !default;
+// 引用 CSS 变量而非编译期烤死的主色：预设主题与暗色模式才能跟随生效
+// 令牌在 var.scss 的同一 :root 必然声明（variables.scss 自身不声明 --lh-*，故走行级豁免）
+$lh-dropdown-item-hover-bg-color: var(--lh-hover-bg-color) !default; /* no-fallback */
 $lh-dropdown-divider-color: $lh-border-color-lighter !default;
 
 // ——— Imperative feedback（命令式反馈：Message / Notification / Loading） ———
@@ -201,8 +208,11 @@ $lh-menu-item-height: 40px !default;
 $lh-menu-item-padding: 20px !default;
 $lh-menu-item-color: $lh-text-primary !default;
 $lh-menu-item-hover-bg: $lh-bg-color-page !default;
-$lh-menu-item-active-color: $lh-primary !default;
-$lh-menu-item-active-bg: rgba($lh-primary, 10%) !default;
+// 激活态改为引用 CSS 变量：预设只覆盖 --lh-primary-*，烤死的主色会让菜单选中态不跟随预设
+// 激活文字统一走 --lh-selected-color（其默认值即 primary-active，预设声明显式 selected 时跟随之，
+// 保证 songhua/golden 等浅主色预设的菜单激活文字对比度不因按压底色调整而回退）
+$lh-menu-item-active-color: var(--lh-selected-color) !default; /* no-fallback */
+$lh-menu-item-active-bg: var(--lh-primary-color-bg) !default; /* no-fallback */
 $lh-menu-arrow-color: $lh-text-secondary !default;
 $lh-menu-z-index: 2000 !default;
 
@@ -230,8 +240,9 @@ $lh-tree-color: $lh-text-primary !default;
 $lh-tree-padding: 4px 0 !default;
 $lh-tree-node-height: 34px !default;
 $lh-tree-node-hover-bg: $lh-bg-color-page !default;
-$lh-tree-node-selected-color: $lh-primary !default;
-$lh-tree-node-selected-bg: rgba($lh-primary, 10%) !default;
+// 选中态文字用 --lh-selected-color（active 深色变体），保证各预设下 ≥4.5:1
+$lh-tree-node-selected-color: var(--lh-selected-color) !default; /* no-fallback */
+$lh-tree-node-selected-bg: var(--lh-primary-color-bg) !default; /* no-fallback */
 $lh-tree-arrow-color: $lh-text-secondary !default;
 
 // ——— Wave F：Transfer / Upload ———

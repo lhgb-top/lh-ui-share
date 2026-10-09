@@ -91,7 +91,8 @@
     transition: background-color 0.15s;
 
     &:hover {
-      background-color: rgba(0, 0, 0, 0.08);
+      /* 中性悬停底色：写死黑色低透明度在暗色模式下不可见 */
+      background-color: var(--lh-hover-bg-color, rgba(0, 0, 0, 0.08));
     }
 
     /* 键盘焦点环（鼠标点击不显示） */

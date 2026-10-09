@@ -75,7 +75,8 @@ nav ul.lh-pagination__pages {
 
   &__page--active,
   &__page--active:hover:not(:disabled) {
-    color: #fff;
+    /* 主色底上的文字不写死 #fff：金色/松花等浅主色下 #fff 对比度不足 AA */
+    color: var(--lh-color-on-primary, #fff);
     background-color: var(--lh-primary-color, #2B4C7C);
     font-weight: var(--lh-font-weight-primary, 400);
   }

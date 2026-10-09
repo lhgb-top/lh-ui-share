@@ -1,5 +1,5 @@
 // ==============================
-// lh-ui-plus 国风暗色主题
+// lh-ui-share 国风暗色主题
 // 深墨染夜，朱砂点朱
 // ==============================
 
@@ -9,8 +9,18 @@
   --lh-primary-color: #3D649E;
   --lh-primary-color-hover: #5078AB;
   --lh-primary-color-active: #2B4C7C;
-  --lh-primary-color-bg: #1A2430;
+  // 暗色下用更深的透明主色底（写死深色会让预设主色在暗色下失真）；
+  // 与 buildPresetStyleText 注入的暗色块保持一致（25% 掺透明）
+  --lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent);
   --lh-primary-color-border: #2A3A4A;
+
+  // 主色底上的文字色：暗色下主色变浅，白字依然成立（显式声明防外部覆盖丢失）
+  --lh-color-on-primary: #fff;
+  // 中性悬停底色：暗色下必须比面板背景亮（黑色低透明度会形成“反向悬停”）
+  --lh-hover-bg-color: rgba(255, 255, 255, 0.08);
+  // 选中态文字：主色掺白提亮，保证在暗色面板背景上的对比度
+  // （主色 40% 掺白：60% 在暗色面板上仅 3.86:1，50% 在悬停底上也只有 4.03:1，40% 达 5.2:1）
+  --lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff);
 
   // Success (松花绿)
   --lh-success-color: #6FA36E;
@@ -105,7 +115,8 @@
   --lh-dropdown-bg-color: #2A2520;
   --lh-dropdown-border-color: #3A3530;
   --lh-dropdown-item-color: #C8C0B8;
-  --lh-dropdown-item-hover-bg-color: #242018;
+  // 原写死 #242018 比面板背景更暗，悬停呈“反向”反馈；改用中性悬停底色
+  --lh-dropdown-item-hover-bg-color: var(--lh-hover-bg-color); /* no-fallback */
   --lh-dropdown-divider-color: #302B28;
 
   // Imperative feedback（命令式反馈 — 深墨夜色）
@@ -130,6 +141,10 @@
   --lh-menu-bg: #242018;
   --lh-menu-border: #302B28;
   --lh-menu-item-hover-bg: #302B28;
+  // :root 上这些 token 编译为 var() 引用后只在 :root 求值，暗色下不会自动翻转，
+  // 必须在此重新指向暗色值（同元素内 var() 引用会取到上方暗色 --lh-selected-color 等）
+  --lh-menu-item-active-color: var(--lh-selected-color); /* no-fallback */
+  --lh-menu-item-active-bg: var(--lh-primary-color-bg); /* no-fallback */
 
   // Wave F：Table
   --lh-table-bg: #242018;
@@ -146,6 +161,8 @@
   // Wave F：Tree
   --lh-tree-node-hover-bg: #2A2420;
   --lh-tree-color: #D8D0C8;
+  --lh-tree-node-selected-color: var(--lh-selected-color); /* no-fallback */
+  --lh-tree-node-selected-bg: var(--lh-primary-color-bg); /* no-fallback */
 
   // Wave F：Transfer / Upload
   --lh-transfer-bg: #242018;

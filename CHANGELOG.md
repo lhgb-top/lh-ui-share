@@ -1,5 +1,102 @@
 # @lh-ui/share
 
+## 0.3.0
+
+### Minor Changes
+
+- # 主题令牌收敛与 config 纳管 theme
+
+  前提结论：**主题不单独拆包**——theme 就是 `@lh-ui/share` 的一部分（TS 侧纯对象 + scss 令牌零框架依赖），
+  各 UI 库统一从 share 消费主题。本轮把 lh-ui-plus 侧真实改进的令牌与样式择优回流 share，
+  并让 config 模块纳管主题预设名，为 plus 迁移到消费 share 做准备。
+
+  ## 阶段 0：清理主题多源
+  - 删除 `src/theme/themes/{cerblue,golden,shuimo,songhua,zhusha}.scss` 五个孤立文件：
+    与 `themes/index.ts` 的 TS `vars` 逐字重复、全仓无引用、不参与编译也不被 exports 暴露。
+    删除后 TS `vars` 成为预设主色的唯一来源，消除双源漂移。
+
+  ## 阶段 1：令牌收敛（plus 的三个变量回流）
+
+  新增三个设计令牌，贯通 SCSS 变量 → `:root` 映射 → 暗色覆盖 → **浅主色预设取值**：
+
+  - `--lh-color-on-primary`：主色底上的文字色。此前各组件写死 `#fff`，在金色 / 松花等浅主色底上
+    对比度不足 AA；默认值仍为 `#fff`，暗色侧显式声明防外部覆盖丢失。
+  - `--lh-hover-bg-color`：列表 / 面板项的中性悬停底色，与选中态主色底区分开；暗色翻转为
+    `rgba(255,255,255,.08)`（此前暗色下拉悬停为写死的深色，形成「反向悬停」）。
+  - `--lh-selected-color`：选中态文字色。`buildPresetStyleText` 的暗色块**已经在用**
+    `color-mix(... 40%, #fff)` 派生它，但明色侧缺失——补齐 share 现有的不自洽。
+    明色侧直接引用 `--lh-primary-color-active`（不做编译期烤死），各预设 active 在其 bg 上的
+    对比度已验证 ≥4.5:1。
+
+  **浅主色预设的对比度兜底**（预设层取值，WCAG 数值全部重新验算）：
+
+  - songhua / golden 的主色属浅主色，白字仅 3.93:1 / 3.25:1（不足 AA），改用墨字
+    `#101410`（4.73:1）/ `#1E1A16`（5.31:1）——`--lh-color-on-primary` 显式写进预设 vars。
+  - active 色作选中文字在悬停底上仅 3.48:1 / 3.41:1，两个预设各自加深 `--lh-selected-color`
+    至 `#456F44`（5.17:1）/ `#82600A`（5.37:1）；按压底色同步加深至 `#4F8F4C` / `#A87F0A`
+    （墨字对比 4.75:1 / 4.70:1，原值 3.70:1 / 3.94:1 均不足）。
+  - cerblue / zhusha / shuimo 为深主色，白字 8.65:1 / 5.90:1 / 13.97:1 已达标，不额外声明，
+    回落 `--lh-color-on-primary` 默认 `#fff` 与 `--lh-selected-color` 默认 active 变体。
+  - 暗色下两个预设仍走 `buildPresetStyleText` 暗色块的 color-mix 提亮值（注入文本中暗色块在
+    `:root` 块之后，同特异性后者胜，明色值不会泄漏进暗色）。
+
+  同时 5 处编译期烤死的主色改为引用 CSS 变量（预设主题只覆盖 `--lh-primary-*`，烤死值会让选中态不跟随预设）：
+  `$lh-dropdown-item-hover-bg-color`、`$lh-menu-item-active-color` / `-bg`、
+  `$lh-tree-node-selected-color` / `-bg`。
+
+  > 层叠说明：var-dark.scss 暗色块的取值已与 `buildPresetStyleText` 注入的暗色块**完全一致**
+  > （`--lh-primary-color-bg` 同为 25% 掺透明、`--lh-selected-color` 同为 40% 掺白），
+  > 二者谁后插入结果都相同，层叠顺序不再是风险点。`:root` 上编译为 var() 引用的 token
+  > 只在 :root 求值、暗色下不会自动翻转，故在 var-dark.scss 显式重新指向暗色值。
+
+  顺手修正 `variables.scss` / `var.scss` / `var-dark.scss` 头部过时注释（仍写「lh-ui-plus」，应为 lh-ui-share）。
+
+  ## 阶段 2：组件样式择优回流
+
+  plus 的 58 个组件样式与 share 无一相同，但绝大多数差异是「share 已有的双写过渡类名 /
+  focus-ring / reduced-motion」造成的假阳性。择优回流 plus 的真实改进（保留 share 侧已有的
+  无障碍成果，不反向覆盖）：
+
+  - 19 处令牌引用点：alert / cascader / date-picker / select / tabs / time-picker 的悬停底色
+    走 `--lh-hover-bg-color`；button / calendar / date-picker / pagination / table / tree 的
+    主色底文字走 `--lh-color-on-primary`；cascader / select / time-picker / tree 的选中态
+    走 `--lh-selected-color` + `--lh-primary-color-bg`。
+  - dialog 补 `--center` 居中变体（header / body / footer 居中，关闭按钮绝对定位到右上角）。
+  - avatar `__icon` 补 `svg { width: 1em; height: 1em; }`，图标随头像尺寸缩放。
+  - calendar / date-picker 的「今日」补 `box-shadow: inset 0 0 0 1px` 内描边环；
+    date-picker 面板阴影改用 `--lh-box-shadow-base` 令牌。
+
+  **未回流**（plus 侧缺陷或死代码）：popconfirm / popover / drawer 引用未定义的
+  `--lh-line-height-primary`、loading 的 `--lh-loading-color`、notification 的 `--lh-notification-color`
+  （share 的正确名分别为 `--lh-font-line-height-primary` / `--lh-loading-text-color` /
+  `--lh-notification-content-color`）；divider 的 `--dotted`（plus 模板不产出该类，死 CSS）；
+  time-picker 激活态 `font-weight: 600`（share 为 500，属行为变更，不做）。
+
+  ## 阶段 4：config 模块纳管 theme
+
+  core 保持纯函数、零 DOM（红线 #1）：config 状态只存主题**名**（字符串，可序列化），
+  vars 取值与 `<style>` 注入由 UI 层调 `getThemeVars` + `buildPresetStyleText` 完成。
+
+  - `LhConfigState` 新增 `theme: ThemePresetName`，默认 `'cerblue'`（`DEFAULT_THEME` 常量，
+    与 `variables.scss` 的默认主色同源，theme.spec.ts 有回归守护）。
+  - 新增纯函数 `getEffectiveTheme(localTheme, globalTheme)`：局部 > 全局 > 默认青花瓷。
+  - `src/core/index.ts` 导出 config 模块；单测补 `DEFAULT_THEME` ↔ `THEME_PRESETS[0].name`
+    一致性护栏、`mergeConfig` 主题覆盖与 `getEffectiveTheme` 三级回退。
+  - theme.spec.ts 的预设键集断言放宽为「包含必需键」（浅主色预设现在额外声明两个令牌），
+    新增浅主色预设必须成对声明 `--lh-color-on-primary` / `--lh-selected-color` 的护栏。
+
+  ## 包面
+  - 全部为**新增导出 + 内部令牌收敛 + 样式增量**：`getEffectiveTheme` / `DEFAULT_THEME` 为新增，
+    既有导出零删除、旧签名零变更，下游既有引用不需要改动。
+  - 三个令牌均为新增 CSS 自定义属性，不覆盖任何既有令牌；组件样式改动只把写死色值换成令牌引用，
+    默认值与原值一致，无主题时视觉不变。
+
+  ## 阶段 3 / 5（后续，另仓）
+
+  plus 迁移到消费 share（import `@lh-ui/share/core/*`、删 `packages/core` / `packages/theme` /
+  各组件 `style/`、build-styles 改编译 share 源、rollup / vite / workspace 配置同步）
+  在 plus 仓单独进行，按红线 #5：**share 先发版，plus 随其后 `pnpm up @lh-ui/share` 回归**。
+
 ## 0.2.0
 
 ### Minor Changes
