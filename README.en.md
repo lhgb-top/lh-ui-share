@@ -240,5 +240,3 @@ CI runs, in order: `lint → typecheck → test → build → build:styles → b
 - `styles/` is the single source of component styles: never copy styles into a UI library to hand-edit them; every style change happens in this repository.
 - The single copy of core unit tests lives here; UI libraries must not duplicate it.
 - Release order: **share is published first, UI libraries follow** — a share change → changeset → publish → each library runs `pnpm up @lh-ui/share` and regresses.
-
-Full conventions in [AGENTS.md](./AGENTS.md).

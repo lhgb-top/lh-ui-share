@@ -232,7 +232,7 @@ scripts/            build-styles / normalize-styles / sync-exports / verify-dts 
 | 单测 | `pnpm test` |
 | Lint / 类型 | `pnpm lint` / `pnpm typecheck` |
 
-CI 按 `lint → typecheck → test → build → build:styles → build:dts → verify:dts` 顺序执行。测试、构建等验证由**用户手动运行**，AI 交付后仅列出命令清单。
+CI 按 `lint → typecheck → test → build → build:styles → build:dts → verify:dts` 顺序执行。测试、构建等验证由**用户手动运行**，交付后仅列出命令清单。
 
 ## 边界与贡献
 
@@ -240,5 +240,3 @@ CI 按 `lint → typecheck → test → build → build:styles → build:dts →
 - `styles/` 是组件样式唯一源：禁止把样式拷贝到 UI 库手改；一切样式改动只在本仓库发生。
 - core 单测唯一一份在本仓库，UI 库不得复制。
 - 版本发布顺序：**share 先发版，UI 库随其后**——share 改动 → changeset → 发版 → 各库 `pnpm up @lh-ui/share` 回归。
-
-完整规约见 [AGENTS.md](./AGENTS.md)。
