@@ -91,8 +91,11 @@ describe('shared/keyboard', () => {
       expect(getNextListIndex(plain, 2, 1, { loop: false })).toBe(2)
       expect(getNextListIndex(plain, 0, -1, { loop: false })).toBe(0)
       expect(getNextListIndex(plain, 1, 1, { loop: false })).toBe(2)
-      // 不循环时若边界项被禁用则无可用目标
-      expect(getNextListIndex(items, 0, 1, { loop: false })).toBe(-1)
+      // 不循环时跳过中间的禁用项
+      expect(getNextListIndex(items, 0, 1, { loop: false })).toBe(2)
+      // 不循环时若边界项也被禁用则无可用目标
+      const borderDisabled = [{}, { disabled: true }]
+      expect(getNextListIndex(borderDisabled, 0, 1, { loop: false })).toBe(-1)
     })
 
     it('keeps disabled items selectable when skipDisabled is off', () => {

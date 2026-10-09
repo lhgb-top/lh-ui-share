@@ -106,7 +106,8 @@ export interface LhListNavigationOptions<T = unknown> {
  *
  * - 方向为数值时按步进移动，'first' / 'last' 直达首尾
  * - 空列表、无可用项（全部禁用且 skipDisabled）返回 -1
- * - 不循环时到达边界停在边界（返回边界下标，不返回 -1）
+ * - 不循环时到达边界停在边界（返回边界下标，不返回 -1）；中间位置的禁用项会被跳过，
+ *   只有边界项本身禁用时才返回 -1
  *
  * @param items 列表项（DOM 序）
  * @param current 当前下标（越界或 -1 时按「未选中」处理：正向取首项、负向取末项）
@@ -138,15 +139,17 @@ export function getNextListIndex<T>(
 
   for (let step = 1; step <= count; step += 1) {
     let next = start + direction * step
+    let atBorder = false
     if (loop) {
       next = ((next % count) + count) % count
     } else if (next < 0 || next >= count) {
       // 不循环：钳到边界
       next = direction > 0 ? count - 1 : 0
+      atBorder = true
     }
     if (!skipDisabled || !disabledOf(items[next])) return next
-    // 不循环时步进已到边界且该项禁用，继续循环只会重复，直接终止
-    if (!loop) return -1
+    // 不循环时只有步进已到边界且该项禁用才终止（中间的禁用项继续跳过）
+    if (atBorder) return -1
   }
   return -1
 }
