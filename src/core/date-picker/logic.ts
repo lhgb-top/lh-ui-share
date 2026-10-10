@@ -6,95 +6,23 @@ import type { LhAriaAttrs } from '../shared/a11y'
 
 /**
  * 通用日期原语已下沉到 core/shared/date（共享内核），此处按原导出面再导出，
- * 保证 `@lh-ui/share/core/date-picker` 的既有引用（下游的 isSameDay /
- * isDateDisabled / getDaysInMonth 等）不需要改路径。
+ * 保证 `@lh-ui/share/core/date-picker` 的既有引用（下游的 formatDate / parseDate /
+ * isSameDay / isDateDisabled / getDaysInMonth 等）不需要改路径；adapter 也直接依赖
+ * 内核，不再反向 import 本文件，避免 logic ↔ adapter 循环依赖。
  */
 export {
   compareDate,
+  formatDate,
   getDaysInMonth,
   getFirstDayOfMonth,
   isDateDisabled,
   isSameDay,
   isSameMonth,
+  parseDate,
 } from '../shared/date'
 
 /** 一周从哪天开始：0=周日（默认）… 6=周六 */
 export type LhFirstDayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6
-
-/**
- * 格式化日期
- *
- * 支持任意顺序的定宽 token（yyyy / MM / dd / HH / mm / ss），同一 token 出现多次时全部替换。
- * 与 parseDate 对称：格式化出来的串一定能解析回去。
- * 年份补零到 4 位：yyyy 是定宽 token，year < 1000 时缺补零会破坏回读
- * （year ≥ 10000 超出定宽 token 表达力，不在支持范围）。
- */
-export function formatDate(date: Date, format: string): string {
-  const year = String(date.getFullYear()).padStart(4, '0')
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  const seconds = String(date.getSeconds()).padStart(2, '0')
-
-  return format
-    .replace(/yyyy/g, year)
-    .replace(/MM/g, month)
-    .replace(/dd/g, day)
-    .replace(/HH/g, hours)
-    .replace(/mm/g, minutes)
-    .replace(/ss/g, seconds)
-}
-
-/**
- * 解析日期字符串
- *
- * 与 formatDate 对称：各 token 按 format 中的位置取值（年份不再硬编码在第 0 位）。
- * 解析失败的两种情形都返回 null：
- *   - 串与格式不对应（parseInt 得到 NaN）；
- *   - 值不合法（如 2023-02-30 会被 Date 静默滚到 3 月）——构造后回读校验。
- */
-export function parseDate(str: string, format: string): Date | null {
-  const yearIdx = format.indexOf('yyyy')
-  const monthIdx = format.indexOf('MM')
-  const dayIdx = format.indexOf('dd')
-  const hoursIdx = format.indexOf('HH')
-  const minutesIdx = format.indexOf('mm')
-  const secondsIdx = format.indexOf('ss')
-
-  const year = yearIdx >= 0 ? parseInt(str.substring(yearIdx, yearIdx + 4), 10) : new Date().getFullYear()
-  const month = monthIdx >= 0 ? parseInt(str.substring(monthIdx, monthIdx + 2), 10) - 1 : 0
-  const day = dayIdx >= 0 ? parseInt(str.substring(dayIdx, dayIdx + 2), 10) : 1
-  const hours = hoursIdx >= 0 ? parseInt(str.substring(hoursIdx, hoursIdx + 2), 10) : 0
-  const minutes = minutesIdx >= 0 ? parseInt(str.substring(minutesIdx, minutesIdx + 2), 10) : 0
-  const seconds = secondsIdx >= 0 ? parseInt(str.substring(secondsIdx, secondsIdx + 2), 10) : 0
-
-  if (
-    isNaN(year) ||
-    isNaN(month) ||
-    isNaN(day) ||
-    isNaN(hours) ||
-    isNaN(minutes) ||
-    isNaN(seconds)
-  ) {
-    return null
-  }
-
-  const date = new Date(year, month, day, hours, minutes, seconds)
-  if (isNaN(date.getTime())) return null
-  // 回读校验：越界的月/日/时/分/秒会被 Date 静态归一化，与用户输入不一致即视为非法
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month ||
-    date.getDate() !== day ||
-    date.getHours() !== hours ||
-    date.getMinutes() !== minutes ||
-    date.getSeconds() !== seconds
-  ) {
-    return null
-  }
-  return date
-}
 
 /**
  * 生成日历数据

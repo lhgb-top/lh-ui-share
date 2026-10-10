@@ -1,4 +1,4 @@
-import { LhIconName } from '../icon'
+import type { LhIconName } from '../icon'
 import type { LhNotificationPosition, LhNotificationType } from './types'
 import type { LhAriaAttrs } from '../shared/a11y'
 

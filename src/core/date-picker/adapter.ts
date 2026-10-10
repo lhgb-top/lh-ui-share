@@ -5,12 +5,12 @@ import {
   getFirstDayOfMonth,
   isSameDay,
   parseDate,
-} from './logic'
+} from '../shared/date'
 
 /**
  * 日期适配器（共享接缝）
  *
- * 默认实现包装本仓库手写的 parse / format / 日历算法；
+ * 默认实现包装共享内核 core/shared/date 的手写 parse / format / 日历算法；
  * 需要接入 dayjs / date-fns / Intl 时实现本接口，并通过显式参数
  * （如 `generateCalendarDays(year, month, ..., firstDayOfWeek, adapter)`）传入；
  * 旧路径 `setDateAdapter` 仍可用但已标记 @deprecated（模块级单例会跨实例泄漏）。
@@ -38,7 +38,7 @@ export interface LhDateAdapter {
   addDays(date: Date, amount: number): Date
 }
 
-/** 默认适配器：包装 logic.ts 的手写实现 */
+/** 默认适配器：包装 core/shared/date 内核的实现（不反向依赖 date-picker/logic，避免循环依赖） */
 const defaultAdapter: LhDateAdapter = {
   parse: (value, format) => parseDate(value, format),
   format: (date, format) => formatDate(date, format),
