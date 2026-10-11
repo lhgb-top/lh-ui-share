@@ -1,0 +1,110 @@
+---
+/**
+ * TokenTable —— 设计令牌全表。
+ *
+ * 数据来自 scripts/gen-docs-data.mjs 解析的 var.scss / var-dark.scss / variables.scss，
+ * 按语义域分组，列：令牌 / 明色 / 暗色 / SCSS 变量源 / 备注。
+ * 颜色类值带色块预览；暗色留空表示暗色沿用明色值。
+ */
+import tokens from '../data/tokens.json';
+
+const { filter } = Astro.props;
+
+// filter：给定分组名时只渲染该分组（供令牌页分节嵌入）
+const list = filter ? tokens.filter((t) => t.group === filter) : tokens;
+const groups = [...new Set(list.map((t) => t.group))];
+
+function swatch(value) {
+  if (!value) return '';
+  // 只给纯色值画色块（#xxx / rgba()），var() 引用与 color-mix 无法预览
+  if (!/^(#|rgba?\()/i.test(value)) return '';
+  return `<span class="lh-swatch" style="background:${value}" title="${value}"></span>`;
+}
+---
+
+<div class="lh-token-table">
+  {
+    groups.map((group) => (
+      <section>
+        <h4>{group}</h4>
+        <table>
+          <thead>
+            <tr>
+              <th>令牌</th>
+              <th>明色</th>
+              <th>暗色</th>
+              <th>SCSS 源</th>
+              <th>备注</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list
+              .filter((t) => t.group === group)
+              .map((t) => (
+                <tr>
+                  <td>
+                    <code>{t.name}</code>
+                  </td>
+                  <td set:html={swatch(t.light) + ' '} class="lh-token-value">
+                    <code>{t.light}</code>
+                  </td>
+                  <td class="lh-token-value">
+                    {t.dark ? (
+                      <>
+                        <span set:html={swatch(t.dark)} /> <code>{t.dark}</code>
+                      </>
+                    ) : (
+                      <span class="lh-token-inherit">沿用明色</span>
+                    )}
+                  </td>
+                  <td>{t.scssVar ? <code>{t.scssVar}</code> : <span class="lh-token-inherit">—</span>}</td>
+                  <td>{t.note || (t.overridable ? '' : '')}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </section>
+    ))
+  }
+</div>
+
+<style>
+  .lh-token-table {
+    overflow-x: auto;
+  }
+  .lh-token-table section {
+    margin-bottom: 2rem;
+  }
+  .lh-token-table h4 {
+    font-size: 1.05rem;
+    margin: 0 0 0.6rem;
+  }
+  .lh-token-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    border: 1px solid var(--sl-color-hairline);
+  }
+  .lh-token-table th,
+  .lh-token-table td {
+    padding: 0.45rem 0.6rem;
+    border-bottom: 1px solid var(--sl-color-hairline);
+    text-align: left;
+    vertical-align: middle;
+  }
+  .lh-token-table th {
+    background: var(--sl-color-bg-sidebar);
+    font-weight: 600;
+  }
+  .lh-token-table code {
+    font-size: 0.78rem;
+    word-break: break-all;
+  }
+  .lh-token-value {
+    white-space: nowrap;
+  }
+  .lh-token-inherit {
+    color: var(--sl-color-text-muted);
+    font-size: 0.78rem;
+  }
+</style>

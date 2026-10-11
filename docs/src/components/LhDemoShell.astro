@@ -1,0 +1,20 @@
+---
+/**
+ * LhDemoShell —— 给文档站的演示块引入 lh-ui 的令牌层。
+ *
+ * 引入 share 的明/暗 CSS 变量源码（var.scss + var-dark.scss）。这两份 scss 声明的是
+ * :root / [data-theme='dark'] 级变量，注入后**整页**都能用 var(--lh-*) 取到真实令牌值；
+ * 由于 lh-ui 与 Starlight 的令牌命名空间互不重叠（--lh-* 与 --sl-*），不会污染站点主题。
+ *
+ * 因此本组件适合「需要真实令牌的演示页」（主题、令牌、暗色示例）。
+ * 若只想给一小块内容套 lh 样式，用 .lh-demo-shell class 并自行覆盖所需变量即可。
+ */
+import '@lh-ui/share/styles/theme/common/var.scss';
+import '@lh-ui/share/styles/theme/common/var-dark.scss';
+
+const { class: className = '' } = Astro.props;
+---
+
+<div class:list={['lh-demo-shell', className]}>
+  <slot />
+</div>

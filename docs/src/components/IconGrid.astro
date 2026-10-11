@@ -1,0 +1,71 @@
+---
+/**
+ * IconGrid —— 内置图标网格。
+ *
+ * 数据来自 scripts/gen-docs-data.mjs 解析的 src/core/icon/svgs.ts（37 个内置图标）。
+ * 每个 `<svg>` 内联 path，填充 currentColor，可随父级文字色变化。
+ */
+import icons from '../data/icons.json';
+
+const { size = 20 } = Astro.props;
+---
+
+<div class="lh-icon-grid">
+  {
+    icons.map((icon) => (
+      <figure class="lh-icon-item">
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d={icon.path} />
+        </svg>
+        <figcaption>
+          <code>{icon.name}</code>
+          {icon.label && <span class="lh-icon-label">{icon.label}</span>}
+        </figcaption>
+      </figure>
+    ))
+  }
+</div>
+
+<style>
+  .lh-icon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 0.75rem;
+    margin: 1.5rem 0;
+  }
+  .lh-icon-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0.85rem 0.5rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 8px;
+    text-align: center;
+  }
+  .lh-icon-item svg {
+    color: var(--sl-color-text);
+    flex: none;
+  }
+  .lh-icon-item figcaption {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    font-size: 0.75rem;
+    line-height: 1.3;
+  }
+  .lh-icon-item code {
+    font-size: 0.72rem;
+    word-break: break-all;
+  }
+  .lh-icon-label {
+    color: var(--sl-color-text-muted);
+  }
+</style>

@@ -395,11 +395,17 @@
     "test:watch": "vitest",
     "changeset": "changeset",
     "changeset:status": "changeset status",
-    "prepublishOnly": "pnpm run build && pnpm run verify:dts && pnpm run verify:styles"
+    "prepublishOnly": "pnpm run build && pnpm run verify:dts && pnpm run verify:styles",
+    "docs:dev": "astro dev --root docs --port 5180",
+    "docs:build": "astro build --root docs",
+    "docs:preview": "astro preview --root docs",
+    "docs:data": "node scripts/gen-docs-data.mjs"
   },
   "devDependencies": {
+    "@astrojs/starlight": "^0.42.6",
     "@changesets/cli": "^3.0.3",
     "@eslint/js": "^10.0.1",
+    "astro": "^7.3.8",
     "@types/node": "^26.6.1",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",

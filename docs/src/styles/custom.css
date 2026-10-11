@@ -1,0 +1,83 @@
+/**
+ * lh-ui/share 文档站自定义样式
+ *
+ * 覆盖 Starlight 的 --sl-* 令牌，把站点视觉对齐 lh-ui 的国风设计语言
+ * （青花瓷主色 #2B4C7C、宣纸底、水墨文本色）。取值与
+ * styles/theme/common/variables.scss 保持同源，手动同步。
+ *
+ * 注意：这里只改 Starlight 自身变量；lh 组件演示块另由 LhDemoShell 组件
+ * 引 @lh-ui/share 的 scss 源，两套令牌（--sl-* 与 --lh-*）互不污染。
+ */
+
+:root {
+  /* 主色：青花瓷之蓝 */
+  --sl-color-primary: #2b4c7c;
+  --sl-color-primary-text: #ffffff;
+  --sl-color-primary-hue: 213;
+  --sl-color-accent: #b8860b;
+
+  /* 背景：宣纸白 */
+  --sl-color-bg: #fdfcfa;
+  --sl-color-bg-nav: #f7f4ee;
+  --sl-color-bg-sidebar: #f7f4ee;
+  --sl-color-bg-inline-code: #f0ede6;
+
+  /* 文本：水墨 */
+  --sl-color-text: #2c2c2c;
+  --sl-color-heading: #1a1a1a;
+  --sl-color-text-muted: #595959;
+  --sl-color-hairline: #ddd6c9;
+
+  /* 圆角与字体细节 */
+  --sl-radius: 8px;
+  --sl-font: 'Noto Sans SC', 'Inter', system-ui, -apple-system, 'Segoe UI',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --sl-font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', 'Menlo',
+    'Consolas', monospace;
+}
+
+/* 暗色下回归 Starlight 默认令牌，避免手工配色在暗色失准 */
+:root[data-theme='dark'] {
+  --sl-color-primary: #5b87bd;
+  --sl-color-primary-text: #0e1a2b;
+  --sl-color-accent: #d4a843;
+}
+
+/* 站点标题的字体重量轻一点，贴合「素雅留白」 */
+.site-title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* hero 与卡片间距微调 */
+.hero {
+  padding-block: clamp(2.5rem, 6vw, 4.5rem);
+}
+
+/* lh 演示块容器：隔离 --lh-* 令牌，不影响 Starlight 自身 */
+.lh-demo-shell {
+  border: 1px solid var(--lh-border-color-base, #dcdfe6);
+  border-radius: var(--lh-border-radius-base, 6px);
+  padding: 1.25rem;
+  background: var(--lh-bg-color, #fff);
+  color: var(--lh-text-primary, #2c2c2c);
+  font-size: 14px;
+  overflow-x: auto;
+}
+
+.lh-demo-shell--inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* 令牌表色块 */
+.lh-swatch {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 3px;
+  vertical-align: middle;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}

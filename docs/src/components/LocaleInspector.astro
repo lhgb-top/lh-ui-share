@@ -1,0 +1,210 @@
+---
+/**
+ * LocaleInspector —— lhlocale 国际化试玩器。
+ *
+ * 演示 LhLocale 纯 emitter 单例的核心能力：
+ * - t(path, fallback?)            按点号路径取文案；第二参可作兜底值或 {key} 插值参数
+ * - tm(path, fallback?)           取数组文案（月份名等数组叶子）
+ * - setLocale(locale)             切换语言（内置六语言可直接切）
+ * - subscribe(listener)           订阅版本号，UI 适配层据此重渲染
+ *
+ * 客户端动态加载 src/locales，切换语言后实时重算输出。
+ */
+const samplePaths = [
+  'common.loading',
+  'input.placeholder',
+  'pagination.total',
+  'pagination.prev',
+  'datepicker.months',
+  'datepicker.weeks.sun',
+];
+---
+
+<div class="lh-locale">
+  <div class="lh-locale-bar">
+    <label>
+      <span>语言</span>
+      <select data-locale>
+        <option value="zh-CN">zh-CN（简体中文）</option>
+        <option value="en-US">en-US（English）</option>
+        <option value="ja-JP">ja-JP（骨架，英文兜底）</option>
+      </select>
+    </label>
+    <label>
+      <span>文案路径</span>
+      <select data-path>
+        {samplePaths.map((p) => <option value={p}>{p}</option>)}
+      </select>
+    </label>
+    <label>
+      <span>插值参数（JSON）</span>
+      <input data-params type="text" value='{ "total": 128 }' />
+    </label>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>API</th>
+        <th>实际调用</th>
+        <th>返回值</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>lhlocale.t(path)</code></td>
+        <td data-t-args><code>—</code></td>
+        <td data-t-out><code>—</code></td>
+      </tr>
+      <tr>
+        <td><code>lhlocale.t(path, params)</code></td>
+        <td data-ti-args><code>—</code></td>
+        <td data-ti-out><code>—</code></td>
+      </tr>
+      <tr>
+        <td><code>lhlocale.tm(path)</code></td>
+        <td data-tm-args><code>—</code></td>
+        <td data-tm-out><code>—</code></td>
+      </tr>
+      <tr>
+        <td><code>lhlocale.getLocale()</code></td>
+        <td><code>()</code></td>
+        <td data-locale-out><code>—</code></td>
+      </tr>
+      <tr>
+        <td><code>lhlocale.version</code></td>
+        <td>（任何语言变更自增）</td>
+        <td data-version-out><code>—</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="lh-locale-note">
+    <code>pagination.total</code> 这类带 <code>{total}</code> 占位符的文案，第二参传对象即做插值；
+    <code>datepicker.months</code> 是数组叶子，只能经 <code>tm()</code> 取（<code>t()</code> 非字符串会回落 path 本身）；
+    切到 <code>ja-JP</code> 等骨架语言时，缺失键由英文兜底，<code>getLocale()</code> 仍如实报告 <code>'ja-JP'</code>。
+  </p>
+</div>
+
+<script>
+  const modules = import.meta.glob('../../../src/locales/index.ts');
+
+  let api: {
+    lhlocale: {
+      t: (p: string, fb?: string | Record<string, unknown>) => string;
+      tm: (p: string, fb?: string[]) => string[];
+      getLocale: () => string;
+      setLocale: (l: string) => void;
+      version: number;
+    };
+  } | null = null;
+
+  async function load() {
+    const key = Object.keys(modules)[0];
+    api = (await modules[key]()) as typeof api;
+    return api;
+  }
+
+  function esc(text: string) {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function render() {
+    if (!api) return;
+    const root = document.querySelector('.lh-locale');
+    const path = (root?.querySelector('[data-path]') as HTMLSelectElement)?.value ?? '';
+    const rawParams = (root?.querySelector('[data-params]') as HTMLInputElement)?.value ?? '';
+    if (!root) return;
+
+    const set = (sel: string, html: string) => {
+      const el = root.querySelector(sel);
+      if (el) el.innerHTML = html;
+    };
+
+    let params: Record<string, unknown> | undefined;
+    try {
+      const parsed = JSON.parse(rawParams);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) params = parsed;
+    } catch {
+      params = undefined;
+    }
+
+    set('[data-t-args]', `<code>t('${esc(path)}')</code>`);
+    set('[data-ti-args]', `<code>t('${esc(path)}', ${esc(rawParams)})</code>`);
+    set('[data-tm-args]', `<code>tm('${esc(path)}')</code>`);
+    set('[data-locale-out]', `<code>'${api.lhlocale.getLocale()}'</code>`);
+    set('[data-version-out]', `<code>${api.lhlocale.version}</code>`);
+
+    set('[data-t-out]', `<code>${esc(JSON.stringify(api.lhlocale.t(path)))}</code>`);
+    set(
+      '[data-ti-out]',
+      `<code>${esc(JSON.stringify(params ? api.lhlocale.t(path, params) : '（JSON 解析失败，未插值）'))}</code>`,
+    );
+    set('[data-tm-out]', `<code>${esc(JSON.stringify(api.lhlocale.tm(path)))}</code>`);
+  }
+
+  async function main() {
+    await load();
+    document.querySelector('[data-locale]')?.addEventListener('change', (e) => {
+      const value = (e.target as HTMLSelectElement).value;
+      api?.lhlocale.setLocale(value);
+      render();
+    });
+    document.querySelector('[data-path]')?.addEventListener('change', render);
+    document.querySelector('[data-params]')?.addEventListener('input', render);
+    render();
+  }
+
+  main();
+</script>
+
+<style>
+  .lh-locale {
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 10px;
+    padding: 1rem;
+    margin: 1.5rem 0;
+    background: var(--sl-color-bg);
+  }
+  .lh-locale-bar {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+  .lh-locale-bar label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.8rem;
+  }
+  .lh-locale-bar select,
+  .lh-locale-bar input {
+    padding: 0.3rem 0.45rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 6px;
+    background: var(--sl-color-bg-inline-code);
+    color: var(--sl-color-text);
+    font-size: 0.8rem;
+    font-family: var(--sl-font-mono);
+  }
+  .lh-locale table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+  .lh-locale th,
+  .lh-locale td {
+    padding: 0.4rem 0.55rem;
+    border-bottom: 1px solid var(--sl-color-hairline);
+    text-align: left;
+    vertical-align: top;
+  }
+  .lh-locale th {
+    background: var(--sl-color-bg-sidebar);
+    font-weight: 600;
+  }
+  .lh-locale-note {
+    margin: 0.75rem 0 0;
+    font-size: 0.78rem;
+    color: var(--sl-color-text-muted);
+  }
+</style>

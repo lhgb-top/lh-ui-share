@@ -1,0 +1,149 @@
+---
+/**
+ * PresetPreview —— 五个内置主题预设的实时预览。
+ *
+ * 从 @lh-ui/share/theme 取 LH_THEME_PRESETS，把每个预设的 vars 以内联 style 注入到
+ * 各自的卡片上（变量作用域 = 卡片，不污染 Starlight 的 --sl-*），卡片内的示例元素
+ * 消费 var(--lh-*)，实时呈现主色 / 主色底文字 / 选中态三组 verify:theme 校验的配对。
+ */
+import { LH_THEME_PRESETS } from '@lh-ui/share/theme';
+
+const presets = LH_THEME_PRESETS;
+---
+
+<div class="lh-preset-grid">
+  {
+    presets.map((preset) => (
+      <div
+        class="lh-preset-card"
+        style={Object.entries(preset.vars)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(';')}
+      >
+        <header class="lh-preset-head">
+          <span class="lh-preset-swatch" style={`background: var(--lh-primary-color, #2B4C7C)`} />
+          <div>
+            <strong>{preset.label}</strong>
+            <span class="lh-preset-name">
+              <code>{preset.name}</code> · {preset.labelEn}
+            </span>
+          </div>
+        </header>
+        <p class="lh-preset-desc">{preset.description}</p>
+        <div class="lh-preset-samples">
+          <button class="lh-sample-btn">主色按钮</button>
+          <span class="lh-sample-selected">选中项</span>
+          <span class="lh-sample-onprimary">主色底文字</span>
+        </div>
+        <dl class="lh-preset-vars">
+          {Object.entries(preset.vars).map(([k, v]) => (
+            <div>
+              <dt>
+                <code>{k}</code>
+              </dt>
+              <dd>
+                <span class="lh-swatch" style={`background:${v}`} />
+                <code>{v}</code>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  .lh-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.25rem;
+    margin: 1.5rem 0;
+  }
+  .lh-preset-card {
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 10px;
+    padding: 1rem 1.1rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    background: var(--sl-color-bg);
+  }
+  .lh-preset-head {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+  }
+  .lh-preset-swatch {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 8px;
+    flex: none;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+  }
+  .lh-preset-head strong {
+    display: block;
+    font-size: 1rem;
+  }
+  .lh-preset-name {
+    font-size: 0.75rem;
+    color: var(--sl-color-text-muted);
+  }
+  .lh-preset-desc {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--sl-color-text-muted);
+  }
+  .lh-preset-samples {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.7rem 0;
+    border-top: 1px dashed var(--sl-color-hairline);
+    border-bottom: 1px dashed var(--sl-color-hairline);
+  }
+  .lh-sample-btn {
+    border: none;
+    border-radius: var(--lh-border-radius-base, 6px);
+    background: var(--lh-primary-color, #2B4C7C);
+    color: var(--lh-color-on-primary, #fff);
+    padding: 0.35rem 0.9rem;
+    font-size: 0.82rem;
+    cursor: default;
+  }
+  .lh-sample-selected {
+    color: var(--lh-selected-color, var(--lh-primary-color-active, #1F3A5F));
+    font-weight: 600;
+    font-size: 0.82rem;
+  }
+  .lh-sample-onprimary {
+    background: var(--lh-primary-color, #2B4C7C);
+    color: var(--lh-color-on-primary, #fff);
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    font-size: 0.78rem;
+  }
+  .lh-preset-vars {
+    margin: 0;
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+  }
+  .lh-preset-vars div {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .lh-preset-vars dd {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .lh-preset-vars code {
+    font-size: 0.7rem;
+    word-break: break-all;
+  }
+</style>

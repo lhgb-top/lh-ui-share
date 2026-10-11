@@ -66,6 +66,11 @@ Desktop.ini
 *.seed
 .node_repl_history
 
+# ---------- 文档站（Astro Starlight，docs:build 产物）----------
+docs/.astro/
+docs/dist/
+docs/node_modules/
+
 # ---------- 临时 / 一次性 scratch 脚本（双下划线前缀）----------
 scripts/__*
 tmp/

@@ -1,0 +1,252 @@
+---
+/**
+ * FnPlayground —— 纯函数试玩器。
+ *
+ * core 层全是纯函数，文档页用它做「填参数 → 看输出」的交互演示，无需任何框架。
+ * 用法（markdown 里）：
+ *
+ *   <FnPlayground
+ *     spec="@lh-ui/share/core/steps"
+ *     fn="getStepsLineLastIndices"
+ *     args={[{ name: 'offsetTops', type: 'json', value: '[10, 10, 44]' }]}
+ *   />
+ *
+ * 实现要点：客户端用 import.meta.glob 预加载 src/core 下全部模块（vite 静态分析可过），
+ * 运行时按 spec 的最后一段定位模块、取函数、JSON 序列化返回值。
+ *
+ * 参数类型：text / number / boolean / json。
+ */
+const { spec, fn, args = [], label } = Astro.props;
+const config = JSON.stringify({ spec, fn, args });
+---
+
+<div class="lh-fnpg" data-config={config}>
+  <div class="lh-fnpg-head">
+    <code class="lh-fnpg-sig">{spec} → {fn}( )</code>
+    {label && <span class="lh-fnpg-label">{label}</span>}
+  </div>
+  <div class="lh-fnpg-args" data-args></div>
+  <div class="lh-fnpg-actions">
+    <button type="button" class="lh-fnpg-run" data-run>运行</button>
+    <button type="button" class="lh-fnpg-reset" data-reset>重置</button>
+  </div>
+  <div class="lh-fnpg-out">
+    <span class="lh-fnpg-out-label">返回值</span>
+    <pre><code data-out>（填好参数后点运行）</code></pre>
+  </div>
+</div>
+
+<script>
+  // 预加载 share core 全部模块：glob 路径相对本组件（docs/src/components → 仓库根 src）
+  const modules = import.meta.glob('../../../src/core/**/index.ts');
+
+  type ArgSpec = {
+    name: string;
+    type?: 'text' | 'number' | 'boolean' | 'json';
+    value?: unknown;
+  };
+
+  function parseValue(raw: string, type: ArgSpec['type']) {
+    if (type === 'number') {
+      const n = Number(raw);
+      return Number.isNaN(n) ? raw : n;
+    }
+    if (type === 'boolean') return raw === 'true' || raw === 'on';
+    if (type === 'json') {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
+  }
+
+  function buildInputs(root: HTMLElement, args: ArgSpec[]) {
+    const host = root.querySelector<HTMLElement>('[data-args]');
+    if (!host) return;
+    host.innerHTML = '';
+    for (const arg of args) {
+      const type = arg.type ?? 'text';
+      const wrap = document.createElement('label');
+      wrap.className = 'lh-fnpg-arg';
+      const name = document.createElement('span');
+      name.className = 'lh-fnpg-arg-name';
+      name.textContent = arg.name;
+      wrap.append(name);
+      let input: HTMLInputElement | HTMLTextAreaElement;
+      if (type === 'json') {
+        input = document.createElement('textarea');
+        input.value = typeof arg.value === 'string' ? arg.value : JSON.stringify(arg.value ?? '');
+      } else if (type === 'boolean') {
+        input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = Boolean(arg.value);
+      } else {
+        input = document.createElement('input');
+        input.type = type === 'number' ? 'number' : 'text';
+        input.value = String(arg.value ?? '');
+      }
+      input.dataset.argName = arg.name;
+      input.dataset.argType = type;
+      wrap.append(input);
+      host.append(wrap);
+    }
+  }
+
+  function readArgs(root: HTMLElement): unknown[] {
+    const inputs = [
+      ...root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[data-arg-name]'),
+    ];
+    return inputs.map((el) => parseValue(el.value, el.dataset.argType as ArgSpec['type']));
+  }
+
+  async function resolveModule(spec: string) {
+    // @lh-ui/share/core/steps → src/core/steps/index.ts
+    // @lh-ui/share/core/shared/sx → src/core/shared/sx/index.ts
+    const tail = spec.replace(/^@lh-ui\/share\/core\//, '');
+    const key = Object.keys(modules).find((k) => k.endsWith(`/core/${tail}/index.ts`));
+    if (!key) throw new Error(`找不到模块：${spec}`);
+    return (await modules[key]()) as Record<string, (...a: unknown[]) => unknown>;
+  }
+
+  function render(root: HTMLElement, text: string, isError = false) {
+    const out = root.querySelector<HTMLElement>('[data-out]');
+    if (out) {
+      out.textContent = text;
+      out.closest('.lh-fnpg-out')?.classList.toggle('is-error', isError);
+    }
+  }
+
+  function init(root: HTMLElement) {
+    const config = JSON.parse(root.dataset.config || '{}') as {
+      spec: string;
+      fn: string;
+      args: ArgSpec[];
+    };
+    buildInputs(root, config.args ?? []);
+
+    const defaults = JSON.stringify(config.args ?? []);
+
+    root.querySelector('[data-run]')?.addEventListener('click', async () => {
+      render(root, '运行中…');
+      try {
+        const mod = await resolveModule(config.spec);
+        const fn = mod[config.fn];
+        if (typeof fn !== 'function') throw new Error(`模块 ${config.spec} 没有导出 ${config.fn}`);
+        const result = fn(...readArgs(root));
+        const resolved = result instanceof Promise ? await result : result;
+        render(root, JSON.stringify(resolved, null, 2) ?? 'undefined');
+      } catch (err) {
+        render(root, String((err as Error)?.message ?? err), true);
+      }
+    });
+
+    root.querySelector('[data-reset]')?.addEventListener('click', () => {
+      buildInputs(root, JSON.parse(defaults) as ArgSpec[]);
+      render(root, '（已重置）');
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>('.lh-fnpg').forEach(init);
+</script>
+
+<style>
+  .lh-fnpg {
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 10px;
+    padding: 1rem;
+    margin: 1.5rem 0;
+    background: var(--sl-color-bg);
+  }
+  .lh-fnpg-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .lh-fnpg-sig {
+    font-size: 0.85rem;
+    color: var(--sl-color-primary);
+  }
+  .lh-fnpg-label {
+    font-size: 0.75rem;
+    color: var(--sl-color-text-muted);
+  }
+  .lh-fnpg-args {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  .lh-fnpg-arg {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.75rem;
+    min-width: 140px;
+  }
+  .lh-fnpg-arg-name {
+    color: var(--sl-color-text-muted);
+    font-family: var(--sl-font-mono);
+    font-size: 0.72rem;
+  }
+  .lh-fnpg-arg input,
+  .lh-fnpg-arg textarea {
+    padding: 0.3rem 0.45rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 6px;
+    background: var(--sl-color-bg-inline-code);
+    color: var(--sl-color-text);
+    font-size: 0.8rem;
+    font-family: var(--sl-font-mono);
+  }
+  .lh-fnpg-arg textarea {
+    min-height: 3.4rem;
+    width: 100%;
+    resize: vertical;
+  }
+  .lh-fnpg-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+  .lh-fnpg-run,
+  .lh-fnpg-reset {
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 6px;
+    padding: 0.3rem 0.85rem;
+    font-size: 0.8rem;
+    background: var(--sl-color-bg-sidebar);
+    color: var(--sl-color-text);
+    cursor: pointer;
+  }
+  .lh-fnpg-run {
+    background: var(--sl-color-primary);
+    border-color: var(--sl-color-primary);
+    color: var(--sl-color-primary-text);
+  }
+  .lh-fnpg-out {
+    border-top: 1px dashed var(--sl-color-hairline);
+    padding-top: 0.6rem;
+  }
+  .lh-fnpg-out-label {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--sl-color-text-muted);
+    margin-bottom: 0.3rem;
+  }
+  .lh-fnpg-out pre {
+    margin: 0;
+    padding: 0.65rem 0.8rem;
+    background: var(--sl-color-bg-inline-code);
+    border-radius: 8px;
+    font-size: 0.78rem;
+    overflow-x: auto;
+  }
+  .lh-fnpg-out.is-error pre {
+    background: rgba(178, 58, 58, 0.08);
+    color: #b23a3a;
+  }
+</style>
