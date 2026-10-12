@@ -151,6 +151,14 @@ export default defineConfig({
                 { label: 'backtop 回到顶部', link: '/components/feedback/backtop' },
               ],
             },
+            {
+              label: '布局',
+              collapsed: true,
+              items: [
+                { label: 'grid 栅格', link: '/components/layout/grid' },
+                { label: 'affix 固定', link: '/components/layout/affix' },
+              ],
+            },
           ],
         },
         {
