@@ -1,5 +1,43 @@
 # @lh-ui/share
 
+## 0.4.1
+
+### Patch Changes
+
+- # date / time-picker 内容行高显式化，外高不再随页面字体漂移
+
+  0.4.0 把 `.lh-date-picker__input` / `.lh-time-picker__input` 的外高钉到
+  `--lh-control-height-medium`（border-box + `min-height`），但触发器内的
+  `.lh-date-picker__value` / `__input-inner`（time-picker 同）未声明 `line-height`，
+  继承了页面的 `line-height: normal`。`normal` 的实际值随字体漂移：
+  lh-ui-vue2 沙箱字体下约 16.8px 塞得进内容预算（32 − padding 12 − 边框 2 = 18px），
+  lh-ui-plus 的 Noto Sans SC 下约 19.28px，顶破预算把触发器撑到 32.37px，
+  令牌外高在两仓表现不一致。
+
+  给这四个元素补 `line-height: 18px`（= 令牌外高 − 垂直 padding − 边框），
+  内容收缩进内容盒，`min-height` 兜底生效。实测 plus 页全部 date / time-picker
+  触发器由 32.37px 回到整 32px，与其他控件齐平。
+
+  属 0.4.0 高度令牌的补全修复：`min-height` 只能兜下限、压不住内容溢出，
+  外高对齐必须同时钉住内容行的行高。
+
+- # verify:versions 修正 0.x 的 caret 语义（此前会漏报跨 minor 的滞后升级）
+
+  `scripts/check-version-sync.mjs` 判定 `^x.y.z` 覆盖关系时只比较了主版本号
+  （`v[0] === base[0] && cmp(v, base) >= 0`），这与 semver 对 0.x 的实际解析不符：
+
+  - `^1.2.3` 是 `>=1.2.3 <2.0.0`，主版本号不变；
+  - `^0.2.3` 是 `>=0.2.3 <0.3.0`，主版本号为 0 时 caret 锁的是 minor；
+  - `^0.0.3` 是 `>=0.0.3 <0.0.4`，主、次均为 0 时锁的是 patch。
+
+  旧实现误以为 `^0.3.0` 覆盖 `0.4.0`，于是「share 已发 0.4.0、下游仍写 `^0.3.0`」
+  这种本该报的滞后被静默放过。修成三级判定（主版本号 → 0.x 再锁 minor →
+  0.0.x 再锁 patch），命中时给出具体原因，方便定位是哪一仓的哪一段依赖滞后。
+
+  另外修脚本刚上线就抓到的真实缺口：`lh-ui-uniapp` 的 `devDependencies`
+  里 `@lh-ui/share` 还停在 `^0.3.0`（`dependencies` 已随回归升到 `^0.4.0`），
+  此前正是被上面这个 bug 掩盖；现已一并升到 `^0.4.0`。
+
 ## 0.4.0
 
 ### Minor Changes

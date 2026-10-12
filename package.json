@@ -1,7 +1,7 @@
 {
   "name": "@lh-ui/share",
   "type": "module",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "lh-ui 家族唯一的框架无关共享层：core 纯函数 / theme / constants / locales / types / utils / 组件样式源",
   "keywords": [
     "lh-ui",

@@ -42,12 +42,15 @@
   background: none;
   width: 100%;
   font-size: 14px;
+  /* 显式行高：同 date-picker，normal 随页面字体漂移会顶破令牌外高 */
+  line-height: 18px;
   color: var(--lh-text-primary, #2C2C2C);
 }
 
 .lh-time-picker__value {
   flex: 1;
   font-size: 14px;
+  line-height: 18px;
   color: var(--lh-text-primary, #2C2C2C);
 }
 
