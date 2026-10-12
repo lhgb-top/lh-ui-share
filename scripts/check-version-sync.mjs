@@ -51,7 +51,18 @@ function satisfies(range, version) {
   if (!base) return { ok: false, reason: '无法解析的版本范围' }
   const v = parse(version)
   if (range.startsWith('^')) {
-    return { ok: v[0] === base[0] && cmp(v, base) >= 0 }
+    // 完整 semver caret 语义（家族一律用 x.y.z 完整形式）：
+    //   ^1.2.3 → >=1.2.3 <2.0.0   主版本号不变
+    //   ^0.2.3 → >=0.2.3 <0.3.0   主版本号为 0 时 caret 锁 minor
+    //   ^0.0.3 → >=0.0.3 <0.0.4   主、次均为 0 时 caret 锁 patch
+    // 旧实现只判 v[0] === base[0]，误以为 ^0.3.0 覆盖 0.4.0，
+    // 与 npm/pnpm 的实际解析不符，会导致升级提示被吞掉。
+    if (v[0] !== base[0]) return { ok: false, reason: `^${base.join('.')} 不覆盖 ${version}（主版本号已变）` }
+    if (base[0] === 0) {
+      if (v[1] !== base[1]) return { ok: false, reason: `^${base.join('.')} 不覆盖 ${version}（0.x 的 caret 锁 minor）` }
+      if (base[1] === 0 && v[2] !== base[2]) return { ok: false, reason: `^${base.join('.')} 不覆盖 ${version}（0.0.x 的 caret 锁 patch）` }
+    }
+    return { ok: cmp(v, base) >= 0 }
   }
   if (range.startsWith('~')) {
     return { ok: v[0] === base[0] && v[1] === base[1] && cmp(v, base) >= 0 }

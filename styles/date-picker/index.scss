@@ -45,12 +45,16 @@
   background: none;
   width: 100%;
   font-size: 14px;
+  /* 显式行高：line-height: normal 随页面字体漂移（Noto Sans SC 下约 1.376，
+     内容高约 19.28px，会顶破 control-height 的内容预算 18px、令牌外高溢出） */
+  line-height: 18px;
   color: var(--lh-text-primary, #2C2C2C);
 }
 
 .lh-date-picker__value {
   flex: 1;
   font-size: 14px;
+  line-height: 18px;
   color: var(--lh-text-primary, #2C2C2C);
 }
 
