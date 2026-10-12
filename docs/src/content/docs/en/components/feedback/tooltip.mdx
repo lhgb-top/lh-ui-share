@@ -1,0 +1,197 @@
+---
+title: tooltip — Tooltip
+description: 'getDefaultDelay show/hide delays (show 200 / hide 0), the role=tooltip and aria-describedby pairing convention'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A tooltip is "the supplementary explanation you only read on hover": an icon button that is hard to understand, link text that got truncated, a table cell that cannot hold the full content. `core/tooltip` is very thin — positioning goes to `shared/popper`, delays go to `shared/delay`, and it only declares **this component's default rhythm** and **the aria pairing convention**.
+
+## When to use
+
+- Each framework implements `<LhTooltip>`: adding a short (one-sentence) explanation to a trigger element.
+- Showing the full content when text is truncated (ellipsis).
+- Explaining the semantics of an icon button.
+- **Do not use it for**: content that needs interaction (use `popover` — no buttons inside a tooltip); confirmation-type operations (use `popconfirm`); error feedback (use `message`); **mobile** (no hover; a tooltip is nearly impossible to trigger on a touch screen — use popover's click trigger or a long-press instead).
+
+## Import
+
+```ts
+import {
+  getPopperClassNames,
+  getPopperStyle,
+  getDefaultDelay,
+  getTooltipPopperAria,
+  getTooltipTriggerAria,
+} from '@lh-ui/share/core/tooltip'
+import type {
+  LhTooltipPlacementCore,
+  LhTooltipTriggerCore,
+  LhTooltipEffectCore,
+  LhTooltipState,
+} from '@lh-ui/share/core/tooltip'
+```
+
+## Design intent
+
+**The asymmetry of the default delays**: show 200ms, hide 0ms — **slow to show, fast to hide**. The show delay guards against accidental triggering (the mouse sweeping across a row of buttons should not pop a tip for each one); the 0ms hide makes it disappear the moment you leave, with no dragging. Contrast with `popover`'s 100ms hide (see below) — the difference in rhythm reflects interaction weight.
+
+**The aria pairing convention**: the trigger's `aria-describedby` points to the layer's id, and the layer has `role="tooltip"`. This is the standard WAI-ARIA approach: when a screen reader focuses the trigger it also reads out the tip content, and **the user does not need to hover to get the information** — this is the most easily overlooked accessibility point; a purely visual tooltip is completely invisible to keyboard users.
+
+**Handling the `@deprecated` aliases**: `getPopperClass` / `getPopperStyle` are the old names, still used by the downstream vue2 repo — kept for compatibility but marked deprecated; new code uses `getPopperClassNames` (the getXxxClassNames convention). **They cannot be deleted** — downstream still imports them, and renaming must be synchronized with downstream changes.
+
+**`getPopperStyle` only manages maxWidth**: numbers → px, strings used as-is. The positioning coordinates are computed by `shared/popper`'s `computePosition`, and the layer's transform/offset is the result of the UI layer binding the popper state.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getPopperClassNames` | `(state: { effect, placement }) => string[]` | class names | theme effect + position |
+| `getPopperStyle` ⚠️ | `(state: { maxWidth }) => Record<string, string>` | inline styles | maxWidth normalization |
+| `getDefaultDelay` | `(show?, hide?) => { show, hide }` | delays | defaults 200 / 0 |
+| `getTooltipPopperAria` | `(id?) => LhAriaAttrs` | aria bag | role="tooltip" |
+| `getTooltipTriggerAria` | `(tooltipId?) => LhAriaAttrs` | aria bag | aria-describedby |
+
+⚠️ marks `@deprecated` compatibility aliases; new code uses the new names.
+
+Constants (types): `LhTooltipPlacementCore` 12 positions, `LhTooltipTriggerCore`, `LhTooltipEffectCore = 'dark' | 'light'`.
+
+## Type definitions
+
+```ts
+export type LhTooltipPlacementCore =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhTooltipTriggerCore = 'hover' | 'focus' | 'click' | 'contextmenu'
+export type LhTooltipEffectCore = 'dark' | 'light'
+
+export interface LhTooltipState {
+  visible: boolean
+  effect: LhTooltipEffectCore
+  placement: LhTooltipPlacementCore
+  maxWidth?: number | string
+  showDelay?: number
+  hideDelay?: number
+}
+```
+
+## Accessibility
+
+```ts
+getTooltipPopperAria('tip-1')
+// { role: 'tooltip', id: 'tip-1' }
+getTooltipTriggerAria('tip-1')
+// { 'aria-describedby': 'tip-1' }
+getTooltipTriggerAria()  // {} (nothing output when no id is passed; fall back to aria-label in this case)
+```
+
+- **The id must match on both ends**: the trigger's `aria-describedby` value must equal the layer's real rendered id. During server-side rendering the id may be empty — when no id is passed the function returns an empty object, and the UI layer should fall back to `aria-label` instead of letting `aria-describedby` point at a nonexistent element (screen readers will report "the referenced element does not exist").
+- **focus trigger covers keyboard users**: with `trigger: 'focus'`, Tab-focusing shows it — this is the recommended default accessibility behavior; hover-only is completely invisible to keyboard users.
+- **Content restrictions of role="tooltip"**: WAI-ARIA specifies that a tooltip must **not contain interactive elements** (buttons, links) — use `popover` (role=dialog) when interaction is needed. This constraint is also reflected in the styles: a tooltip usually has pointer-events: none.
+- **Long text**: `maxWidth` limits the wrapping width, but a tooltip should not carry paragraphs — anything beyond one sentence calls for popover.
+
+## Usage examples
+
+```ts
+import { getDefaultDelay, getPopperClassNames, getPopperStyle } from '@lh-ui/share/core/tooltip'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 0 }
+getDefaultDelay(0, 500)                // { show: 0, hide: 500 } (explicit override)
+
+getPopperClassNames({ effect: 'dark', placement: 'top' })
+// ['lh-tooltip__popper', 'lh-tooltip__popper--dark', 'lh-tooltip__popper--top']
+
+getPopperStyle({ maxWidth: 200 })    // { maxWidth: '200px' }
+getPopperStyle({ maxWidth: '30em' }) // { maxWidth: '30em' }
+getPopperStyle({})                   // {}
+```
+
+```ts
+// Show/hide state machine (UI layer): delays normalized by shared/delay's resolveDelay
+const state = reactive<LhTooltipState>({
+  visible: false, effect: 'dark', placement: 'top',
+})
+
+let showTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleShow() {
+  clearTimeout(showTimer)
+  const { show } = getDefaultDelay(props.showDelay, props.hideDelay)
+  showTimer = setTimeout(() => { state.visible = true }, show)
+}
+function scheduleHide() {
+  clearTimeout(showTimer)
+  const { hide } = getDefaultDelay(props.showDelay, props.hideDelay)
+  setTimeout(() => { state.visible = false }, hide)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTooltip content="This cannot be undone after deletion" placement="top">
+    <button type="button" aria-label="Delete"><LhIcon name="delete" /></button>
+  </LhTooltip>
+</template>
+
+<!-- Inside the component: trigger and layer -->
+<template>
+  <span
+    class="lh-tooltip__trigger"
+    v-bind="getTooltipTriggerAria(popperId)"
+    @mouseenter="scheduleShow" @mouseleave="scheduleHide"
+    @focus="scheduleShow" @blur="scheduleHide"
+  >
+    <slot />
+  </span>
+  <teleport to="body">
+    <transition name="lh-tooltip-fade">
+      <div
+        v-if="state.visible"
+        :id="popperId"
+        :class="getPopperClassNames({ effect: state.effect, placement: state.placement })"
+        :style="{ ...getPopperStyle({ maxWidth: props.maxWidth }), ...popperStyle }"
+        v-bind="getTooltipPopperAria(popperId)"
+        role="tooltip"
+      >
+        <slot name="content">{{ props.content }}</slot>
+      </div>
+    </transition>
+  </teleport>
+</template>
+```
+
+```tsx
+// React: the trigger element clones children to inject events and aria (React.cloneElement);
+// the layer uses createPortal + useFloating (@floating-ui or an in-house popper)
+```
+
+```ts
+// uniapp: <view> + catchtouchstart; hover does not exist on the mini-program side, so tooltip on mobile
+// mainly serves h5; mini-program scenarios should switch to popover's click trigger
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-tooltip__trigger` | trigger wrapper (inline) |
+| `.lh-tooltip__popper` | the layer |
+| `.lh-tooltip__popper--{dark\|light}` | theme effect |
+| `.lh-tooltip__popper--{top\|top-start\|…}` | 12 positions (including the arrow direction) |
+
+dark effect: `--lh-tooltip-bg-dark` (near-black) + white text; light effect: `--lh-bg-color` + `--lh-text-primary`. Border radius `--lh-border-radius-small`, padding `--lh-tooltip-padding`, font size `--lh-font-size-small`.
+
+## Caveats
+
+- **Two-way clearing of the timers**: if you leave before the show timer fires, you must clearTimeout; otherwise the tip pops after the mouse is already gone. The state machine example above only clears showTimer; a complete implementation must clear both.
+- **Moving into the layer itself**: a tooltip's `pointer-events` is usually none, so "moving into the layer" does not exist — but popover allows it, and this is where the two's hide-delay difference comes from.
+- **Controlled and uncontrolled**: in the controlled `v-model:visible` mode, external visible changes must sync to the internal state; the delay timers must be reset along with the controlled state.
+- **Multiple tooltips coexisting**: each instance's popperId must be unique (useId or an auto-incrementing sequence), otherwise aria-describedby points at the wrong element.
+- **`getPopperClass` / `getPopperStyle` are deprecated aliases**: new code uses `getPopperClassNames`; the old names are still referenced by the downstream vue2 repo, so downstream must be migrated before they can be removed (the release order of red line 5).
+- **Handling empty content**: when `content` is empty, an empty layer should not be shown — the UI layer skips showing it when the content is empty (`v-if="content"`); this is not core's responsibility.
+- **A disabled trigger element**: a natively `disabled` button does not fire mouseenter/focus events, so the tooltip fails. A common practice is to wrap the trigger in a non-disabled element (the `.lh-tooltip__trigger` span) to receive events — this is one reason the trigger class name exists.
+
+<FnPlayground module="tooltip" fn="getDefaultDelay" params='{"showDelay": null, "hideDelay": null}' />

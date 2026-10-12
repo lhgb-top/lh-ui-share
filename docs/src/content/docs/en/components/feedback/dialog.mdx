@@ -1,0 +1,178 @@
+---
+title: dialog — Dialog
+description: 'canClose dismissal gate, shouldTrapFocus focus-trap decision, getDialogStyle three positions, dialog semantics'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A dialog is the modal layer that "interrupts the current flow and requires the user to deal with this first": confirming a deletion, filling out a form, showing details. Its core is not visual but **focus and scroll locking** — modal means the page behind it is not interactive. `core/dialog` collapses "can it close", "should focus be trapped", and "positioning styles" into pure functions; the actual trapping is performed by `core/shared/focus-trap`.
+
+## When to use
+
+- Each framework implements `LhDialog`: dangerous-operation confirmation, standalone forms (more focused than a drawer), important information display.
+- Situations that need a **modal** (interrupting the main flow, must be handled first).
+- **Do not use it for**: non-modal lightweight notices (use `message` / `notification`); side-sliding detail panels (use `drawer`, which does not cover the whole screen); simple confirmations (use `popconfirm`, more lightweight).
+
+## Import
+
+```ts
+import {
+  canClose,
+  getDialogStyle,
+  getDialogPopperClass,
+  shouldTrapFocus,
+  getDialogAria,
+} from '@lh-ui/share/core/dialog'
+import type { LhDialogState } from '@lh-ui/share/core/dialog'
+```
+
+## Design intent
+
+**The two defaults of `canClose` are asymmetric**:
+
+- `closeOnClickModal` defaults to **false** (clicking the mask does not close it) — a dialog usually carries a form or confirmation requiring explicit user action; accidentally dismissing it via the mask would lose input.
+- `closeOnPressEscape` defaults to **true** (Esc closes it) — keyboard users need an escape hatch, and this is the convention of the APG dialog pattern.
+
+This asymmetry is deliberate experience design: **guard against accidents but always leave a way out**.
+
+**`shouldTrapFocus` only makes the decision**: it returns "whether to enable the focus trap"; the actual trapping is implemented by the UI layer together with `core/shared/focus-trap` (saveActiveElement + focusFirst on open, trapTabKey on keydown, inert handled by setInertOutside, restoreActiveElement on close to return focus). The core layer never touches the DOM.
+
+**Division of labor in `getDialogStyle` positioning**: `top` / `center` / `bottom` are handled by the container's flexbox alignment, and `marginTop` is only applied when `position: 'top'` or unset — stacking a marginTop on top of center/bottom would fight the flexbox.
+
+**The visible class of `getDialogPopperClass`**: used for the start/end state of the transition animation, not for controlling visibility (visibility is managed by `v-if` / `v-show`).
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `canClose` | `(state, reason: 'modalClick' \| 'escape') => boolean` | whether closing is allowed | dismissal gate |
+| `getDialogStyle` | `(state: { top?, zIndex?, position? }) => Record<string, string>` | styles | positioning and stacking |
+| `getDialogPopperClass` | `(state: LhDialogState) => string[]` | class names | visible state |
+| `shouldTrapFocus` | `(state: { visible, lockScroll }) => boolean` | whether to trap focus | decision (no DOM access) |
+| `getDialogAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | aria attribute bag | dialog semantics |
+
+## Type definitions
+
+```ts
+export interface LhDialogState {
+  visible: boolean
+  lockScroll: boolean
+  closeOnClickModal: boolean   // default false
+  closeOnPressEscape: boolean  // default true
+  width: string | number | undefined
+  top: string | undefined
+  zIndex: number | undefined
+  position: 'top' | 'center' | 'bottom' | undefined
+}
+```
+
+## Accessibility
+
+`getDialogAria` outputs APG modal dialog semantics:
+
+```ts
+getDialogAria({ id: 'lh-dialog-1', titleId: 'lh-dialog-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-dialog-1', 'aria-labelledby': 'lh-dialog-title' }
+
+getDialogAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true` tells screen readers the background is unreachable (complete only when combined with inert / focus-trap).
+- **When there is a title you must pass `titleId`**; with no title it does not output `aria-labelledby`, and the UI layer should provide an `aria-label` fallback — a dialog with no accessible name gets announced by screen readers as an empty "dialog".
+- Focus management (UI layer): on open, focus enters the dialog (the first focusable element or the content area); on close, **it returns to the triggering element** — this is the standard focus-trap convention, and skipping the return leaves keyboard users disoriented.
+- **`aria-modal` is not a substitute**: it is only a declaration; real background isolation relies on the inert implementation of `core/shared/focus-trap`. A "fake modal" that only declares without isolating is a common defect.
+- When the dialog contains a form, the semantics of Enter to submit / Esc to close must be clear (if there are unsaved changes before Esc closes, a second confirmation should be required).
+
+## Usage examples
+
+```ts
+import { canClose, shouldTrapFocus, getDialogStyle } from '@lh-ui/share/core/dialog'
+
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'modalClick')  // false
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'escape')      // true
+canClose({}, 'escape')        // true (Esc closes by default)
+canClose({}, 'modalClick')    // false (clicking the mask does not close by default)
+
+shouldTrapFocus({ visible: true, lockScroll: true })   // true
+shouldTrapFocus({ visible: true, lockScroll: false })  // false
+shouldTrapFocus({ visible: false, lockScroll: true })  // false
+
+getDialogStyle({ top: '15vh', position: 'top', zIndex: 2000 })
+// { marginTop: '15vh', zIndex: '2000' }
+getDialogStyle({ top: '15vh', position: 'center' })
+// {} (center is handled by flexbox; marginTop is not stacked on top)
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-dialog-fade">
+    <div v-if="visible" class="lh-dialog__wrapper" :style="{ zIndex }">
+      <div class="lh-dialog__mask" @click="onMaskClick" />
+      <div
+        :class="getDialogPopperClass({ visible })"
+        :style="getDialogStyle({ top, zIndex, position })"
+        v-bind="getDialogAria({ id: dialogId, titleId })"
+      >
+        <header class="lh-dialog__header">
+          <h3 class="lh-dialog__title" :id="titleId">{{ title }}</h3>
+          <button v-if="showClose" type="button" class="lh-dialog__close" aria-label="Close" @click="close">✕</button>
+        </header>
+        <div class="lh-dialog__body"><slot /></div>
+        <footer class="lh-dialog__footer"><slot name="footer" /></footer>
+      </div>
+    </div>
+  </transition>
+</teleport>
+```
+
+```ts
+function onMaskClick() {
+  if (canClose({ closeOnClickModal, closeOnPressEscape }, 'modalClick')) close()
+}
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && canClose({ closeOnClickModal, closeOnPressEscape }, 'escape')) close()
+}
+
+// Focus trap (combined with shared/focus-trap)
+watch(visible, async (v) => {
+  if (v) { savedFocus = saveActiveElement(); await nextTick(); focusFirst(dialogRef.value) }
+  else { restoreActiveElement(savedFocus) }
+})
+```
+
+```tsx
+// React: use CSSTransition or a headless approach for transitions; the focus trap uses the same focus-trap core
+```
+
+```ts
+// uniapp: <view> + fixed positioning; scroll locking is handled by the UI layer (mini-programs have no body scroll to lock,
+// wrap the content area in a scroll-view to control it); core's canClose / getDialogAria are used as-is
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-dialog__wrapper` | outer layer (flex centering + zIndex) |
+| `.lh-dialog__mask` | mask (semi-transparent black) |
+| `.lh-dialog__popper` | the dialog body |
+| `.lh-dialog__popper--visible` | expanded state (transition end point) |
+| `.lh-dialog__header` / `__title` / `__close` | header |
+| `.lh-dialog__body` | content area |
+| `.lh-dialog__footer` | footer button area |
+
+Mask `rgba(0, 0, 0, 0.5)`; body `--lh-bg-color` + `--lh-radius-base` rounded corners + shadow; width controlled by the `width` prop (default 50%).
+
+## Caveats
+
+- **`closeOnClickModal` conflicts with forms**: for dialogs containing a form, explicitly setting `false` (also the default) is recommended, to avoid the user losing input by accidentally clicking the mask.
+- **The relationship between `lockScroll` and the focus trap**: `shouldTrapFocus` requires `lockScroll` to also be true — locking scroll usually implies a full modal, in which case the focus trap is the accompanying behavior. Locking scroll without trapping focus creates a jarring "Tab escapes to the page behind" experience.
+- **Nested dialogs**: the inner dialog's zIndex must be higher than the outer one (managed with an auto-incrementing counter), and the focus trap must nest the saved focus (when the inner one closes, focus returns to the inner trigger element, not the outermost one).
+- **zIndex management**: core only writes the passed value into the styles and does not auto-increment. The UI layer should use a global zIndex counter (to avoid stacking conflicts with message / notification).
+- **Mounting timing of the transition animation**: a `v-if` toggle unmounts the DOM immediately; the close animation needs `<transition>` cooperation — if the DOM is destroyed mid-animation, the focus return will fail; use `@after-leave` to defer the real unmount logic.
+- **`position: 'bottom'`**: a bottom-positioned dialog (mobile action-sheet style) is aligned by flexbox's flex-end; `top` has no effect.
+- **`width` as a percentage**: `'50%'` is relative to the mask width; on mobile narrow screens consider `'90%'` or a specific px value.
+
+<FnPlayground module="dialog" fn="canClose" params='{"state": {"closeOnClickModal": false, "closeOnPressEscape": true}, "reason": "escape"}' />

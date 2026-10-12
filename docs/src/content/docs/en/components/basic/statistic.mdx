@@ -1,0 +1,132 @@
+---
+title: statistic — Statistic
+description: 'formatStatisticValue does fixed precision + thousands separation; super-large integers go through a string path to avoid precision loss, precision is sanitized via safePrecision'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+The statistic component displays "key numbers": daily active users, revenue, completion rate. Its core risk is not layout but **precision**: `Number(12345678901234567890).toFixed(2)` gives a wrong result in JS (exceeds the safe integer limit), and the rounding of `(0.1).toFixed`-style operations has floating-point traps as well. `formatStatisticValue` in `core/statistic` fills these traps once in the shared layer, shared by all three platforms.
+
+## When to use
+
+- Each platform implements `LhStatistic`: dashboard numbers, report summaries, completion displays.
+- Any scenario that needs to format an arbitrary number with "fixed decimal places + thousands separator"; you can call `formatStatisticValue` directly even without using the component.
+- **Do not use it for**: currency symbols, unit conversion, or timezone formatting — those are business-layer concerns; for date formatting use `core/shared/date`.
+
+## Import
+
+```ts
+import { formatStatisticValue, getStatisticClassNames } from '@lh-ui/share/core/statistic'
+import type { LhStatisticState } from '@lh-ui/share/core/statistic'
+```
+
+## Design intent
+
+The three precision defenses of `formatStatisticValue`:
+
+1. **Invalid input does not throw**: NaN / Infinity are returned as-is via `String(value)`; it does not attempt to format "something that is not a number".
+2. **precision sanitization**: `toFixed(101)` throws a RangeError, so here it is first sanitized to an integer in `[0, 100]` by `safePrecision` from `shared/sanitize`. This defense is shared with `input-number` (see [input-number](/components/form/input-number)).
+3. **Super-large integers go through a string path**: when the integer part exceeds `Number.MAX_SAFE_INTEGER`, there is no Number conversion anywhere in the process — rounding uses decimal string carry (the internal `incrementDigits`), and grouping uses string slicing (`formatBigString`). This is the only way to guarantee that `99999999999999999999` formats correctly.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `formatStatisticValue` | `(value: number \| string, state: Pick<LhStatisticState, 'precision' \| 'separator'>) => string` | formatted string | precision + thousands separation |
+| `getStatisticClassNames` | `(prefixCls?: string) => string[]` | class name array | container class, prefix can be swapped |
+
+Behavior details:
+
+| Input | Output | Path |
+| --- | --- | --- |
+| `1234567.891`, `{ precision: 2, separator: ',' }` | `'1,234,567.89'` | toFixed + grouping |
+| `1234567.8`, `{ precision: 0, separator: '' }` | `'1234568'` | no separator |
+| `'99999999999999999999'`, `{ precision: 0, separator: ',' }` | `'99,999,999,999,999,999,999'` | string path |
+| `NaN`, any | `'NaN'` | returned as-is |
+| `'abc'`, any | `'abc'` | `Number('abc')` is NaN |
+
+The separator is only used for **integer grouping**; the decimal point is always `.` (if a platform needs a localized decimal point, replace it in the UI layer).
+
+## Type definitions
+
+```ts
+export interface LhStatisticState {
+  precision: number      // decimal places (sanitized to [0, 100] via safePrecision)
+  separator: string      // thousands separator; an empty string means no grouping
+}
+```
+
+## Accessibility
+
+`core/statistic` does not output an aria attribute bundle. The accessibility essentials of a statistic live in the UI layer:
+
+- The number itself can be read by screen readers as plain text, but **the thousands-separator commas are announced as "comma"** (e.g. "1,234,567" is read as "one comma two three four…"). You should provide an `aria-label` for the whole numeric block, using a spoken formulation (either a locale-appropriate number reading or digit by digit).
+- Animations when the value changes (scrolling to the target value) are purely visual and carry no information; if the value is not readable during the animation, keep the old value's aria-label until it settles.
+
+## Usage examples
+
+```ts
+import { formatStatisticValue } from '@lh-ui/share/core/statistic'
+
+formatStatisticValue(9876543.21, { precision: 1, separator: ' ' })
+// '9 876 543.2'
+
+formatStatisticValue(0.1 + 0.2, { precision: 2, separator: '' })
+// '0.30'  (instead of part of 0.30000000000000004)
+
+formatStatisticValue('12345678901234567890', { precision: 0, separator: ',' })
+// '12,345,678,901,234,567,890'
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getStatisticClassNames()">
+  <span v-if="prefix" class="lh-statistic__prefix">{{ prefix }}</span>
+  <span class="lh-statistic__content">
+    <span class="lh-statistic__title">{{ title }}</span>
+    <span class="lh-statistic__value" :aria-label="ariaLabel">
+      {{ formatStatisticValue(value, { precision, separator }) }}
+    </span>
+  </span>
+  <span v-if="suffix" class="lh-statistic__suffix">{{ suffix }}</span>
+</div>
+```
+
+```tsx
+// React
+const text = formatStatisticValue(value, { precision, separator })
+return (
+  <div className="lh-statistic">
+    <span className="lh-statistic__content">
+      <span className="lh-statistic__title">{title}</span>
+      <span className="lh-statistic__value" aria-label={spoken}>{text}</span>
+    </span>
+  </div>
+)
+```
+
+```ts
+// uniapp: pure string output, no platform differences; each platform uses its own
+// scrolling solution for animations
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-statistic` | base class: layout |
+| `.lh-statistic__title` | title (secondary text color, smaller font size) |
+| `.lh-statistic__content` | content area (title + value stacked vertically) |
+| `.lh-statistic__value` | value (primary text color, large font size, tabular numerals `font-variant-numeric: tabular-nums`) |
+| `.lh-statistic__prefix` / `.lh-statistic__suffix` | prefix and suffix (e.g. ¥, %) |
+
+The numeric font goes through the `--lh-font-family-numeric` token (if present), guaranteeing aligned digit widths.
+
+## Notes
+
+- **precision upper bound is 100**: anything higher is clamped by `safePrecision` rather than throwing; a negative precision is normalized to 0.
+- **Semantics of string input**: `formatStatisticValue('123', ...)` first tries `Number('123')` and takes the numeric path if it succeeds; only `'abc'` is returned as-is. Super-large integer strings **must be passed as strings** — writing the numeric literal `99999999999999999999` in JS source already loses precision, and core cannot recover it.
+- **Do not** write your own thousands separation with `toLocaleString` in the UI layer: it is affected by the runtime locale and may differ across the three platforms; use `formatStatisticValue` uniformly.
+- The `prefixCls` parameter of `getStatisticClassNames` allows swapping the prefix (default `lh-statistic`), for scenarios on some platforms that need to coexist with existing class names.
+
+<FnPlayground module="statistic" fn="formatStatisticValue" params='{"value": 1234567.891, "state": {"precision": 2, "separator": ","}}' />

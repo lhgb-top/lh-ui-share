@@ -1,0 +1,122 @@
+---
+title: avatar — Avatar
+description: 'getAvatarText extracts the first character via codePointAt (emoji-safe), isImageSource detects image fallback, getAvatarClassNames computes shape modifiers'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+The avatar component handles three content forms: image, text, and icon, and needs to degrade gracefully when an image fails to load or has an invalid URL. `core/avatar` turns "text extraction" and "image source detection" into pure functions — these two decisions must be perfectly consistent across platforms, otherwise you get divergence like "Vue3 shows text, uniapp shows a broken image".
+
+## When to use
+
+- Each platform implements `LhAvatar`: render an `img` when an image is available, otherwise the first character extracted by `getAvatarText`, and an icon placeholder when neither exists.
+- Scenarios that take "the first character of a name" as the default avatar in a user system.
+- **Do not use it for**: image cropping or uploading. That is the job of `LhUpload` plus business logic.
+
+## Import
+
+```ts
+import { getAvatarClassNames, getAvatarText, isImageSource } from '@lh-ui/share/core/avatar'
+import type { LhAvatarState, LhAvatarShape } from '@lh-ui/share/core/avatar'
+```
+
+## Design intent
+
+`getAvatarText` uses `codePointAt(0)` + `String.fromCodePoint` instead of `str[0]`, and this is an easy trap to miss: `'😀'[0]` yields half a surrogate pair (`\uD83D`), which renders as a garbled square. Extracting by code point keeps emoji and supplementary-plane characters (many rare Chinese characters) safe.
+
+The regex in `isImageSource` only does **loose availability detection**, not security validation: any string starting with `http(s)://`, `data:image/`, an absolute path `/`, or a relative path `./` / `../` is treated as an image URL. Its purpose is "decide whether to try rendering an img"; actual load failures are caught by the `img` `error` event (the UI layer switches to the text state).
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getAvatarClassNames` | `(state: LhAvatarState) => string[]` | class name array | shape and size modifiers |
+| `getAvatarText` | `(source: string) => string` | first character or `''` | extract the display character from text |
+| `isImageSource` | `(src: string \| undefined) => boolean` | boolean | whether the image URL is worth trying to render |
+
+Edge details:
+
+- `getAvatarText('')` → `''`; `getAvatarText(' Ink ')` → `'I'` (trimmed first); `getAvatarText('Alice')` → `'A'`.
+- `getAvatarText` returns `''` when `codePointAt(0)` returns undefined (the empty string is already trimmed, so this is theoretically unreachable).
+- `isImageSource(undefined)` → `false`; `isImageSource('')` → `false`.
+
+## Type definitions
+
+```ts
+export type LhAvatarShape = 'circle' | 'square'
+
+export interface LhAvatarState {
+  size: LhComponentSize
+  shape: LhAvatarShape
+}
+```
+
+## Accessibility
+
+`core/avatar` does not output an aria attribute bundle, because how an avatar is handled depends on its content form:
+
+- **Image avatar**: use a native `<img>` with a required `alt` (e.g. "Zhang San's avatar"). Do not leave alt empty — an empty alt means "decorative image", while an avatar usually carries identity information.
+- **Text avatar**: the text itself is readable content; no extra handling needed.
+- **Icon avatar** (anonymous user placeholder): the icon goes through `getIconAria({ decorative: false, label: 'Anonymous user' })`.
+
+## Usage examples
+
+```ts
+import { getAvatarText, isImageSource } from '@lh-ui/share/core/avatar'
+
+getAvatarText('John Doe')       // 'J'
+getAvatarText('Alice Smith')  // 'A'
+getAvatarText('😀哈哈')       // '😀'
+isImageSource('https://a.com/1.png')  // true
+isImageSource('data:image/png;base64,...')  // true
+isImageSource(undefined)               // false
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getAvatarClassNames({ size, shape })">
+  <img v-if="isImage && !error" :src="src" :alt="alt" @error="error = true" />
+  <span v-else-if="text" class="lh-avatar__text">{{ text }}</span>
+  <LhIcon v-else name="user" :decorative="false" label="Anonymous user" />
+</div>
+```
+
+```tsx
+// React
+const text = getAvatarText(name)
+const showImg = isImageSource(src) && !imgError
+return (
+  <div className={getAvatarClassNames({ size, shape }).join(' ')}>
+    {showImg ? <img src={src} alt={alt} onError={() => setImgError(true)} />
+      : text ? <span className="lh-avatar__text">{text}</span>
+      : <LhIcon name="user" decorative={false} label="Anonymous user" />}
+  </div>
+)
+```
+
+```ts
+// uniapp: the <image> component has an @error event; the logic is the same as above.
+// For text avatars on non-h5 platforms, mind font fallback (rare characters may lack glyphs)
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-avatar` | base class: fixed width/height, overflow hidden, centered |
+| `.lh-avatar--{mini\|small\|medium\|large\|x-large}` | size scale |
+| `.lh-avatar--circle` / `.lh-avatar--square` | shape (corner radius) |
+| `.lh-avatar__img` | image: fill + object-fit |
+| `.lh-avatar__text` | text: centered, white, scaled by size |
+| `.lh-avatar__icon` | icon placeholder |
+
+The avatar background defaults to the primary color token; in multi-avatar scenarios (such as avatar groups) each platform's UI layer may color by name hash — core is not involved.
+
+## Notes
+
+- **Do not use `str[0]` or `str.charAt(0)`** to extract the first character in the UI layer — emoji and rare characters get truncated into garbled text; use `getAvatarText` uniformly.
+- `isImageSource` returning true does not mean the image exists, only that it is "worth a try". An `onError` fallback is mandatory.
+- `square` is not a right angle but a small corner radius (for visual harmony); square-cornered avatars look too sharp in design.
+- The image avatar's `object-fit` defaults to `cover`, so a face may have its edges cropped — business use cases often need `object-position` fine-tuning, which is handled in each platform's UI layer.
+
+<FnPlayground module="avatar" fn="getAvatarText" params='{"source": "cerblue porcelain"}' />

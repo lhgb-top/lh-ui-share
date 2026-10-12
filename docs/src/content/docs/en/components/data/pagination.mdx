@@ -1,0 +1,194 @@
+---
+title: pagination — Pagination
+description: 'getPaginationRange window-shrinking algorithm (first/last always visible + dual ellipses), clampPage out-of-range normalization, aria-current=page'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Pagination is the standard navigation for when "the amount of data exceeds one screen". Its core difficulty is not turning pages but **the display of the page-number range**: with 100 pages you cannot draw all 100 buttons; how to use the first/last pages plus the current window and ellipses to convey position while still offering quick jumps is something every library solves in its own way. `core/pagination` implements the common "window shrinking" algorithm and normalizes all kinds of invalid input.
+
+## When to use
+
+- Each framework implements `LhPagination`: table footer pagination, search-result pagination, album pagination.
+- Scenarios where data is paginated and the user explicitly controls the page number.
+- **Don't use it**: infinite scroll loading (use `virtual-list` or a scroll listener); data small enough to fit on one screen (not paginating is simpler).
+
+## Import
+
+```ts
+import {
+  getPageCount,
+  clampPage,
+  getPaginationRange,
+  getPaginationItemAria,
+  formatMessage,
+} from '@lh-ui/share/core/pagination'
+import type {
+  LhPaginationRangeItem,
+  LhPaginationRangeState,
+  LhPaginationMessageParams,
+} from '@lh-ui/share/core/pagination'
+```
+
+## Design intent
+
+**`getPageCount` dual-parameter sanitization**: both `total` and `pageSize` pass through `shared/sanitize.sanitizeNumber` — NaN / Infinity cannot leak through and become a NaN page count. This defense is not redundant: `total` often comes from an async API and may be undefined while loading, `Math.ceil(undefined / 10)` is NaN, and NaN would break `clampPage` and the range algorithm entirely.
+
+**`clampPage` treats NaN and Infinity differently**: NaN is treated as invalid and falls back to the first page; **±Infinity is left to clamping** — `Infinity` lands on the last page, `-Infinity` on the first. This distinction is meaningful in practice: an illegal value passed in from outside under controlled mode (NaN) should return to a safe position, while using Infinity to express "jump to the last page" is legitimate usage.
+
+**The range algorithm's clamping logic**: `current` in `getPaginationRange` is first normalized by `clampPage` — a comment records a real scenario: the `innerCurrent` forwarded by the UI layer may briefly go out of range (under controlled mode the external and internal values are out of sync, or `current` has not caught up after the total shrank), and without clamping the current page could fall outside the display window and the ellipsis logic would invert.
+
+**Ellipses are only emitted when they actually produce a gap**: `showLeftEllipsis = leftSibling > 2` rather than `> 1` — when the window is flush against the first page (e.g. current=3, siblingCount=1), only the single page "2" would be elided on the left, and showing the contiguous 1,2,3,4,5 is clearer than inserting an ellipsis.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getPageCount` | `(total, pageSize) => number` | total page count (minimum 1) | dual-parameter sanitization |
+| `clampPage` | `(page, pageCount) => number` | clamped page number | NaN→1, Infinity→last page |
+| `getPaginationRange` | `(state: LhPaginationRangeState) => LhPaginationRangeItem[]` | array of range items | window-shrinking algorithm |
+| `getPaginationItemAria` | `(options: { page, current, labelTemplate? }) => LhAriaAttrs` | aria attribute bag | aria-current / aria-label |
+| `formatMessage` | re-exported from `shared/format` | interpolated copy | preserves the existing import path |
+
+## Type definitions
+
+```ts
+export type LhPaginationRangeItemType = 'page' | 'ellipsis'
+
+export interface LhPaginationRangeItem {
+  type: LhPaginationRangeItemType
+  page: number    // an ellipsis item is always 0; its position is its meaning
+}
+
+export interface LhPaginationRangeState {
+  current: number       // current page (1-based)
+  pageCount: number
+  siblingCount?: number // number of page buttons on each side of the current page, default 1
+}
+
+export type LhPaginationMessageParams = Record<string, string | number>
+```
+
+## Accessibility
+
+```ts
+getPaginationItemAria({ page: 3, current: 3, labelTemplate: 'Page {page}' })
+// { 'aria-current': 'page', 'aria-label': 'Page 3' }
+
+getPaginationItemAria({ page: 5, current: 3, labelTemplate: 'Page {page}' })
+// { 'aria-label': 'Page 5' }
+
+getPaginationItemAria({ page: 5, current: 3 })
+// {} (no aria-label is emitted without a template; the number inside the button is itself readable)
+```
+
+- The current page emits `aria-current="page"` — this is the standard APG convention for pagination, letting screen readers announce "current page" instead of treating the page number as a plain link.
+- **Ellipsis buttons** must have an `aria-label` (e.g. "jump forward 5 pages") or be `disabled` — a bare `…` text carries no information for screen readers, and this is the most common pagination accessibility flaw.
+- The pagination as a whole should be wrapped in `<nav aria-label="Pagination">` to distinguish it from other page navigation.
+- `labelTemplate` comes from the locale pack (`pagination.page`, etc.), with the `{page}` placeholder replaced by this function.
+
+## Usage examples
+
+```ts
+import { getPageCount, clampPage, getPaginationRange } from '@lh-ui/share/core/pagination'
+
+getPageCount(100, 10)    // 10
+getPageCount(105, 10)    // 11
+getPageCount(0, 10)      // 1 (minimum 1 page)
+getPageCount(NaN, 10)    // 1 (total is sanitized to 0, then raised to 1 by Math.max(1, …))
+getPageCount(100, NaN)   // 100 (pageSize is sanitized to the default 1, i.e. 1 item per page)
+
+clampPage(5, 10)    // 5
+clampPage(0, 10)    // 1
+clampPage(15, 10)   // 10
+clampPage(NaN, 10)  // 1
+clampPage(Infinity, 10)  // 10 (Infinity lands on the last page)
+
+// siblingCount defaults to 1, total slots = 1*2 + 5 = 7
+getPaginationRange({ current: 1, pageCount: 10 })
+// [1, 2, 3, …, 10]
+getPaginationRange({ current: 5, pageCount: 10 })
+// [1, …, 4, 5, 6, …, 10]
+getPaginationRange({ current: 10, pageCount: 10 })
+// [1, …, 8, 9, 10]
+getPaginationRange({ current: 5, pageCount: 5 })
+// [1, 2, 3, 4, 5] (fewer pages than slots: show everything, no ellipses)
+getPaginationRange({ current: 99, pageCount: 10 })
+// [1, …, 8, 9, 10] (an out-of-range current is clamped)
+```
+
+```vue
+<!-- Vue3 -->
+<nav class="lh-pagination" aria-label="Pagination">
+  <button type="button" class="lh-pagination__prev" :disabled="current <= 1" @click="go(current - 1)">
+    Previous
+  </button>
+  <template v-for="(item, i) in range" :key="i">
+    <span v-if="item.type === 'ellipsis'" class="lh-pagination__ellipsis">…</span>
+    <button
+      v-else
+      type="button"
+      class="lh-pagination__item"
+      :class="{ 'is-active': item.page === current }"
+      v-bind="getPaginationItemAria({ page: item.page, current, labelTemplate: t('pagination.page') })"
+      @click="go(item.page)"
+    >
+      {{ item.page }}
+    </button>
+  </template>
+  <button type="button" class="lh-pagination__next" :disabled="current >= pageCount" @click="go(current + 1)">
+    Next
+  </button>
+  <select v-model="pageSize" class="lh-pagination__sizes">
+    <option :value="10">10 / page</option>
+    <option :value="20">20 / page</option>
+    <option :value="50">50 / page</option>
+  </select>
+  <span class="lh-pagination__total">Total {{ total }}</span>
+</nav>
+```
+
+```ts
+const pageCount = computed(() => getPageCount(props.total, pageSize.value))
+const range = computed(() =>
+  getPaginationRange({ current: current.value, pageCount: pageCount.value }),
+)
+function go(page: number) {
+  const next = clampPage(page, pageCount.value)
+  if (next !== current.value) emit('update:current', next)
+}
+```
+
+```tsx
+// React: controlled pagination, current is held by the parent component; clampPage inside go before the callback
+```
+
+```ts
+// uniapp: <view> + <view> iterating the range items; page jumping uses <input type="number"> + a jump button
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-pagination` | base class (flex centered) |
+| `.lh-pagination__prev` / `__next` | previous / next page buttons |
+| `.lh-pagination__item` | page-number button |
+| `.lh-pagination__item.is-active` | current page (primary-color background) |
+| `.lh-pagination__ellipsis` | ellipsis |
+| `.lh-pagination__sizes` | page-size selector |
+| `.lh-pagination__total` / `__jump` | total-count text / jump input |
+
+The current page uses a `--lh-primary-color` background + `--lh-color-on-primary` text; disabled buttons use `--lh-text-disabled`; button spacing is controlled by `--lh-gap-small`.
+
+## Caveats
+
+- **Page numbers are 1-based**: `current`, `page`, and `pageCount` are all 1-based, unlike `table`'s row indices (0-based) — mixing them up is easy.
+- **The relationship between `pageCount` and `total`**: the UI layer usually computes it via `getPageCount(total, pageSize)`, but you can also pass `pageCount` directly (when the server already knows the total page count). Do not use both sources at once, to avoid inconsistency.
+- **Convergence of `current` when `pageSize` changes**: switching from 50 to 10 items per page may leave the current page beyond the new `pageCount` — call `clampPage` once inside `watch(pageSize)`, otherwise an empty page is shown.
+- **Ellipsis interaction**: clicking an ellipsis usually jumps 5 pages (`current ± 5`); core does not build this in — the UI layer implements it and gives the ellipsis button an `aria-label`.
+- **`siblingCount` and slots**: `totalSlots = siblingCount * 2 + 5` (first/last page + current page + two ellipsis slots + siblings on both sides). When `pageCount <= totalSlots`, everything is shown with no ellipses — with `siblingCount: 2` the threshold is 9 pages.
+- **Brief out-of-range values in controlled mode**: `getPaginationRange` clamps `current` internally, so rendering never breaks; but `aria-current` will land on the clamped page, and it naturally becomes consistent once the external state syncs.
+- **The `formatMessage` re-export**: this module re-exports `formatMessage` from `shared/format` with the same binding only to preserve the downstream import path (interpolating copy like `pagination.total` that carries a `{total}` placeholder); new code should import directly from `core/shared/format`.
+
+<FnPlayground module="pagination" fn="getPaginationRange" params='{"state": {"current": 5, "pageCount": 20, "siblingCount": 1}}' />

@@ -1,0 +1,137 @@
+---
+title: Contribution guide
+description: 'The six red lines, naming conventions, commit-message conventions, and the self-check list before opening a PR'
+---
+
+Contributions to @lh-ui/share are welcome. This page is the **hard contract** for participating — most of these conventions are not style preferences but preconditions for the whole thing to work across four UI libraries.
+
+## The six red lines
+
+### 1. No framework dependencies in `src/`
+
+```ts
+// ❌ absolutely forbidden
+import { ref } from 'vue'
+import { useState } from 'react'
+import { ... } from '@dcloudio/uniapp'
+
+// ✅ only pure functions and types are allowed
+export function computeSomething(input: Foo): Bar { ... }
+```
+
+**Why**: share is the family's **only framework-agnostic shared layer**. One `import 'vue'` and the React build and the uniapp build are both broken. CI has a grep gate.
+
+Reactive wiring belongs to each UI layer (`ref()` / `useState()` / `useSyncExternalStore()`); core only outputs pure data. See [the lhlocale design](/reference/locales#how-each-port-subscribes-to-version): a pure event emitter that each port converts into its own re-render signal.
+
+### 2. `styles/` is the single source of component styles
+
+- Copying the styles into any UI library for hand-editing is forbidden.
+- **All style changes happen only in this repo**.
+
+Cross-port transition class-name differences are unified by the [three transition mixins](/reference/transition-mixins); **component styles must never hand-write duplicate class names** — always `@include`. Pass the second argument when the state needs to live on a descendant node.
+
+### 3. A single copy of the core unit tests
+
+`tests/unit/` is the test result **shared by all three libraries**. UI libraries must not copy this repo's core unit tests.
+
+### 4. ~~1px hairline borders must carry a `/* hairline */` marker~~ — **deprecated**
+
+uniapp v3 outputs px directly and no longer transpiles rpx, so the hairline marker lost its purpose (see `docs/bugfix-log.md` D-02). The 65 historical markers already inside `styles/` remain as ordinary comments; **new 1px borders need no marker**. Structural borders (2px / 3px) were never marked in the first place.
+
+### 5. Release order: share first, UI libraries after
+
+share change → changeset → release → each library `pnpm up @lh-ui/share` plus a regression pass. **This cannot be skipped** — the UI libraries' releases depend on the already-published share tarball.
+
+### 6. Self-authored symbols must carry the LH prefix
+
+Follow this **when adding** constants / types / interfaces; do not leave it for a later unified cleanup (the historical rename is in the `lh-prefix-naming` changeset).
+
+## Naming conventions
+
+Aligned with the plus repo's `docs/project/development-guide.md`; uniform across the whole family:
+
+| Layer | Convention | Example |
+| --- | --- | --- |
+| Reverse-DNS root | `top.lhgb` (`www.lhgb.top` reversed) | the naming root of every repo in the family; `package.json`'s homepage / repository / author use `lhgb.top` |
+| JS / npm package names | the `@lh-ui/*` scope | npm package names cannot contain dots, so the reverse-DNS name lives at the metadata level |
+| Constants | `LH_XXX`, `LH_<Module>_<Concept>` | `LH_SIZE_DEFAULT`, `LH_THEME_PRESETS` |
+| Default-value constants | the `DEFAULT` suffix | `LH_DRAWER_DIRECTION_DEFAULT` |
+| Types / interfaces | `LhXxx` | `LhThemePreset`, `LhSxProps` |
+| Module-level singletons / lowercase objects | `lhXxx` | `lhlocale` |
+| BEM class names | `lh-xxx` | `lh-button__text--disabled` |
+| Component name | `LhXxx` | `name: 'LhButton'` |
+
+### Registered exemptions
+
+Established by convention and not forced to take the prefix (register the reason here before changing any of them):
+
+- **Language-pack exports `zhCN` / `enUS`** — standard locale naming, and re-exported as a public API by all three UI libraries; renaming would break too much.
+- **The string value of theme preset names** (`name: 'cerblue'` etc.) — this is the configuration value users write in ConfigProvider's `theme`; changing it breaks every downstream user's configuration. The corresponding **TS identifier still takes the prefix** (`LhCerblue`).
+- **Exported symbols of third-party dependencies** are not enforced.
+
+## Directory responsibilities
+
+| Directory | Responsibility |
+| --- | --- |
+| `src/core/<name>/` | Component pure-function logic (`logic.ts` / `types.ts` / `index.ts`), zero framework imports |
+| `src/core/shared/` | The cross-component kernel (12 modules; see the [overview](/core/overview)) |
+| `src/theme/` | The theme TS side (types + five presets) |
+| `src/constants/` / `src/locales/` / `src/types/` / `src/utils/` | constants / language packs / types / pure utilities |
+| `styles/` | The single source of component BEM styles (`<name>/index.scss` + `theme/common/*.scss`) |
+| `tests/unit/` | The single copy of the core unit tests |
+| `scripts/` | Build and verification scripts |
+| `docs/` | The docs site (Astro Starlight); **not part of the npm output** |
+
+## Commit-message conventions
+
+- **Comments and commit messages are written in Chinese**.
+- **Commit messages are written as detailed markdown**: a title line + scope description + a list of added / modified files + a design-points table + verification status.
+- Prettier config: single quotes, no semicolons, 2-space indent, printWidth 100. `pnpm format` only covers config files; everything else is hand-aligned.
+
+## Checklist for adding a core component
+
+1. The `src/core/<name>/{logic,types,index}.ts` triplet
+2. `tests/unit/core/<name>.spec.ts`
+3. Add the export to `src/core/index.ts`
+4. `styles/<name>/index.scss` (otherwise one port gets no style artifact — a silent skip)
+5. A changeset (minor)
+
+Then run:
+
+```bash
+pnpm test && pnpm lint && pnpm typecheck
+pnpm build                    # sync:exports generates the new exports keys
+pnpm verify:dts && pnpm verify:styles
+```
+
+## Self-check list before opening a PR
+
+- [ ] No `import 'vue' | 'react' | '@dcloudio/*'` anywhere in `src/` (red line 1)
+- [ ] Style changes are only in `styles/` (red line 2)
+- [ ] Colors always take the form `var(--lh-*, fallback)`; no new hardcoded color values
+- [ ] New transition class names use the mixins; no bare `-enter-from` / `-leave-from`
+- [ ] New tokens are in `var.scss`; if the value is a `#{$lh-*}` interpolation, `var-dark.scss` has the matching override
+- [ ] New symbols carry the `LH` / `Lh` prefix (red line 6)
+- [ ] `pnpm test` / `pnpm lint` / `pnpm typecheck` pass
+- [ ] After `pnpm build`, `pnpm verify:dts` / `pnpm verify:styles` pass
+- [ ] There is a changeset, with the correct level
+- [ ] The new component has `styles/<name>/index.scss` and `tests/unit/core/<name>.spec.ts` exists (red line 3)
+- [ ] If tokens / class names / icons changed, `pnpm docs:data` was run to refresh the docs data
+
+## Known TODOs (recorded as follow-up changesets; claims welcome)
+
+The "control-height token" project:
+
+1. Control heights are inconsistent across components (input 37 / select 32 / cascader 27→32 / date-time 33 / input-number 32); the root cause is that `var.scss` has no `--lh-control-height-*` tokens
+2. input's asymmetric `padding-top: 16px` under `--has-label`
+3. spinner and icon disagree on same-named size tiers (small 16 vs 14)
+4. The checkbox checkmark is fixed at `top:2/left:5` instead of 50%-centered (correct under a 16px box; any size change offsets it)
+5. switch's `translate(-50%,-50%)` is hardcoded twice, in both the base rule and the keyframes
+
+## Related documentation
+
+- [Project introduction](/guide/introduction) — where share sits in the family
+- [Naming conventions](/guide/naming) — the full version of the naming rules
+- [Style injection per port](/guide/injection) — the mechanism behind red line 2
+- [Verification system](/development/verification) — the checks to run before a PR
+- [Release process](/development/release) — the full flow behind red line 5

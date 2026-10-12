@@ -1,0 +1,70 @@
+---
+title: Shared kernel overview
+description: 'The 12 submodules of core/shared, the design philosophy of the pure-function layer, and cross-module dependencies'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+## What it is
+
+`@lh-ui/share/core/shared` is the **common algorithm layer** of the entire lh-ui family — 12 zero-dependency TypeScript modules that collapse the logic every component needs (and that each port tends to reimplement with subtle differences) into a single implementation:
+
+popover positioning, virtual scrolling, keyboard navigation, focus trapping, aria attribute builders, date primitives, number sanitization, style pass-through… These algorithms **belong to no framework**: the input is plain data, the output is plain data, and they never touch reactivity or global DOM state (a few functions do read the DOM, but behind SSR guards).
+
+The same component across lh-ui-plus, lh-ui-vue2, lh-ui-react, and lh-ui-uniapp uses the **same** `computePosition` and the same `getNextListIndex`. Fix one bug and all four ports are fixed; add one edge case and all four ports gain it.
+
+## The 12 submodules
+
+| Module | Responsibility | Core exports |
+| --- | --- | --- |
+| [`sx`](/core/sx) | sx props → inline styles, with a fixed precedence of "single side > axis pair > shorthand" | `sxToStyle` / `mergeSx` / `LhSxProps` |
+| [`popper`](/core/popper) | Popover positioning engine: 12 placements, main-axis flip, cross-axis clamp, arrow offset | `computePosition` / `parsePlacement` / `LhPlacement` |
+| [`virtual`](/core/virtual) | Fixed-height virtual scroll range (virtual-list and table share the same algorithm) | `computeRange` / `computeWindow` / `LH_VIRTUAL_OVERSCAN` |
+| [`keyboard`](/core/keyboard) | Keyboard interaction: key detection, list / grid / range navigation, type-ahead | `getNextListIndex` / `getNextGridCell` / `LH_KEYS` |
+| [`focus-trap`](/core/focus-trap) | Focus management: focusable enumeration, Tab focus trapping, inert ownership registry | `trapTabKey` / `setInertOutside` / `focusFirst` |
+| [`a11y`](/core/a11y) | Atomic aria attribute builders (unified "omit on falsy" semantics) | `getPopupTriggerAria` / `ariaExpanded` / `getDecorativeAria` |
+| [`date`](/core/date) | Date primitives: days in month, comparison, disabled detection, fixed-width token formatting | `formatDate` / `parseDate` / `isDateDisabled` |
+| [`format`](/core/format) | Message template interpolation (`{key}` placeholders) | `formatMessage` |
+| [`delay`](/core/delay) | Show/hide delay normalization (shared by tooltip / popover / popconfirm) | `resolveDelay` |
+| [`pt`](/core/pt) | PT pass-through prop merging (shallow merge of class / style / attrs) | `mergePt` / `LhPtAttrs` |
+| [`sanitize`](/core/sanitize) | Number sanitization: NaN / Infinity intercepted at the entry point | `sanitizeNumber` / `clamp` / `safePrecision` |
+| [`types`](/core/types) | Shared union types: size / language / type / position | `LhComponentSize` / `LhComponentType` |
+
+The aggregate entry point `@lh-ui/share/core/shared` re-exports all 12 modules via `export *`; you can also import a module precisely as `@lh-ui/share/core/shared/popper` so the bundler only carries what you use.
+
+## Design philosophy
+
+### Pure functions, state lives in the UI layer
+
+Functions in the core layer **hold no component state**. Take popper: `computePosition(trigger, popper, viewport, options)` receives three plain rects and returns `{ top, left, placement, arrowOffset }` — "where the trigger is right now, how big the floating layer is, how big the viewport is" are all measured by the UI layer at call time and passed in. This means:
+
+- The same function can run inside a Vue3 `watchEffect`, a React `useLayoutEffect`, or a uniapp `onPageScroll`.
+- **Unit tests need no component rendering**: many cases in `tests/unit/` are "build a set of rects, assert the output", and all four ports share that same test result (red line 3: core unit tests exist only in this repo).
+
+### SSR guards are the default contract
+
+A few functions must read the DOM (`getWindowViewport`, `getFocusableElements`, `saveActiveElement`). They all check `typeof document === 'undefined'` / `typeof window === 'undefined'` at the entry point and return a safe empty value (`[]` / `null` / a zero-size rect), so server-side rendering in Nuxt / Next / uniapp never blows up. Every function in this docs is annotated "SSR-safe" or with its specific guard behavior.
+
+### The "omit on falsy" aria convention
+
+All builders in the `a11y` module follow the same convention: **boolean aria attributes output `undefined` when falsy so the framework does not render them** (`aria-required: false` as an explicit negation is noise most of the time). The exceptions are attributes that semantically need to be announced explicitly: `aria-expanded: false` and `aria-invalid: false` are emitted as-is. See the [a11y docs](/core/a11y).
+
+### Sanitize at the entry point, no defensive code downstream
+
+The existence of `sanitize` means the other core functions do not need `Number.isFinite` checks everywhere. Numbers coming from outside — page numbers, spacing, step, precision — pass through `sanitizeNumber` before entering the algorithm, and NaN / Infinity are replaced with a safe default. This is a "intercept once, clean everywhere" trade-off: the caller either guarantees finiteness itself and uses `clamp` directly, or explicitly opts into trusting the entry-point sanitization.
+
+### Cross-module dependencies are light
+
+There are only three:
+
+- `keyboard` ← `sanitize.clamp` (navigation boundary clamping)
+- `popper` ← `sanitize.clamp` + `sanitize.sanitizeNumber` (clamping and input sanitization)
+- `shared/types` ← `constants.LH_SIZE_CONST` / `LH_LANGUAGE_CONST` / `LH_TYPES_CONST` (`import type`; the union types are derived from the constants)
+
+There are no circular dependencies and no reverse dependencies toward `locales` or the UI layer. The `format` module exists precisely because of this line: interpolations like `rate`'s `'{n} stars'` or `pagination`'s `'Total {total} items'` used to require looking up the locales singleton; after being distilled into a pure string function, core components no longer depend on the module-level side effects of locales.
+
+## Try it out
+
+<FnPlayground module="sanitize" fn="clamp" params='{"value": 12, "min": 0, "max": 10}' />
+
+Every submodule docs page has a playground block like this at the bottom: fill in the params, run it directly in the browser, and see the output.

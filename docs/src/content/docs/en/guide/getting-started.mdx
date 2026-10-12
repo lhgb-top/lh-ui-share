@@ -1,0 +1,131 @@
+---
+title: Getting Started
+description: 'Install @lh-ui/share, import pure functions on demand, and the four ways to load styles'
+---
+
+# Getting Started
+
+## Installation
+
+```bash
+pnpm add @lh-ui/share
+# or npm i @lh-ui/share / yarn add @lh-ui/share
+```
+
+This package is built with `external: []` and has **no runtime dependencies** — it works the moment
+it is installed, with no peer-installed framework required.
+
+## Importing logic (JS / TS)
+
+### Bare import: everything
+
+```ts
+import { lhlocale, createNamespace, LH_THEME_PRESETS } from '@lh-ui/share'
+```
+
+The full entry is `./es/index.js` (CJS uses `./lib/index.js`). The package's `sideEffects` field
+only declares `**/*.css` and `**/*.scss`, so pure JS modules are tree-shakeable — a bare import does
+not pull in extra code.
+
+### Subpath import: per component (recommended)
+
+```ts
+import { getButtonClasses, getButtonAria } from '@lh-ui/share/core/button'
+import { sxToStyle } from '@lh-ui/share/core/shared/sx'
+import { lhlocale } from '@lh-ui/share/locales'
+import { LH_THEME_PRESETS, buildPresetStyleText } from '@lh-ui/share/theme'
+```
+
+Every subpath has its own `types` / `import` / `require` conditional exports. Importing on demand
+bundles only that one component's pure functions. For the complete key table, see
+[Package entry points and subpaths](/guide/exports).
+
+## Importing styles (four ways)
+
+The package's `files` field publishes only `es / lib / dist / styles`, and styles can be loaded via
+two paths:
+
+### 1. Full theme only (least effort)
+
+```ts
+// Tokens only, no component styles at all — the smallest payload
+import '@lh-ui/share/theme.css'       // light :root tokens
+import '@lh-ui/share/theme-dark.css'  // dark [data-theme='dark'] overrides
+```
+
+Suits projects that want the design tokens but write component styles themselves.
+
+### 2. Full theme + all component styles
+
+```ts
+import '@lh-ui/share/styles.css'      // dist/styles/index.css: tokens + all 58 component suites
+```
+
+`dist/index.css` is the build-time aggregated final artifact — one import for the complete look.
+
+### 3. On-demand SCSS source (requires a bundler that can compile SCSS)
+
+```scss
+// Full aggregation (theme tokens + all components)
+@use '@lh-ui/share/styles/index.scss';
+
+// Single component: only this suite is compiled — smallest output
+@use '@lh-ui/share/styles/button';
+```
+
+The `styles/` directory is published as **source**, compiled on the fly by the vite / webpack sass
+loader, so a project can `@use` the tokens for customization.
+
+### 4. Tokens only, for deep customization
+
+```scss
+@use '@lh-ui/share/styles/theme/common/var.scss' as *;
+
+.my-panel {
+  color: $lh-text-primary;
+  border: 1px solid $lh-border-color;
+}
+```
+
+`styles/theme/common/` exposes 183 `$lh-*` SCSS variables plus 6 traditional-Chinese-pattern mixins.
+See [Design tokens](/theme/tokens) and the [pattern system](/theme/patterns).
+
+## TypeScript
+
+Every subpath carries a `types` condition, so no extra `@types` package is needed:
+
+```ts
+import type { LhThemePreset, LhThemeVars } from '@lh-ui/share/theme'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+```
+
+Type exports go through `./es/**/*.d.ts` separately, so `import type` never pulls implementations
+into your bundle.
+
+## Try a pure function
+
+No framework is needed — it runs in plain Node:
+
+```ts
+import { getButtonClasses } from '@lh-ui/share/core/button'
+
+getButtonClasses({ size: 'small', type: 'primary', disabled: true })
+// => 'lh-button lh-button--small lh-button--primary is-disabled'
+```
+
+Want to try interactively? Every component page on this site includes a **function playground**
+panel — change the parameters and see the output live, for example the
+[steps playground](/components/navigation/steps).
+
+## Dark mode
+
+Components in this package never toggle dark mode themselves; they only read CSS variables. Add the
+attribute on the root node to flip the whole site:
+
+```html
+<html data-theme="dark">
+  <!-- or <body class="dark"> — var-dark.scss covers both selectors -->
+</html>
+```
+
+For the mechanism and the "baked at compile time" trap, see [Dark mode](/theme/dark-mode).

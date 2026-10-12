@@ -1,0 +1,156 @@
+---
+title: 'menu — Menu'
+description: 'toggleMenuOpen accordion/regular dual modes, submenu aria-expanded linking, @deprecated moveMenuFocus has been consolidated into shared/keyboard'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A menu is the skeleton navigation of a website: a top horizontal menu, a side vertical menu, a collapsible icon menu. The difference from `dropdown` is **persistence and hierarchy** — a menu stays on the page and can nest child levels indefinitely; a dropdown is a temporary popup list of actions. What `core/menu` manages is open-state bookkeeping and accessibility semantics; layout and positioning are all in SCSS.
+
+## When to use
+
+- Each framework implements `<LhMenu>` / `<LhSubMenu>` / `<LhMenuItem>`: site primary navigation, admin sidebars, docs-site tables of contents.
+- Navigation that needs **more than two levels** of hierarchy.
+- **Do not use it for**: a flat row of action buttons (use `space` + `button`); a temporarily popped-up action menu (use `dropdown`); tab-style content switching (use `tabs`).
+
+## Import
+
+```ts
+import {
+  getMenuClassNames,
+  getMenuItemClassNames,
+  getSubMenuClassNames,
+  getMenuItemGroupClassNames,
+  toggleMenuOpen,
+  isMenuOpen,
+  moveMenuFocus,
+  getMenuAria,
+  getMenuItemAria,
+  getSubMenuAria,
+} from '@lh-ui/share/core/menu'
+import type { LhMenuMode } from '@lh-ui/share/core/menu'
+```
+
+## Design intent
+
+**Accordion mode allows zero open**: with `uniqueOpened: true`, `toggleMenuOpen` returns `[]` (all collapsed) when clicking an already-expanded item, and `[key]` (keeping only it) when clicking an unexpanded one. Note that it is not "keep at least one open" — zero open is allowed, which makes "collapse everything" an interactive state.
+
+**Regular mode is add/remove, not replace**: it returns a new array (`filter` to remove / append), leaving the other expanded items untouched — having several submenus open at once in a multi-level menu is a common need.
+
+**`moveMenuFocus` is a @deprecated shell**: the cyclic navigation algorithm has been consolidated into `core/shared/keyboard`'s `getNextListIndex`, and this function keeps the old signature (consuming an array of DOM elements) for existing downstream references. What it does: filter out `tabIndex === -1` (equivalent to the core's disabled items), and fall back to the first item when the current element is not in the list. **New code should use `getNextListIndex` directly**.
+
+**The aria triple**: the container `role="menu"`, leaf items `role="menuitem"`, and the submenu title `role="menuitem"` + `aria-expanded` + `aria-controls`. Note that **the submenu title is not a sub-role of menuitem** — in APG's menu structure, an expandable menu item is still a menuitem, and the expanded state is expressed via aria-expanded.
+
+**Class names separated from state**: `--active` / `--disabled` / `--opened` are all independent boolean classes, with SCSS combining the styles. `--collapse` (the collapsed state) is a container-level class name that affects how all child items render (an icon menu shows only icons, with a tooltip supplying the text).
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getMenuClassNames` | `(state: { mode, collapse }) => string[]` | class names | layout mode + collapsed state |
+| `getMenuItemClassNames` | `(state: { active, disabled }) => string[]` | class names | leaf items |
+| `getSubMenuClassNames` | `(state: { active, disabled, opened }) => string[]` | class names | submenus |
+| `getMenuItemGroupClassNames` | `() => string[]` | class names | group container |
+| `toggleMenuOpen` | `(openeds, key, uniqueOpened) => string[]` | new array | expand/collapse (immutable) |
+| `isMenuOpen` | `(openeds, key) => boolean` | whether expanded | includes query |
+| `moveMenuFocus` ⚠️ | `(items, currentEl, direction) => HTMLElement \| null` | target element | ↑/↓ focus movement |
+| `getMenuAria` | `(id?) => LhAriaAttrs` | aria bag | role=menu |
+| `getMenuItemAria` | `(state: { disabled? }) => LhAriaAttrs` | aria bag | menuitem |
+| `getSubMenuAria` | `(options: { opened, disabled?, menuId? }) => LhAriaAttrs` | aria bag | menuitem + expanded |
+
+⚠️ marks a `@deprecated` compatibility shell; new code uses `shared/keyboard`'s `getNextListIndex`.
+
+## Type definitions
+
+```ts
+export type LhMenuMode = 'horizontal' | 'vertical'
+```
+
+## Accessibility
+
+```ts
+getMenuAria('menu-1')            // { role: 'menu', id: 'menu-1' }
+getMenuItemAria({ disabled: true })  // { role: 'menuitem', 'aria-disabled': true }
+getSubMenuAria({ opened: true, menuId: 'menu-1' })
+// { role: 'menuitem', 'aria-expanded': true, 'aria-controls': 'menu-1' }
+getSubMenuAria({ opened: false })
+// { role: 'menuitem', 'aria-expanded': false }
+```
+
+- **The false value of aria-expanded is also output**: `{ 'aria-expanded': false }` is meaningful — it explicitly tells the screen reader "this submenu is collapsed". This follows `shared/a11y`'s convention: only undefined (not passed) is omitted; false is a legitimate state value.
+- **The split in keyboard navigation conventions**: horizontal menus use ←/→ and vertical menus use ↑/↓ — this is the APG menu pattern convention. Screen-reader users expect the corresponding behavior when pressing arrow keys — `moveMenuFocus` only provides the vertical direction's 1/-1, and a horizontal menu's ←/→ is mapped by the UI layer and calls in the same way.
+- **aria-current marks the current page**: for an active menu item, in addition to the `--active` class name, it is recommended that the UI layer add `aria-current="page"` (the same semantics as `breadcrumb`'s last item), letting screen readers announce "current page".
+- **Text compensation for collapsed menus**: in `collapse` mode only icons are shown, and the menu item's text should go into an `aria-label` or a hover tooltip — otherwise the icon buttons are nameless to screen readers.
+- **Skipping disabled items**: `--disabled` items do not respond to clicks (intercepted by the UI layer) but remain in the DOM. Keyboard navigation must skip them (the tabIndex filtering of `moveMenuFocus`).
+
+## Usage examples
+
+```ts
+import { toggleMenuOpen, isMenuOpen } from '@lh-ui/share/core/menu'
+
+toggleMenuOpen(['a', 'b'], 'b', false)  // ['a'] (regular mode collapses b)
+toggleMenuOpen(['a'], 'b', false)       // ['a', 'b'] (expand b)
+toggleMenuOpen(['a'], 'a', true)        // [] (accordion: clicking again collapses, zero open allowed)
+toggleMenuOpen(['a'], 'b', true)        // ['b'] (accordion: keep only b)
+
+isMenuOpen(['a', 'b'], 'a')  // true
+isMenuOpen(['a'], 'c')       // false
+```
+
+```ts
+// Controlled open state (UI layer): openeds is an array rather than a Set, for easy serialization and v-model
+const openeds = ref<string[]>([])
+function onSubMenuClick(key: string) {
+  openeds.value = toggleMenuOpen(openeds.value, key, props.uniqueOpened)
+}
+```
+
+```vue
+<!-- Vue3: side vertical menu -->
+<template>
+  <LhMenu mode="vertical" :collapse="collapsed" :unique-opened="true">
+    <LhSubMenu index="1">
+      <template #title><LhIcon name="settings" /><span>System settings</span></template>
+      <LhMenuItem index="1-1" @click="go('/users')">User management</LhMenuItem>
+      <LhMenuItem index="1-2" disabled>Permission management</LhMenuItem>
+    </LhSubMenu>
+    <LhMenuItem index="2" @click="go('/profile')">My account</LhMenuItem>
+  </LhMenu>
+</template>
+```
+
+```tsx
+// React: openeds uses useState<string[]>; menu item clicks navigate;
+// the collapsed state is delivered to submenus via context (avoiding prop drilling at every level)
+```
+
+```ts
+// uniapp: <view> + catchtap; collapsed mode uses a px fixed-width transition animation on the mini-program side
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-menu` | container |
+| `.lh-menu--{horizontal\|vertical}` | layout mode |
+| `.lh-menu--collapse` | collapsed state (icons only) |
+| `.lh-menu-item` | leaf item |
+| `.lh-menu-item--active` / `--disabled` | active / disabled |
+| `.lh-sub-menu` / `--active` / `--disabled` / `--opened` | submenu title |
+| `.lh-sub-menu__popup` | popup-style children (horizontal menu) |
+| `.lh-menu-item-group` | group (with a group title) |
+
+Active item background `--lh-menu-item-active-background`, text color `--lh-menu-item-color` (the light token must be explicitly flipped in var-dark, see the root AGENTS.md "dark mode pitfalls"); height token `--lh-menu-item-height`.
+
+## Caveats
+
+- **openeds uses an array, not an object**: order does not matter but duplicates must be removed; `toggleMenuOpen` guarantees uniqueness. An array is more intuitive when serializing into a route query or localStorage.
+- **Accordion only controls the same level**: `uniqueOpened` only makes the direct submenus **under the same menu** mutually exclusive; grandchild submenus are unaffected (each maintains its own openeds).
+- **Horizontal menu children are popup-style**: the first level is laid out horizontally, the second level pops downward (class `lh-sub-menu__popup`, positioned with `shared/popper`); a vertical menu's children expand inline (squeezing the content below). The two modes have different DOM structures, driven by mode.
+- **`--active` needs route synchronization**: a menu's active state usually follows the current route, and the UI layer listens to route changes to update the active index — core never touches routing.
+- **Tooltips in the collapsed state**: with `collapse: true`, the menu items are reduced to icons and the text should be supplied through a `tooltip` (shown on hover). This is a cooperation point between the two components.
+- **The DOM dependency of `moveMenuFocus`**: it consumes `HTMLElement[]` and can only be called in the browser (skip under SSR); and it filters by tabIndex rather than reading the disabled class name — the UI layer must ensure that disabled items have a tabIndex of -1.
+- **Menu and dropdown share the same role but differ in usage**: both use `role="menu"`. A menu is persistent navigation, a dropdown is a temporary action list — do not pass a dropdown off as site navigation (it disappears on refresh and cannot be deep-linked).
+
+<FnPlayground module="menu" fn="toggleMenuOpen" params='{"openeds": ["a"], "key": "b", "uniqueOpened": true}' />

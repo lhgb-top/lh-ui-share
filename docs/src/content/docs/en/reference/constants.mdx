@@ -1,0 +1,145 @@
+---
+title: constants — constants
+description: 'LH_TYPES_CONST / LH_SIZE_CONST / LH_LANGUAGE_CONST and the two DEFAULT constants, all frozen with as const'
+---
+
+`src/constants/` is the **single source of runtime constants** for the whole family: component type semantic colors, size tiers, and language codes. All are frozen with `as const` and referenced by the union types derived in `core/shared/types` (see [core/types](/core/types)).
+
+## How to import
+
+```ts
+import {
+  LH_TYPES_CONST,
+  LH_SIZE_CONST,
+  LH_LANGUAGE_CONST,
+  LH_SIZE_DEFAULT,
+  LH_LANGUAGE_DEFAULT,
+} from '@lh-ui/share/constants'
+```
+
+## Constants table
+
+| Constant | Value | Purpose |
+| --- | --- | --- |
+| `LH_TYPES_CONST` | `{ success, warning, error, info, danger }` | Component types (five semantic colors) |
+| `LH_SIZE_CONST` | `{ small, medium, large, mini, old: 'x-large' }` | Component size tiers |
+| `LH_SIZE_DEFAULT` | `'medium'` (= `LH_SIZE_CONST.medium`) | Default size |
+| `LH_LANGUAGE_CONST` | `{ zhCN: 'zh-CN', enUS: 'en-US', jaJP: 'ja-JP', koKR: 'ko-KR', deDE: 'de-DE', frFR: 'fr-FR' }` | Language codes |
+| `LH_LANGUAGE_DEFAULT` | `'zh-CN'` (= `LH_LANGUAGE_CONST.zhCN`) | Default language |
+
+## LH_TYPES_CONST — five semantic colors
+
+```ts
+export const LH_TYPES_CONST = {
+  success: 'success',   // success
+  warning: 'warning',   // warning
+  error: 'error',       // error
+  info: 'info',         // info
+  danger: 'danger',     // danger
+} as const
+```
+
+Every member carries an `@alias` JSDoc (success / warning / error / info / danger), so hovering shows a hint. `LhComponentType` **additionally includes `'default' | 'primary'`** on top of these (base appearance colors, not status semantics).
+
+### The difference between error and danger
+
+Both are reddish "something went wrong" colors with slightly different intended duties; each component picks for itself:
+
+- `error` — validation failure (a form input's red outline), operation failure (an upload that failed).
+- `danger` — destructive operations (the red emphasis on a delete button).
+
+This is a convention, not a hard rule; most components use only one of them, so refer to each component's own docs.
+
+## LH_SIZE_CONST — five size tiers
+
+```ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',     // default
+  large: 'large',
+  mini: 'mini',         // inline compact scenarios (action buttons inside a table)
+  old: 'x-large',       // elderly-friendly mode
+} as const
+```
+
+### The `old` key and the `'x-large'` value disagree
+
+This is a **deliberate naming trade-off**:
+
+- **The key `old`** is the internal semantic identifier for "elderly mode"; `LhBaseProps.old?: boolean` uses it as the toggle.
+- **The value `'x-large'`** is the outward-facing size enum value; it is what appears in the `LhComponentSize` union.
+
+What users see is `size="x-large"` (or the `old` prop toggle); the internal constant key is never exposed to them. When writing code, note that `Object.keys(LH_SIZE_CONST)` gives you the keys while `Object.values(...)` gives you the type enum values — do not mix them up.
+
+### What each tier is for
+
+| Tier | Scenario |
+| --- | --- |
+| `mini` | in-row action buttons in tables, dense forms |
+| `small` | compact layouts, toolbars |
+| `medium` | **default**; ordinary forms and content areas |
+| `large` | the primary button on a standalone register / login page |
+| `x-large` | accessibility elderly mode: large text and large touch targets, paired with the `old` boolean toggle |
+
+**Not every component supports all five tiers**: `mini` / `x-large` are implemented only on some components; refer to each component's own docs.
+
+## LH_LANGUAGE_CONST — six languages
+
+```ts
+export const LH_LANGUAGE_CONST = {
+  zhCN: 'zh-CN',
+  enUS: 'en-US',
+  jaJP: 'ja-JP',
+  koKR: 'ko-KR',
+  deDE: 'de-DE',
+  frFR: 'fr-FR',
+} as const
+```
+
+The keys are the [conventional locale names like zhCN / enUS](/guide/naming#registered-exemptions); the values are BCP 47 language codes. Both `LhLocaleType` and `LhComponentLanguage` are derived from this.
+
+**Mind the enabled state of the language files**: `ja-JP` / `ko-KR` / `de-DE` / `fr-FR` are currently **reserved language skeletons that fall back to English translations** (see [locales](/reference/locales)). Being registered in the constants does not mean the copy is complete.
+
+## Why constants instead of enums
+
+An `as const` object plus derived union types has three advantages over a TS `enum`:
+
+1. **Zero runtime overhead**: an `enum` generates extra code (reverse mapping); an `as const` object is just one object.
+2. **Iterable**: `Object.values(LH_TYPES_CONST)` gives you every enum value directly for runtime validation; iterating an `enum` is unreliable when `preserveConstEnums` is off.
+3. **Per-member JSDoc**: each member's `@alias` hint is visible in the IDE.
+
+## Usage examples
+
+### Default values for component props
+
+```ts
+import { LH_SIZE_DEFAULT } from '@lh-ui/share/constants'
+
+props: {
+  size: { type: String, default: LH_SIZE_DEFAULT },   // 'medium'
+}
+```
+
+### Runtime value validation
+
+```ts
+const TYPE_VALUES = Object.values(LH_TYPES_CONST)
+
+const isValidType = (v: string): v is LhComponentType =>
+  TYPE_VALUES.includes(v as never) || v === 'default' || v === 'primary'
+```
+
+### Iterating to generate utilities
+
+```ts
+// theme / docs pages iterate all languages to build the switcher list
+Object.entries(LH_LANGUAGE_CONST).forEach(([key, code]) => {
+  // key: 'zhCN'  code: 'zh-CN'
+})
+```
+
+## Caveats
+
+- **The constants are frozen**: `as const` makes the types literal unions, but at runtime they are still plain objects (no `Object.freeze`) — do not mutate them at runtime; downstream type inference will not follow along.
+- **`LH_SIZE_DEFAULT` / `LH_LANGUAGE_DEFAULT` reference members of the constants** rather than being independent literals — change the constant and the defaults follow automatically.
+- **Do not expose the `old` key to users directly**: outwardly it is `size="x-large"` or the `old` boolean toggle.

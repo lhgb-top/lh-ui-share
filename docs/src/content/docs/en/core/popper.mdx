@@ -1,0 +1,154 @@
+---
+title: 'popper — popover positioning engine'
+description: 'computePosition implements 12 placements, main-axis flip and cross-axis clamping, with plain rect inputs you can unit-test directly'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+tooltip, popover, popconfirm, dropdown, select's dropdown, cascader's panel, date-picker's calendar — every "thing floating next to a trigger" in lh-ui gets its position from this one function.
+
+## Why not floating-ui / popper.js
+
+All four ports of the family (Vue3 / Vue2 / React / uniapp) import this package, so the size and update cadence of a third-party positioning library would become a fourfold burden. share's positioning engine covers only the subset the family actually uses: 12 placements, main-axis flip, cross-axis clamping, arrow offset — about 300 lines, zero dependencies, pure function inputs and outputs. It **creates no DOM, listens to no events, and runs no requestAnimationFrame**. Scheduling and rendering are left to each UI layer (Vue3 uses `watchEffect`, React uses `useLayoutEffect`, uniapp uses page scroll events).
+
+## Import
+
+```ts
+import {
+  computePosition,
+  parsePlacement,
+  getWindowViewport,
+  type LhPlacement,
+  type LhComputePositionOptions,
+} from '@lh-ui/share/core/shared/popper'
+```
+
+## Types and constants
+
+```ts
+// 12 placements = 4 directions × 3 alignments (the center suffix can be omitted)
+export type LhPlacement =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhPlacementDir = 'top' | 'bottom' | 'left' | 'right'
+export type LhPlacementAlign = 'start' | 'center' | 'end'
+
+// Minimal structure isomorphic to DOMRect — build literals directly in tests
+export interface LhDOMRectLike {
+  top: number
+  left: number
+  width: number
+  height: number
+  right: number
+  bottom: number
+}
+
+export interface LhComputePositionOptions {
+  placement?: LhPlacement       // default 'bottom'
+  gap?: number                  // gap to the trigger, default 8
+  padding?: number              // viewport safe margin, default 8
+  flip?: boolean                // flip on main-axis overflow, default true
+  shift?: boolean               // clamp on the cross axis, default true
+}
+
+export interface LhPopperPosition {
+  top: number
+  left: number
+  placement: LhPlacement        // the placement actually in effect after flipping
+  arrowOffset: number           // arrow offset on the cross axis (px, from the popover's cross-axis start)
+}
+```
+
+## Function table
+
+| Function | Signature | Purpose |
+| --- | --- | --- |
+| `parsePlacement` | `(placement: LhPlacement) => { dir, align }` | Splits a placement into "direction + alignment"; an invalid direction falls back to `bottom`, an invalid alignment to `center` |
+| `buildPlacement` | `(dir: LhPlacementDir, align: LhPlacementAlign) => LhPlacement` | Rebuilds a placement from direction and alignment (omits the suffix when `center`) |
+| `flipDir` | `(dir: LhPlacementDir) => LhPlacementDir` | Main-axis flip: top↔bottom, left↔right |
+| `basePosition` | `(dir, align, trigger, popper, gap) => { top, left }` | Base placement for a given placement (**ignores viewport constraints**) |
+| `fitsInViewport` | `(dir, trigger, popper, viewport, gap, padding) => boolean` | Whether the popover fits entirely in the viewport in the given direction (main-axis check) |
+| `computePosition` | `(trigger, popper, viewport, options?) => LhPopperPosition` | **Main entry**: the full positioning computation |
+| `getWindowViewport` | `() => LhDOMRectLike` | Builds a viewport rect from the browser window; SSR-guarded, zero size when there is no `window` |
+| `isOutsideViewport` | `(rect, viewport) => boolean` | Whether a rect has left the viewport entirely (when the trigger is scrolled out of view, the popover should close) |
+
+## computePosition's computation flow
+
+```
+flip (main-axis flip)
+  → only flip if the flipped direction actually fits (avoid flipping into something worse)
+  → place per the placement (basePosition)
+  → shift: clamp on the cross axis (along the padding safe margin)
+  → main-axis clamp (only when flip is on and neither side fits; stick to the side that can be reached)
+  → low-side clamping safety net (fallback, guarantees no negative coordinates)
+```
+
+Key design decisions:
+
+- **Flipping is conditional.** A common wrong implementation is "flip whenever overflowing", which makes things worse when the trigger is in the middle of the viewport and the popover is tall. `computePosition` first asks `fitsInViewport` "would it fit if flipped?", and if not, it does not flip and falls back to main-axis clamping.
+- **The actually-effective `placement` is returned.** After a flip, the `placement` field becomes the new placement, and the UI layer switches the arrow class accordingly (`is-top` / `is-bottom`) — the arrow direction must match the actual placement, otherwise the arrow visually detaches from the popover.
+- **The arrow always points at the trigger's center**; `arrowOffset` is its offset on the cross axis, clamped inside the popover's bounds, with an upper limit of half the popover to keep the bounds from inverting (the arrow running outside the popover).
+
+## Usage examples
+
+### Pure function (directly unit-testable)
+
+```ts
+const trigger = { top: 100, left: 50, width: 80, height: 32, right: 130, bottom: 132 }
+const popper = { top: 0, left: 0, width: 200, height: 120, right: 200, bottom: 120 }
+const viewport = { top: 0, left: 0, width: 375, height: 667, right: 375, bottom: 667 }
+
+computePosition(trigger, popper, viewport, { placement: 'top' })
+// it fits above the trigger:
+// { top: 132 - 8 - 120, left: ..., placement: 'top', arrowOffset: ... }
+```
+
+### Vue3 wiring
+
+```ts
+// Inside the popover component
+function update() {
+  if (!triggerEl.value || !popperEl.value) return
+  const pos = computePosition(
+    triggerEl.value.getBoundingClientRect(),
+    popperEl.value.getBoundingClientRect(),
+    getWindowViewport(),
+    { placement: placementRef.value, gap: 8 },
+  )
+  popperEl.value.style.top = `${pos.top}px`
+  popperEl.value.style.left = `${pos.left}px`
+  actualPlacement.value = pos.placement
+}
+
+onMounted(() => {
+  watchEffect(update)          // recompute when reactive dependencies change
+  window.addEventListener('scroll', update, true)
+})
+```
+
+### React wiring
+
+```tsx
+useLayoutEffect(() => {
+  if (!triggerRef.current || !popperRef.current) return
+  const pos = computePosition(/* ... */)
+  setPos(pos)
+}, [open, placement])
+```
+
+### uniapp wiring
+
+uniapp's `getBoundingClientRect` differs per target (mini-programs need `uni.createSelectorQuery`); the UI layer measures the rects and then calls the same `computePosition` — the algorithm itself is identical.
+
+## Caveats
+
+- **Inputs are sanitized field by field first**: non-finite fields (NaN / Infinity) become 0, so a bad rect never flows into the geometry math.
+- **SSR-safe**: `getWindowViewport()` returns a zero-size rect when there is no `window`; `computePosition` itself never touches the DOM, so a position can be precomputed on the server.
+- **The semantics of `flip: false`**: the caller accepts main-axis overflow; in that case the main axis keeps only the low-side clamp (the popover is never pushed to negative coordinates). Fixed-direction scenarios like `select` / `cascader` use it.
+- **No Resize / Scroll listening**: scheduling is the UI layer's job; share only guarantees "given an input, the output is deterministic".
+- This and `LhPosition` (the `'top-left'` / `'bottom-right'` set, see [types](/core/types)) are **two placement models**: `LhPosition` is for the "stick to the edge" semantics of affix / backtop and has no `-start` / `-end` alignment suffixes; do not mix them.
+
+<FnPlayground module="popper" fn="computePosition" params='{"trigger": {"top": 100, "left": 50, "width": 80, "height": 32, "right": 130, "bottom": 132}, "popper": {"top": 0, "left": 0, "width": 200, "height": 120, "right": 200, "bottom": 120}, "viewport": {"top": 0, "left": 0, "width": 375, "height": 667, "right": 375, "bottom": 667}, "options": {"placement": "top"}}' />

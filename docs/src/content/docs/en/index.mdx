@@ -1,0 +1,64 @@
+---
+title: '@lh-ui/share'
+description: 'The single framework-agnostic shared layer of the lh-ui family — core pure functions / theme / style sources'
+template: splash
+hero:
+  title: '@lh-ui/share'
+  tagline: 'The single <b>framework-agnostic shared layer</b> of the lh-ui family — 56 core component pure functions, 12 shared-kernel modules, a Chinese-style theme system, pure-emitter internationalization, and 58 component style sources. One logic, feeding every port: Vue3 / Vue2 / React / uniapp.'
+  actions:
+    - text: Get started
+      link: /en/guide/getting-started
+      icon: right-arrow
+      variant: primary
+    - text: Theme presets
+      link: /en/theme/presets
+      icon: sun
+    - text: GitHub
+      link: https://github.com/lhgb-top/lh-ui-share
+      icon: github
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid cols={3}>
+  <Card title="Core pure functions" icon="code-branch">
+    Class-name computation, state machines, and accessibility attribute packs for 56 components — all zero-dependency pure functions. The framework layer only wires them up; the logic has a single source and a single test suite.
+  </Card>
+  <Card title="Shared kernel" icon="puzzle">
+    The popper positioning engine, virtual scrolling, focus trap, keyboard navigation, sx style props, and number sanitizing — 12 modules reused directly by every port.
+  </Card>
+  <Card title="Chinese-style themes" icon="pencil">
+    Five built-in presets (cerblue / songhua / zhusha / shuimo / golden), CSS variables + dark mode + a pattern system, guarded by an AA-contrast script.
+  </Card>
+  <Card title="Pure-emitter i18n" icon="translate">
+    LhLocale is a pure event emitter carrying no framework reactivity; each port subscribes to its version with its own signaling mechanism.
+  </Card>
+  <Card title="Single source of styles" icon="open-book">
+    `styles/` is the only source of component BEM styles for the whole family; three transition mixins unify the Vue2 / Vue3 / React differences.
+  </Card>
+  <Card title="Zero framework dependencies" icon="padlock">
+    Bundled with `external: []` — fully dependency-free — and gated by `verify:dts` so no framework import ever appears in the output.
+  </Card>
+</CardGrid>
+
+## Who this documentation is for
+
+- **Developers of the UI libraries** (lh-ui-plus / lh-ui-vue2 / lh-ui-react / lh-ui-uniapp): look up
+  every pure function's signature, return value, and edge cases, and how to override style tokens.
+- **Standalone developers using share directly**: your project wants the accessibility baseline
+  and the theme tokens without pulling in any UI library.
+- **Contributors**: understand the directory responsibilities, the red lines, and the verification
+  and release process.
+
+## Understand this package in five minutes
+
+```md
+- `src/core/<component>/`  —— pure-function logic (logic.ts / types.ts), zero framework imports
+- `src/core/shared/`       —— cross-component shared kernel (popper / virtual / sx / keyboard …)
+- `src/theme/`             —— theme TS side: types + five presets + runtime primitives
+- `styles/`                —— the single source of component BEM styles + theme/common/*.scss tokens
+- `src/{constants,locales,types,utils}/` —— constants / language packs / types / utilities
+```
+
+Next: [Getting started](/en/guide/getting-started) to install the package and import styles; or go
+straight to [entry points and subpaths](/en/guide/exports) to see how to import on demand.

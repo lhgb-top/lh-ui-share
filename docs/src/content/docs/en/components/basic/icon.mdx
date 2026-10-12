@@ -1,0 +1,131 @@
+---
+title: icon — Icon
+description: 'getIconSize size conversion, getIconSvg fetches built-in SVG paths, getIconAria produces an aria attribute bundle for both decorative and semantic modes'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`core/icon` ships a set of 33 Chinese-style minimalist SVG icons and is responsible for converting "size scales" into SVG `width/height` and turning the "decorative or semantic" decision into an aria attribute bundle. The icon component itself has no props state machine — it is a **parameter set for the render function**.
+
+## When to use
+
+- Each platform implements `LhIcon`: `name` → path, `size` → pixels, `color` → inline `color`.
+- Anywhere an icon needs to sit next to text. **The vast majority of icons should be decorative** (`decorative: true`, the default), and screen readers do not announce them.
+- When an icon must carry semantics (such as a "delete" button with an icon and no text), you must pass `decorative: false` + `label`, otherwise screen readers read out nothing but a silent graphic.
+
+## Import
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+import type { LhIconState, LhIconName } from '@lh-ui/share/core/icon'
+import { LH_ICON_SVGS_CONST } from '@lh-ui/share/core/icon'
+```
+
+## Design intent
+
+Icon sizes come from two sources: **preset scales** (`'small'` / `'medium'` …) and **arbitrary numbers**. `getIconSize` unifies the two into a `number`, because the SVG `width`/`height` attributes only accept numbers (the unit is determined by the attribute itself), and the UI layer does not need to check "is this a scale or pixels".
+
+Accessibility follows the APG's "decorative vs semantic" dichotomy:
+
+- Decorative icon (default): `aria-hidden="true"`, removed from the accessibility tree. Icons side by side with text always take this route.
+- Semantic icon: `role="img"` + `aria-label`, becoming an announceable graphic.
+- A third case: `decorative: false` but no `label` given — neither hidden nor given semantics, returning an empty object. This is reserved for the scenario where "the icon button's label is provided by an outer aria-label", to avoid duplicate announcements.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getIconSize` | `(size: string \| number \| undefined) => number` | pixel value | scale mapping, unknown values fall back to 16 |
+| `getIconSvg` | `(name: LhIconName \| undefined) => string \| null` | path `d` or null | fetches a built-in icon; returns null instead of throwing when not found |
+| `getIconStyle` | `(state: LhIconState) => Record<string, string>` | inline styles | always outputs width/height, color as needed |
+| `getIconAria` | `(options?: { decorative?: boolean; label?: string }) => LhAriaAttrs` | aria attribute bundle | decorative/semantic dual mode |
+
+Size scale mapping: `mini: 12` / `small: 14` / `medium: 16` / `large: 20` / `x-large: 24`; unknown strings fall back to 16, and falsy values (including `0`) also fall back to 16.
+
+## Type definitions
+
+```ts
+export interface LhIconState {
+  size: string | number | undefined
+  color: string | undefined
+  name?: LhIconName
+}
+
+export type LhIconName =
+  | 'star' | 'search' | 'check' | 'close' | 'warning' | 'error' | 'info'
+  | 'loading' | 'plus' | 'minus' | 'edit' | 'delete' | 'setting' | 'user'
+  | 'home' | 'menu' | 'more' | 'download' | 'upload' | 'refresh' | 'folder'
+  | 'file' | 'date' | 'clock' | 'email' | 'phone' | 'location' | 'image'
+  | 'share' | 'bell' | 'filter' | 'eye' | 'link'
+```
+
+## Accessibility
+
+`getIconAria` is this component's aria attribute bundle function:
+
+```ts
+getIconAria()                            // { 'aria-hidden': true }  decorative
+getIconAria({ label: 'Delete' })           // { 'aria-label': 'Delete', role: 'img' }
+getIconAria({ decorative: false })        // {}  label provided by the outer layer
+```
+
+Note that the value of `aria-hidden` is `true` (boolean); `LhAriaAttrs` allows booleans and strings to coexist, and each platform's v-bind converts it to `"true"`.
+
+## Usage examples
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+
+getIconSize('large')          // 20
+getIconSize(32)               // 32
+getIconSvg('check')           // 'M...'  path data
+getIconSvg('not-exist')       // null (does not throw; the UI layer renders an empty svg or a placeholder)
+getIconStyle({ size: 'large', color: 'var(--lh-primary-color)' })
+// { width: '20px', height: '20px', color: 'var(--lh-primary-color)' }
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="['lh-icon', { 'lh-icon--loading': name === 'loading' }]"
+  viewBox="0 0 1024 1024"
+  :width="px" :height="px"
+  v-bind="getIconAria({ decorative, label })"
+>
+  <path :d="path" />
+</svg>
+```
+
+```tsx
+// React
+const px = getIconSize(size)
+const aria = getIconAria({ decorative: !label, label })
+return (
+  <svg className="lh-icon" viewBox="0 0 1024 1024" width={px} height={px} {...aria}>
+    <path d={getIconSvg(name) ?? ''} />
+  </svg>
+)
+```
+
+```ts
+// uniapp: non-h5 platforms do not support inline svg; the UI layer pre-renders the path
+// into an image asset. The numeric value from getIconSize is still used to control the image size.
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-icon` | base class: `display: inline-block`, `vertical-align` alignment correction |
+| `.lh-icon--loading` | infinite spin animation for the loading icon |
+
+The icon color inherits the parent's text color by default (`fill: currentColor`); when a theme color is needed, it is injected explicitly via the `color` from `getIconStyle`.
+
+## Notes
+
+- For a name that does not exist, `getIconSvg` **returns null instead of throwing** — the UI layer should handle this branch, otherwise an empty `<svg>` is rendered.
+- The built-in icon set is **Chinese-style minimalist** and is not compatible with third-party icon libraries (such as element-plus's fontawesome class names). When business icons are needed, each platform's `LhIcon` typically supports passing a `path` or drawing via a slot.
+- The loading icon's spin animation lives in the CSS layer (`.lh-icon--loading`), not in core — core only outputs the class name.
+- Keep the default decorative state when an icon sits next to text; only pass a label when "the icon alone carries the action".
+
+<FnPlayground module="icon" fn="getIconSize" params='{"size": "large"}' />

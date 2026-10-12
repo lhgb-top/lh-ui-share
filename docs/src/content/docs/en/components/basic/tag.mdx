@@ -1,0 +1,121 @@
+---
+title: tag — Tag
+description: 'getTagClassNames computes type/size/round/closable/disabled/outlined modifier classes'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Tags are used for marking, categorization, and selection. `core/tag` does exactly one thing: computes a tag's state into a class name array. It is simpler than a button — no interaction decisions, no size fallbacks; all visual variants land directly on class names.
+
+## When to use
+
+- Each platform implements `LhTag`: class names are produced entirely by `getTagClassNames`.
+- When you need to reuse the tag visual without introducing the component (such as a status marker inside a table cell), you can import the core function plus the class names from `styles/tag` directly.
+- **Do not use it for**: scenarios that need `sx` fine-tuning or custom colors. A tag's colors are semantic tokens; to customize them use the ConfigProvider's componentTheme rather than modifying core.
+
+## Import
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+import type { LhTagState, LhTagType } from '@lh-ui/share/core/tag'
+```
+
+## Design intent
+
+A tag's state is all "visual switches" with no computational logic at all. The principle of `getTagClassNames` is **append only when truthy**: when `type` and `size` are falsy not even a modifier class is produced, and `closable` / `disabled` / `round` / `hit` are each evaluated independently. This guarantees the class name array is always the "minimal sufficient set", and dirty classes like `lh-tag--undefined` never appear.
+
+`hit` (outline) is a semantics unique to a tag relative to a button: a tag often needs a "lightweight presence", and an outline suits it better than a fill.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getTagClassNames` | `(state: LhTagState) => string[]` | class name array | computes all tag class names |
+
+Output example:
+
+```ts
+getTagClassNames({ type: 'success', size: 'small', closable: true, disabled: false, round: false, hit: true })
+// ['lh-tag', 'lh-tag--success', 'lh-tag--small', 'lh-tag--closable', 'lh-tag--hit']
+```
+
+## Type definitions
+
+```ts
+export type LhTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhTagState {
+  type: LhTagType
+  size: LhComponentSize        // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  closable: boolean            // closable (renders a × button)
+  disabled: boolean            // disabled (the close button does not respond either)
+  round: boolean               // rounded corners
+  hit: boolean                 // outlined instead of filled
+}
+```
+
+## Accessibility
+
+`core/tag` does not output an aria attribute bundle: a tag is a purely presentational element, and presenting its text content to screen readers by default is enough. The **close button** should be carried by a native `<button>` (or each platform's equivalent) and given an `aria-label` (such as "Remove"); this is the UI layer's responsibility.
+
+One easily overlooked point: when a tag is used as a filter condition (such as the multi-select tags in `LhSelect`), it gains interactive semantics, and in that case the whole clickable area should get `role="button"` — this is handled in each platform's UI layer, and core is not involved.
+
+## Usage examples
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+
+getTagClassNames({ type: 'primary', size: 'medium', closable: false, disabled: false, round: false, hit: false })
+// ['lh-tag', 'lh-tag--primary', 'lh-tag--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getTagClassNames({ type, size, closable, disabled, round, hit })">
+  <slot />
+  <button v-if="closable" class="lh-tag__close" aria-label="Close" @click="!disabled && emit('close')">
+    <LhIcon name="close" :size="12" />
+  </button>
+</span>
+```
+
+```tsx
+// React
+const cls = getTagClassNames({ type, size, closable, disabled, round, hit })
+return (
+  <span className={cls.join(' ')}>
+    {children}
+    {closable && <CloseButton disabled={disabled} />}
+  </span>
+)
+```
+
+```ts
+// uniapp: class names are the same; the close button uses view + @tap; aria-label support
+// varies by platform, and may degrade to not rendering screen-reader semantics (non-h5
+// platforms have limited screen-reader capability anyway)
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-tag` | base class: inline-flex, padding, font size, border radius |
+| `.lh-tag--{primary\|success\|warning\|danger\|info\|default}` | semantic type (background + text color) |
+| `.lh-tag--{mini\|small\|medium\|large\|x-large}` | size scale |
+| `.lh-tag--round` | large border radius (pill shape) |
+| `.lh-tag--hit` | outlined style |
+| `.lh-tag--closable` | reserves right-side spacing for the close button |
+| `.lh-tag--disabled` | disabled state: reduced opacity + not-allowed cursor |
+| `.lh-tag__text` | text node (ellipsis on overflow) |
+| `.lh-tag__close` | close button |
+
+Colors are all `var(--lh-*)`, flipped for dark mode by `var-dark.scss`.
+
+## Notes
+
+- When `type` and `size` are falsy, **no modifier class is produced** (there is no fallback to default); if the UI layer relies on `lh-tag--default` being present, pass `type: 'default'` explicitly.
+- The close button's disabled decision lives in the UI layer (`disabled` blocks the click); core's `--disabled` only handles the visual.
+- `round` and `hit` can coexist, producing an "outlined pill".
+
+<FnPlayground module="tag" fn="getTagClassNames" params='{"state": {"type": "warning", "size": "small", "closable": true, "disabled": false, "round": true, "hit": false}}' />

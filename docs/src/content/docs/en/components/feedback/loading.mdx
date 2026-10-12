@@ -1,0 +1,178 @@
+---
+title: loading — Loading overlay
+description: 'resolveLoadingTarget mount-target resolution, ensurePositioned positioning patch and restore, aria-busy semantics'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A loading overlay covers a region (or a whole page) to say "this area is busy". What `core/loading` manages is **mount-target resolution** and **the positioning patch** — the imperative `v-loading="true"` needs to absolutely position the overlay against the trigger element, but a statically positioned element cannot act as a positioned ancestor, and this patch is core's job.
+
+## When to use
+
+- Each framework implements a `v-loading` directive or a `<LhLoading>` component: button submission, table refreshing, full-page loading.
+- When you need to **explicitly mask a specific region** (rather than the full screen).
+- **Do not use it for**: pure text feedback (use `message`); background tasks of indeterminate duration (use `notification` + cancellable); skeleton structures (use `skeleton` — loading assumes the content layout stays the same, skeleton assumes it changes).
+
+## Import
+
+```ts
+import {
+  getLoadingClassNames,
+  resolveLoadingTarget,
+  isLoadingFullscreen,
+  ensurePositioned,
+  getLoadingAria,
+} from '@lh-ui/share/core/loading'
+import type { LhLoadingOptions, LhLoadingHandle, LhLoadingState } from '@lh-ui/share/core/loading'
+```
+
+## Design intent
+
+**`resolveLoadingTarget` normalizes three states**: nothing passed → `document.body` (fullscreen); a string → `querySelector`, **falling back to body on a miss** (a mistyped selector will not crash, it just becomes a fullscreen overlay); an element is returned as-is. This fallback matters: the target an imperative API receives comes from a ref/selector written by the user, and dirty data must be tolerated.
+
+**`ensurePositioned` "returns what it borrows"**: a statically positioned element is temporarily changed to relative, and it returns `restore()` for restoring on unmount. **Only the inline style's position is changed** — no classes touched, no other styles touched — and on restore the inline position goes back to its original value (which may be an empty string). If the element is already positioned (relative/absolute/fixed/sticky), nothing happens and `restore` is a no-op — callers need not check and can just call it unconditionally.
+
+**Fullscreen is decided by "is the target body"**: `isLoadingFullscreen(target)` rather than passing a separate flag — if the target is body it is treated as fullscreen, and the overlay class gets `--fullscreen` (fixed positioning + a higher z-index). SSR guard: returns false when there is no `document`.
+
+**The dual semantics of `getLoadingAria`**: `aria-busy="true"` marks the masked region (screen readers will not announce its stale content before loading finishes), and the spinner is a **decorative graphic** → `aria-hidden` (avoiding screen readers announcing nonsense like "spinning graphic"). `busy: false` returns an empty object — the UI layer can `v-bind` it unconditionally.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getLoadingClassNames` | `(state: LhLoadingState) => string[]` | class names | fullscreen / with text |
+| `resolveLoadingTarget` | `(target: string \| HTMLElement \| undefined) => HTMLElement` | target element | string selector falls back to body on a miss |
+| `isLoadingFullscreen` | `(target: HTMLElement) => boolean` | whether fullscreen | target being body means fullscreen |
+| `ensurePositioned` | `(target: HTMLElement) => { restore }` | restore handle | static → relative, restored on unmount |
+| `getLoadingAria` | `(busy?: boolean) => LhAriaAttrs` | aria attribute bag | aria-busy + icon aria-hidden |
+
+## Type definitions
+
+```ts
+export interface LhLoadingOptions {
+  text?: string                      // overlay message
+  fullscreen?: boolean               // force fullscreen
+  background?: string                // overlay background color (overrides the default semi-transparency)
+  spinner?: boolean                  // show the spinner (default true)
+  target?: string | HTMLElement      // mount target
+  delay?: number                     // display delay in milliseconds (anti-flicker)
+}
+
+export interface LhLoadingHandle {
+  close: () => void                  // close and unmount the overlay
+  setText: (text: string) => void    // update the message dynamically
+}
+
+export interface LhLoadingState {
+  fullscreen: boolean
+  withText: boolean                  // when there is text, reserve room for the text container
+}
+```
+
+## Accessibility
+
+```ts
+getLoadingAria(true)   // { 'aria-hidden': true, 'aria-busy': true }
+getLoadingAria(false)  // {} (for unconditional v-bind)
+```
+
+- `aria-busy="true"` is the standard WAI-ARIA "busy region" marker; screen readers use it to know the content is about to change and to hold off announcing the current stale content. It goes on the **masked content container**, not on the overlay layer itself.
+- The spinner is `aria-hidden`: it is purely visual feedback, and the message (if any) is already conveyed via text.
+- **The message should be meaningful**: "Loading…" beats "loading"; a percentage progress ("76% loaded") is friendlier to screen-reader users — when the overlay's text changes, screen readers announce it (whether to add `aria-live` is decided by the UI layer).
+- **Full-screen overlays and focus**: with a fullscreen overlay the content can still be reached by Tab — if interaction must be blocked, the UI layer should intercept it on the overlay or add `inert` to the content area (see the inert mechanism of `shared/focus-trap`).
+
+## Usage examples
+
+```ts
+import { resolveLoadingTarget, ensurePositioned, isLoadingFullscreen, getLoadingClassNames } from '@lh-ui/share/core/loading'
+
+resolveLoadingTarget(undefined)              // document.body (fullscreen)
+resolveLoadingTarget('.table-wrapper')       // the matched element; on a miss → body
+resolveLoadingTarget(elRef)                  // returned as-is
+
+const el = resolveLoadingTarget(props.target)
+const restore = ensurePositioned(el).restore  // static → relative, recording the original value
+try {
+  // …render the overlay…
+} finally {
+  restore()                                   // restore position on unmount
+}
+
+isLoadingFullscreen(document.body)  // true
+isLoadingFullscreen(tableEl)        // false
+```
+
+```ts
+// Imperative service (UI layer): create / close / counting
+const instances = new Map<HTMLElement, { count: number; restore: () => void; el: HTMLElement }>()
+
+function showLoading(target: HTMLElement, text?: string) {
+  const hit = instances.get(target)
+  if (hit) { hit.count++; return }
+  const { restore } = ensurePositioned(target)
+  const mask = createMask(text, isLoadingFullscreen(target))
+  target.appendChild(mask)
+  instances.set(target, { count: 1, restore, el: mask })
+}
+
+function closeLoading(target: HTMLElement) {
+  const hit = instances.get(target)
+  if (!hit) return
+  hit.count--
+  if (hit.count > 0) return        // reference counting: multiple loadings only close one
+  hit.el.remove()
+  hit.restore()                    // restore position
+  instances.delete(target)
+}
+```
+
+```vue
+<!-- Vue3: v-loading directive -->
+<template>
+  <div class="table-wrapper" v-loading="loading">
+    <LhTable :data="rows" />
+  </div>
+</template>
+
+<script setup>
+// Directive implementation: on mounted, show/hide according to binding.value
+const loading = ref(false)
+async function refresh() {
+  loading.value = true
+  try { rows.value = await fetch() } finally { loading.value = false }
+}
+</script>
+```
+
+```tsx
+// React: useLoading hook (ref + useEffect to manage overlay mounting and restore)
+```
+
+```ts
+// uniapp: the overlay uses <view> + absolute; ensurePositioned is only effective on h5,
+// fixed/absolute behavior differs on the mini-program side, adapted by the UI layer per platform
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-loading` | overlay container (absolute, covering the target) |
+| `.lh-loading--fullscreen` | fullscreen (fixed + higher z-index) |
+| `.lh-loading--with-text` | with a message (icon + text stacked vertically) |
+| `.lh-loading__spinner` | spinner (`LhSpinner`) |
+| `.lh-loading__text` | message |
+
+Overlay background `--lh-mask-color` (semi-transparent, one set each for light and dark); text color `--lh-text-primary-regular`; z-index `--lh-z-index-loading`.
+
+## Caveats
+
+- **`restore()` must be called**: `ensurePositioned` changed the target element's inline position; not restoring it leaves a "relative" polluting the layout (especially where `position: static` was deliberate). Use try/finally to guarantee it.
+- **A missed selector silently becomes fullscreen**: `resolveLoadingTarget('.typo-selector')` falls back to body — when debugging "why does the overlay cover the whole screen", check the selector first.
+- **Reference counting**: multiple concurrent loadings on the same region (two requests fired at once) need counting; only when the last one finishes is the overlay closed. Core holds no state; the UI layer does the bookkeeping.
+- **`delay` against flicker**: a quickly completed request (under 200ms) makes the overlay flash by and look like a bug. The UI layer can use delay to postpone showing and cancel the show if the request finishes first.
+- **Nested overlays**: when region B sits inside masked region A, the z-index and pointer-events must be arranged by the UI layer so that B's overlay only covers B — core only computes the positioning of a single target.
+- **SSR guards**: `isLoadingFullscreen` and `ensurePositioned` both have `typeof document/window === 'undefined'` guards, but **a loading overlay is inherently a client-side concept**; under SSR the service layer should not be called.
+- **A fullscreen overlay does not block interaction**: by default it is only a visual mask and background buttons remain clickable (unless the overlay layer handles pointer-events). When forced blocking is needed, add `inert` in the UI layer.
+
+<FnPlayground module="loading" fn="getLoadingAria" params='{"busy": true}' />

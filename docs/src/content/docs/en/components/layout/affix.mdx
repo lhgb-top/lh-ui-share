@@ -1,0 +1,152 @@
+---
+title: affix — Layout
+description: 'isAffixFixed viewport out-of-bounds detection (dual top/bottom modes), getAffixFixedStyle positioning style, IntersectionObserver and getBoundingClientRect dual paths'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+When a page scrolls, some elements need to be "pinned": a top navigation bar, a bottom action bar, a sidebar table of contents. `affix` switches an element to fixed positioning when it scrolls out of the viewport and restores it when it scrolls back. The difficulty is not the switch itself but **when to detect it** and **using a placeholder to prevent collapse** — core only handles detection and styling; listening and the placeholder are the UI layer's responsibility.
+
+## When to use
+
+- Each framework implements `<LhAffix>`: pinning the page's top navigation, pinning the form's bottom action bar, pinning a long document's sidebar table of contents to the viewport.
+- Scenarios where an element needs to **stay visible while scrolling**.
+- **Don't use it**: short pages where the element is already inside the viewport (no pinning needed); scenarios needing a fullscreen mask (use `loading`'s fullscreen); a sidebar with an entirely fixed layout (plain CSS `position: sticky` is simpler — the value of affix lies in the conditional behavior of "only pinning once a scroll threshold is passed").
+
+## Import
+
+```ts
+import {
+  getAffixClassNames,
+  isAffixFixed,
+  getAffixFixedStyle,
+} from '@lh-ui/share/core/affix'
+import type { LhAffixState } from '@lh-ui/share/core/affix'
+```
+
+## Design intent
+
+**top and bottom are two mutually exclusive modes**: with `offsetTop > 0` it checks "whether the top edge has crossed the viewport's top threshold", and with `offsetBottom > 0` it checks "whether the bottom edge has crossed the viewport's bottom threshold". The two offsets cannot both be in effect — `isAffixFixed` uses `if (offsetBottom > 0)` to prefer the bottom mode. Semantically an element can only be pinned to one edge.
+
+**The bottom detection must account for the viewport height**: `rect.bottom > viewportHeight - offsetBottom` — the placeholder element's bottom edge must cross "viewport bottom minus threshold" to be considered fixed. This threshold is **dynamic** (viewportHeight changes with the window size), so the UI layer must pass the current viewport height in on every callback and cannot cache it.
+
+**Decoupling the detection function from the listening mechanism**: `isAffixFixed` takes a `{ top, bottom }` rectangle object and does not care where it came from — an IntersectionObserver callback takes the entry's boundingClientRect, or a resize/scroll event falls back to `getBoundingClientRect()`, and both paths share the same detection logic.
+
+**`getAffixFixedStyle`'s `top: 'auto'` / `bottom: 'auto'`**: when fixed, the other axis is explicitly set to auto, preventing the element from carrying both top and bottom at once (under fixed positioning, having both values stretches the element's height).
+
+**A fixed class name rather than directly changing styles**: `lh-affix--fixed` lets SCSS decide the details of fixed positioning (z-index, shadow, transition), while core's `getAffixFixedStyle` only computes the concrete pixel values of top/bottom — the positioning switch is separated from the offsets.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getAffixClassNames` | `(state: LhAffixState) => string[]` | class names | fixed state |
+| `isAffixFixed` | `(rect: { top, bottom }, offsetTop, offsetBottom, viewportHeight) => boolean` | whether fixed | viewport out-of-bounds detection |
+| `getAffixFixedStyle` | `(offsetTop, offsetBottom) => Record<string, string>` | inline style | fixed positioning offset |
+
+## Type definitions
+
+```ts
+export interface LhAffixState {
+  fixed: boolean    // whether it is currently in the fixed state (drives the class name)
+}
+```
+
+## Accessibility
+
+affix is purely visual positioning and **does not change content semantics**; there are no dedicated aria attributes. Two related practices:
+
+- **Do not change the DOM order in the fixed state**: after the element becomes fixed it stays at its original DOM position, and screen readers announce in source order. If you move it to the end of body for visual reasons (teleport), the announcement order jumps — an affix implementation should only change positioning, not the DOM.
+- **Visibility of the fixed element**: an element in the fixed state is always inside the viewport, and `aria-hidden` should not change with scrolling (it is always visible anyway).
+- **Focus-trap risk**: a pinned-bottom "save / submit" action bar is convenient in long forms, but note that a fixed element may cover the page's bottom content (the button permanently covers the last row) — the UI layer should reserve space with `padding-bottom` on the body or a content container. This is a layout issue rather than an accessibility one, but it affects operability.
+
+## Usage examples
+
+```ts
+import { isAffixFixed, getAffixFixedStyle } from '@lh-ui/share/core/affix'
+
+// top mode: the top edge crosses the 80px threshold
+isAffixFixed({ top: 50, bottom: 200 }, 80, 0, 900)   // false (fixed only when 50 < 80; 50 has not crossed)
+isAffixFixed({ top: 100, bottom: 300 }, 80, 0, 900)  // true (100 > 80)
+// note the detection direction: top < offsetTop is true — the element's top edge is **above** the threshold line (scrolled up)
+
+// bottom mode: the bottom edge crosses "viewport bottom - threshold"
+isAffixFixed({ top: 700, bottom: 950 }, 0, 60, 900)  // true (950 > 900-60=840)
+isAffixFixed({ top: 500, bottom: 700 }, 0, 60, 900)  // false (700 < 840, has not crossed yet)
+
+// both offsets passed: bottom takes priority
+isAffixFixed({ top: 100, bottom: 950 }, 80, 60, 900)  // true (the bottom branch is taken)
+```
+
+```ts
+getAffixFixedStyle(80, 0)   // { position: 'fixed', top: '80px', bottom: 'auto' }
+getAffixFixedStyle(0, 60)   // { position: 'fixed', bottom: '60px', top: 'auto' }
+getAffixFixedStyle(0, 0)    // { position: 'fixed', top: '0px', bottom: 'auto' } (default: pin to top)
+```
+
+```ts
+// UI layer: IntersectionObserver as the main path + a placeholder against collapse
+const placeholder = document.createElement('div')  // holds the original position while fixed, preventing subsequent content from jumping
+let observer: IntersectionObserver | undefined
+
+function observe() {
+  observer = new IntersectionObserver(
+    (entries) => {
+      const rect = entries[0].boundingClientRect
+      const fixed = isAffixFixed(
+        { top: rect.top, bottom: rect.bottom },
+        props.offsetTop ?? 0,
+        props.offsetBottom ?? 0,
+        window.innerHeight,
+      )
+      if (fixed !== state.fixed) {
+        state.fixed = fixed
+        if (fixed) targetEl.before(placeholder)   // placeholder
+        else placeholder.remove()                  // remove placeholder
+      }
+    },
+    { threshold: [0, 1] },
+  )
+  observer.observe(targetEl)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhAffix :offset-top="64">
+    <nav class="page-nav">…</nav>
+  </LhAffix>
+</template>
+```
+
+```tsx
+// React: register the IntersectionObserver in useEffect; skip it under SSR (no IntersectionObserver),
+// and mount it after client-side hydration
+```
+
+```ts
+// uniapp: IntersectionObserver on the mini-program side is wx.createIntersectionObserver;
+// on the h5 side use the browser's native API. core's detection function is shared by both
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-affix` | wrapper container (in place) |
+| `.lh-affix--fixed` | fixed state (position: fixed + z-index + optional shadow / transition) |
+
+z-index `--lh-z-index-affix`; the fixed-state shadow `--lh-box-shadow-affix` (optional — a thin shadow along the bottom when pinned to the top, distinguishing the layering).
+
+## Caveats
+
+- **The placeholder element is required**: once an element is fixed it leaves the document flow, and everything after it shifts up to fill the gap — the page jumps abruptly. The UI layer must place a same-size placeholder element (as in the example above). The placeholder's height must equal the element's height **before it became fixed**.
+- **The viewport height for bottom mode must be live**: the `viewportHeight` parameter of `isAffixFixed` should pass the current value on every call, and when the window resizes the detection must re-run (the affix state may flip from fixed back to unfixed).
+- **Choose one of `offsetTop` / `offsetBottom`**: when both are passed, bottom takes priority and the top threshold is void. Although the API allows passing both, semantically only one should be configured.
+- **Width collapse in the fixed state**: once fixed, the element's width is no longer constrained by its parent (a block element with fixed shrinks to its content width). The SCSS side usually records and reuses the original width inside `--fixed`, or the UI layer writes the width into the inline style.
+- **Nested scroll containers**: when the page has a locally scrolling container (not window scrolling), the IntersectionObserver's root must be set to that container — and the viewport-height parameter for `isAffixFixed` must be swapped for the container's clientHeight. core does not distinguish; the caller guarantees consistency.
+- **IntersectionObserver compatibility**: all target platforms already support it; to support very old environments, fall back to the scroll event + `getBoundingClientRect()` (the detection function can be reused directly, since it only takes a rectangle object).
+- **Choosing between affix and sticky**: CSS `position: sticky` covers most "pin to top" needs with zero JS. The extra value of affix is the **controllable threshold** (it pins only after crossing 64px rather than when flush with the edge) and the **bottom mode** (sticky can only stick to the near edge in the scroll direction). Don't reach for affix for simple cases.
+
+<FnPlayground module="affix" fn="isAffixFixed" params='{"rect": {"top": 100, "bottom": 300}, "offsetTop": 80, "offsetBottom": 0, "viewportHeight": 900}' />

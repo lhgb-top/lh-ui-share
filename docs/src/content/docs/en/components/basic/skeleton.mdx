@@ -1,0 +1,152 @@
+---
+title: skeleton — Skeleton
+description: 'getSkeletonRowWidths generates a width sequence with a shortened last row, getSkeletonAria hides the placeholder and requires the UI layer to add aria-busy'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A skeleton is the placeholder "before loading completes": gray blocks simulate the layout that is about to appear, giving the user an expectation of "what they will see in a moment". `core/skeleton` computes the width sequence of text lines (with the last row shortened, like a real paragraph) and prepares the accessibility signal that "this is a placeholder, not content".
+
+## When to use
+
+- Each platform implements `LhSkeleton`: card loading, list loading, article loading.
+- Whenever a region needs to express "loading" visually, a skeleton "fits the future layout" better than a loading spinner.
+- **Do not use it for**: scenarios with extremely short load times (under 300ms) — a flashing skeleton is instead disruptive; and do not use it for "no data" — that is `LhEmpty`.
+
+## Import
+
+```ts
+import {
+  getSkeletonClassNames,
+  getSkeletonItemClassNames,
+  getSkeletonRowWidths,
+  getSkeletonAria,
+} from '@lh-ui/share/core/skeleton'
+import type { LhSkeletonState, LhSkeletonVariant } from '@lh-ui/share/core/skeleton'
+```
+
+## Design intent
+
+The `60%` last row of `getSkeletonRowWidths(rows)` is a small but important design detail: the last line of a real text paragraph is almost never full. An evenly-wide skeleton looks like "striped wallpaper" rather than "text", and this 60% gives the placeholder a "textual feel".
+
+The last row is shortened only when `rows > 1`: with a single row it is just a complete row (shortening a single row instead looks like a truncated title). `rows <= 0` returns an empty array instead of throwing.
+
+`getSkeletonAria()` always returns `{ 'aria-hidden': true }` — skeleton content has zero information value, and screen readers should not announce it. But **hiding alone is not enough**: the source comments require the UI layer to also attach `aria-busy="true"` to the outer container, so that when the data is ready the screen reader re-announces the real content. These two attributes are a pair: `aria-hidden` removes the noise, `aria-busy` marks "read again later".
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getSkeletonClassNames` | `(state: LhSkeletonState) => string[]` | class name array | animation, with-avatar modifiers |
+| `getSkeletonItemClassNames` | `(variant: LhSkeletonVariant, animated: boolean) => string[]` | class name array | placeholder block shape and animation |
+| `getSkeletonRowWidths` | `(rows: number) => string[]` | width sequence | generates text row widths |
+| `getSkeletonAria` | `() => LhAriaAttrs` | aria attribute bundle | always `{ 'aria-hidden': true }` |
+
+Output example:
+
+```ts
+getSkeletonRowWidths(3)   // ['100%', '100%', '60%']
+getSkeletonRowWidths(1)   // ['100%']
+getSkeletonRowWidths(0)   // []
+getSkeletonItemClassNames('text', true)
+// ['lh-skeleton-item', 'lh-skeleton-item--text', 'lh-skeleton-item--animated']
+```
+
+## Type definitions
+
+```ts
+export type LhSkeletonVariant = 'text' | 'rect' | 'circle'
+
+export interface LhSkeletonState {
+  animated: boolean
+  avatar: boolean
+}
+```
+
+## Accessibility
+
+```ts
+// The UI layer's outer container
+const aria = { 'aria-busy': true }   // marks "content is loading, please re-read when ready"
+// The skeleton element itself
+const skeletonAria = getSkeletonAria()  // { 'aria-hidden': true }
+```
+
+A common mistake is doing only one of the two: only `aria-hidden` means screen reader users miss the new content once data is ready (they think they already read it); only `aria-busy` means the screen reader tries to announce the skeleton's blank content.
+
+## Usage examples
+
+```ts
+import { getSkeletonRowWidths, getSkeletonItemClassNames } from '@lh-ui/share/core/skeleton'
+
+getSkeletonRowWidths(4)
+// ['100%', '100%', '100%', '60%']
+
+getSkeletonItemClassNames('circle', false)
+// ['lh-skeleton-item', 'lh-skeleton-item--circle']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSkeletonClassNames({ animated, avatar })" aria-busy="true">
+  <div v-if="avatar" class="lh-skeleton__avatar">
+    <div :class="getSkeletonItemClassNames('circle', animated)" />
+  </div>
+  <div class="lh-skeleton__content">
+    <div
+      v-for="(w, i) in getSkeletonRowWidths(rows)"
+      :key="i"
+      :class="getSkeletonItemClassNames('text', animated)"
+      :style="{ width: w }"
+      v-bind="getSkeletonAria()"
+    />
+  </div>
+</div>
+```
+
+```tsx
+// React
+const widths = getSkeletonRowWidths(rows)
+return (
+  <div className={getSkeletonClassNames({ animated, avatar }).join(' ')} aria-busy={true}>
+    <div className="lh-skeleton__content">
+      {widths.map((w, i) => (
+        <div
+          key={i}
+          className={getSkeletonItemClassNames('text', animated).join(' ')}
+          style={{ width: w }}
+          {...getSkeletonAria()}
+        />
+      ))}
+    </div>
+  </div>
+)
+```
+
+```ts
+// uniapp: animations may not be smooth on non-h5 platforms; each platform's UI layer may
+// disable animated as a platform downgrade
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-skeleton` | base class: layout |
+| `.lh-skeleton--animated` | enables the shimmer sweep animation |
+| `.lh-skeleton--with-avatar` | combined avatar + text layout (space reserved on the left for the avatar) |
+| `.lh-skeleton-item` | a single placeholder block |
+| `.lh-skeleton-item--{text\|rect\|circle}` | shape: text row / rectangle / circle |
+| `.lh-skeleton-item--animated` | shimmer animation |
+| `.lh-skeleton__avatar` / `.lh-skeleton__content` | avatar area and content area |
+
+Placeholder block colors use the `--lh-skeleton-*` tokens (a gray slightly deeper than the background + the shimmer highlight), and are automatically darkened in dark mode.
+
+## Notes
+
+- A `rows` value of 0 or a negative number returns an empty array and the UI layer renders no rows — this is legal input, not an error.
+- The skeleton's **layout should match the real content** (the same card structure, the same number of rows), otherwise there will be layout shift when loading completes. Using `LhCard`'s `loading` state is less work than placing a skeleton separately.
+- The shimmer animation is a vestibular trigger for some users; the responsibility for respecting `prefers-reduced-motion` lies with the style layer (disabling the animation inside `@media`), and the core layer is not aware of it.
+- `aria-busy` should be attached to the **data container**, not the skeleton itself — once the skeleton is destroyed, `aria-busy` must be removed along with it.
+
+<FnPlayground module="skeleton" fn="getSkeletonRowWidths" params='{"rows": 3}' />

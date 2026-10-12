@@ -1,0 +1,114 @@
+---
+title: spinner — Spinner
+description: 'LH_SPINNER_SIZE_PX maps sizes to diameters, getSpinnerClassNames outputs size modifier classes'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`spinner` is a pure "spinning graphic" — it is not a loading overlay (that is `LhLoading`), not a skeleton (that is `LhSkeleton`), but a reusable **spinning element**: the loading icon inside a button, the loading icon in a message toast, the spinner in a card's loading corner — all of these are it.
+
+## When to use
+
+- Each platform implements `LhSpinner`, and anywhere a component needs a spinning graphic internally (button loading, message loading, etc.).
+- **Do not use it for**: full-screen loading or region loading. That is the responsibility of `LhLoading` (`spinner` is only a part of it).
+
+## Import
+
+```ts
+import { getSpinnerClassNames } from '@lh-ui/share/core/spinner'
+import { LH_SPINNER_SIZE_PX, LH_SPINNER_SIZE_CONST } from '@lh-ui/share/core/spinner'
+import type { LhSpinnerSize } from '@lh-ui/share/core/spinner'
+```
+
+## Design intent
+
+The spinner's size system is aligned with the global size scale (`LH_SPINNER_SIZE_CONST` directly expands `LH_SIZE_CONST`), but the **pixel mapping is independent** — the component's "medium" is 24px, while a button's medium height is 37px; a graphic and its container need not be the same size. This independence lives in constants rather than being scattered as magic numbers.
+
+`LH_SPINNER_SIZE_PX` is the single source of truth; the UI layer reads it to set the SVG/element width/height instead of writing `size === 'small' ? 16 : 24` itself.
+
+## Function and constant table
+
+| Export | Signature / value | Purpose |
+| --- | --- | --- |
+| `getSpinnerClassNames` | `(state: { size: LhSpinnerSize }) => string[]` | class name array |
+| `LH_SPINNER_SIZE_CONST` | `{ small: 'small', medium: 'medium', large: 'large', mini: 'mini', 'x-large': 'x-large' }` | size enum (aligned with `LH_SIZE_CONST`) |
+| `LH_SPINNER_SIZE_PX` | `{ mini: 12, small: 16, medium: 24, large: 32, 'x-large': 40 }` | size → diameter in px |
+
+```ts
+getSpinnerClassNames({ size: 'small' })  // ['lh-spinner', 'lh-spinner--small']
+LH_SPINNER_SIZE_PX['large']              // 32
+```
+
+## Type definitions
+
+```ts
+export type LhSpinnerSize =
+  (typeof LH_SPINNER_SIZE_CONST)[keyof typeof LH_SPINNER_SIZE_CONST]
+// 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+```
+
+## Accessibility
+
+`core/spinner` does not provide an aria attribute bundle. The accessibility handling of a spinning graphic depends on **where it appears**:
+
+- **Spinner inside a button**: the button gets `aria-busy="true"`, and the spinner itself is `aria-hidden`.
+- **Spinner inside a message toast**: the message's live-region role already conveys "processing is underway", so the spinner is decorative.
+- **Standalone "loading" display**: it must be paired with readable text (such as "Loading…"); a pure graphic conveys no information to screen reader users.
+
+General principle: **the spinning graphic itself should always be `aria-hidden`**; the information is carried by the surrounding semantics (aria-busy, role, text).
+
+## Usage examples
+
+```ts
+import { getSpinnerClassNames, LH_SPINNER_SIZE_PX } from '@lh-ui/share/core/spinner'
+
+getSpinnerClassNames({ size: 'medium' })  // ['lh-spinner', 'lh-spinner--medium']
+LH_SPINNER_SIZE_PX['medium']              // 24
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="getSpinnerClassNames({ size })"
+  :width="px" :height="px"
+  viewBox="0 0 50 50"
+  aria-hidden="true"
+>
+  <circle class="lh-spinner__circle" cx="25" cy="25" r="20" fill="none" />
+</svg>
+```
+
+```tsx
+// React
+const px = LH_SPINNER_SIZE_PX[size]
+return (
+  <svg className={getSpinnerClassNames({ size }).join(' ')} width={px} height={px} viewBox="0 0 50 50" aria-hidden="true">
+    <circle className="lh-spinner__circle" cx="25" cy="25" r="20" fill="none" />
+  </svg>
+)
+```
+
+```ts
+// uniapp: non-h5 platforms have poor svg animation support, so it is usually swapped for a CSS
+// border rotation approach or a GIF; the diameter values from LH_SPINNER_SIZE_PX still apply
+// (as the width/height of the border approach)
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-spinner` | base class: spin animation (`animation: lh-spinner-rotate`) |
+| `.lh-spinner--{mini\|small\|medium\|large\|x-large}` | size scale (sets width and height) |
+| `.lh-spinner__circle` | SVG circle: partial arc stroke + `stroke-linecap: round` |
+
+The stroke color defaults to `currentColor` (inheriting the parent's text color); the rotation speed is defined in the style layer, and is paused by a CSS media query under `prefers-reduced-motion`.
+
+## Notes
+
+- **Size inconsistency**: `LH_SPINNER_SIZE_PX` small is 16px, while the icon's small is 14px (see [icon](/components/basic/icon)) — this is a known scale inconsistency, recorded under the "control height tokens" initiative to be unified in a later changeset; for now, just use the constant table directly instead of converting yourself.
+- `getSpinnerClassNames` does not validate the legality of `size` (the type guarantees it); passing an out-of-range value produces an unstyled dirty class.
+- The SVG circle's stroke arc (`stroke-dasharray`) is hardcoded in the style layer to about a 75% arc; to change the arc, change the styles, not core.
+- The rotation animation is CSS keyframes; respecting `prefers-reduced-motion` is handled in the style layer.
+
+<FnPlayground module="spinner" fn="getSpinnerClassNames" params='{"state": {"size": "medium"}}' />

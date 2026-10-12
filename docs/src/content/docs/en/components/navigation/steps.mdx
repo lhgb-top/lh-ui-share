@@ -1,0 +1,171 @@
+---
+title: 'steps — Steps'
+description: 'getStepStatus forced override, the last item handled by the structural :last-child (SSR-safe), getStepsLineLastIndices end-of-row detection for horizontal wrapping'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A steps bar is "the progress indicator for a flow": the shopping cart's "Cart → Fill in info → Pay → Done", wizard-style forms. The difference from `tabs` is **sequential semantics** — steps have an order, and the status is derived from position (finished / in progress / pending). What `core/steps` manages is state derivation and a layout detail that is very easy to get wrong: **when a horizontal steps bar wraps, the connector at the end of each row must be hidden**.
+
+## When to use
+
+- Each framework implements `<LhSteps>` / `<LhStep>`: order flows, wizard forms, task progress, multi-step setup.
+- The flow has **a clear order** and the user needs to know "how far along it is".
+- **Do not use it for**: switching between peer content (use `tabs` — no sequential semantics); a simple progress percentage (use `progress`); hierarchical navigation (use `menu` or `breadcrumb`).
+
+## Import
+
+```ts
+import {
+  getStepStatus,
+  getStepsClassNames,
+  getStepClassNames,
+  getStepsLineLastIndices,
+  getStepAria,
+} from '@lh-ui/share/core/steps'
+import type {
+  LhStepStatus, LhStepsDirection, LhStepStatusState, LhStepClassState,
+} from '@lh-ui/share/core/steps'
+```
+
+## Design intent
+
+**Status is derived from position**: the core rule of `getStepStatus` is `index < current → finish`, `=== → process`, `> → wait`. Most scenarios only need `current` to be passed and the status is computed automatically — the UI layer does not have to declare a status explicitly for each step.
+
+**`forced` is a blanket override**: a Steps-level forced status (like `error`) makes **all steps** take that status. This is the semantics of "the whole flow failed": when a payment fails, it is not that one step failed but that the entire flow cannot continue. Note that it has the highest priority (it returns before the position derivation).
+
+**The last item outputs no class name; it is left to `:last-child`**: this is the most subtle design in this module. The comment gives the reason: child items render during their own setup phase, at which point **the following siblings have not registered yet**, so an isLast computed from the registration total would make every item be misjudged as the last one on the first screen (including SSR/SSG). The structural `:last-child` selector is only evaluated at CSS render time, so it is naturally correct — the price being that the connector styles must be implemented with a structural pseudo-class.
+
+**`getStepsLineLastIndices` solves the wrapping problem**: after a horizontal steps bar wraps at a fixed width, the connector of **the last item of each row** points into the row-end blank space (the start of the next row), a visual break. This function finds the wrap points by the `offsetTop` difference between adjacent items: `offsetTops[i+1] > offsetTops[i]` means i+1 moved to the next row, so i is the end of the row. The UI layer adds a `line-last` class to the end-of-row items (including the global last item) based on this to hide the connector.
+
+**`lineLast` and `isLast` are two different things**: `isLast` (the global last item) is handled by `:last-child`; `lineLast` (an end-of-row item) is **measured**, requiring the UI layer to read offsetTop after rendering and fill it back in — only needed in the horizontal wrapping scenario.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getStepStatus` | `(state: LhStepStatusState) => LhStepStatus` | status | forced override / position-derived |
+| `getStepsClassNames` | `(direction: LhStepsDirection) => string[]` | class names | direction |
+| `getStepClassNames` | `(state: LhStepClassState) => string[]` | class names | status + clickable + end of row |
+| `getStepsLineLastIndices` | `(offsetTops: number[]) => number[]` | end-of-row indices | horizontal wrap detection |
+| `getStepAria` | `(status: LhStepStatus) => LhAriaAttrs` | aria bag | aria-current="step" |
+
+## Type definitions
+
+```ts
+export type LhStepStatus = 'wait' | 'process' | 'finish' | 'error'
+export type LhStepsDirection = 'horizontal' | 'vertical'
+
+export interface LhStepStatusState {
+  index: number       // step index (0-based)
+  current: number     // current step index
+  forced?: LhStepStatus  // Steps-level blanket override status
+}
+
+export interface LhStepClassState {
+  status: LhStepStatus
+  clickable: boolean
+  lineLast?: boolean  // whether this is the last item of the current row (measured by the UI layer when wrapping horizontally)
+}
+```
+
+## Accessibility
+
+```ts
+getStepAria('process')  // { 'aria-current': 'step' }
+getStepAria('finish')   // {}
+getStepAria('error')    // {}
+```
+
+- **aria-current="step" marks the current step**: this is the dedicated WAI-ARIA semantics, and screen readers announce "current step" — more standard than an "in progress" text hint. It is only output for the process status.
+- **Ordered list semantics**: a steps bar is recommended to be rendered with `<ol>` — the sequential semantics are built in, and screen readers announce "item 2 of 4". If implemented with `<div>`, you must add `role="list"` and each item `role="listitem"`.
+- **Convey status with text, not just color**: the check mark of finish, the number of process, the grey of wait — colorblind users cannot distinguish them. Each step's title text ("Fill in information") + icon combination is what makes it complete.
+- **Announcing the error step**: the error state should use `aria-invalid` in the UI layer or append "(failed)" text after the step title; a red icon alone is not enough to convey it.
+- **Button semantics for clickable steps**: with `clickable: true`, the step title should be rendered as a `<button>` (allowing jumps back to finished steps), reachable by keyboard; when not clickable, it is plain text.
+
+## Usage examples
+
+```ts
+import { getStepStatus, getStepsLineLastIndices } from '@lh-ui/share/core/steps'
+
+getStepStatus({ index: 0, current: 2 })  // 'finish'
+getStepStatus({ index: 2, current: 2 })  // 'process'
+getStepStatus({ index: 3, current: 2 })  // 'wait'
+getStepStatus({ index: 0, current: 2, forced: 'error' })  // 'error' (forced overrides everything)
+getStepStatus({ index: 2, current: 2, forced: 'wait' })   // 'wait'
+
+// Horizontal wrapping (2 items per row, 4 items wrapping into 2 rows):
+getStepsLineLastIndices([10, 10, 60, 60])  // [1, 3] (index 2 has a larger offsetTop → 1 is the end of the row; 3 is the global last item)
+getStepsLineLastIndices([10, 10, 10])      // [2] (no wrapping, only the global last item)
+getStepsLineLastIndices([])                // []
+```
+
+```ts
+// UI layer: measure offsetTop after rendering and fill in the lineLast class (only needed horizontally)
+const items = ref<HTMLElement[]>([])
+const lineLastSet = ref<Set<number>>(new Set())
+
+onMounted(() => {
+  const offsetTops = items.value.map((el) => el.offsetTop)
+  lineLastSet.value = new Set(getStepsLineLastIndices(offsetTops))
+})
+// Listen for window resize: the wrap points change with the width
+```
+
+```vue
+<!-- Vue3: order flow -->
+<template>
+  <LhSteps :current="1">
+    <LhStep title="Shopping cart" description="3 items selected" />
+    <LhStep title="Fill in information" description="Shipping address and invoice" />
+    <LhStep title="Payment" />
+    <LhStep title="Done" />
+  </LhSteps>
+</template>
+```
+
+```vue
+<!-- Whole-flow failure (the entire flow turns red when a payment fails) -->
+<template>
+  <LhSteps :current="2" status="error">
+    <LhStep title="Shopping cart" /><LhStep title="Fill in information" />
+    <LhStep title="Payment" description="Payment timed out, please retry" />
+    <LhStep title="Done" />
+  </LhSteps>
+</template>
+```
+
+```tsx
+// React: useLayoutEffect to measure offsetTop (to avoid a first-frame flicker), plus a resize listener to recompute
+```
+
+```ts
+// uniapp: <view> + flex; horizontal wrapping uses createSelectorQuery node queries to get top on the mini-program side
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-steps` | root container (flex) |
+| `.lh-steps--{horizontal\|vertical}` | direction |
+| `.lh-steps__item` | step item |
+| `.lh-steps__item--{wait\|process\|finish\|error}` | status (circle color + text color + connector color) |
+| `.lh-steps__item--clickable` | clickable (hover highlight + pointer) |
+| `.lh-steps__item--line-last` | end-of-row item (hides the connector pointing into the row-end blank) |
+| `.lh-steps__circle` / `__title` / `__description` | circle / title / description |
+| `.lh-steps__line` | connector (the global last item's line is hidden via `:last-child`) |
+
+Status colors: wait `--lh-text-placeholder`, process `--lh-primary-color`, finish `--lh-success-color`, error `--lh-danger-color`; the connector usually uses `--lh-border-color`, and the finished segments use the finish color.
+
+## Caveats
+
+- **`lineLast` is only needed in the horizontal wrapping scenario**: in a vertical steps bar each item occupies its own row and the connectors go straight down, so there is no end-of-row problem. A fixed-width horizontal steps bar (that does not wrap) does not need it either — only when the width is fixed **and** wrapping is allowed do you measure.
+- **Timing of the measurement**: `offsetTop` must be read after the DOM renders (onMounted / useLayoutEffect), and recomputed on window resize. The first frame may flicker (the connector shows then hides), which is acceptable; for strict scenarios, delay showing with `visibility`.
+- **`forced` is a blanket override, not per-step**: when the `status` prop is error, **all steps** become error, including the finished ones — this is the "the whole flow failed" semantics. To mark only one step as failed, pass a status to that LhStep individually (the UI layer merges the per-step status into a per-step version of forced, or directly overrides that item's class names).
+- **`current` may be out of range**: with `current: 5` and only 4 steps, everything is finish (all indexes < 5) — used for the terminal state display of "the flow is complete", with no special-casing needed.
+- **The last-item pitfall under SSR/SSG**: this is why `getStepClassNames` takes no isLast parameter. Any implementation that computes the last item from "the registration total" during setup will misjudge all items on the first screen — use `:last-child`.
+- **The business constraint on clickable jumps**: `clickable` is usually only enabled for **finished** steps (to review information); in-progress and pending steps are not jumpable. Whether jumping to an arbitrary step is allowed is a business decision; core only provides the class name.
+- **Room for the description**: a horizontal steps bar with descriptions is taller, and the row height of a wrapped row is determined by the tallest item — make sure all items are fully rendered before measuring offsetTop.
+
+<FnPlayground module="steps" fn="getStepStatus" params='{"index": 2, "current": 2}' />

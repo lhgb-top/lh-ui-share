@@ -1,0 +1,155 @@
+---
+title: select — Select
+description: 'findSelectOption exact match, getSelectOptionId deterministic ids, combobox/listbox/option three-layer accessibility attribute bags'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A select is the most minimal implementation of the "trigger + floating list" pattern. `core/select` handles option lookup, deterministic option id generation, and the three-layer accessibility attribute bags of the APG combobox pattern. **Positioning computation is not here** — the floating layer's coordinates are the job of `core/shared/popper` (see [popper](/core/popper)).
+
+## When to use
+
+- Each port implements `LhSelect`.
+- Single-selection scenarios; for multi-select use a cascader or checkbox-group.
+- **Should not use it**: when options need a tree hierarchy (use `cascader`), or when there are hundreds of options (consider `virtual-list` virtualization).
+
+## Import
+
+```ts
+import {
+  findSelectOption,
+  getNextEnabledIndex,
+  getSelectOptionId,
+  getSelectTriggerAria,
+  getSelectListboxAria,
+  getSelectOptionAria,
+} from '@lh-ui/share/core/select'
+import type { LhSelectOption, LhSelectState } from '@lh-ui/share/core/select'
+```
+
+## Design intent
+
+The "deterministic" nature of `getSelectOptionId(listboxId, index)` is a prerequisite for the APG combobox pattern to work: the trigger references the currently highlighted item via `aria-activedescendant`, and both sides must point to **the same DOM id**. Rather than letting the UI layer generate ids ad hoc and then figure out how to keep them in sync, the core layer prescribes `${listboxId}-option-${index}`, and both sides read by that rule.
+
+Its guards are equally important: when `listboxId` is empty, index is not an integer, or `index < 0` (-1 means no highlight), it returns **undefined** — undefined attributes are ignored by the framework's v-bind, so no `aria-activedescendant` pointing to a nonexistent element is produced.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `findSelectOption` | `(options: LhSelectOption[], value: unknown) => LhSelectOption \| undefined` | option | exact value match using `Object.is` |
+| `getNextEnabledIndex` | `(options: LhSelectOption[], currentIndex: number, direction: 1 \| -1) => number` | index | **@deprecated**, forwards to `shared/keyboard.getNextListIndex` |
+| `getSelectOptionId` | `(listboxId: string \| undefined, index: number) => string \| undefined` | id | deterministic concatenation; invalid input returns undefined |
+| `getSelectTriggerAria` | `(options: { visible: boolean; listboxId?: string; highlightedIndex: number }) => LhAriaAttrs` | aria attribute bag | combobox trigger |
+| `getSelectListboxAria` | `(id?: string) => LhAriaAttrs` | aria attribute bag | listbox container |
+| `getSelectOptionAria` | `(options: { listboxId?: string; index: number; selected: boolean; disabled?: boolean }) => LhAriaAttrs` | aria attribute bag | single option |
+
+## Type definitions
+
+```ts
+export interface LhSelectOption {
+  label: string
+  value: unknown
+  disabled?: boolean
+}
+
+export interface LhSelectState {
+  options: LhSelectOption[]
+  highlightedIndex: number
+}
+```
+
+## Accessibility
+
+Three layers of attribute bags form the complete combobox pattern:
+
+```ts
+// Trigger: aria-haspopup="listbox" + aria-expanded + aria-controls
+getSelectTriggerAria({ visible: true, listboxId: 'my-listbox', highlightedIndex: 2 })
+// { role: 'combobox', 'aria-expanded': true, 'aria-controls': 'my-listbox',
+//   'aria-haspopup': 'listbox', 'aria-activedescendant': 'my-listbox-option-2' }
+
+// Floating layer: role="listbox" + id (corresponding to the trigger's aria-controls)
+getSelectListboxAria('my-listbox')  // { role: 'listbox', id: 'my-listbox' }
+
+// Option: role="option" + id + aria-selected
+getSelectOptionAria({ listboxId: 'my-listbox', index: 2, selected: true })
+// { role: 'option', id: 'my-listbox-option-2', 'aria-selected': true }
+```
+
+A complete keyboard loop (implemented by the UI layer; core provides the algorithms): ArrowDown/Up move `highlightedIndex` (using `shared/keyboard.getNextListIndex`, cycling at the ends and skipping disabled items), Enter selects, Esc closes. **The visual highlight must share the same source as `highlightedIndex`**, otherwise "aria points at A while the eyes see B" occurs.
+
+## Usage examples
+
+```ts
+import { findSelectOption, getSelectOptionId, getSelectTriggerAria } from '@lh-ui/share/core/select'
+
+const options = [
+  { label: 'Blue-white porcelain', value: 'cerblue' },
+  { label: 'Ink wash', value: 'shuimo', disabled: true },
+]
+findSelectOption(options, 'cerblue')   // { label: 'Blue-white porcelain', value: 'cerblue' }
+findSelectOption(options, 'nope')      // undefined
+getSelectOptionId('lb', 0)             // 'lb-option-0'
+getSelectOptionId('lb', -1)            // undefined (no highlight)
+getSelectOptionId(undefined, 0)        // undefined
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-select', `lh-select--${size}`, { 'lh-select--open': visible, 'lh-select--disabled': disabled }]">
+  <button
+    class="lh-select__trigger"
+    v-bind="getSelectTriggerAria({ visible, listboxId, highlightedIndex })"
+    @click="toggle"
+  >
+    <span class="lh-select__value" :class="{ 'lh-select__value--placeholder': !selected }">
+      {{ selected ? selected.label : placeholder }}
+    </span>
+    <LhIcon class="lh-select__arrow" name="more" :size="12" />
+  </button>
+  <div v-if="visible" :id="listboxId" class="lh-select__dropdown" v-bind="getSelectListboxAria(listboxId)">
+    <div
+      v-for="(opt, i) in options"
+      :key="i"
+      class="lh-select__option"
+      :class="{ 'lh-select__option--highlighted': i === highlightedIndex, 'lh-select__option--selected': i === selectedIdx, 'lh-select__option--disabled': opt.disabled }"
+      v-bind="getSelectOptionAria({ listboxId, index: i, selected: i === selectedIdx, disabled: opt.disabled })"
+      @click="choose(opt)"
+    >{{ opt.label }}</div>
+  </div>
+</div>
+```
+
+```tsx
+// React: visible state + useRef holding listboxId (use useId to generate a stable id)
+```
+
+```ts
+// uniapp: the floating layer is an absolutely positioned view; aria-activedescendant is
+// unsupported on non-h5 targets, so keyboard navigation degrades to just moving focus
+// (the focused item), and screen readers rely on focus events to announce
+```
+
+## Styles and tokens
+
+| Class | Semantics |
+| --- | --- |
+| `.lh-select` | Base class |
+| `.lh-select--{small\|large}` / `--disabled` / `--open` | State modifiers |
+| `.lh-select__trigger` | Trigger button |
+| `.lh-select__value` / `--placeholder` | Displayed value / placeholder state |
+| `.lh-select__arrow` / `__clear` / `__actions` | Arrow / clear / actions area |
+| `.lh-select__dropdown` / `--teleported` | Floating layer (teleported means transported to body) |
+| `.lh-select__option` / `--highlighted` / `--selected` / `--disabled` | The four option states |
+| `.lh-select__empty` | No-options placeholder |
+| `.lh-select-fade-*` | Floating layer enter/leave transitions (Vue3 class names; the Vue2 port aligns via mixins) |
+
+## Caveats
+
+- **`Object.is` instead of `===`**: `findSelectOption` uses `Object.is`, correctly handling edge cases like `NaN` and `-0` (though real option values rarely use them).
+- **`getNextEnabledIndex` is deprecated**: the implementation has converged on `shared/keyboard.getNextListIndex`; this function only forwards to it, keeping the old signature alive. New code should import the kernel directly.
+- **id stability**: `listboxId` must not change over the component's lifetime (otherwise `aria-activedescendant` points at a stale id); use each port's stable id generation.
+- **Teleport**: when the floating layer is transported to body, `aria-controls` still works (same document), but **focus management** needs care — after clicking an option, focus should return to the trigger.
+
+<FnPlayground module="select" fn="findSelectOption" params='{"options": [{"label": "Blue-white porcelain", "value": "cerblue"}, {"label": "Ink wash", "value": "shuimo"}], "value": "cerblue"}' />

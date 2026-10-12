@@ -1,0 +1,176 @@
+---
+title: Dark Mode
+description: 'The data-theme=dark switching mechanism, the compile-time baking trap, and the dark-accessibility gate in verify:styles item 7'
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+All lh-ui components **support light and dark by default**. This is not a theme bolted on after the fact — it is a design premise of the token system.
+
+## Switching mechanism
+
+The dark switch is a CSS selector, not JS:
+
+```scss
+// styles/theme/common/var-dark.scss
+[data-theme='dark'],
+.dark {
+  --lh-bg-color: #14141F;
+  --lh-text-primary: rgba(255, 255, 255, 0.85);
+  // ... 118 overrides
+}
+```
+
+Two ways to trigger it:
+
+```html
+<!-- Option 1: data attribute (recommended, clear semantics) -->
+<html data-theme="dark">
+
+<!-- Option 2: class (compatible with legacy code / third-party toggle libraries) -->
+<body class="dark">
+```
+
+The UI layer (each library's ConfigProvider or business code) only has to toggle this attribute / class, and **all components change color immediately** — CSS variables are evaluated at runtime, with no re-render cost.
+
+```ts
+function toggleDark(isDark: boolean) {
+  document.documentElement.dataset.theme = isDark ? 'dark' : 'light'
+}
+```
+
+## Dark mode is an override layer
+
+The dark file only writes **118 entries**, not a full set of 185. It overrides only the tokens that need to flip; the rest keep their light values.
+
+The design principle is **re-pointing semantic tokens, not rewriting per component**:
+
+```scss
+// ✅ Good: in dark mode, point at the dark semantic token
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);
+  --lh-table-cell-color: var(--lh-text-primary);
+}
+
+// ❌ Bad: hardcode a concrete color in the dark block
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: rgba(255, 255, 255, 0.85);   // decoupled from text-primary; future palette tweaks need two edits
+}
+```
+
+## The compile-time baking trap
+
+This is the **easiest pit to fall into** with dark mode, and the reason `verify:styles` item 7 exists.
+
+### How the trap works
+
+Tokens in `var.scss` whose value looks like `#{$lh-foo}`:
+
+```scss
+// var.scss
+:root {
+  --lh-menu-item-color: #{$lh-menu-item-color};   // the SCSS variable is replaced with a concrete light value at compile time
+}
+```
+
+The SCSS variable is **baked into its literal value at compile time**, equivalent to:
+
+```scss
+:root {
+  --lh-menu-item-color: rgba(0, 0, 0, 0.88);   // does not flip automatically in dark mode!
+}
+```
+
+The result: in dark mode the text of menus / tables / timelines keeps its light value — **black text on a black background, invisible**. Gaps like this actually happened; the fix is recorded in the 0.4.0 changeset.
+
+### The fix
+
+Explicitly re-point to the dark semantic token in `var-dark.scss`:
+
+```scss
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);
+}
+```
+
+### Chained fallbacks are evaluated at runtime, and are safe
+
+Chained fallbacks in component SCSS:
+
+```scss
+.lh-button {
+  color: var(--lh-foo, var(--lh-bar, #333));
+}
+```
+
+The `var()` fallback is **evaluated at runtime**: as long as any token in the chain has a dark override, the whole chain flips with it. **No duplicate declaration needed**.
+
+Comparison table:
+
+| Form | Evaluation time | Dark behavior |
+| --- | --- | --- |
+| `var(--lh-foo, fallback)` | Runtime | ✅ Flips if any token in the chain has a dark override |
+| `#{$lh-foo}` (SCSS interpolation) | Compile time | ❌ Baked as a light value; needs explicit re-pointing in var-dark |
+| SCSS functions like `mix($lh-a, $lh-b)` | Compile time | ❌ Same as above |
+
+## Dark lightening of dark-primary presets
+
+Of the five built-in presets, the dark-primary ones (cerblue porcelain / zhusha red / ink wash) have a primary that "sinks into" the page background in dark mode. `buildPresetDarkVars` handles this automatically:
+
+The rule: if `--lh-primary-color` has a contrast ratio below 3 (`DARK_PRIMARY_CONTRAST_THRESHOLD`) against the dark page background `#1A1A2E` (`DARK_PAGE_BG`), it is treated as a dark primary, and then:
+
+```css
+[data-theme='dark'],
+.dark {
+  --lh-primary-color: color-mix(in srgb, <literal value> 55%, #fff);   /* lightened 55% */
+  --lh-primary-color-hover: color-mix(in srgb, var(--lh-primary-color) 70%, #fff);
+  --lh-primary-color-active: color-mix(in srgb, var(--lh-primary-color) 85%, #000);
+  --lh-color-on-primary: #101410;   /* after lightening, white text would be below contrast, so ink text is used */
+  --lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent);
+  --lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff);
+}
+```
+
+**Why the primary lightening uses the literal value instead of `var()`**: `color-mix(in srgb, var(--lh-primary-color) 55%, #fff)` would create a CSS self-reference cycle (the value of `--lh-primary-color` referencing itself). So this one line **substitutes the literal value**; the rest use `var()` to follow the current primary.
+
+Light-primary presets (songhua green / golden) need no lightening, but still get the dark redefinitions of `--lh-primary-color-bg` and `--lh-selected-color`.
+
+## The order semantics of preset injection
+
+The text generated by `buildPresetStyleText` has the `:root { ... }` block first and the `[data-theme='dark'], .dark { ... }` block after. **At equal specificity the latter wins**, so the light value of `--lh-selected-color` declared in `:root` by a light-primary preset does not leak into dark mode.
+
+This is also the root cause of "only write `<style>`, never inline style" — inline style's specificity of 1,0,0,0 overrides the entire dark variable block in `var-dark.scss`, darkly disabling dark mode outright (see [Theme System Overview](/theme/overview#injection-constraint-only-write-style-never-inline-style)).
+
+## Dark token table
+
+<TokenTable />
+
+## How to verify dark completeness
+
+Three means, from weakest to strongest:
+
+1. **`pnpm verify:styles` item 7 (dark accessibility)**: a static scan that finds tokens "baked from a light value but with no var-dark override". This is the CI gate.
+2. **`pnpm verify:theme` (AA 4.5:1)**: reads the `es/` artifacts and computes the contrast of preset themes under both light and dark. Requires `pnpm build` first. Not run in CI; manually guarded.
+3. **Visual inspection**: switch the docs site / each library's playground to dark mode and go through the components one by one.
+
+Self-check checklist when adding a token:
+
+- [ ] Does this token need to flip in dark mode?
+- [ ] If yes, did you add the override in `var-dark.scss`?
+- [ ] Is its value an `#{$lh-*}` interpolation? (If yes → the dark override is mandatory)
+- [ ] Do components consume it via a `var(--lh-x, fallback)` chain?
+
+## Known leftovers
+
+Dark completeness had a systematic round of gap-filling in 0.4.0 (invisible text in menus / tables / timelines; see the changeset). The remaining known items are queued with the "control-height token initiative" for later.
+
+## Related docs
+
+- [Theme System Overview](/theme/overview)
+- [Design Tokens](/theme/tokens)
+- [Theme Presets](/theme/presets)
+- [Style Sources](/reference/styles)
+- [verify:styles six items](/development/verification)

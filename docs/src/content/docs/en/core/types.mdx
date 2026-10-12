@@ -1,0 +1,110 @@
+---
+title: 'types — shared union types'
+description: 'LhComponentSize / LhComponentLanguage / LhComponentType / LhPosition, derived from constants'
+---
+
+Four union types shared by the core components. Their values are not hand-written literal unions — they are **derived from the `as const` constants in `src/constants/`**, so adding a size or a language means changing only the constant, and the types follow automatically.
+
+## Import
+
+```ts
+import type {
+  LhComponentSize,
+  LhComponentLanguage,
+  LhComponentType,
+  LhPosition,
+} from '@lh-ui/share/core/shared/types'
+```
+
+## The four types
+
+| Type | Definition | Actual values |
+| --- | --- | --- |
+| `LhComponentSize` | `(typeof LH_SIZE_CONST)[keyof typeof LH_SIZE_CONST]` | `'small' \| 'medium' \| 'large' \| 'mini' \| 'x-large'` |
+| `LhComponentLanguage` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | `'zh-CN' \| 'en-US' \| 'ja-JP' \| 'ko-KR' \| 'de-DE' \| 'fr-FR'` |
+| `LhComponentType` | `(typeof LH_TYPES_CONST)[keyof typeof LH_TYPES_CONST] \| 'default' \| 'primary'` | `'success' \| 'warning' \| 'error' \| 'info' \| 'danger' \| 'default' \| 'primary'` |
+| `LhPosition` | A literal union | `'top' \| 'top-left' \| 'top-right' \| 'bottom' \| 'bottom-left' \| 'bottom-right' \| 'left' \| 'right'` |
+
+### `LhComponentSize`'s `'x-large'`
+
+This is a **size for elderly users** (large text, large touch targets). Note the structure in the constant:
+
+```ts
+// src/constants/index.ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',
+  large: 'large',
+  mini: 'mini',
+  old: 'x-large',   // the key is old, the value is 'x-large'; an accessibility size for elderly users
+} as const
+```
+
+**The key and the value differ** (`old` ↔ `'x-large'`), and what appears in the type union is the **value** `'x-large'`. Meanwhile the switch that turns on the elderly mode in a component's props is a separate boolean field, `old?: boolean` (see [LhBaseProps](/reference/types)) — the size enum value and the toggle prop are two different things; do not conflate them.
+
+### LhComponentType's two base colors
+
+`'default'` / `'primary'` are not in `LH_TYPES_CONST` (that holds the five **semantic colors**: success / warning / error / info / danger) — they are appended at the type level as `| 'default' | 'primary'`. They are not "status semantics"; they are the base appearance colors of components like buttons.
+
+### LhPosition and LhPlacement are two models
+
+| | `LhPosition` | `LhPlacement` ([popper](/core/popper)) |
+| --- | --- | --- |
+| Purpose | Edge-stick positioning (affix / backtop) | Popover positioning (tooltip / popover) |
+| Values | `'top'` / `'top-left'` / `'top-right'` / `'bottom'` / `'bottom-left'` / `'bottom-right'` / `'left'` / `'right'` | `'top'` / `'top-start'` / `'top-end'` / `'bottom'` / `'bottom-start'` / `'bottom-end'` / `'left'` / `'left-start'` / `'left-end'` / `'right'` / `'right-start'` / `'right-end'` |
+| Alignment suffix | `-left` / `-right` (the two ends only) | `-start` / `-end` (semantic alignment, supports RTL flipping) |
+
+`LhPosition`'s `-left` / `-right` are **physical directions**; `LhPlacement`'s `-start` / `-end` are **logical directions** (they flip automatically in RTL layouts). Do not convert between them.
+
+## Why derive from constants
+
+```ts
+// Anti-pattern: a hand-written union means adding a language touches two places
+type LhComponentLanguage = 'zh-CN' | 'en-US'  // ← easily falls out of sync with the constant
+
+// This repo's approach: the constant is the single source
+type LhComponentLanguage = (typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]
+```
+
+Adding a language only requires one new line in `LH_LANGUAGE_CONST`, and the type, `LhLocaleType`, and `setLocale`'s parameter validation all update automatically. This is a concrete instance of the [naming convention](/guide/naming) split between "constants `LH_XXX`" and "types `LhXxx`".
+
+## Usage examples
+
+### Component props
+
+```ts
+import type { LhComponentSize, LhComponentType } from '@lh-ui/share/core/shared/types'
+
+interface LhButtonProps {
+  type?: LhComponentType   // autocompletes 'primary' | 'success' | …
+  size?: LhComponentSize   // autocompletes 'small' | 'medium' | …
+}
+```
+
+### A generic version for application-level extensions
+
+Applications often need "the component types plus a few of our own", and `src/types/components/base.ts` provides a generic version (see the [types reference](/reference/types)):
+
+```ts
+import type { LhTypes } from '@lh-ui/share/types'
+
+type MyButtonType = LhTypes<'brand' | 'dangerous'>
+// → LhComponentType | 'brand' | 'dangerous'
+```
+
+### Runtime validation
+
+The types themselves do no runtime validation. Components use the constants for value checks:
+
+```ts
+import { LH_SIZE_CONST } from '@lh-ui/share/constants'
+
+const isValidSize = (v: string): v is LhComponentSize =>
+  Object.values(LH_SIZE_CONST).includes(v as LhComponentSize)
+```
+
+## Caveats
+
+- **Only types are exported**: this module imports the constants with `import type`, so compilation produces no runtime code (beyond the constants themselves). Type-only imports do not affect bundle size.
+- **`'mini'` and `'x-large'` are extended tiers**: `small / medium / large` are the regular three tiers; `mini` is for inline compact scenarios (action buttons inside tables), and `x-large` is the accessibility tier for elderly users. Not every component supports all five tiers — check each component's docs.
+- **`LhPosition` is not part of the `src/types` public export surface**: it lives in `core/shared/types` and must be imported from `@lh-ui/share/core/shared/types`; it is not in `@lh-ui/share/types`.

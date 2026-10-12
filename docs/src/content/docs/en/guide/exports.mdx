@@ -1,0 +1,126 @@
+---
+title: Package entry points and subpaths
+description: 'The full table of @lh-ui/share''s 77 export keys and on-demand import practice'
+---
+
+# Package entry points and subpaths
+
+The `exports` field of `package.json` defines the **only legal import paths** — anything not listed
+there (for example `@lh-ui/share/es/core/button/logic.js` directly) is rejected by Node and bundlers.
+This package has **77 keys**.
+
+## Top-level keys
+
+| Key | Points to | Purpose |
+| --- | --- | --- |
+| `.` | `es/index.js` / `lib/index.js` | full bare import |
+| `./package.json` | `./package.json` | lets tooling read the version |
+| `./core` | `es/core/index.js` | all core pure functions aggregated |
+| `./core/<component>/*` | `es/core/<component>/*` | **56 components**, each on demand |
+| `./core/shared/*` | `es/core/shared/*` | the 12 shared kernel modules |
+| `./constants` | `es/constants/index.js` | `LH_*` constants |
+| `./locales` | `es/locales/index.js` | lhlocale + zhCN / enUS |
+| `./locales/lang/*` | `es/locales/lang/*` | the 6 language packs, importable individually |
+| `./theme` | `es/theme/index.js` | theme runtime primitives + presets |
+| `./types` | `es/types/index.d.ts` | **types only**, no implementation |
+| `./types/components/*` | `es/types/components/*.d.ts` | component Props types (types only) |
+| `./utils` | `es/utils/index.js` | pure utilities such as createNamespace / deepMerge |
+| `./utils/*` | `es/utils/*` | utilities per file |
+| `./theme.css` | `dist/theme/index.css` | light tokens |
+| `./theme-dark.css` | `dist/theme/index-dark.css` | dark overrides |
+| `./styles.css` | `dist/styles/index.css` | tokens + all component styles |
+| `./dist/*` | `dist/*` | direct pass-through to dist artifacts |
+| `./styles/*` | `styles/<name>/index.scss` | **single-component SCSS source** |
+| `./styles/index.scss` | `styles/index.scss` | full SCSS aggregation |
+| `./styles/theme/index.scss` | `styles/theme/index.scss` | theme SCSS aggregation |
+| `./styles/theme/common/*` | `styles/theme/common/*.scss` | tokens / patterns / transition mixins |
+
+## Three-condition exports
+
+Except for pure CSS / SCSS keys and the `types` keys, every JS key provides three conditions at once:
+
+```json
+"./core/button/*": {
+  "types": "./es/core/button/*.d.ts",
+  "import": "./es/core/button/*.js",
+  "require": "./lib/core/button/*.js"
+}
+```
+
+- `import` — the ESM output (`es/`), preserveModules mirroring the source structure; on-demand
+  imports bundle only that one file.
+- `require` — the CJS output (`lib/`), for running Node directly, jest, and similar scenarios.
+- `types` — the `.d.ts` files; `import type` goes through them at zero runtime cost.
+
+## The 56 core subpaths
+
+```
+affix · alert · anchor · avatar · backtop · badge · breadcrumb · button ·
+calendar · card · cascader · checkbox · collapse · config · date-picker ·
+descriptions · dialog · divider · drawer · dropdown · empty · form · grid ·
+icon · image · input · input-number · loading · menu · message ·
+notification · pagination · popconfirm · popover · progress · radio · rate ·
+segmented · select · skeleton · slider · space · spinner · statistic ·
+steps · switch · table · tabs · tag · time-picker · timeline · tooltip ·
+transfer · tree · upload · virtual-list
+```
+
+The export surface of each subpath is documented on the component page's function table — every one
+is covered (see "Components" in the sidebar).
+
+## The 12 shared kernel subpaths
+
+```
+core/shared/a11y · date · delay · focus-trap · format · keyboard ·
+popper · pt · sanitize · sx · types · virtual
+```
+
+This is the layer the UI libraries reference most heavily. Each module is documented under "Shared
+kernel" in the sidebar.
+
+## tree-shaking and sideEffects
+
+```json
+"sideEffects": ["**/*.css", "**/*.scss"]
+```
+
+Only style files have side effects. Pure JS subpaths are safe to tree-shake:
+
+- ✅ `import { getButtonClasses } from '@lh-ui/share/core/button'` bundles only button.
+- ✅ `import type { LhSxProps } from '@lh-ui/share/core/shared/sx'` is erased at compile time.
+- ⚠️ `import '@lh-ui/share/styles.css'` is **full** and cannot be tree-shaken — for styles, compile
+  the `./styles/<name>` SCSS source yourself, or use the on-demand artifacts the UI libraries build.
+
+## The two shapes of the styles subpaths
+
+`./styles/*` points at **SCSS source** (`styles/<name>/index.scss`), not compiled output:
+
+```scss
+@use '@lh-ui/share/styles/button';   // ✅ the bundler compiles SCSS
+```
+
+```ts
+import '@lh-ui/share/styles/button'   // ❌ needs the .scss extension and a bundler that understands it
+```
+
+If you would rather not compile SCSS in your project, import `./styles.css` (full) or use the
+ready-built `es/<name>/style/index.css` (lh-ui-plus) / `es/components/<name>/style/index.css`
+(lh-ui-vue2) from the UI libraries.
+
+## Local linkage (development inside the family)
+
+Inside the family, UI libraries do not depend on npm: their dev / test configs alias
+`@lh-ui/share/**` to the sibling `lh-ui-share/` source, guarded for existence:
+
+| Import | Points to under the family layout |
+| --- | --- |
+| `@lh-ui/share/styles/**` | `lh-ui-share/styles/**` (SCSS source, compiled live by vite) |
+| `@lh-ui/share/core/**` | `lh-ui-share/src/core/**` |
+| `@lh-ui/share/{utils,constants,theme,locales,types}/**` | `lh-ui-share/src/$1/**` |
+| `@lh-ui/share` (bare) | `lh-ui-share/src/index.ts` |
+
+When the sibling share repo is absent the guard returns an empty array and the alias falls back to
+the installed npm package — **both a single-repo clone and the family layout work**. The same rule
+applies to releases: after adding a deep file in share, if `pnpm build` (which includes
+sync-exports) has not run, the npm side has no matching exports key and a downstream `pnpm up` hits
+MODULE_NOT_FOUND.

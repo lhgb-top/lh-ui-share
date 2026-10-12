@@ -1,0 +1,126 @@
+---
+title: space — Space
+description: 'resolveSpaceGaps normalizes preset scales/numbers/arrays into CSS gap and flags whether tokens are used, getSpaceClassNames computes layout classes'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`space` solves one of the most common problems in a component library: laying out a group of elements at fixed spacing. It is not a layout framework (that is `LhGrid`), but rather "spacing with semantics" — `small` / `medium` / `large` are design tokens, numbers are ad-hoc fine-tuning, and arrays control the row and column gaps separately.
+
+## When to use
+
+- Each platform implements `LhSpace`: button groups, arranging form items, element layout inside a card.
+- Anywhere inside a component that needs to express "these elements are spaced apart".
+- **Do not use it for**: two-dimensional grids (use `LhGrid`), or advanced flex alignment (write the styles directly). space only manages spacing; alignment is passed through via `align`.
+
+## Import
+
+```ts
+import { getSpaceClassNames, resolveSpaceGaps, resolveSpaceAlignment } from '@lh-ui/share/core/space'
+import type { LhSpaceState, LhSpaceSizeInput, LhSpaceAlignment } from '@lh-ui/share/core/space'
+```
+
+## Design intent
+
+The core of `resolveSpaceGaps` is **distinguishing "tokens" from "literals"**:
+
+- Preset scales (`small` / `medium` / `large`) output `var(--lh-spacing-*)` and return `usesTokens: true` — the spacing changes with theme customization.
+- Numbers are treated as px literals and return `usesTokens: false` — the spacing is a one-time decision by the caller.
+- An array `[columnGap, rowGap]` controls the two axes separately.
+
+Why expose `usesTokens`? Because the UI layer's rendering strategy differs: when tokens are used the class name can be omitted (the gap is driven directly by the CSS variable), and when a literal is used an inline style must be written. This flag saves the UI layer from regex-matching the output value.
+
+The scales only reference the spacing tokens **actually registered** in `var.scss`, and the fallback values match the token defaults — overriding `--lh-spacing-*` only then has a real effect, and this consistency is guaranteed by `verify:styles`.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getSpaceClassNames` | `(state: LhSpaceState) => string[]` | class name array | direction, wrap, size modifier classes |
+| `resolveSpaceGaps` | `(size: LhSpaceSizeInput) => { columnGap: string; rowGap: string; usesTokens: boolean }` | gap description | normalizes size into CSS gap |
+| `resolveSpaceAlignment` | `(alignment: string) => string` | CSS value | alignment value pass-through |
+
+The mapping of `resolveSpaceGaps`:
+
+| Input | columnGap / rowGap | usesTokens |
+| --- | --- | --- |
+| `'small'` | `var(--lh-spacing-sm, 8px)` | true |
+| `'medium'` | `var(--lh-spacing-base, 16px)` | true |
+| `'large'` | `var(--lh-spacing-xl, 24px)` | true |
+| `24` (number) | `24px` | false |
+| `[16, 8]` | `16px` / `8px` | false |
+
+Edges: missing array entries or non-finite values fall back to `0` (to avoid `"undefinedpx"`); mixing presets with numbers (such as `['medium', 8]`) is not supported.
+
+## Type definitions
+
+```ts
+export type LhSpaceAlignment = 'start' | 'center' | 'end' | 'baseline'
+export type LhSpaceSizeInput = 'small' | 'medium' | 'large' | number | [number, number]
+
+export interface LhSpaceState {
+  direction: 'horizontal' | 'vertical'
+  wrap: boolean
+  size: string    // class name computation only accepts preset scales
+}
+```
+
+Note the division of labor in the types: `LhSpaceState.size` (for class names) only accepts preset scale strings; `LhSpaceSizeInput` (for gap computation) additionally accepts numbers and arrays. A class name like `lh-space--16px` can never appear.
+
+## Accessibility
+
+`space` is a pure layout element: it outputs no aria attributes and is itself invisible to screen readers. The content it wraps each retains its original semantics — this is how space differs from containers like `<button>`: it introduces no semantic layer at all.
+
+## Usage examples
+
+```ts
+import { getSpaceClassNames, resolveSpaceGaps } from '@lh-ui/share/core/space'
+
+getSpaceClassNames({ direction: 'horizontal', wrap: true, size: 'small' })
+// ['lh-space', 'lh-space--horizontal', 'lh-space--small', 'lh-space--wrap']
+
+resolveSpaceGaps('medium')
+// { columnGap: 'var(--lh-spacing-base, 16px)', rowGap: 'var(--lh-spacing-base, 16px)', usesTokens: true }
+
+resolveSpaceGaps([16, 8])
+// { columnGap: '16px', rowGap: '8px', usesTokens: false }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSpaceClassNames({ direction, wrap, size })" :style="gapStyle">
+  <slot />
+</div>
+```
+
+```tsx
+// React
+const gaps = resolveSpaceGaps(size)
+const style = { columnGap: gaps.columnGap, rowGap: gaps.rowGap }
+return <div className={getSpaceClassNames({ direction, wrap, size }).join(' ')} style={style}>{children}</div>
+```
+
+```ts
+// uniapp: gap is well supported on non-h5 platforms (both nvue and uvue support it);
+// if a particular platform does not support gap, the UI layer degrades to adding margins to children
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-space` | base class: flex container |
+| `.lh-space--horizontal` / `.lh-space--vertical` | direction (flex-direction) |
+| `.lh-space--wrap` | allows wrapping |
+| `.lh-space--{small\|medium\|large}` | scale classes (paired with the `--lh-spacing-*` tokens) |
+
+The scale classes and the preset output of `resolveSpaceGaps` are **two expressions of the same set of tokens**: class names go through the `@use` SCSS variables (compile time), and the gap goes through CSS variables (runtime). The two values are consistent, verified by `verify:styles`.
+
+## Notes
+
+- **Do not mix**: `resolveSpaceGaps(['medium', 8])` is not supported (the implementation does not recognize mixtures); if you need different gaps per axis, use numbers for both, e.g. `[16, 8]`.
+- **Choosing numbers vs tokens**: the component library's internal defaults should use scales (they vary with the theme), and ad-hoc fine-tuning at business call sites should use numbers.
+- Wrapping (`wrap`) is only meaningful with horizontal; vertical + wrap has no effect.
+- `resolveSpaceAlignment` currently passes values straight through; the concrete flex keyword mapping lives in the style layer (class-name driven).
+
+<FnPlayground module="space" fn="resolveSpaceGaps" params='{"size": "medium"}' />

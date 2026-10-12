@@ -1,0 +1,222 @@
+---
+title: form — Form
+description: 'validateFormField rule engine (async does not short-circuit), getFormFieldValue dot-path value access, getFormFieldAria error association'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Form controls do not collect data on their own — **validation and error association** are the real core value of a form. `core/form` provides three things: a rule engine (`validateFormField`), a value getter (`getFormFieldValue`, supporting dot paths), and a set of error-association attribute bags (`getFormFieldAria`). It deliberately **excludes overall form orchestration** (field registration, submission timing, reset) — that is the job of the UI layer's `LhForm` component.
+
+## When to use
+
+- Each port implements `LhForm` / `LhFormItem`: any input scenario that needs validation.
+- Scenarios where validation errors must be associated with screen readers (`aria-invalid` + `aria-describedby`).
+- **Should not use it**: simple validation of a single field with no cross-field dependencies (the component's built-in `required` may suffice); for complex cross-field dependency graphs (like "when A is x, B is required and C must equal D"), express it with a custom `validator` function instead of trying to combine multiple built-in rules.
+
+## Import
+
+```ts
+import {
+  getFormFieldValue,
+  isEmptyValue,
+  validateFormField,
+  getFormFieldErrorId,
+  getFormFieldAria,
+} from '@lh-ui/share/core/form'
+import type { LhFormRule, LhFormState } from '@lh-ui/share/core/form'
+```
+
+## Design intent
+
+**Three key decisions of the rule engine**:
+
+1. **Empty values only care about required** — when a value is empty and the field is not required, **all rules are skipped**, consistent with mainstream libraries (Element / Ant Design): if it was not filled in, there is no error. This means `type: 'email'` does not report "invalid email format" on an empty string — required intent is expressed with `required`.
+
+2. **Async rules do not short-circuit** — this is a behavioral difference from the old implementation and the most subtle part of this module. `validator` may return a Promise. The old implementation **skipped all subsequent rules** after encountering the first thenable, causing "the length validation after an async email-uniqueness check to be swallowed." The new implementation wraps each rule in a lazy evaluation function (`RuleCheck`): when it hits a thenable it suspends and **continues evaluating the following rules**, finally merging all errors into a single Promise. The first synchronous error is still returned immediately (synchronous errors short-circuit, asynchronous rules do not).
+
+3. **A validator that throws synchronously is treated as a validation failure** — `error.message` is taken as the error text instead of propagating an uncaught exception. When a user writes a custom validator incorrectly (throwing a TypeError inside), the form behaves as "this field failed validation" rather than crashing the page.
+
+**Priority of the required message**: when the value is empty, a required rule that "explicitly provides a message" is preferred; otherwise the first required rule is used. This handling fixes a real bug — the component layer (form item) **synthesizes a message-less `{ required: true }` rule** when the `required` prop is truthy, and if it sorts before the user's rule with a message, `find` would hit the synthesized rule and fall back to the generic message, **swallowing the user's custom message**.
+
+**Dot paths of `getFormFieldValue`**: `'user.address.city'` reduces layer by layer; encountering a non-object midway (null / a primitive) returns undefined instead of throwing. This lets form fields bind directly to nested models without the UI layer manually flattening the data.
+
+**The criteria of `isEmptyValue`**: undefined / null / empty string / empty array count as empty; **a whitespace string and an empty object do not count as empty** — the semantics of whitespace are handled by the component layer trimming before passing the value in if needed; core does not make that business decision.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getFormFieldValue` | `(model, prop: string) => unknown` | field value | dot path; returns undefined when missing |
+| `isEmptyValue` | `(value: unknown) => boolean` | empty or not | four kinds of emptiness |
+| `validateFormField` | `(value, rules?, model, requiredMessage?) => string \| undefined \| Promise<string \| undefined>` | error text / undefined | rule engine |
+| `getFormFieldErrorId` | `(prop: string) => string` | element id | corresponds to aria-describedby |
+| `getFormFieldAria` | `(options: { prop, error?, required? }) => LhAriaAttrs` | aria attribute bag | invalid + describedby + required |
+
+## Type definitions
+
+```ts
+export interface LhFormRule {
+  required?: boolean
+  message?: string
+  trigger?: string  // trigger timing (blur / change / submit); core does not interpret it, the UI layer filters rules by event
+  /** Built-in type validation; skipped for empty values (same rule as required) */
+  type?: 'string' | 'number' | 'boolean' | 'array' | 'email' | 'url'
+  pattern?: string | RegExp       // regex (only applies to string values)
+  min?: number                    // numeric lower bound, or minimum length of a string/array
+  max?: number                    // numeric upper bound, or maximum length of a string/array
+  len?: number                    // exact length (string/array)
+  /** Custom validator: returns the error text, or nothing when passing; supports async */
+  validator?: (value: unknown, model: Record<string, unknown>) => string | undefined | Promise<string | undefined>
+}
+
+export interface LhFormState {
+  model: Record<string, unknown>
+  rules?: Record<string, LhFormRule[]>
+}
+```
+
+The **dual semantics of `min` / `max`** are a design convenience: numeric values are compared by magnitude, strings/arrays by length. The cost is less precise typing, but the payoff in rule-configuration simplicity is greater (`{ min: 6, message: 'At least 6 characters' }` works for both a password and a headcount).
+
+## Accessibility
+
+`getFormFieldAria` is the **last mile** of form accessibility: when validation fails, it associates the error message with the control so the screen reader announces "invalid input, the error is…".
+
+```ts
+getFormFieldAria({ prop: 'username', error: 'Username is required', required: true })
+// { 'aria-invalid': true, 'aria-describedby': 'lh-form-error-username', 'aria-required': true }
+
+getFormFieldAria({ prop: 'username', required: true })
+// { 'aria-required': true } (no association to an empty message element when there is no error)
+
+getFormFieldAria({ prop: 'username' })
+// {} (empty object when there is no state)
+```
+
+Supporting conventions:
+
+- The error message element must be rendered with `getFormFieldErrorId(prop)` as its id — `aria-describedby` points to it.
+- **Timing of `aria-describedby`**: this attribute is emitted only when error has a value (to avoid referencing a nonexistent empty element), so the attribute bag and the error text must be updated in the same frame.
+- A `required` field emits `aria-required` so the screen reader announces "required" upon entering the control.
+- The accessibility implication of `trigger`: validation triggered on blur should not interrupt the user mid-typing (an error on every keystroke is a bad experience); change-triggered validation suits lightweight "validate as you type" scenarios.
+
+## Usage examples
+
+```ts
+import { validateFormField, isEmptyValue, getFormFieldValue } from '@lh-ui/share/core/form'
+
+isEmptyValue('')           // true
+isEmptyValue([])           // true
+isEmptyValue('  ')         // false (a whitespace string is not empty)
+isEmptyValue({})           // false (an empty object is not empty)
+isEmptyValue(0)            // false (0 is a valid value!)
+
+getFormFieldValue({ user: { name: 'lh' } }, 'user.name')   // 'lh'
+getFormFieldValue({ user: null }, 'user.name')             // undefined (non-object midway)
+getFormFieldValue({}, 'missing')                           // undefined
+```
+
+```ts
+// Required
+validateFormField('', [{ required: true, message: 'Username is required' }], {})
+// 'Username is required'
+
+// Optional and empty: all rules are skipped
+validateFormField('', [{ required: false, type: 'email', message: 'Invalid email format' }], {})
+// undefined
+
+// Built-in type + length
+validateFormField('ab', [{ min: 6, message: 'At least 6 characters' }], { username: 'ab' })
+// 'At least 6 characters'
+
+// Regex
+validateFormField('123', [{ pattern: /^\d{4}$/, message: '4 digits' }], {})
+// '4 digits'
+
+// Custom synchronous validator
+validateFormField('abc', [{
+  validator: (v) => (v as string).includes('@') ? undefined : 'Must contain @',
+}], {})
+// 'Must contain @'
+
+// A validator that throws: treated as a validation failure
+validateFormField('x', [{ validator: () => { throw new Error('Validator blew up') } }], {})
+// 'Validator blew up'
+
+// Async validator (does not short-circuit: the synchronous rule after it is still evaluated)
+validateFormField('ab', [
+  { validator: async (v) => await checkUnique(v) ? undefined : 'Already taken', message: 'x' },
+  { min: 6, message: 'At least 6 characters' },
+], {})
+// Promise<the first error among ['Already taken', 'At least 6 characters']>
+```
+
+```vue
+<!-- Vue3: typical wiring of a form-item -->
+<script setup>
+const error = ref('')
+async function validate(trigger: string) {
+  const rules = (props.rules ?? []).filter((r) => !r.trigger || r.trigger === trigger)
+  error.value = (await validateFormField(
+    getFormFieldValue(props.model, props.prop),
+    rules,
+    props.model,
+    t('form.required'),
+  )) ?? ''
+}
+</script>
+
+<template>
+  <div class="lh-form-item" :class="{ 'is-error': error }">
+    <label class="lh-form-item__label" :for="inputId">{{ label }}</label>
+    <div class="lh-form-item__content">
+      <slot :aria-props="getFormFieldAria({ prop, error, required })" />
+      <p
+        v-if="error"
+        :id="getFormFieldErrorId(prop)"
+        class="lh-form-item__error"
+        role="alert"
+      >
+        {{ error }}
+      </p>
+    </div>
+  </div>
+</template>
+```
+
+```tsx
+// React: pass the attribute bag through to the wrapped control
+// <input {...getFormFieldAria({ prop, error, required })} aria-describedby={error ? getFormFieldErrorId(prop) : undefined} />
+```
+
+```ts
+// uniapp: the core layer is fully usable; note that aria attribute support is limited on non-h5 targets,
+// so error text relies mainly on visuals + role="alert"
+```
+
+## Styles and tokens
+
+| Class | Semantics |
+| --- | --- |
+| `.lh-form` | Form container |
+| `.lh-form--inline` | Inline layout (label and control on the same row) |
+| `.lh-form--label-top` / `--label-left` / `--label-right` | Label position |
+| `.lh-form-item` | Field item |
+| `.lh-form-item.is-error` | Validation failed (control gets a red border) |
+| `.lh-form-item__label` | Label (the required asterisk is rendered by `::before`) |
+| `.lh-form-item__content` | Control area |
+| `.lh-form-item__error` | Error message (`role="alert"`) |
+| `.lh-form-item__required` | Required asterisk |
+
+The error color is `--lh-danger-color`; the required asterisk uses the same color. The label width is controlled by the `--lh-form-label-width` token (the alignment baseline when right-aligned).
+
+## Caveats
+
+- **`0` / `false` are not empty**: `isEmptyValue(0)` returns false. This is the easiest trap to fall into — "quantity is 0" is valid input, and `required` should not error. Likewise, `false` is a valid value for a checkbox.
+- **The second parameter of `validator` is the whole model**: use it for cross-field validation (like confirming a password); do not capture stale values in a closure.
+- **Debouncing async validation**: when a `validator` makes a request, the UI layer must debounce (usually 300ms) and handle the race where "the field has changed by the time the response returns" — core does not handle this; returning a stale error text is the caller's problem.
+- **`trigger` is interpreted by the UI layer**: core only carries the declaration and does not consume it. The component layer filters the rules by event (blur/change/submit) before passing them into `validateFormField`.
+- **`requiredMessage` is the generic fallback text**: usually from the locale pack (`form.required`); it is used only when a rule's `message` is undefined. An explicitly provided empty string `message: ''` is also used as-is (not treated as missing).
+- **The first error among multiple rules**: synchronous rules short-circuit (return on the first hit), asynchronous rules are all evaluated and the first resolved error is taken. The error display order matches the rule array order.
+- **The prop of a nested field**: `'user.name'` is used both for value access and for generating the error id (`lh-form-error-user.name`) — the dot inside the id needs escaping in CSS selectors; keep it in mind when using `document.getElementById` or `querySelector`.
+
+<FnPlayground module="form" fn="validateFormField" params='{"value": "ab", "rules": [{"min": 6, "message": "At least 6 characters"}], "model": {}}' />

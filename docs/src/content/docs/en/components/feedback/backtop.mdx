@@ -1,0 +1,171 @@
+---
+title: backtop — Back to top
+description: 'resolveScrollTarget scroll-root resolution, prefers-reduced-motion fallback, scrollend feature detection and debounce fallback'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Scroll to the bottom of a long page and the only way back up is frantic scrolling. `backtop` is a floating button in the bottom-right corner that appears after you have scrolled a certain distance and smoothly returns you to the top when clicked. The logic is not complicated, but **scrolling API compatibility is full of pitfalls** — which element is the scroll root, how smooth scrolling degrades, how scroll-end is detected. `core/backtop` collects all of this.
+
+## When to use
+
+- Each framework implements `<LhBackTop>`: a back-to-top entry for long lists, long documents, and admin data tables.
+- Only worth showing when the page is clearly taller than one viewport (usually 2~3 screens or more).
+- **Do not use it for**: short pages (less than one screen — the button never appears and just adds code); native mobile pages where a wheel/gesture already quickly returns to the top (system gestures cover it; for embedded h5 pages it depends).
+
+## Import
+
+```ts
+import {
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  LH_BACKTOP_SCROLLEND_DELAY,
+  getBackTopClassNames,
+  resolveScrollTarget,
+  getScrollTop,
+  backToTop,
+  isBackTopVisible,
+  supportsScrollEnd,
+} from '@lh-ui/share/core/backtop'
+```
+
+## Design intent
+
+**Scroll root priority**: `document.scrollingElement` takes precedence over `document.documentElement`. This is not pedantry — on some pages (those using `body { overflow }`) the element that actually scrolls is body, `documentElement.scrollTop` is always 0, and visibility detection fails entirely. `scrollingElement` is the standard property the W3C invented to unify this mess.
+
+**`getScrollTop` uses `instanceof HTMLElement` instead of `instanceof Window`**: the comment says "safe across realms" — if a page has an iframe, the Window object passed in from the iframe **is not equal to** the current realm's `Window` constructor, so `x instanceof Window` would wrongly evaluate to false. Checking against HTMLElement (elements do not have this problem) avoids it. This is a very subtle but real pitfall.
+
+**Two levels of smooth-scroll fallback**: ① when `prefers-reduced-motion` is enabled, degrade to `auto` (no animation) — users with vestibular disorders get dizzy from continuous scrolling, and this is a hard accessibility requirement; ② if the target element has no `scrollTo` method (old jsdom and similar environments), write `scrollTop = 0` directly.
+
+**`supportsScrollEnd` feature detection**: the `scrollend` event only exists in Chromium 114+ / Safari 18.2+ — with it you can refresh the visible state precisely when scrolling has **actually come to rest** (reading scrollTop frequently during scrolling has a performance cost). When unsupported, the caller falls back to the `scroll` event + `LH_BACKTOP_SCROLLEND_DELAY` (150ms) debounce simulation.
+
+**Visibility is a pure function**: `isBackTopVisible(scrollTop, height)` only compares numbers — the UI layer listens to scrolling itself and stores scrollTop itself; core holds no reactive state. This also lets unit tests assert numeric boundaries directly.
+
+## Function table
+
+| Function / constant | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getBackTopClassNames` | `(state: { visible }) => string[]` | class names | visibility drives the show/hide animation |
+| `resolveScrollTarget` | `(target?: string \| HTMLElement) => HTMLElement \| Window` | scroll target | falls back to window when the selector misses |
+| `getScrollTop` | `(target) => number` | scroll distance | container/viewport adaptive |
+| `backToTop` | `(target, smooth) => void` | none | smooth return to top (with fallbacks) |
+| `isBackTopVisible` | `(scrollTop, visibilityHeight) => boolean` | whether visible | threshold check |
+| `supportsScrollEnd` | `(target) => boolean` | whether supported | feature detection |
+
+Constants: `LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT = 200`, `LH_BACKTOP_SCROLLEND_DELAY = 150`.
+
+## Type definitions
+
+```ts
+export interface LhBackTopState {
+  visible: boolean      // currently visible (drives show/hide class names)
+  target?: string | HTMLElement
+  visibilityHeight?: number
+  smooth?: boolean      // whether to scroll smoothly (default true)
+}
+```
+
+## Accessibility
+
+```ts
+// The button's accessibility attributes are assembled in the UI layer:
+const aria = {
+  type: 'button',
+  'aria-label': 'Back to top',   // an icon button has no text, so a label is required
+}
+```
+
+- **`type="button"`**: if the back-to-top button sits inside a `<form>`, the default `type="submit"` would submit the form — this is the most common small bug.
+- **aria-label is required**: a pure icon button (up arrow) is nameless to screen readers; `aria-label="Back to top"` makes it announceable.
+- **Sync aria-hidden with visibility**: when not visible, remove it from the accessibility tree (`aria-hidden="true"` or just unmount with `v-if`), so screen readers do not navigate to an invisible button.
+- **Keyboard reachable**: the button is a native `<button>`, so Tab focus + Enter/Space activation works natively. Do not make it a `<div @click>`.
+- **The dual meaning of prefers-reduced-motion**: it is both an accessibility requirement (vestibular safety) and a way to avoid janky smooth scrolling on low-end devices. `backToTop` handles it internally; the UI layer does not need to check.
+
+## Usage examples
+
+```ts
+import {
+  resolveScrollTarget, getScrollTop, isBackTopVisible, backToTop, supportsScrollEnd,
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT, LH_BACKTOP_SCROLLEND_DELAY,
+} from '@lh-ui/share/core/backtop'
+
+isBackTopVisible(200, 200)  // true (>= threshold)
+isBackTopVisible(199, 200)  // false
+isBackTopVisible(0, 200)    // false
+
+supportsScrollEnd(window)         // true in modern browsers
+supportsScrollEnd(someEl)         // true only in Chromium 114+ / Safari 18.2+
+```
+
+```ts
+// Listening strategy: if scrollend is supported, only check at rest; otherwise scroll + debounce
+const target = resolveScrollTarget(props.target)
+let visible = ref(false)
+
+function refresh() {
+  visible.value = isBackTopVisible(
+    getScrollTop(target),
+    props.visibilityHeight ?? LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  )
+}
+
+if (supportsScrollEnd(target)) {
+  target.addEventListener('scrollend', refresh)
+} else {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  target.addEventListener('scroll', () => {
+    clearTimeout(timer)
+    timer = setTimeout(refresh, LH_BACKTOP_SCROLLEND_DELAY)
+  })
+}
+
+function onClick() {
+  backToTop(target, props.smooth ?? true)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <button
+    type="button"
+    class="lh-backtop"
+    :class="getBackTopClassNames({ visible })"
+    aria-label="Back to top"
+    :aria-hidden="!visible"
+    @click="backToTop(target, true)"
+  >
+    <LhIcon name="arrow-up" />
+  </button>
+</template>
+```
+
+```tsx
+// React: useEffect registers/unregisters the scroll listener (depending on target and visibilityHeight);
+// smooth is controlled by props, reduced-motion is handled inside core
+```
+
+```ts
+// uniapp: <button open-type?> does not apply; use <view> + @tap;
+// on the mini-program side, page scrolling uses onPageScroll (built into uniapp), element scrolling uses the scroll-view scroll event
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-backtop` | button container (fixed bottom-right) |
+| `.lh-backtop--visible` | visible (drives the fade-in / slide-up entrance animation) |
+
+Hidden by default with `opacity: 0; visibility: hidden` (visibility rather than display, to keep the transition animation); round button `--lh-backtop-size` (e.g. 40px); background `--lh-bg-color` + shadow `--lh-box-shadow-base`; z-index `--lh-z-index-backtop`.
+
+## Caveats
+
+- **Scroll listeners must be unregistered**: when the component is destroyed, `removeEventListener`, otherwise references to removed DOM cause memory leaks. Vue's `onUnmounted` / React's useEffect cleanup function.
+- **The special nature of `window` listeners**: the `scroll` event on window is passive and high-frequency — you must debounce or use scrollend; reading `getScrollTop` on every event will jank on very long pages.
+- **When the target element scrolls itself**: for a table that scrolls internally (not the page scrolling), point `target` at the table container — otherwise the button's visibility follows page scrolling, unrelated to the container you actually want to return to the top of.
+- **Smooth scrolling overridden by CSS**: if the page has `html { scroll-behavior: smooth }`, `scrollTo({ behavior: 'auto' })` will be overridden by the CSS — the reduced-motion fallback of `backToTop` stops working. When a strict fallback is needed, the UI layer must temporarily remove that CSS.
+- **iOS Safari scroll inertia**: iOS scrolling has inertia, and scrollend only fires after the inertia ends; the 150ms debounce fallback may refresh the visible state too early during a fast swipe (the button flashes). This is a known trade-off.
+- **The meaning of the 200 visibility threshold**: roughly half a screen height (depending on viewport height). Document-style pages can lower it (100), tool-style pages raise it (500) — that is what the `visibilityHeight` prop is for.
+- **The button must not cover content**: fixed positioning + bottom-right corner; on mobile, avoid the bottom navigation bar (leave room for the safe area).
+
+<FnPlayground module="backtop" fn="isBackTopVisible" params='{"scrollTop": 300, "visibilityHeight": 200}' />

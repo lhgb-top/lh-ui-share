@@ -1,0 +1,174 @@
+---
+title: calendar — Calendar
+description: 'shiftCalendarMonth cross-month normalization, normalizeCalendarSpan span normalization, toggleCalendarDate multi-select toggling, aria-current=date'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A calendar is a **persistent date panel**: date-picker hides the panel inside a popup, while calendar spreads it out on the page. It supports three selection modes — single, range, and multiple — plus optional date-range constraints. `core/calendar` reuses date-picker's grid algorithm (`generateCalendarDays`) and layers shifting, range constraints, and selection-state toggling on top.
+
+## When to use
+
+- Each port implements `LhCalendar`: schedule views, check-in tracking, hotel/flight date-selection pages.
+- Scenarios where dates need to be **persistently visible** rather than picked from a popup.
+- **Should not use it**: inside space-constrained forms (use `date-picker`, a popup saves space); when only one date is needed and the page is already crowded.
+
+## Import
+
+```ts
+import {
+  getCalendarClassNames,
+  shiftCalendarDate,
+  shiftCalendarMonth,
+  isCalendarDateDisabled,
+  clampDateToRange,
+  isCalendarSelected,
+  normalizeCalendarSpan,
+  isCalendarInSpan,
+  toggleCalendarDate,
+  getCalendarCellAria,
+  generateCalendarDays,
+  isSameDay,
+} from '@lh-ui/share/core/calendar'
+import type { LhCalendarRange, LhCalendarSelection } from '@lh-ui/share/core/calendar'
+```
+
+## Design intent
+
+**The dependency direction is semantic**: calendar imports `generateCalendarDays` from `date-picker` instead of reimplementing it on top of `core/shared/date` — the calendar-grid algorithm is date-picker's responsibility, and calendar is its calendar view. General primitives (`compareDate` / `isDateDisabled` / `isSameDay`) go straight to the shared kernel; calendar does not reverse-depend on date-picker's logic. This is the layering convention of "general primitives sink down, domain algorithms stay in their place."
+
+**Tolerance for reversed spans**: both `isCalendarDateDisabled` and `clampDateToRange` call `normalizeCalendarSpan` first to normalize the span — a user passing `[end, start]` (reversed) does not cause everything to be disabled or clamped incorrectly. The UI layer does not force the caller to sort first.
+
+**`shiftCalendarMonth` normalization**: `year * 12 + month + delta` split back into year and month, with `((total % 12) + 12) % 12` handling negative modulo — when a negative delta crosses a year boundary (e.g. January -2), the month never becomes -1.
+
+**Immutable multi-select toggling**: `toggleCalendarDate` removes on a hit, otherwise adds and sorts chronologically — it returns a new array that can be fed straight into a reactive update, and the order is stable (avoids UI jitter).
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getCalendarClassNames` | `() => string[]` | `['lh-calendar']` | Container class names |
+| `shiftCalendarDate` | `(date, days) => Date` | new Date | Shift by days (cross-month safe) |
+| `shiftCalendarMonth` | `(year, month, delta) => { year, month }` | year and month | Shift by months |
+| `isCalendarDateDisabled` | `(date, range?) => boolean` | disabled or not | Always false with no constraint |
+| `clampDateToRange` | `(date, range?) => Date` | clamped date | Pull out-of-range values back to the boundary |
+| `isCalendarSelected` | `(date, selected) => boolean` | selected or not | Same-day check |
+| `normalizeCalendarSpan` | `(a, b) => [Date, Date]` | normalized span | Guarantees start ≤ end |
+| `isCalendarInSpan` | `(date, start, end) => boolean` | inside closed span or not | Returns false if either end is null |
+| `toggleCalendarDate` | `(dates, date) => Date[]` | new array | Remove on hit / otherwise add and sort |
+| `getCalendarCellAria` | `(options: { date, selected, range? }) => LhAriaAttrs` | aria attribute bag | aria-current / aria-disabled |
+
+## Type definitions
+
+```ts
+export type LhCalendarRange = [Date, Date]
+export type LhCalendarSelection = 'single' | 'range' | 'multiple'
+```
+
+The grid data structure reuses `LhDatePickerDayData` (see date-picker).
+
+## Accessibility
+
+`getCalendarCellAria`'s output is deliberately restrained — **attributes are emitted only when there is state** (the falsy-omit convention of `LhAriaAttrs`):
+
+```ts
+getCalendarCellAria({ date: selectedDate, selected: selectedDate, range: undefined })
+// { 'aria-current': 'date' }
+
+getCalendarCellAria({ date: new Date(2026, 0, 1), selected: null, range: [new Date(2026, 2, 1), new Date(2026, 3, 1)] })
+// { 'aria-disabled': true }
+
+getCalendarCellAria({ date: someDate, selected: null })
+// {} (empty object when there is no state)
+```
+
+- Selected days use `aria-current="date"` (not `aria-selected`) — a calendar is a navigational control, and APG convention uses `current` to express "the current position."
+- Disabled days use `aria-disabled`; both clicks and keyboard navigation in the UI layer must skip these cells.
+- Keyboard interaction: after focusing a cell, ↑/↓/←/→ move via `shiftCalendarDate(date, ±1|±7)`, and Enter/Space triggers selection.
+- The grid as a whole should still carry `role="grid"`, the same structure as the date-picker panel.
+
+## Usage examples
+
+```ts
+import {
+  shiftCalendarMonth, normalizeCalendarSpan, toggleCalendarDate, isCalendarInSpan,
+} from '@lh-ui/share/core/calendar'
+
+shiftCalendarMonth(2026, 0, -2)   // { year: 2025, month: 10 } (negative modulo handled correctly)
+shiftCalendarMonth(2026, 11, 1)   // { year: 2027, month: 0 }
+normalizeCalendarSpan(new Date(2026, 3, 1), new Date(2026, 2, 1))
+// [2026-03-01, 2026-04-01] (reversed input auto-normalized)
+isCalendarInSpan(new Date(2026, 2, 15), new Date(2026, 2, 1), new Date(2026, 2, 28))  // true
+isCalendarInSpan(new Date(2026, 2, 15), null, null)  // false (either end null)
+toggleCalendarDate([new Date(2026, 2, 1)], new Date(2026, 2, 5))
+// [2026-03-01, 2026-03-05] (added and sorted)
+toggleCalendarDate([new Date(2026, 2, 1), new Date(2026, 2, 5)], new Date(2026, 2, 1))
+// [2026-03-05] (removed on hit)
+```
+
+```vue
+<!-- Vue3: range mode -->
+<div :class="getCalendarClassNames()">
+  <div class="lh-calendar__header">
+    <button type="button" @click="shift(-1)">‹</button>
+    <span class="lh-calendar__title">{{ year }} / {{ month + 1 }}</span>
+    <button type="button" @click="shift(1)">›</button>
+  </div>
+  <div class="lh-calendar__body" role="grid">
+    <div v-for="row in weekRows(days)" :key="row[0].date.getTime()" class="lh-calendar__row" role="row">
+      <button
+        v-for="cell in row"
+        :key="cell.date.getTime()"
+        type="button"
+        class="lh-calendar__cell"
+        :class="cellClass(cell)"
+        role="gridcell"
+        v-bind="getCalendarCellAria({ date: cell.date, selected: selected, range: allowedRange })"
+        @click="onPick(cell.date)"
+      >
+        {{ cell.day }}
+      </button>
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// Two-step selection in range mode (UI-layer rule, not built into core)
+// if (!rangeStart || (rangeStart && rangeEnd)) { rangeStart = date; rangeEnd = null }
+// else rangeEnd = date  (earlier than rangeStart, normalizeCalendarSpan normalizes it)
+```
+
+```tsx
+// React: multiple mode
+// const [dates, setDates] = useState<Date[]>([])
+// onClick: setDates(toggleCalendarDate(dates, cell.date))
+```
+
+```ts
+// uniapp: <view> grid + @touchstart; core's range constraints and selection-toggle functions work as-is
+```
+
+## Styles and tokens
+
+| Class | Semantics |
+| --- | --- |
+| `.lh-calendar` | Base class |
+| `.lh-calendar__header` / `__title` | Header navigation |
+| `.lh-calendar__body` | Grid area |
+| `.lh-calendar__row` | One week |
+| `.lh-calendar__cell` | Date cell |
+| `.lh-calendar__cell.is-today` / `.is-selected` / `.is-in-range` / `.is-start` / `.is-end` / `.is-disabled` / `.is-other-month` | State modifiers |
+
+Selected uses `--lh-primary-color`, in-range segments use a low-opacity primary color, today gets an outline, and disabled uses `--lh-text-disabled`.
+
+## Caveats
+
+- **month is 0-based**: consistent with date-picker and the native `Date`; the UI displays it `+1`.
+- **The three selection modes vs core**: `LhCalendarSelection` is only a type declaration; core's functions are mode-agnostic — `isCalendarSelected` handles single, `isCalendarInSpan` handles range, and `toggleCalendarDate` handles multiple. The wiring for mode switching lives in the UI layer.
+- **The half-selected state in range mode**: once `rangeStart` is set and `rangeEnd` is not, hovering a cell should highlight the middle segment in real time (the UI layer renders with a temporary end); core's `generateCalendarDays` accepts a null rangeEnd and will not error.
+- **Purpose of `clampDateToRange`**: when a value is set externally (e.g. an out-of-range date passed via `v-model`), it collapses it back into the valid span; the UI layer calls it once when watching value changes.
+- **Performance of the persistent panel**: unlike date-picker, which computes the grid only when opened, calendar recomputes when the month changes; do not recompute `generateCalendarDays` every frame (it creates 35–42 Date objects).
+- **Boundary with date-picker**: the two share grid data but **not the state model** — date-picker's `LhDatePickerState` is oriented toward popup interaction, while calendar has no visible state.
+
+<FnPlayground module="calendar" fn="shiftCalendarMonth" params='{"year": 2026, "month": 0, "delta": -2}' />

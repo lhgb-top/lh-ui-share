@@ -1,0 +1,163 @@
+---
+title: collapse — Collapse
+description: 'normalizeActiveKeys normalization, toggleCollapseKey accordion mode, immutable updates'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+The collapse panel is the standard solution for "too much content, collapsed by default, expand on demand": commonly used in FAQs, settings groups, and long-form partitions. Its state model is minimal — an array of "which panels are open" — and the only hard parts are the **accordion mode** (only one open at a time) and **controlled-value normalization**.
+
+## When to use
+
+- Each framework implements `LhCollapse`: FAQ pages, settings groups, partitioned collapsing of complex forms, sidebar menu groups.
+- Scenarios where content blocks can be independently collapsed / expanded and vertical space needs to be saved.
+- **Don't use it**: only two or three fixed items (displaying them directly is simpler); strict linear step flows (use `steps`).
+
+## Import
+
+```ts
+import {
+  normalizeActiveKeys,
+  toggleCollapseKey,
+  getCollapseItemClassNames,
+} from '@lh-ui/share/core/collapse'
+import type { LhCollapseKey } from '@lh-ui/share/core/collapse'
+```
+
+## Design intent
+
+**`normalizeActiveKeys` three-state normalization**: the controlled `v-model` may pass a single value (`'1'`), an array (`['1','2']`), or undefined (all collapsed). Once normalized to an array, the downstream `includes` check only ever faces one shape — another example of "lenient input, strict internals".
+
+**Accordion's "allow zero open"**: `toggleCollapseKey(keys, key, true)` returns `[]` when `keys.includes(key)` instead of keeping other items — in accordion mode, clicking an already-open panel again collapses **everything**, which is the intuitive behavior (not switching to another one). When the accordion passes a single value, the UI layer's `v-model` receives an array, so it must handle the type itself (or the UI layer provides an additional single-value API for accordion mode).
+
+**Immutable updates**: both functions return new arrays, fed directly to reactive state, without mutating their inputs.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `normalizeActiveKeys` | `(value: LhCollapseKey \| LhCollapseKey[] \| undefined) => LhCollapseKey[]` | key array | three-state normalization |
+| `toggleCollapseKey` | `(keys, key, accordion: boolean) => LhCollapseKey[]` | new key array | accordion / regular |
+| `getCollapseItemClassNames` | `(state: { active, disabled }) => string[]` | class names | expanded / disabled |
+
+## Type definitions
+
+```ts
+export type LhCollapseKey = string | number
+```
+
+## Accessibility
+
+collapse is a typical implementation of the APG **accordion / disclosure** pattern; the semantic markup is assembled by the UI layer (core provides no attribute-bag function, because the pattern is simple and DOM differs greatly across frameworks):
+
+```html
+<!-- each item is a disclosure -->
+<div class="lh-collapse__item">
+  <h3>
+    <button type="button" aria-expanded="true" aria-controls="panel-1" id="trigger-1">
+      Title
+    </button>
+  </h3>
+  <div id="panel-1" role="region" aria-labelledby="trigger-1">Content</div>
+</div>
+```
+
+- `aria-expanded` sits on the trigger button and shares the same source as `active` — this is the **core attribute** of an accessible collapse panel.
+- The panel container uses `role="region"` + `aria-labelledby` to back-reference the trigger, forming a bidirectional association.
+- **Disabled items**: the trigger button gets `disabled` (a real disabled attribute, not just a class name), recognized by both keyboard and screen readers.
+- Keyboard: Tab moves between triggers, Enter/Space toggles expansion.
+- In accordion mode, **do not** use `aria-hidden="true"` to hide collapsed panels — the content is still in the DOM (visible during animation); a CSS height animation is enough. If you actually remove it from the DOM, the `aria-expanded` state must be managed carefully.
+
+## Usage examples
+
+```ts
+import { normalizeActiveKeys, toggleCollapseKey } from '@lh-ui/share/core/collapse'
+
+normalizeActiveKeys('1')          // ['1']
+normalizeActiveKeys(['1', '2'])   // ['1', '2']
+normalizeActiveKeys(undefined)    // []
+
+toggleCollapseKey([], '1', false)       // ['1']
+toggleCollapseKey(['1'], '1', false)    // [] (click again to collapse)
+toggleCollapseKey(['1'], '2', false)    // ['1', '2'] (regular mode allows multiple open)
+toggleCollapseKey(['1'], '1', true)     // [] (accordion: clicking again collapses all)
+toggleCollapseKey(['1'], '2', true)     // ['2'] (accordion: only the newly opened one is kept)
+```
+
+```vue
+<!-- Vue3 -->
+<div class="lh-collapse">
+  <div
+    v-for="item in items"
+    :key="item.key"
+    :class="getCollapseItemClassNames({ active: activeKeys.includes(item.key), disabled: item.disabled })"
+  >
+    <h4 class="lh-collapse__header">
+      <button
+        type="button"
+        class="lh-collapse__trigger"
+        :disabled="item.disabled"
+        :aria-expanded="activeKeys.includes(item.key)"
+        :aria-controls="`lh-panel-${item.key}`"
+        :id="`lh-trigger-${item.key}`"
+        @click="onToggle(item)"
+      >
+        <span class="lh-collapse__arrow">{{ activeKeys.includes(item.key) ? '▾' : '▸' }}</span>
+        {{ item.title }}
+      </button>
+    </h4>
+    <div
+      v-show="activeKeys.includes(item.key)"
+      class="lh-collapse__panel"
+      :id="`lh-panel-${item.key}`"
+      role="region"
+      :aria-labelledby="`lh-trigger-${item.key}`"
+    >
+      <slot :name="item.key" :item="item" />
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// controlled + accordion
+const activeKeys = computed(() => normalizeActiveKeys(props.modelValue))
+function onToggle(item) {
+  if (item.disabled) return
+  emit('update:modelValue', toggleCollapseKey(activeKeys.value, item.key, props.accordion))
+}
+```
+
+```tsx
+// React: whether the accordion v-model is a single value or an array is decided by the UI layer API;
+// core always operates on arrays; the UI layer converts on emit as needed (take [0] for accordion single-value)
+```
+
+```ts
+// uniapp: <view> + v-show; expand animation via CSS max-height transition (supported by <view>)
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-collapse` | base class |
+| `.lh-collapse__item` | a single panel item |
+| `.lh-collapse__item--active` | expanded state |
+| `.lh-collapse__item--disabled` | disabled |
+| `.lh-collapse__header` / `__trigger` | header / trigger button |
+| `.lh-collapse__arrow` | expand arrow (rotation animation) |
+| `.lh-collapse__panel` | panel content area |
+
+Header background `--lh-fill-color`, arrow `--lh-text-color-secondary`, disabled item `--lh-text-disabled`, panel border `--lh-border-color`.
+
+## Caveats
+
+- **`v-show` vs `v-if`**: expand animations require the DOM to be persistent (`v-show` + a height/max-height transition). With `v-if`, the collapse animation cannot play on destroy, which feels abrupt.
+- **Controlled value type and accordion**: logically the accordion should only have one expanded item, but `toggleCollapseKey` returns an array (possibly `[]` or `[key]`). If the UI layer exposes a single-value API for accordion, take `[0] ?? undefined` on emit; keeping an array API is also fine, but then the caller must constrain itself.
+- **When to call `normalizeActiveKeys`**: normalizing on every render is very cheap (a single `Array.isArray` check); if you are concerned, cache it with `computed`.
+- **Nested collapse panels**: the inner `activeKeys` is independent of the outer one; when the DOM is nested, the inner panel's `role="region"` ends up inside another region — this is allowed, but the `aria-labelledby` id must be globally unique (prefix it with the key).
+- **Height during animation**: the `max-height` approach needs a sufficiently large upper bound (e.g. `1000px`), otherwise the animation speed distorts for very tall content; a more precise approach is to measure `scrollHeight` in JS and set it — core does not participate, the UI layer implements it itself.
+- **id uniqueness**: `aria-controls` / `aria-labelledby` rely on ids; on pages where multiple collapse instances coexist, add a component-level prefix to the key (the UI layer uses `useId` or an instance uid).
+
+<FnPlayground module="collapse" fn="toggleCollapseKey" params='{"keys": ["1", "2"], "key": "3", "accordion": false}' />

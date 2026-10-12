@@ -1,0 +1,229 @@
+---
+title: cascader — Cascader
+description: 'findNode/findPathByValues tree lookup and path restoration, normalizeCascaderNodes one-time normalization, searchNodes searching with the ancestor chain'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A cascader handles **level-by-level selection** data like "province > city > district": pick the upper level, and the next level appears. `core/cascader` is one of the heaviest core modules in share — tree lookup, path restoration, panel generation, search, and normalization are all pure functions, and the UI layer only renders panel items into columns.
+
+## When to use
+
+- Each port implements `LhCascader`: multi-level categories, region selection, organizational structure.
+- The data is a tree (or normalizable into one), with mutually exclusive selection per level.
+- **Should not use it**: single-level selection uses `select`; cascading checks where checking a parent also checks its children use `tree` (which has `checkStrictly` semantics).
+
+## Import
+
+```ts
+import {
+  findNode,
+  findPathByValues,
+  getField,
+  getChildren,
+  getPanelItems,
+  searchNodes,
+  getSelectedLabelPath,
+  getCascaderClassNames,
+  getPanelClassNames,
+  expandLastValue,
+  isLeafNode,
+  normalizeCascaderNodes,
+  flattenNodes,
+  getCascaderTriggerAria,
+  getCascaderColumnAria,
+  getCascaderItemAria,
+} from '@lh-ui/share/core/cascader'
+import type {
+  LhCascaderNode,
+  LhCascaderPath,
+  LhCascaderPanelItem,
+  LhCascaderState,
+  LhCascaderSearchResult,
+  LhCascaderItemConfig,
+} from '@lh-ui/share/core/cascader'
+```
+
+## Design intent
+
+A few key designs:
+
+- **Ancestor-chain dedup instead of a global visited set**: tree operations commonly need circular-reference protection. Here dedup uses the "ancestor chain" (the `ancestors` parameter passed down level by level) rather than a module-level or global Set. The cost is that the protection is **only valid within a single call**; the benefit is that legitimately shared subtrees in a DAG are not mistakenly skipped, and there is no cross-instance state leakage.
+- **`getField` makes field aliases actually work**: backend data often does not use `value`/`label`/`children` (it might be `id`/`name`/`subList`). `LhCascaderItemConfig` declares the alias mapping, and every tree operation reads through `getField`.
+- **Normalize once, use the standard structure everywhere**: `normalizeCascaderNodes` converts a raw tree of any field structure into `LhCascaderNode[]`, after which all functions face the standard structure. You can also skip normalization and pass itemConfig directly; both paths are equivalent (but normalization performs better, since aliases are not looked up at every level).
+- **Search results carry the full ancestor chain**: each result of `searchNodes` contains `path` (value array), `nodes` (node array), and `pathLabels` (label array), so the UI can render a "Zhejiang / Hangzhou / West Lake" row directly without looking anything back up.
+- **Programmatic echo does not filter disabled items**: `findPathByValues` deliberately **does not filter disabled child nodes** — disabled is a click constraint enforced by the UI layer, and programmatic echo (e.g. a `v-model` initial value) should be able to restore any path, otherwise "disable first, echo later" would lose values.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `findNode` | `(nodes, value, strict?, ancestors?, itemConfig?) => { node, path } \| null` | node + ancestor chain | Recursive lookup |
+| `getField` | `<T>(node, standard: string, configKey?: string) => T` | field value | Read a node property via its alias |
+| `findPathByValues` | `(nodes, values, itemConfig?) => LhCascaderPath \| null` | path | Restore level by level from a value array |
+| `getChildren` | `(node, itemConfig?) => LhCascaderNode[]` | children array | Dirty-data fallback returns `[]` |
+| `getPanelItems` | `(nodes, expandedValues?, itemConfig?) => LhCascaderPanelItem[]` | panel items | tree → panel item mapping |
+| `searchNodes` | `(nodes, keyword, results?, itemConfig?, maxResults?) => LhCascaderSearchResult[]` | search results | Case-insensitive, default cap 50 |
+| `getSelectedLabelPath` | `(nodes, values, itemConfig?) => string` | `"Zhejiang / Hangzhou"` | Selected label string |
+| `expandLastValue` | `(nodes, value, itemConfig?) => (string\|number)[] \| null` | path array | Restore the path from a single value when `emitPath: false` |
+| `isLeafNode` | `(node, itemConfig?) => boolean` | boolean | Explicit `leaf` wins, otherwise inferred from children |
+| `normalizeCascaderNodes` | `(nodes: readonly unknown[], itemConfig?) => LhCascaderNode[]` | standard tree | One-time normalization |
+| `flattenNodes` | `(nodes, itemConfig?) => {node, path, pathValues}[]` | flattened list | Each item carries its path |
+| `getCascaderClassNames` | `(state) => string[]` | class names | Container |
+| `getPanelClassNames` | `(state) => string[]` | class names | Panel (`--hover-mode`) |
+
+## Type definitions
+
+```ts
+export interface LhCascaderNode {
+  value: string | number
+  label: string
+  disabled?: boolean
+  leaf?: boolean
+  children?: LhCascaderNode[]
+}
+
+export interface LhCascaderPath {
+  path: (string | number)[]      // array of selected values
+  nodes: LhCascaderNode[]        // corresponding array of nodes
+}
+
+export interface LhCascaderPanelItem {
+  value: string | number
+  label: string
+  isDisabled: boolean
+  isExpanded: boolean
+  hasChildren: boolean
+}
+
+export interface LhCascaderSearchResult {
+  path: (string | number)[]
+  nodes: LhCascaderNode[]
+  pathLabels: string[]
+}
+
+export interface LhCascaderItemConfig {
+  value?: string    // alias for the value field
+  label?: string
+  children?: string
+  disabled?: string
+  leaf?: string
+}
+
+export interface LhCascaderState {
+  options: LhCascaderNode[]
+  size: LhComponentSize
+  disabled: boolean
+  clearable: boolean
+  placeholder: string
+  visible: boolean
+  checkStrictly: boolean   // parent and child are independent (any level selectable)
+  emitPath: boolean        // true: the value is a path array; false: only the last-level value
+  multiple: boolean
+  cascading: boolean
+  value: (string | number)[]
+  selectedValue: (string | number)[] | null
+}
+```
+
+## Accessibility
+
+Three layers of attribute bags:
+
+```ts
+// Trigger: pops up with listbox semantics
+getCascaderTriggerAria(true, 'my-panel')
+// { 'aria-expanded': true, 'aria-controls': 'my-panel', 'aria-haspopup': 'listbox' }
+
+// Each column: role="listbox" + aria-level marking depth (starting from 1)
+getCascaderColumnAria('col-2', 2)  // { role: 'listbox', id: 'col-2', 'aria-level': 2 }
+
+// Item: role="option" + on-demand aria-expanded/selected/disabled
+getCascaderItemAria({ selected: true, expanded: true, hasChildren: true })
+// { role: 'option', 'aria-expanded': true, 'aria-selected': true }
+```
+
+Note that `getCascaderItemAria` **does not emit `aria-expanded` when there are no children** — declaring `aria-expanded="false"` on a leaf option is allowed by APG but redundant, and it makes screen readers think "this is expandable, just not expanded right now."
+
+## Usage examples
+
+```ts
+import { findPathByValues, getSelectedLabelPath, getPanelItems } from '@lh-ui/share/core/cascader'
+
+const tree = [
+  {
+    value: 'zj', label: 'Zhejiang', children: [
+      { value: 'hz', label: 'Hangzhou', children: [{ value: 'xh', label: 'West Lake' }] },
+    ],
+  },
+]
+
+findPathByValues(tree, ['zj', 'hz', 'xh'])
+// { path: ['zj','hz','xh'], nodes: [Zhejiang, Hangzhou, West Lake] }
+
+getSelectedLabelPath(tree, ['zj', 'hz', 'xh'])  // 'Zhejiang / Hangzhou / West Lake'
+getSelectedLabelPath(tree, ['nope'])            // '' (returns an empty string when not found)
+
+getPanelItems(tree, new Set(['zj']))
+// [{ value:'zj', label:'Zhejiang', isExpanded:true, hasChildren:true },
+//  { value:'hz', label:'Hangzhou', isExpanded:false, hasChildren:true }]
+```
+
+Field aliases:
+
+```ts
+const raw = [{ id: 'zj', name: 'Zhejiang', subList: [{ id: 'hz', name: 'Hangzhou' }] }]
+const cfg = { value: 'id', label: 'name', children: 'subList' }
+const standard = normalizeCascaderNodes(raw, cfg)
+// [{ value:'zj', label:'Zhejiang', children:[{ value:'hz', label:'Hangzhou' }] }]
+findPathByValues(standard, ['zj', 'hz'])  // works
+```
+
+```vue
+<!-- Vue3: each column renders one level of panelItems -->
+<div :class="getCascaderClassNames({ size, disabled, visible, readonly })">
+  <button class="lh-cascader__input" v-bind="getCascaderTriggerAria(visible, panelId)">
+    {{ getSelectedLabelPath(options, value) || placeholder }}
+  </button>
+  <div v-if="visible" class="lh-cascader-panel" :class="getPanelClassNames({ hoverMode })">
+    <div
+      v-for="(col, ci) in columns"
+      :key="ci"
+      class="lh-cascader-panel__column"
+      v-bind="getCascaderColumnAria(`col-${ci}`, ci + 1)"
+    >
+      <div
+        v-for="item in col"
+        class="lh-cascader-panel__item"
+        v-bind="getCascaderItemAria({ selected: ..., expanded: item.isExpanded, disabled: item.isDisabled, hasChildren: item.hasChildren })"
+        @click="select(item, ci)"
+      >{{ item.label }}</div>
+    </div>
+  </div>
+</div>
+```
+
+## Styles and tokens
+
+| Class | Semantics |
+| --- | --- |
+| `.lh-cascader` / `--disabled` / `--visible` | Container |
+| `.lh-cascader__input` / `__input-inner` | Trigger input area |
+| `.lh-cascader__tags` / `__tag` / `__tag-more` | Multi-select tags (overflow collapse) |
+| `.lh-cascader__clear` | Clear button |
+| `.lh-cascader-panel` / `--hover-mode` | Panel (hover mode: hovering expands the next level) |
+| `.lh-cascader-panel__column` / `__column-header` | Column and column header |
+| `.lh-cascader-panel__item` / `--active` / `--disabled` | Column items |
+| `.lh-cascader-panel__search` / `__search-item` | Search results area |
+| `.lh-cascader-panel__empty` | No-results placeholder |
+| `.lh-cascader-panel-*` transition classes | Panel enter/leave animation |
+
+## Caveats
+
+- **`searchNodes` default cap of 50**: with a large tree and frequent input, O(all nodes) per keystroke causes lag; the cap is a performance safeguard. When more results are needed, the UI layer prompts "too many results, refine your keyword."
+- **Scope of the circular-reference protection**: ancestor-chain dedup is valid only within a single call and is **not cached across calls**. Do not try to cache and reuse `findNode`'s result — recompute when the tree changes.
+- **`expandLastValue` is only for `emitPath: false`**: in that mode `v-model` provides only the last-level value, and echo needs to restore the full expanded path from that single value.
+- **`getChildren` dirty-data fallback**: null nodes, non-object nodes, and non-array children all return `[]` instead of throwing TypeError. This lets the cascader swallow dirty backend data (children written as null is a common case).
+- **Combination of `checkStrictly` and `emitPath`**: `checkStrictly` allows selecting any level, and it is often paired with `emitPath: false` (only the last-level value); the two are orthogonal.
+
+<FnPlayground module="cascader" fn="getSelectedLabelPath" params='{"nodes": [{"value": "zj", "label": "Zhejiang", "children": [{"value": "hz", "label": "Hangzhou"}]}], "values": ["zj", "hz"]}' />

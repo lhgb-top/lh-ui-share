@@ -1,0 +1,116 @@
+---
+title: empty — Empty state
+description: 'getEmptyClassNames distinguishes a custom image from the default ink-wash placeholder; content (title/description/actions) is composed by the UI layer'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+The empty state is the "zero data" state of lists/tables/query results. The state of `core/empty` is extremely minimal — just a single `hasImage` boolean, because its core visual decision is "the user passed an image vs. use the library's default ink-wash image", and these two have different layouts (a custom image respects the original dimensions, while the default image is a bespoke full-bleed ink-wash painting).
+
+## When to use
+
+- Each platform implements `LhEmpty`: table with no data, search with no results, cleared list, insufficient-permission prompt.
+- Custom scenarios that need to reuse the ink-wash empty state visual.
+- **Do not use it for**: the loading state. That is the responsibility of `LhSkeleton` or `LhLoading`; the empty state means "the data is definitively zero", not "it has not arrived yet".
+
+## Import
+
+```ts
+import { getEmptyClassNames } from '@lh-ui/share/core/empty'
+import type { LhEmptyState } from '@lh-ui/share/core/empty'
+```
+
+## Design intent
+
+The reason `core/empty` has only the single field `hasImage` is that everything else (title, description, action buttons) is **content** rather than **state** — content is rendered directly via slots/props and needs no computation. Routing content through core as well would only add indirection with no benefit.
+
+This "compute only state, not content" boundary is a general principle of the lh-ui core layer: the input to a core function should be something that **changes the output**.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getEmptyClassNames` | `(state: LhEmptyState) => string[]` | class name array | distinguishes a custom image from the default image |
+
+Output example:
+
+```ts
+getEmptyClassNames({ hasImage: true })   // ['lh-empty', 'lh-empty--custom-image']
+getEmptyClassNames({ hasImage: false })  // ['lh-empty']
+```
+
+## Type definitions
+
+```ts
+export interface LhEmptyState {
+  hasImage: boolean
+}
+```
+
+## Accessibility
+
+`core/empty` does not output an aria attribute bundle. The accessibility essentials of the empty state live in the UI layer:
+
+- When an empty state appears, the list/table preceding it should use `aria-live="polite"` or actively notify after data loading completes, otherwise screen reader users remain stuck with the outdated perception that "the list has 0 items".
+- The default ink-wash image is **decorative** and should be `aria-hidden="true"` (handled by the UI layer at render time).
+- The description text carries the real information ("No data yet, click the button to refresh") and must be readable.
+- If the empty state contains an action button, the button itself can just use native semantics.
+
+## Usage examples
+
+```ts
+import { getEmptyClassNames } from '@lh-ui/share/core/empty'
+
+getEmptyClassNames({ hasImage: false })  // ['lh-empty']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getEmptyClassNames({ hasImage: !!image })">
+  <div class="lh-empty__image">
+    <slot name="image">
+      <InkWash />   <!-- default ink-wash placeholder image, aria-hidden -->
+    </slot>
+  </div>
+  <p class="lh-empty__description">{{ description }}</p>
+  <div class="lh-empty__actions"><slot name="actions" /></div>
+</div>
+```
+
+```tsx
+// React
+const hasImage = !!image
+return (
+  <div className={getEmptyClassNames({ hasImage }).join(' ')}>
+    <div className="lh-empty__image">{image ?? <DefaultInkWash aria-hidden="true" />}</div>
+    <p className="lh-empty__description">{description}</p>
+    <div className="lh-empty__actions">{actions}</div>
+  </div>
+)
+```
+
+```ts
+// uniapp: the default ink-wash image is an svg; non-h5 platforms need to swap in an image
+// asset (handled by each platform's UI layer)
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-empty` | base class: centered, vertical spacing |
+| `.lh-empty--custom-image` | custom image: releases the default image's fixed size constraint |
+| `.lh-empty__image` | image area |
+| `.lh-empty__description` | description text (secondary text color) |
+| `.lh-empty__actions` | action button area |
+| `.lh-empty__illustration` / `__ink-*` | elements of the default ink-wash illustration (distant mountains, ink wash, seal, frame) |
+
+The default ink-wash illustration is one of lh-ui's signature Chinese-style elements; it is drawn with pure CSS/SVG and has dedicated color tuning for dark mode.
+
+## Notes
+
+- The authority for determining `hasImage` lies with the UI layer: anything the user passes in via the `image` prop or the `image` slot counts as "has a custom image".
+- The empty state **should appear where the data would normally be** (inside the table body, inside the list container); do not pop it up as a global prompt — it is not feedback, it is a state of the data.
+- For scenarios like 404 / no permission, which are not "the data is empty", the semantics are closer to a warning; `LhResult` (if available on each platform) or a custom layout is more appropriate than `LhEmpty`.
+
+<FnPlayground module="empty" fn="getEmptyClassNames" params='{"state": {"hasImage": false}}' />

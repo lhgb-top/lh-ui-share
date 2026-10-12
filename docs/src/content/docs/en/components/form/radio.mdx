@@ -1,0 +1,133 @@
+---
+title: radio — Radio
+description: 'isRadioChecked uses Object.is to compare modelValue and value, getRadioClassNames emits type modifiers'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+The semantics of a radio is "only one in a group is active." `core/radio` abstracts it into the simplest possible check: **does the current group value `modelValue` equal my `value`**? Unlike checkbox's set operations, radio is a single-value comparison.
+
+## When to use
+
+- Each port implements `LhRadio` and `LhRadioGroup` (the group holds `modelValue`; each item derives its own selected state).
+- Mutually exclusive selection: gender, payment method, tab-style form branches.
+- **Should not use it**: multi-select uses `checkbox`; a toggle uses `switch`; segmented switching uses `segmented` (visually lighter).
+
+## Import
+
+```ts
+import { isRadioChecked, getRadioClassNames } from '@lh-ui/share/core/radio'
+import type { LhRadioState } from '@lh-ui/share/core/radio'
+```
+
+## Design intent
+
+`isRadioChecked` uses `Object.is(modelValue, value)` rather than `===`, for the same reason as checkbox: consistent set semantics for NaN / -0, and "values of any type can serve as a radio key."
+
+Radio needs no toggle function — selecting is **assignment** (`modelValue = value`); this is the mathematical difference between single-select and multi-select (assignment of one variable vs. addition/removal in a set).
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `isRadioChecked` | `(state: LhRadioState) => boolean` | boolean | `Object.is(modelValue, value)` |
+| `getRadioClassNames` | `(type: string) => string[]` | class name array | `lh-radio` + type modifier |
+
+```ts
+getRadioClassNames('primary')  // ['lh-radio', 'lh-radio--primary']
+getRadioClassNames('')         // ['lh-radio']
+```
+
+## Type definitions
+
+```ts
+export interface LhRadioState {
+  modelValue: unknown   // the group's current value
+  value: unknown        // this radio's value
+  checked: boolean
+}
+```
+
+## Accessibility
+
+Same reasoning as checkbox: **use the native `<input type="radio">`** — semantics, keyboard support, and form submission all come for free. The radio's name attribute is key — radios in the same group must share a name; the browser's arrow-key navigation (moving between radios in the same group) depends on it.
+
+```ts
+// Screen readers announce the label text plus the "selected/unselected" state — the native radio covers all of it
+```
+
+## Usage examples
+
+```ts
+import { isRadioChecked, getRadioClassNames } from '@lh-ui/share/core/radio'
+
+isRadioChecked({ modelValue: 'b', value: 'b', checked: false })  // true
+isRadioChecked({ modelValue: 'b', value: 'a', checked: false })  // false
+```
+
+```vue
+<!-- Vue3 -->
+<div class="lh-radio-group" :class="`lh-radio-group--${size}`">
+  <label
+    v-for="opt in options"
+    :key="String(opt.value)"
+    :class="getRadioClassNames(type)"
+    :class-mod="{ 'lh-radio--checked': isRadioChecked({ modelValue, value: opt.value, checked: false }) }"
+  >
+    <span class="lh-radio__box">
+      <input
+        class="lh-radio__input"
+        type="radio"
+        :name="groupName"
+        :checked="modelValue === opt.value"
+        @change="emit('update:modelValue', opt.value)"
+      />
+    </span>
+    <span class="lh-radio__label">{{ opt.label }}</span>
+  </label>
+</div>
+```
+
+```tsx
+// React
+const [value, setValue] = useState('a')
+return options.map((opt) => (
+  <label key={opt.value} className="lh-radio">
+    <input
+      type="radio"
+      name={groupName}
+      checked={value === opt.value}
+      onChange={() => setValue(opt.value)}
+    />
+    <span className="lh-radio__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp: <radio-group> + <radio> are built-in components, and the change event gives the
+// selected item's value directly; note that uniapp's radio value only supports strings
+```
+
+## Styles and tokens
+
+| Class | Semantics |
+| --- | --- |
+| `.lh-radio` | Base class |
+| `.lh-radio--checked` / `--disabled` | States |
+| `.lh-radio--{small\|large}` | Size tiers |
+| `.lh-radio__box` | Custom radio circle (overrides the native appearance) |
+| `.lh-radio__input` | Native input (visually hidden, semantics preserved) |
+| `.lh-radio__label` | Text |
+| `.lh-radio-group` / `--{small\|large}` | Group container |
+
+The selected state's inner dot uses `var(--lh-primary-color)`; the disabled state uses `--lh-text-disabled`.
+
+## Caveats
+
+- **The `type` parameter and checkbox-group sizing are two different things**: radio's `getRadioClassNames(type)` emits a **type** modifier (like primary); the size modifier lives on the group (`lh-radio-group--{size}`).
+- **name must be consistent within a group**: otherwise the browser's keyboard navigation (arrow keys between group members) breaks, and form submission would submit multiple values.
+- **The initial value of `modelValue`**: it should be one of the options' values, or `undefined` (nothing selected). Giving it a value that is not among the options leaves all radios unselected, and it cannot be recovered through the UI.
+- Both radio and segmented can do mutually exclusive switching: radio carries "form control" semantics (native, submittable), while segmented carries "view switching" semantics (lighter, more like a button group).
+
+<FnPlayground module="radio" fn="getRadioClassNames" params='{"type": "primary"}' />

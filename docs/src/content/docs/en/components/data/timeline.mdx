@@ -1,0 +1,161 @@
+---
+title: timeline — Timeline
+description: 'getTimelineSide left-right alternation, four semantic node types, alternate two-column layout'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A timeline visualizes "events ordered by time": a vertical line threading several nodes, each carrying a time, a title, and content. It is commonly seen in delivery tracking, operation logs, and version-update records. `core/timeline` is very light — its main work is the layout-side left/right alternation calculation and class-name assembly.
+
+## When to use
+
+- Each framework implements `LhTimeline`: delivery tracking, approval records, version-update logs, operation audit trails.
+- Scenarios where events are **ordered by time** and a sense of a time axis should be emphasized.
+- **Don't use it**: steps without a time dimension (use `steps`, which emphasizes progress rather than time); events that need filtering / search (use a list with filters).
+
+## Import
+
+```ts
+import {
+  getTimelineItemClassNames,
+  getTimelineClassNames,
+  getTimelineSide,
+} from '@lh-ui/share/core/timeline'
+import type { LhTimelineMode, LhTimelineType, LhTimelineItemState } from '@lh-ui/share/core/timeline'
+```
+
+## Design intent
+
+**Two layout modes**:
+
+- `left` (default): the vertical line is on the far left, and all content is laid out in a single column on the right. Simple, high information density.
+- `alternate`: the vertical line is centered and content **alternates left and right** — `getTimelineSide(index)` uses `index % 2` to decide the side (even goes left, odd goes right). This mode is more visually symmetric and suits larger content blocks or when the timeline is the main body of the page.
+
+**Why `getTimelineSide` lives in core rather than in styles**: the side determines not just the CSS class name but also **the ordering of the content sub-components** (when the timestamp is in the left column it must come before the content, and after the content when in the right column). Computing it with a pure function keeps the rendering logic identical across frameworks and avoids the divergence of "alternating on the Vue side but all-left on the React side".
+
+**Four semantic types**: `primary` / `success` / `warning` / `danger`, corresponding to the color of the node dot. The semantics are assigned by the caller based on the nature of the event (a successful operation is success, an alert is warning); core only maps class names and does not interpret business meaning.
+
+**The use of `isLast`**: the last node's **vertical line is not drawn** (the `--last` class removes the `::before` line segment), otherwise the axis extends one segment beyond the last node.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getTimelineItemClassNames` | `(state: LhTimelineItemState) => string[]` | class names | type / hollow / side / last |
+| `getTimelineClassNames` | `(mode: LhTimelineMode) => string[]` | class names | alternate modifier |
+| `getTimelineSide` | `(index: number) => 'left' \| 'right'` | side | even left, odd right |
+
+## Type definitions
+
+```ts
+export type LhTimelineMode = 'left' | 'alternate'
+export type LhTimelineType = 'primary' | 'success' | 'warning' | 'danger'
+
+export interface LhTimelineItemState {
+  type: LhTimelineType | undefined
+  hollow: boolean       // hollow node (border only, used for "not yet reached" events)
+  side: 'left' | 'right'  // the side under alternate mode
+  isLast: boolean
+}
+```
+
+## Accessibility
+
+timeline is a **purely presentational component** with no APG interactive role. The content itself carries ordered-list semantics; wrapping it in `<ol>` is recommended:
+
+```html
+<ol class="lh-timeline">
+  <li class="lh-timeline__item">
+    <time datetime="2026-10-12T10:00">10:00</time> Order delivered
+  </li>
+</ol>
+```
+
+- The `<time>` element lets screen readers and search engines recognize the time; the `datetime` attribute uses ISO 8601 format.
+- The node dots are purely decorative — use `aria-hidden="true"` or implement them with pseudo-elements (pseudo-elements are naturally absent from the accessibility tree).
+- If the timeline expresses **progress** (e.g. "currently at step 3"), consider using `steps` instead, with `aria-current`.
+
+## Usage examples
+
+```ts
+import { getTimelineSide, getTimelineClassNames } from '@lh-ui/share/core/timeline'
+
+getTimelineSide(0)  // 'left'
+getTimelineSide(1)  // 'right'
+getTimelineSide(2)  // 'left'
+getTimelineClassNames('alternate')  // ['lh-timeline', 'lh-timeline--alternate']
+getTimelineClassNames('left')       // ['lh-timeline']
+```
+
+```vue
+<!-- Vue3: alternate mode -->
+<ol :class="getTimelineClassNames(mode)">
+  <li
+    v-for="(item, index) in items"
+    :key="item.id"
+    :class="getTimelineItemClassNames({
+      type: item.type,
+      hollow: item.hollow,
+      side: getTimelineSide(index),
+      isLast: index === items.length - 1,
+    })"
+  >
+    <template v-if="mode === 'alternate'">
+      <!-- left column -->
+      <div v-if="getTimelineSide(index) === 'left'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+        <p class="lh-timeline__desc">{{ item.desc }}</p>
+      </div>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <!-- right column -->
+      <div v-if="getTimelineSide(index) === 'right'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+    <template v-else>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <div class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+  </li>
+</ol>
+```
+
+```tsx
+// React: in alternate mode the side decides the render order; branch on getTimelineSide(index)
+```
+
+```ts
+// uniapp: iterate with <view>; the alternate two columns use absolute positioning + left/right 50% layout
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-timeline` | base class (`<ol>` reset) |
+| `.lh-timeline--alternate` | alternate mode (axis centered) |
+| `.lh-timeline__item` | a single node item |
+| `.lh-timeline__item--{primary\|success\|warning\|danger}` | semantic type (dot color) |
+| `.lh-timeline__item--hollow` | hollow dot (not yet reached) |
+| `.lh-timeline__item--right` | alternate right column |
+| `.lh-timeline__item--last` | last item (does not draw the lower axis segment) |
+| `.lh-timeline__dot` | dot (`::before` draws the axis) |
+| `.lh-timeline__content` / `__time` / `__title` / `__desc` | content area |
+
+Axis color `--lh-border-color`; the four dot colors are `--lh-primary-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color` respectively; hollow nodes use a border + transparent background.
+
+## Caveats
+
+- **`isLast` must be passed**: without it the axis extends beyond the last node, visually resembling a truncated progress bar.
+- **Data order in `alternate` mode**: the left/right alternation is **by index**, consistent with the data's chronological order — do not sort in the UI layer before computing the side, otherwise the sides will be misaligned.
+- **The semantics of the hollow node `hollow`**: it indicates "this event has not yet been reached" (e.g. "pending delivery" in logistics). It is orthogonal to `type`: hollow + warning means "not yet reached and at risk".
+- **Content overflow**: in alternate mode each column is only half the width, and long text wraps many times; when there is a lot of content, use `left` mode or give the content area a `max-height` with an expand action.
+- **Time formatting**: core does not format times; the UI layer uses `core/shared/date.formatDate` or handles it itself, and `<time datetime>` must be in ISO format to be machine-parsable.
+- **Reverse timelines**: some scenarios need the newest event on top — just reverse it at the data layer; core is unaware of direction.
+
+<FnPlayground module="timeline" fn="getTimelineSide" params='{"index": 3}' />

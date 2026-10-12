@@ -1,0 +1,148 @@
+---
+title: checkbox — Checkbox
+description: 'isCheckboxChecked uses Object.is for determination, toggleCheckboxValue toggles immutably'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A checkbox is the smallest state machine in a form: whether a value is in an array or not. `core/checkbox` has only two functions because it abstracts "checking" into a **set operation** — a checkbox group's value is an array, checking adds an element, and unchecking removes one.
+
+## When to use
+
+- Each port implements `LhCheckbox` and `LhCheckboxGroup` (the group holds the value array; each item derives its own checked state from it).
+- Multi-select scenarios; for a two-state toggle, `switch` is a better fit.
+- **Should not use it**: single selection uses `radio`; when an indeterminate semantic is needed (a parent partially checked), use `tree`'s check cascading.
+
+## Import
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+import type { LhCheckboxState } from '@lh-ui/share/core/checkbox'
+```
+
+## Design intent
+
+`Object.is` is used for determination instead of `includes`' implicit equality because a checkbox's value can be of any type (string, number, even an object reference). `includes` returns false for NaN, while `Object.is(NaN, NaN)` returns true — rare in practice, but set semantics should be consistent.
+
+`toggleCheckboxValue` is **immutable**: it first filters out the equal item (dedup), then decides whether to append based on `checked`. This ordering guarantees **idempotence** — repeated calls with the same value and direction produce the same result, and duplicate elements never appear in the array.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `isCheckboxChecked` | `(values: unknown[], value: unknown) => boolean` | boolean | Whether value is in the array |
+| `toggleCheckboxValue` | `(values: unknown[], value: unknown, checked: boolean) => unknown[]` | new array | Immutable toggle |
+
+## Type definitions
+
+```ts
+export interface LhCheckboxState {
+  values: unknown[]
+  value: unknown
+  checked: boolean
+}
+```
+
+## Accessibility
+
+`core/checkbox` does not emit an aria attribute bag — **it is strongly recommended that each port use the native `<input type="checkbox">`**: the native element brings `aria-checked` for free, supports keyboard interaction and form-submission semantics, which any equivalent custom implementation would struggle to fully replicate.
+
+The native checkbox's `indeterminate` (partially checked) state can **only be set via JS** (there is no corresponding HTML attribute); this is the one special point the UI layer needs to handle in group scenarios:
+
+```ts
+// The parent checkbox's indeterminate state (e.g. a "select all" box)
+input.indeterminate = checkedCount > 0 && checkedCount < total
+```
+
+## Usage examples
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+
+isCheckboxChecked(['a', 'b'], 'b')   // true
+isCheckboxChecked(['a', 'b'], 'c')   // false
+
+toggleCheckboxValue(['a', 'b'], 'c', true)   // ['a', 'b', 'c']
+toggleCheckboxValue(['a', 'b', 'c'], 'b', false)  // ['a', 'c']
+toggleCheckboxValue(['a', 'b'], 'b', false)       // ['a']
+toggleCheckboxValue(['a'], 'a', true)             // ['a'] (already present, idempotent)
+```
+
+```vue
+<!-- Vue3: LhCheckboxGroup -->
+<script setup>
+const model = defineModel<Array<string>>({ default: [] })
+const toggle = (value: string, checked: boolean) => {
+  model.value = toggleCheckboxValue(model.value, value, checked)
+}
+</script>
+
+<template>
+  <div class="lh-checkbox-group" :class="`lh-checkbox-group--${size}`">
+    <label
+      v-for="opt in options"
+      :key="String(opt.value)"
+      class="lh-checkbox"
+      :class="{
+        'lh-checkbox--checked': isCheckboxChecked(model, opt.value),
+        'lh-checkbox--disabled': disabled || opt.disabled,
+      }"
+    >
+      <span class="lh-checkbox__box">
+        <input
+          class="lh-checkbox__input"
+          type="checkbox"
+          :checked="isCheckboxChecked(model, opt.value)"
+          :disabled="disabled || opt.disabled"
+          @change="toggle(opt.value, ($event.target as HTMLInputElement).checked)"
+        />
+      </span>
+      <span class="lh-checkbox__label">{{ opt.label }}</span>
+    </label>
+  </div>
+</template>
+```
+
+```tsx
+// React
+const [values, setValues] = useState<string[]>([])
+return options.map((opt) => (
+  <label key={opt.value} className="lh-checkbox">
+    <input
+      type="checkbox"
+      checked={isCheckboxChecked(values, opt.value)}
+      onChange={(e) => setValues(toggleCheckboxValue(values, opt.value, e.target.checked))}
+    />
+    <span className="lh-checkbox__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp: <checkbox-group> + <checkbox> are built-in components, and the change event
+// gives the value array directly; when customizing the check styling, use .lh-checkbox__box
+// to override the default appearance (on non-h5 targets, mind :checked reactivity)
+```
+
+## Styles and tokens
+
+| Class | Semantics |
+| --- | --- |
+| `.lh-checkbox` | Base class (label wrapper) |
+| `.lh-checkbox--checked` / `--indeterminate` / `--disabled` | Three states |
+| `.lh-checkbox--{small\|large}` | Size tiers |
+| `.lh-checkbox__box` | Custom check box (overrides the native appearance) |
+| `.lh-checkbox__input` | Native input (visually hidden, semantics preserved) |
+| `.lh-checkbox__label` | Text |
+| `.lh-checkbox-group` / `--{small\|large}` | Group container and group size |
+
+The checkmark is positioned at a fixed `top: 2px / left: 5px` — **only correct for a 16px box**; this is a pending-unification item recorded in the "control-height tokens" initiative (should be changed to 50% centering).
+
+## Caveats
+
+- **Value type consistency**: `toggleCheckboxValue(['1'], 1, true)` yields `['1', 1]` — the string `'1'` and the number `1` are two different values. The id type from the backend must be unified in the UI layer.
+- **Semantics of an empty array**: `values: []` means "none selected," which is different from `values: undefined`; the group's default value should be `[]`.
+- **Direction of the `checked` parameter**: it is the "target state," not the "current state" — `toggleCheckboxValue(v, x, false)` always removes x, whether it was there or not.
+- Consider `virtual-list` when there are many options; the group itself does not virtualize.
+
+<FnPlayground module="checkbox" fn="toggleCheckboxValue" params='{"values": ["a", "b"], "value": "c", "checked": true}' />

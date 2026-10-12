@@ -1,0 +1,170 @@
+---
+title: 'dropdown — Dropdown menu'
+description: 'LH_DROPDOWN_PLACEMENT_DEFAULT=b-bottom-start, getDropdownMenuStyle maxHeight scrolling, haspopup:"menu" vs popover''s "true"'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A dropdown menu is "the list of operations that pops up on button click": the per-row "Edit / Delete / Disable", the table column's "More actions". The difference from `popover` is **semantics and content form** — dropdown is **menu semantics** (role=menu + a list of menuitems), popover is **dialog semantics** (role=dialog, can hold arbitrary content). The difference from `menu` is **persistence** — a dropdown is a temporary, click-and-gone action entry.
+
+## When to use
+
+- Each framework implements `<LhDropdown>` / `<LhDropdownItem>`: row action menus, "More" buttons, bulk operations, command-style shortcut menus.
+- **Peer-level action items, a moderate count (3~10), no complex forms needed**.
+- **Do not use it for**: popovers needing forms or rich content (use `popover`); dangerous operations needing confirmation (putting a delete button directly in a dropdown without a second confirmation is risky — use `popconfirm`); primary navigation (use `menu` — a dropdown disappears on refresh).
+
+## Import
+
+```ts
+import {
+  LH_DROPDOWN_PLACEMENT_DEFAULT,
+  LH_DROPDOWN_TRIGGERS,
+  getDropdownClass,
+  getDropdownItemClass,
+  getDropdownMenuStyle,
+  getDropdownTriggerAria,
+  getDropdownMenuAria,
+  getDropdownItemAria,
+} from '@lh-ui/share/core/dropdown'
+import type { LhDropdownTrigger, LhDropdownState, LhDropdownItemState } from '@lh-ui/share/core/dropdown'
+```
+
+## Design intent
+
+**The default position is `bottom-start`, not `top`**: `LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'` — a dropdown menu **expands downward from the button's bottom-left corner**, matching the mental model of "drop-down". Contrast with the default `top` of `popover` / `popconfirm` (information layers float upward, not covering the content below): a dropdown is an action entry, expanding downward is more natural, and `bottom-start` (left-aligned rather than centered) ensures a long menu does not overflow the viewport horizontally.
+
+**No focus in the trigger types**: `LH_DROPDOWN_TRIGGERS` is `hover / click / contextmenu` — **no focus**. Contrast with `popover`'s `click / hover / focus / manual`. The reason: a dropdown's trigger is usually a button, and a focus trigger would pop the menu as Tab passes through, interfering with the keyboard flow. `contextmenu` is for the right-click menu scenario (replacing the browser's default context menu).
+
+**The semantics of `hideOnClick` live in the UI layer**: the state has a `hideOnClick` field but core does not consume it — the decision of "whether to close after clicking a menu item" is in the UI layer (on item click, decide whether to close based on the config). Core only carries the declaration, keeping the data structure able to express the complete intent (same idea as `form`'s `trigger` field).
+
+**`getDropdownMenuStyle` builds in `overflow: auto`**: setting maxHeight automatically adds scrolling. When there are many dropdown items, the menu does not burst the viewport — this is a subtle difference from `popover` (popover's width styles include no scrolling; content overflow is managed by the caller).
+
+**`haspopup: 'menu'` instead of `'true'`**: the trigger's aria-haspopup value is **`'menu'`** — precisely declaring that what pops up is a menu. Contrast with `popover`'s `'true'` (a generic popup, equivalent to the generalization of dialog/menu/listbox). Screen readers use this to anticipate the interaction pattern of the popped-up content (menus support arrow-key navigation).
+
+## Function table
+
+| Function / constant | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getDropdownClass` | `(state: { placement, popperClass? }) => string[]` | class names | position + custom |
+| `getDropdownItemClass` | `(state: { disabled?, divided? }) => string[]` | class names | disabled + divider |
+| `getDropdownMenuStyle` | `(maxHeight?: string \| number) => Record<string, string>` | inline styles | maxHeight + overflow |
+| `getDropdownTriggerAria` | `(visible, menuId?) => LhAriaAttrs` | aria bag | haspopup="menu" |
+| `getDropdownMenuAria` | `(id?) => LhAriaAttrs` | aria bag | role=menu |
+| `getDropdownItemAria` | `(state: { disabled? }) => LhAriaAttrs` | aria bag | role=menuitem |
+
+Constants: `LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'`, `LH_DROPDOWN_TRIGGERS` (hover / click / contextmenu).
+
+## Type definitions
+
+```ts
+export type LhDropdownTrigger = 'hover' | 'click' | 'contextmenu'
+
+export interface LhDropdownState {
+  trigger?: LhDropdownTrigger
+  placement?: LhPlacement          // 12 positions (shared/popper)
+  visible?: boolean
+  disabled?: boolean
+  hideOnClick?: boolean            // whether to close after clicking a menu item (consumed by the UI layer)
+}
+
+export interface LhDropdownItemState {
+  command?: string | number        // menu item identifier, emitted with the command event
+  disabled?: boolean
+  divided?: boolean                // top divider line
+}
+```
+
+## Accessibility
+
+```ts
+getDropdownTriggerAria(true, 'dd-menu-1')
+// { 'aria-expanded': true, 'aria-controls': 'dd-menu-1', 'aria-haspopup': 'menu' }
+getDropdownTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'menu' }
+
+getDropdownMenuAria('dd-menu-1')  // { role: 'menu', id: 'dd-menu-1' }
+getDropdownItemAria({ disabled: true })
+// { role: 'menuitem', 'aria-disabled': true }
+```
+
+- **Screen readers anticipating `aria-haspopup="menu"`**: when a screen reader encounters it, it knows the popup is a menu and treats it in menu mode (arrow-key navigation, Enter to activate). This is more precise than a generic `"true"` — which is why dropdown and popover use different values.
+- **Menu keyboard conventions** (the APG menu pattern): the trigger opens with Enter/Space; after opening, focus lands on **the first available menu item**; ↑/↓ to move; Enter/Space to activate; Esc to close and **return focus to the trigger**. The arrow-key navigation algorithm uses `shared/keyboard.getNextListIndex` (shared origin with menu / tabs).
+- **The event contract of `command`**: a menu item's `command` field is emitted with the click event (`@command="cmd => ..."`), rather than writing an individual handler per item — this is the standard API shape for a dropdown menu. The UI layer dispatches with a switch.
+- **aria-disabled instead of the disabled attribute for disabled items**: `aria-disabled` marks the element as disabled in the accessibility tree while keeping it focusable (screen readers can announce its existence and that it is disabled); the native `disabled` removes it from the tab sequence, so keyboard users "skip" it without knowing why.
+- **Dividers are purely decorative**: `divided` is just a CSS border with no semantics — do not use it to express "a group of dangerous operations"; for dangerous groupings use `popconfirm` or a visual color (danger text color).
+- **Context menus (contextmenu)**: the trigger needs `@contextmenu.prevent` to stop the browser's default menu, and the trigger element should be marked as interactive — a context menu is completely unreachable for keyboard users, so **an equivalent button entry must be provided** (a hard accessibility requirement).
+
+## Usage examples
+
+```ts
+import {
+  getDropdownClass, getDropdownItemClass, getDropdownMenuStyle, LH_DROPDOWN_PLACEMENT_DEFAULT,
+} from '@lh-ui/share/core/dropdown'
+
+LH_DROPDOWN_PLACEMENT_DEFAULT  // 'bottom-start'
+
+getDropdownClass({ placement: 'bottom-start' })
+// ['lh-dropdown__menu', 'lh-dropdown__menu--bottom-start']
+getDropdownItemClass({ disabled: true, divided: true })
+// ['lh-dropdown__item', 'lh-dropdown__item--disabled', 'lh-dropdown__item--divided']
+
+getDropdownMenuStyle(200)     // { maxHeight: '200px', overflow: 'auto' }
+getDropdownMenuStyle('30vh')  // { maxHeight: '30vh', overflow: 'auto' }
+getDropdownMenuStyle(undefined)  // {}
+```
+
+```vue
+<!-- Vue3: row action menu -->
+<template>
+  <LhDropdown @command="onCommand">
+    <template #default>
+      <LhButton size="small">More<LhIcon name="arrow-down" /></LhButton>
+    </template>
+    <template #menu>
+      <LhDropdownItem :command="'edit'">Edit</LhDropdownItem>
+      <LhDropdownItem :command="'copy'">Copy</LhDropdownItem>
+      <LhDropdownItem :command="'delete'" divided danger>Delete</LhDropdownItem>
+    </template>
+  </LhDropdown>
+</template>
+
+<script setup>
+function onCommand(command: string | number) {
+  if (command === 'delete') visible.value = true  // delete goes through popconfirm for a second confirmation
+  else if (command === 'edit') router.push(`/edit/${id}`)
+}
+</script>
+```
+
+```tsx
+// React: render the menu items from an array + onCommand dispatch; a controlled visible pairs with click-outside closing
+```
+
+```ts
+// uniapp: a <view> menu + catchtap; context menus are unsupported on non-h5 platforms, so only the click trigger is kept
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-dropdown__menu` | menu container (popper) |
+| `.lh-dropdown__menu--{bottom-start\|top\|…}` | position (the actual value after flip) |
+| `.lh-dropdown__item` | menu item |
+| `.lh-dropdown__item--disabled` | disabled (grey + non-responsive) |
+| `.lh-dropdown__item--divided` | top divider line |
+| `.lh-dropdown__item--danger` | dangerous operation (red text, a UI-layer convention) |
+
+Background `--lh-bg-color`, shadow `--lh-box-shadow-dropdown`, border radius `--lh-border-radius-base`, item padding `--lh-dropdown-item-padding`, z-index `--lh-z-index-dropdown`.
+
+## Caveats
+
+- **Dangerous operations must require a second confirmation**: putting "Delete" directly in a dropdown executes on a single click, and a mis-click is costly. The standard practice is for the dropdown to trigger a `popconfirm` ("This cannot be undone after deletion. Confirm?") — this is the cooperation chain between the two components.
+- **Scrolling when there are too many items**: over 10 items — consider `maxHeight` scrolling, or switch to `select` (selection semantics) or a drawer. Keyboard navigation through a long menu is a poor experience (many arrow-key presses).
+- **The mobile problem with `hover` triggers**: touch screens have no hover, same as `popover`/`tooltip`. Use click by default across platforms.
+- **The scenario for `hideOnClick: false`**: when the menu items are "checkmark-style" toggles (like "Show column X"), staying open after a click lets the user check several in a row — this is why that field exists.
+- **Nested dropdowns**: the positioning and focus management of submenus (dropdown inside dropdown) are complicated (which Esc closes which parent/child popup). lh-ui does not build in submenus — use `menu` when hierarchical navigation is needed.
+- **`placement` must pass the real post-flip value**: same as `popover`, `getDropdownClass` consumes the actual position returned by the popper, otherwise the arrow/alignment class names will not match the visuals.
+- **The boundary with `menu`**: a dropdown is a **temporary action entry** (gone on refresh); a menu is **persistent navigation** (deep-linkable, state survives refresh). Passing a dropdown off as primary navigation leaves users unable to get back to secondary pages.
+- **Focus on the first item**: when the menu opens, focus lands on the first available item (the `first` semantics of `shared/keyboard`), not resting on the trigger — this is required by APG, so that keyboard users can act directly after opening.
+
+<FnPlayground module="dropdown" fn="getDropdownMenuStyle" params='{"maxHeight": 200}' />

@@ -1,0 +1,93 @@
+---
+title: 'delay — show/hide delay normalization'
+description: 'resolveDelay falls undefined values back to the component default show/hide timing; shared by tooltip / popover / popconfirm'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+A tooltip should "show the moment the mouse enters, and disappear a moment after it leaves" (to avoid flicker while sweeping across); a popconfirm should "appear the instant it is clicked". Every popover component has its own show/hide rhythm, but "what default value to use when the user passes nothing" is a shared concern.
+
+## When to use it
+
+- Hover-style popovers like tooltip / popover / popconfirm, where props expose `show-delay` / `hide-delay`.
+- Any timing parameter that "the user can override, but which has a sensible default".
+
+**Don't use it for**: fixed-timing scenarios (message's 3-second auto-dismiss) — just write a constant; no normalization needed.
+
+## Import
+
+```ts
+import { resolveDelay, type LhDefaultDelay } from '@lh-ui/share/core/shared/delay'
+```
+
+## Types and functions
+
+```ts
+export interface LhDefaultDelay {
+  show: number
+  hide: number
+}
+```
+
+| Function | Signature | Purpose |
+| --- | --- | --- |
+| `resolveDelay` | `(showDelay: number \| undefined, hideDelay: number \| undefined, defaults: LhDefaultDelay) => LhDefaultDelay` | Show/hide delay normalization |
+
+```ts
+resolveDelay(undefined, undefined, { show: 0, hide: 150 })
+// { show: 0, hide: 150 }   —— the user passed nothing, use the component defaults
+
+resolveDelay(200, undefined, { show: 0, hide: 150 })
+// { show: 200, hide: 150 } —— only show was overridden
+```
+
+The implementation is just two `??`s: `showDelay ?? defaults.show` and `hideDelay ?? defaults.hide`. `null` goes down the same path (`??` handles both `null` and `undefined`).
+
+## Why extract this into its own function
+
+The three components have different defaults but the same normalization logic:
+
+| Component | Default show | Default hide | Reason |
+| --- | --- | --- | --- |
+| tooltip | 0 | 150 | Show immediately to avoid "no response while sweeping"; delay hiding to avoid flicker when moving toward the target |
+| popover | 0 | 150 | Same as above, but the content is interactive and hide is longer (decided by the UI layer) |
+| popconfirm | 0 | 0 | Click-triggered, no hover semantics |
+
+With this extracted, a new popover component only passes its own `defaults` instead of reimplementing "fall back on undefined".
+
+## Difference from debounce
+
+Two things that are easy to confuse:
+
+| | `resolveDelay` | `debounce` (utils) |
+| --- | --- | --- |
+| Semantics | **Parameter normalization** for "how long to wait before this show / hide" | A throttling tool that **collapses** frequent calls into a single execution |
+| Use | Computes the delay value | Uses the delay value to wrap a real timer |
+
+The typical chain is sequential: `const { hide } = resolveDelay(props.hideDelay, undefined, DEFAULTS)` → `hideTimer = debounce(actualHide, hide)`.
+
+## Usage example
+
+```ts
+// inside the popover component
+const DEFAULT_DELAY: LhDefaultDelay = { show: 0, hide: 150 }
+
+const delay = computed(() =>
+  resolveDelay(props.showDelay, props.hideDelay, DEFAULT_DELAY),
+)
+
+function onShow() {
+  setTimeout(open, delay.value.show)
+}
+function onHide() {
+  setTimeout(close, delay.value.hide)
+}
+```
+
+## Caveats
+
+- **It only falls back, it does not clamp**: a negative delay is returned as-is. If a UI layer needs "delays must be non-negative", it handles that at the `setTimeout(fn, Math.max(0, ms))` call site (`setTimeout` treats negatives as 0, so in practice there is no problem).
+- **`show` / `hide` are independent**: after normalization they are still two separate numbers, and the component must use them on two separate timers.
+- **A new object is returned**: each call returns a fresh `{ show, hide }`, safe to wrap in a reactive reference.
+
+<FnPlayground module="delay" fn="resolveDelay" params='{"showDelay": null, "hideDelay": 300, "defaults": {"show": 0, "hide": 150}}' />

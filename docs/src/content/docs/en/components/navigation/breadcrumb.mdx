@@ -1,0 +1,152 @@
+---
+title: 'breadcrumb — Breadcrumb'
+description: 'getEllipsisBeforeIndex first-item + ellipsis + tail strategy, getCollapsedHiddenIndexes hidden set, last item aria-current="page"'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A breadcrumb is the "where am I and how did I get here" path indicator: `Home / Settings / Security / Two-step verification`. It is lighter than a menu — it only expresses the hierarchical path and carries no primary navigation; weaker than a steps bar — it expresses no sequential flow, only containment. When the hierarchy is deep the path gets long, and collapsing is its core algorithm.
+
+## When to use
+
+- Each framework implements `<LhBreadcrumb>` / `<LhBreadcrumbItem>`: admin-system hierarchical paths, docs-site category paths, product category paths.
+- Situations that need to **mark the current position** and provide an entry to **go back level by level**.
+- **Do not use it for**: primary navigation (use `menu`); step flows (use `steps`); switching between peer content (use `tabs`); a path with only one level (that is not a breadcrumb, it is a page title).
+
+## Import
+
+```ts
+import {
+  getBreadcrumbItemClassNames,
+  getEllipsisBeforeIndex,
+  getCollapsedHiddenIndexes,
+  getBreadcrumbItemAria,
+} from '@lh-ui/share/core/breadcrumb'
+import type { LhBreadcrumbItemState, LhBreadcrumbCollapseState } from '@lh-ui/share/core/breadcrumb'
+```
+
+## Design intent
+
+**Collapsing keeps the first item**: the rule of `getEllipsisBeforeIndex` is "first item + ellipsis + the last maxItems-1 items". **The first item is always kept** — it is the anchor to "go back to the top level" (usually "Home"), and omitting it takes away the user's ability to return to the root. This trade-off is as important as "keeping the last item" (the current position).
+
+**Which item the ellipsis is inserted before**: what is returned is **the index of the first visible item after the ellipsis** (`total - (maxItems - 1)`), and the UI layer inserts the ellipsis element before this position. When not collapsing it returns -1 — note that -1 is the "not collapsing" sentinel, not a valid index.
+
+**`maxItems < 2` does not collapse**: at least the first item plus one following item must be shown for collapsing to make sense. `maxItems: 1` or smaller returns -1 — this is defensive design, preventing a misconfigured value from collapsing the breadcrumb down to a single ellipsis.
+
+**The relationship between `getCollapsedHiddenIndexes` and the ellipsis index**: what gets hidden is "the items between the first item and the ellipsis", i.e. the half-open interval `[1, ellipsisIndex)` — the first item (index 0) and everything after the ellipsis position are kept. The two functions are used together: first get the ellipsis position, then compute the hidden set.
+
+**The last item's aria-current="page"**: the last item is "the current page", and `aria-current="page"` is the standard WAI-ARIA semantics — screen readers announce "current page", which is more precise than a text hint. Non-last items output no aria attributes at all (the link semantics are carried by the native `<a>`).
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getBreadcrumbItemClassNames` | `(state: LhBreadcrumbItemState) => string[]` | class names | link state + last item |
+| `getEllipsisBeforeIndex` | `(state: LhBreadcrumbCollapseState) => number` | index / -1 | ellipsis position |
+| `getCollapsedHiddenIndexes` | `(state: LhBreadcrumbCollapseState) => number[]` | hidden index set | collapsed hidden items |
+| `getBreadcrumbItemAria` | `(isLast: boolean) => LhAriaAttrs` | aria bag | last item aria-current |
+
+## Type definitions
+
+```ts
+export interface LhBreadcrumbItemState {
+  isLast: boolean    // whether this is the last item (the current page)
+  isLink: boolean    // whether to render as a link (has `to` and is not the last item)
+}
+
+export interface LhBreadcrumbCollapseState {
+  total: number      // total number of items
+  maxItems: number   // maximum visible items (including the ellipsis); less than 2 means no collapsing
+}
+```
+
+## Accessibility
+
+```ts
+getBreadcrumbItemAria(true)   // { 'aria-current': 'page' }
+getBreadcrumbItemAria(false)  // {}
+```
+
+- **aria-current="page" only for the last item**: the middle items are clickable links and need no current marker. When entering a page, the screen reader announces "Home, link / Settings, link / Security, link / Two-step verification, current page" — the path and position are conveyed completely at once.
+- **Use a native `<a>` rather than a JS jump**: when the middle items are real links, use `<a href="...">` — it supports opening in a new tab with a middle-click, right-clicking to copy the link, and works without JS. Client-side routing is implemented by the UI layer intercepting the click (`@click.prevent`), keeping the href. The comment of `getBreadcrumbItemAria` explains this: when there is a link, the role semantics are carried by the native a, so the function needs to output nothing.
+- **Accessibility of the ellipsis button**: the collapsed ellipsis is usually clickable to expand the full path. It is a control and needs `aria-label="Expand the full path"` (or aria-expanded to convey the expanded state) — otherwise it is a nameless button.
+- **A nav wrapper + aria-label**: the whole breadcrumb is recommended to be wrapped in `<nav aria-label="Breadcrumb">` — a page may have multiple nav elements (primary navigation, pagination), and aria-label distinguishes them.
+- **Separators are decorative**: the `/` or `»` separators are purely decorative — make them `aria-hidden` or implement them with CSS pseudo-elements, so the screen reader does not announce every slash.
+
+## Usage examples
+
+```ts
+import {
+  getEllipsisBeforeIndex, getCollapsedHiddenIndexes, getBreadcrumbItemAria,
+} from '@lh-ui/share/core/breadcrumb'
+
+getEllipsisBeforeIndex({ total: 6, maxItems: 4 })   // 3 (the ellipsis is inserted before index 3)
+getEllipsisBeforeIndex({ total: 4, maxItems: 4 })   // -1 (total <= maxItems, no collapsing)
+getEllipsisBeforeIndex({ total: 6, maxItems: 1 })   // -1 (maxItems < 2, no collapsing)
+getEllipsisBeforeIndex({ total: 6, maxItems: 2 })   // 5 (keep the first item + the last 1 item)
+
+getCollapsedHiddenIndexes({ total: 6, maxItems: 4 })  // [1, 2] (between the first item and the ellipsis)
+getCollapsedHiddenIndexes({ total: 4, maxItems: 4 })  // [] (no collapsing)
+```
+
+```ts
+// UI layer: collapsed rendering (the expanded state is controlled by local state)
+const expanded = ref(false)
+const items = ['Home', 'System', 'Settings', 'Security', 'Account', 'Two-step verification']
+const ellipsisIndex = computed(() =>
+  getEllipsisBeforeIndex({ total: items.value.length, maxItems: props.maxItems ?? 4 }),
+)
+const hidden = computed(() =>
+  expanded.value ? [] : getCollapsedHiddenIndexes({ total: items.value.length, maxItems: props.maxItems ?? 4 }),
+)
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <nav aria-label="Breadcrumb">
+    <LhBreadcrumb :max-items="4">
+      <LhBreadcrumbItem to="/">Home</LhBreadcrumbItem>
+      <LhBreadcrumbItem to="/system">System</LhBreadcrumbItem>
+      <LhBreadcrumbItem to="/system/security">Security</LhBreadcrumbItem>
+      <LhBreadcrumbItem>Two-step verification</LhBreadcrumbItem>
+    </LhBreadcrumb>
+  </nav>
+</template>
+```
+
+```tsx
+// React: the path data is usually derived from the route table (useMatches / custom route meta),
+// rather than declared item by item by hand — the mapping between breadcrumbs and routes is a business convention
+```
+
+```ts
+// uniapp: <navigator> is the native jump component; there is no <nav> semantics on the mini-program side,
+// and view + aria-label is a no-op there — acceptable (the mini-program screen-reader ecosystem differs);
+// just keep the DOM structure consistent
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-breadcrumb` | container (inline-flex) |
+| `.lh-breadcrumb__item` | a single item |
+| `.lh-breadcrumb__item--link` | link state (hover color change) |
+| `.lh-breadcrumb__item--last` | last item (current page, bold or primary color) |
+| `.lh-breadcrumb__separator` | separator (usually a CSS pseudo-element) |
+| `.lh-breadcrumb__ellipsis` | ellipsis (clickable to expand) |
+
+Text color `--lh-text-regular`, link hover color `--lh-primary-color`, last item `--lh-text-primary`; font size `--lh-font-size-base`.
+
+## Caveats
+
+- **`maxItems` includes the ellipsis**: `maxItems: 4` actually renders "first item + ellipsis + last 3 items" = 5 elements, and the number of visible **text items** is 4. Configure by visible text items.
+- **The dynamic nature of collapsing**: the path length changes with navigation depth (the `total` of `getEllipsisBeforeIndex` is dynamic), while `maxItems` can stay fixed — there is no need to manually decide when to collapse; the function handles it automatically.
+- **The interaction for expanding the ellipsis**: two common approaches — ① click the ellipsis to expand everything in place (an `expanded` state toggle); ② click to pop up a popover listing the hidden items. The former is simple, the latter saves space; choose by path depth.
+- **Where the path data comes from**: breadcrumbs are usually derived from the route table rather than hand-written — configure a `title` in each route's meta, and the component layer aggregates the ancestor meta of the current path. Core only handles the rendering algorithm; route integration is the UI layer's business.
+- **The last item is not rendered as a link**: pointing the current page at itself is meaningless (and `isLink: false`). Note that the `--link` class name of `getBreadcrumbItemClassNames` is controlled by isLink, so the last item naturally does not have it.
+- **Ellipsis for over-long titles**: when a single level's title is too long, use CSS `text-overflow: ellipsis` (UI-layer styles) — this is a different kind of "ellipsis" from path collapsing: collapsing reduces the number of levels, CSS reduces the width of a single level.
+- **Do not use breadcrumb as primary navigation**: it is auxiliary positioning; the main entry is still the menu. On mobile, where space is limited, breadcrumbs are often omitted or reduced to a "back" button.
+
+<FnPlayground module="breadcrumb" fn="getEllipsisBeforeIndex" params='{"total": 6, "maxItems": 4}' />

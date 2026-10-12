@@ -1,0 +1,177 @@
+---
+title: descriptions — Descriptions
+description: 'buildDescriptionRows normalizes row structure by span (invalid-value fallback, overflow clamping, last-row padding)'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A descriptions list is a "read-only table": it displays several fields of a single record (label + value), with no sorting, filtering, or pagination. Its difficulty is concentrated in one place — **the line-wrapping calculation when an item spans multiple columns**: an item has `span: 2`, but only 1 column of width is left in the current row; what happens? The last row has only 2 items but 4 columns in total; should it be padded? `buildDescriptionRows` exists to answer these questions.
+
+## When to use
+
+- Each framework implements `LhDescriptions`: detail pages (order details, user profiles), settings summaries, approval-flow information display.
+- Read-only grouped "label-value" display where each row needs to hold multiple fields.
+- **Don't use it**: tables that need sorting / filtering / row operations (use `table`); single-field display (a plain label + text is enough); editable content (use `form`).
+
+## Import
+
+```ts
+import {
+  getDescriptionsClassNames,
+  buildDescriptionRows,
+} from '@lh-ui/share/core/descriptions'
+import type { LhDescriptionsItem, LhDescriptionsState } from '@lh-ui/share/core/descriptions'
+```
+
+## Design intent
+
+The four rules of `buildDescriptionRows` are all defensive, each corresponding to a class of real input:
+
+1. **Invalid span falls back to 1**: `span <= 0`, NaN, and non-numbers (`Number('abc')` = NaN) are all treated as 1. Configuration often comes from user-supplied props, and dirty values should not collapse the layout to 0 columns.
+2. **Clamp to the remaining width of the current row**: when `used + span > column`, clamp to the remaining width (at least 1 column). If it simply wrapped to the next line, the current row would be left with a hole that visually looks like a bug.
+3. **A single span larger than a whole row is clamped to the full row**: with `column: 3`, an item passed `span: 5` fills the entire row instead of overflowing.
+4. **Last-row padding**: when the last row falls short of `column`, the `filler` field tells the rendering layer how many placeholder cells to add — under a bordered style, omitting the padding leaves a missing border.
+
+The return value is "an array of rows", where each row contains `cells` (items with their actual span) and `filler` (the number of placeholders to add). The UI layer only needs two nested `v-for` loops.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getDescriptionsClassNames` | `(state: LhDescriptionsState) => string[]` | class names | border modifier |
+| `buildDescriptionRows` | `(items: LhDescriptionsItem[], column: number) => Row[]` | row structure | wrapping + padding |
+
+```ts
+type Row = {
+  cells: { item: LhDescriptionsItem; span: number }[]
+  filler: number
+}
+```
+
+## Type definitions
+
+```ts
+export interface LhDescriptionsItem {
+  label: string
+  value?: string | number    // may also be passed in via a scoped slot
+  span?: number              // number of columns occupied, default 1, clamped if it exceeds column
+}
+
+export interface LhDescriptionsState {
+  column: number    // number of columns shown per row
+  border: boolean   // whether to show borders (table layout)
+}
+```
+
+## Accessibility
+
+`descriptions` is a **presentational component** with no APG role requirements. The recommended DOM structure uses definition-list semantics:
+
+```html
+<dl>
+  <dt>Username</dt><dd>lhgb</dd>
+  <dt>Email</dt><dd>i@lhgb.top</dd>
+</dl>
+```
+
+This maps naturally to the "label-value" data model, and screen readers correctly announce "Username: lhgb". If implemented with a `<table>` (common when the bordered style is used), add `role="presentation"` or preserve header semantics — do not use a real `<th scope="row">` without also providing a summary, as that makes screen readers think it is an interactive table.
+
+When bordered, the placeholder cells added by `filler` padding should carry `aria-hidden="true"` so screen readers do not announce empty cells.
+
+## Usage examples
+
+```ts
+import { buildDescriptionRows } from '@lh-ui/share/core/descriptions'
+
+// column 3: the third item has span 2, but only 1 column of width is left in this row → clamped to 1
+buildDescriptionRows([
+  { label: 'Username', value: 'lhgb' },
+  { label: 'Email', value: 'i@lhgb.top' },
+  { label: 'Bio', value: 'Coder', span: 2 },
+], 3)
+// [{ cells: [Username(1), Email(1), Bio(1)], filler: 0 }]  ← exactly a full row after clamping
+
+// Note: the implementation **clamps to the remaining width** rather than wrapping —
+// when a span does not fit in the current row it is not pushed to the next row
+buildDescriptionRows([
+  { label: 'Username', value: 'lhgb' },
+  { label: 'Bio', value: 'Coder', span: 2 },
+  { label: 'Email', value: 'i@lhgb.top' },
+], 2)
+// [
+//   { cells: [Username(1), Bio(2→1 clamped)], filler: 0 },  ← full row
+//   { cells: [Email(1)], filler: 1 },                       ← last row padded with 1 placeholder
+// ]
+
+// A single span exceeding the row's column count is likewise clamped to the remaining width (here, the whole row)
+buildDescriptionRows([{ label: 'A', span: 1 }, { label: 'B', span: 5 }], 2)
+// [{ cells: [A(1), B(5→1 clamped)], filler: 0 }]  ← B occupies the 1 column left in the first row
+
+// Only when B is alone and its span exceeds the whole row does it fill the entire row
+buildDescriptionRows([{ label: 'B', span: 5 }], 2)
+// [{ cells: [B(5→2 clamped)], filler: 0 }]
+
+// Invalid span fallback
+buildDescriptionRows([{ label: 'A', span: 0 }, { label: 'B', span: NaN }, { label: 'C', span: -1 }], 3)
+// [{ cells: [A(span 1), B(span 1), C(span 1)], filler: 0 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getDescriptionsClassNames({ column, border })">
+  <div v-for="(row, ri) in rows" :key="ri" class="lh-descriptions__row">
+    <template v-for="(cell, ci) in row.cells" :key="ci">
+      <div class="lh-descriptions__label" :style="{ gridColumn: `span ${cell.span}` }">
+        {{ cell.item.label }}
+      </div>
+      <div class="lh-descriptions__value" :style="{ gridColumn: `span ${cell.span}` }">
+        <slot :name="cell.item.label" :item="cell.item">{{ cell.item.value }}</slot>
+      </div>
+    </template>
+    <div
+      v-for="f in row.filler"
+      :key="`filler-${f}`"
+      class="lh-descriptions__filler"
+      aria-hidden="true"
+    />
+  </div>
+</div>
+```
+
+```ts
+const rows = computed(() => buildDescriptionRows(props.items, props.column))
+```
+
+```tsx
+// React: use CSS grid's gridColumn: `span ${cell.span}`;
+// note that label and value each occupy span columns, so "column 3" is actually 6 grid units
+```
+
+```ts
+// uniapp: <view> + flex ratios (span / column * 100%);
+// with border, flex-layout table lines must be simulated with pseudo-elements or box-shadow
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-descriptions` | base class |
+| `.lh-descriptions--border` | bordered (label background is distinguished) |
+| `.lh-descriptions__row` | a row |
+| `.lh-descriptions__label` | label cell |
+| `.lh-descriptions__value` | value cell |
+| `.lh-descriptions__filler` | last-row placeholder (`aria-hidden`) |
+
+Two modes for label width: under `border`, the label and value share a column and are equal width; without a border, the label width is determined by its content (overridable via `--lh-descriptions-label-width`). Label text uses `--lh-text-color-secondary`, value uses `--lh-text-color-primary`.
+
+## Caveats
+
+- **The relationship between column and grid units**: `span` is measured in "item" units, but at render time the label and the value each take one share of width. With CSS grid, if label/value are each treated as one grid unit, `column: 3` actually needs a 6-column grid — the UI layer's column-count definition must be consistent with core's `column` convention (one item = one span unit).
+- **Responsive column**: on narrow screens reduce `column` (e.g. 3 → 1) and just re-run `buildDescriptionRows`. core does not listen to screen width; the UI layer switches via media queries or container queries.
+- **Scoped-slot keys**: the UI layer usually uses `item.label` as the slot name; labels containing special characters (spaces, CJK) are framework-compatible, but `/` or duplicate labels cause conflicts — it is recommended that the UI layer provide a `slot` field alias (not provided by this type; each framework may extend it on its own).
+- **`filler` is only required in border mode**: without borders the placeholder cells are invisible, but keeping them costs no extra rendering and unified rendering is simpler.
+- **Empty items**: `buildDescriptionRows([], 3)` returns `[]`, and the UI layer renders an empty container — remember to provide an empty state (an `empty` component or hint text).
+- **Default display of values**: what to show when `value` is undefined is decided by the UI layer (usually `—`); core does not manage the copy.
+
+<FnPlayground module="descriptions" fn="buildDescriptionRows" params='{"items": [{"label": "Username", "value": "lhgb"}, {"label": "Email", "value": "i@lhgb.top"}, {"label": "Bio", "value": "Coder", "span": 2}], "column": 2}' />

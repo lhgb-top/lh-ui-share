@@ -1,0 +1,128 @@
+---
+title: badge — Badge
+description: 'getBadgeClassNames computes hidden/dot/zero state modifiers; count is computed by the UI layer and passed in'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A badge is the visual carrier of a "notification count": a small red dot in the corner, a number, or a hidden placeholder. The state model of `core/badge` already collapses the **numeric semantics** into three booleans — the UI layer is responsible for computing "is the number 0, should it be shown", and core only maps those three booleans to class names.
+
+## When to use
+
+- Each platform implements `LhBadge`: class names are produced by `getBadgeClassNames`.
+- When you need to reuse the badge visual on a custom element (such as an `LhAvatar` corner badge or an `LhMenu` item badge), import the core function directly.
+- **Do not use it for**: "99+" truncation, animations, and similar logic — those are the responsibility of UI layer props; core does no numeric processing.
+
+## Import
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+import type { LhBadgeState, LhBadgeType } from '@lh-ui/share/core/badge'
+```
+
+## Design intent
+
+The most notable part of the badge state is the three mutually exclusive visual states `isHidden` / `isDot` / `isZero`:
+
+- `isDot`: no number is shown, only a dot (strong reminder; the number is unknown or unnecessary).
+- `isZero`: the value is 0. Many designs choose "0 is not hidden either" (letting the user clearly see "none" rather than "not loaded yet"), with a visually subdued style.
+- `isHidden`: completely hidden (`display: none`), used for "no new messages".
+
+The decision logic for these three (`value === 0`, the `hidden` prop, etc.) is done by the UI layer; core only receives the conclusion. This way different platforms can have different "when to hide" strategies while the visual behavior stays consistent.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getBadgeClassNames` | `(state: LhBadgeState) => string[]` | class name array | computes all badge class names |
+
+Output example:
+
+```ts
+getBadgeClassNames({ type: 'danger', size: 'small', isHidden: false, isDot: true, isZero: false })
+// ['lh-badge', 'lh-badge--danger', 'lh-badge--small', 'lh-badge--dot']
+```
+
+## Type definitions
+
+```ts
+export type LhBadgeType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhBadgeState {
+  type: LhBadgeType
+  size: LhComponentSize
+  isHidden: boolean
+  isDot: boolean
+  isZero: boolean
+}
+```
+
+## Accessibility
+
+`core/badge` does not output an aria attribute bundle, but the badge's **accessibility handling in the UI layer is very important** and often done wrong:
+
+- A badge is a **decorative visual emphasis**; the content itself (such as "3 unread") should be carried by semantic text. Adding `aria-hidden="true"` to the badge is a safe default.
+- If the badge is the only information source (such as a pure corner badge with no text), you must provide an `aria-label` or declare it on the parent element, otherwise screen reader users cannot perceive "there are new messages" at all.
+- Numeric badges should not be announced digit by digit by screen readers ("9" "9" would be read as "nine nine"); format it as "99 plus" or delegate to the UI layer's `aria-label`.
+
+## Usage examples
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+
+getBadgeClassNames({ type: 'primary', size: 'medium', isHidden: false, isDot: false, isZero: false })
+// ['lh-badge', 'lh-badge--primary', 'lh-badge--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span class="lh-badge-wrapper">
+  <slot />
+  <sup
+    v-if="!hidden"
+    :class="getBadgeClassNames({ type, size, isHidden: hidden, isDot, isZero: value === 0 })"
+    aria-hidden="true"
+  >
+    {{ isDot ? '' : displayValue }}
+  </sup>
+</span>
+```
+
+```tsx
+// React
+const cls = getBadgeClassNames({ type, size, isHidden, isDot, isZero })
+return (
+  <span className="lh-badge-wrapper">
+    {children}
+    {!isHidden && <sup className={cls.join(' ')} aria-hidden="true">{isDot ? '' : value}</sup>}
+  </span>
+)
+```
+
+```ts
+// uniapp: badges on non-h5 platforms commonly use an absolutely positioned view;
+// numeric truncation (99+) is handled by UI layer props
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-badge` | base class: absolutely positioned corner badge, border radius, font size, text color |
+| `.lh-badge--{primary\|success\|warning\|danger\|info\|default}` | semantic type (background color) |
+| `.lh-badge--{small\|medium\|large}` | size scale (including `.lh-badge--mini` / `--x-large`) |
+| `.lh-badge--dot` | dot form (fixed small circle, no content rendered) |
+| `.lh-badge--zero` | zero-value subduing (opacity, lower visual weight) |
+| `.lh-badge--hidden` | completely hidden |
+| `.lh-badge__content` | content node |
+| `.lh-badge-zoom-enter-active` / `.lh-badge-zoom-leave-active` | scale transition for appearing/disappearing |
+
+The badge position depends on the outer `.lh-badge-wrapper` providing `position: relative` (guaranteed by each platform's UI layer).
+
+## Notes
+
+- When `isDot` and `isZero` are both true, `--dot` takes precedence in the styles (the dot form renders no content, so the zero modifier is meaningless) — the UI layer should avoid this combination.
+- The type table has `'default'` in `LhBadgeType`, but the most common badge is still `'danger'` (red dot); `'default'` is a neutral gray.
+- The transition classes `lh-badge-zoom-*` are Vue3-style `-enter-active` / `-leave-active`; the Vue2 platform aligns them with the `lh-enter-both` mixin (see [transition mixins](/reference/transition-mixins)).
+
+<FnPlayground module="badge" fn="getBadgeClassNames" params='{"state": {"type": "danger", "size": "small", "isHidden": false, "isDot": true, "isZero": false}}' />

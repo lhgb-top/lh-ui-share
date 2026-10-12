@@ -1,0 +1,158 @@
+---
+title: Theme Presets
+description: 'The five built-in presets — cerblue / songhua / zhusha / shuimo / golden — and custom registration via registerTheme'
+---
+
+import PresetPreview from '../../../../components/PresetPreview.astro'
+
+The five built-in presets are lh-ui's default aesthetic statement: each takes a primary color from traditional Chinese colorways, paired with a complete light and dark palette.
+
+## Preset overview
+
+| Preset | `name` | Identifier | labelEn | Description | Light primary |
+| --- | --- | --- | --- | --- | --- |
+| cerblue porcelain | `'cerblue'` | `LhCerblue` | Ceramic Blue | Underglaze blue-and-white porcelain, elegant and pristine | No |
+| songhua green | `'songhua'` | `LhSonghua` | Pine Green | Tall bamboo groves, full of vitality | **Yes** |
+| zhusha red | `'zhusha'` | `LhZhusha` | Vermilion | Traditional seal cinnabar red, festive and solemn | No |
+| ink wash | `'shuimo'` | `LhShuimo` | Ink Wash | Ink-wash painting, elegantly minimal | No |
+| golden | `'golden'` | `LhGolden` | Golden Autumn | Late-autumn maple gold, warm and golden | **Yes** |
+
+<PresetPreview />
+
+## Vars of each preset
+
+### The base five keys (every preset has them)
+
+```ts
+{
+  '--lh-primary-color': '...',
+  '--lh-primary-color-hover': '...',
+  '--lh-primary-color-active': '...',
+  '--lh-primary-color-bg': '...',
+  '--lh-primary-color-border': '...',
+}
+```
+
+### Two extra keys for light-primary presets
+
+`songhua` (songhua green) and `golden` (golden) are **light primaries** — white text on them fails AA contrast, so two extra keys are required:
+
+| Key | Purpose |
+| --- | --- |
+| `--lh-color-on-primary` | Text color on primary-colored buttons (light primaries switch to ink text) |
+| `--lh-selected-color` | Text color of the selected state (the active color as selected text on a hover background has insufficient contrast, so it is deepened separately) |
+
+**Why they are required**: a light-primary button with white text only reaches about 3.x:1, below the AA requirement of 4.5:1. The `verify:theme` gate will fail it.
+
+Taking songhua green as an example, the source comments record the reasoning behind the fixes:
+
+- `--lh-color-on-primary`: songhua is a light primary; white text is only 3.93:1, so ink text is used at 4.73:1
+- `--lh-selected-color`: the active color as selected text on a hover background is only 3.48:1, so the selected state is deepened separately (the button active background is unaffected)
+- `--lh-primary-color-active`: the original `#4B7A4A` at 3.70:1 → `#4F8F4C` at 4.75:1
+
+Golden is the same: white text 3.25:1 → ink text 5.31:1; selected text 3.41:1 → deepened to `#82600A`; active `#9A7208` at 3.94:1 → `#A87F0A` at 4.70:1.
+
+**Hard requirement for new light-primary presets**: you must provide `--lh-color-on-primary` and `--lh-selected-color`, otherwise the AA 4.5:1 gate in `verify:theme` will fail.
+
+## Using presets
+
+### Getting a preset
+
+```ts
+import { LH_THEME_PRESETS, getThemePreset, getThemeVars } from '@lh-ui/share/theme'
+
+LH_THEME_PRESETS                       // all five
+getThemePreset('cerblue')              // the LhCerblue object
+getThemePreset('not-exists')           // undefined
+getThemeVars('cerblue')?.['--lh-primary-color']
+```
+
+### Injecting a preset (UI layer)
+
+```ts
+import { buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyPreset(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+
+  const text = buildPresetStyleText(vars)
+  let style = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!style) {
+    style = document.createElement('style')
+    style.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(style)
+  }
+  style.textContent = text     // replace, not append, so no stale custom styles linger when switching themes
+}
+```
+
+**Key point** (see [the injection constraint in the theme overview](/theme/overview#injection-constraint-only-write-style-never-inline-style)): you may only write a `<style>` element, never `documentElement`'s inline style, or the dark-mode palette will be distorted.
+
+### Each UI library's ConfigProvider
+
+```vue
+<!-- lh-ui-plus / lh-ui-vue2 -->
+<lh-config-provider theme="cerblue">
+  <App />
+</lh-config-provider>
+```
+
+The `theme` prop accepts a `LhThemePresetName`, and the component runs the injection logic above internally. The docs theme-customization page and ThemeStudio iterate `LH_THEME_PRESETS` to list every preset automatically — **after adding a preset, no manual edits to each library's docs pages are needed**.
+
+## Custom presets
+
+```ts
+import { registerTheme, getThemePreset } from '@lh-ui/share/theme'
+
+registerTheme({
+  name: 'my-brand',
+  label: 'Brand Color',
+  labelEn: 'Brand',
+  description: 'The company brand primary color',
+  vars: {
+    '--lh-primary-color': '#722ED1',
+    '--lh-primary-color-hover': '#9254DE',
+    '--lh-primary-color-active': '#531DAB',
+    '--lh-primary-color-bg': '#F9F0FF',
+    '--lh-primary-color-border': '#D3ADF7',
+    // Light primaries additionally need these two:
+    // '--lh-color-on-primary': '#101410',
+    // '--lh-selected-color': '#...,
+  },
+})
+
+getThemePreset('my-brand')   // available as soon as it is registered
+```
+
+Semantics of `registerTheme`:
+
+- **Same-name override**: `registerTheme({ name: 'cerblue', ... })` **overrides the built-in cerblue porcelain** — this is intentional, letting the business side adjust the default theme without touching components.
+- **New names are pushed to the end of the array**: the order of `LH_THEME_PRESETS` is "five built-ins + registered ones".
+- **The registry is module-level state**: `import` it and it is shared — one copy for the whole application.
+
+## Adding a new built-in preset
+
+1. Add a `LhThemePreset` in `src/theme/themes/index.ts` (at least the five `--lh-primary-*` keys; a light-primary preset must additionally provide `--lh-color-on-primary` and `--lh-selected-color`).
+2. Add it to the `LH_THEME_PRESETS` array, and add the name to the re-exports in `src/theme/index.ts`.
+3. `pnpm test` (`theme.spec` has a preset-consistency regression) + `pnpm verify:theme` (AA 4.5:1 gate).
+4. Attach a changeset; each library's docs theme-customization page will list the new preset automatically.
+
+**Note**: vars only serve JS runtime consumption; the primary colors used by component SCSS still live in `styles/theme/common/variables.scss` — **when overriding a built-in theme's primary color, both sides must be updated in sync** (theme.spec has a regression).
+
+## Naming conventions
+
+The **string value** of a preset (`name: 'cerblue'`) is what users write in ConfigProvider's `theme`; changing it would break every downstream configuration — this is one of the entries in the [naming exemption registry](/guide/naming#registered-exemptions). The corresponding **TS identifier** still carries the prefix (`LhCerblue`).
+
+## Notes
+
+- **Unregistered names return `undefined`**: `getThemePreset` / `getThemeVars` do not throw; the UI layer should remember to null-check.
+- **`--lh-primary-color-active` and `--lh-selected-color` are two different things**: the former is the background color of a pressed button, the latter is the **text** color of list / selected items. In light-primary presets the active color has insufficient contrast as selected text, which is why a separate `--lh-selected-color` is needed.
+- **Dark-primary presets are auto-lightened in dark mode**: `buildPresetDarkVars` lightens a primary when its contrast against the dark page background `#1A1A2E` falls below 3 (see [Theme System Overview](/theme/overview#dark-derivation-in-buildpresetdarkvars)).
+
+## Related docs
+
+- [Theme System Overview](/theme/overview)
+- [Design Tokens](/theme/tokens)
+- [Runtime Customization](/theme/customization)
+- [Dark Mode](/theme/dark-mode)

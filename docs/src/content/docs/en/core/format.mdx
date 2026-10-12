@@ -1,0 +1,99 @@
+---
+title: 'format — message interpolation'
+description: 'formatMessage replaces {key} placeholders with parameter values and keeps unknown placeholders as-is; shared by rate / pagination'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`Total {total} items`, `{n} stars`, `Step {index}` — message templates in the language packs need their placeholders replaced with runtime numbers. This interpolation capability used to live inside the locales singleton, but when core components used it (rate's star count, pagination's page count), it made core **reverse-depend** on the module-level singleton side effects of locales. After being distilled into a pure string function, the message interpolation of core components depends on no singleton at all.
+
+## Import
+
+```ts
+// From the shared kernel (recommended)
+import { formatMessage } from '@lh-ui/share/core/shared/format'
+
+// Or from the locales entry point (the export surface is unchanged)
+import { formatMessage } from '@lh-ui/share/locales'
+```
+
+## Function table
+
+| Function | Signature | Purpose |
+| --- | --- | --- |
+| `formatMessage` | `(template: string, params?: Record<string, unknown>) => string` | Replaces `'{key}'` placeholders with values from `params` |
+
+## Behavioral details
+
+```ts
+formatMessage('Total {total} items', { total: 42 })   // 'Total 42 items'
+formatMessage('{n} stars', { n: 5 })                   // '5 stars'
+formatMessage('No placeholder')                        // 'No placeholder'
+formatMessage('Unknown placeholder {missing}')          // 'Unknown placeholder {missing}'
+```
+
+Three rules:
+
+1. **Unknown placeholders are kept as-is.** No error, no replacement with an empty string — the caller has usually already fetched a template with placeholders from the language pack, so a placeholder without a matching parameter means the upstream forgot to pass it; keeping it makes the problem visible in the UI (instead of silently swallowing it).
+2. **Values are uniformly `String(...)`**: numbers and booleans can both be interpolated.
+3. **`params` defaults to `{}`**: with no parameters, the template passes through unchanged.
+
+## Relationship with lhlocale
+
+`lhlocale.t(path, params)` internally is "look up the language pack → get the template → call `formatMessage`":
+
+```ts
+// simplified internals of locales
+t(path, fallbackOrParams) {
+  const template = resolve(path) ?? fallback
+  return typeof fallbackOrParams === 'object'
+    ? formatMessage(template, fallbackOrParams)
+    : template
+}
+```
+
+`@lh-ui/share/locales` re-exporting `formatMessage` is deliberate — it was on the old export surface, and after the function moved down into core, the import path stayed the same so downstream code needed zero changes.
+
+## When to use it and when not to
+
+| Scenario | Use it? |
+| --- | --- |
+| Message interpolation inside a core component | ✅ Use `formatMessage` directly (no locales singleton imported) |
+| Message interpolation in application code | ✅ Safer than `str.replace` (unknown placeholders are kept) |
+| Need a language-pack lookup plus interpolation | ❌ Use `lhlocale.t(path, params)` — one step |
+| Templates need conditionals / plurals | ❌ This function only does naive replacement; conditional copy should be split into multiple keys in the language pack |
+
+## Usage examples
+
+### pagination's total-count text
+
+```ts
+// inside the component
+const totalText = computed(() =>
+  formatMessage(lhlocale.t('pagination.total'), { total: props.total }),
+)
+// language pack: 'Total {total} items'  →  'Total 42 items'
+```
+
+### rate's star-count announcement
+
+```ts
+const ariaLabel = formatMessage(lhlocale.t('rate.stars'), { n: currentValue.value })
+// language pack: '{n} stars'  →  '3 stars'
+```
+
+### A general string utility
+
+```ts
+// pure interpolation with no language pack involved
+formatMessage('Step {index} of {total}', { index: 2, total: 5 })
+// 'Step 2 of 5'
+```
+
+## Caveats
+
+- **The placeholder syntax is `{key}`** (single braces), not `${key}` and not `{{key}}`.
+- **Nested templates are not supported**: the values in `params` are run through `String()` once and are not parsed recursively.
+- **Performance**: a single call does a `String.replace` loop — do not call it repeatedly on the same template inside a high-frequency loop; have the UI layer cache it in a `computed`.
+
+<FnPlayground module="format" fn="formatMessage" params='{"template": "Total {total} items", "params": {"total": 42}}' />

@@ -1,0 +1,180 @@
+---
+title: 'tabs — Tabs'
+description: 'resolveActiveName empty-string tab names, getNameAfterRemove post-removal activation strategy, two-way tab/tabpanel aria wiring'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Tabs are "the content switcher for one region": the settings page's "Basic / Security / Notifications", the browser's tabs. It stacks multiple panels in the same space and toggles their visibility with tabs — saving vertical space, at the cost of only being able to view one panel at a time. What `core/tabs` manages is **active-state resolution, the activation strategy after removing a tab, and roving tabindex navigation**.
+
+## When to use
+
+- Each framework implements `<LhTabs>` / `<LhTabPane>`: settings pages, detail-page sections, dashboard panel switching.
+- Sections of content that are **mutually exclusive** and **at the same level**.
+- **Do not use it for**: flow-style steps (use `steps` — tabs have no sequential semantics); hierarchical navigation (use `menu`); when two panels need to be compared side by side (use a `grid` side by side); be careful when switching would lose a form draft (the UI layer can use keep-alive to preserve it).
+
+## Import
+
+```ts
+import {
+  getTabsClassNames,
+  resolveActiveName,
+  getNextActiveName,
+  getNameAfterRemove,
+  getTablistAria,
+  getTabAria,
+  getTabpanelAria,
+} from '@lh-ui/share/core/tabs'
+import type {
+  LhTabsType, LhTabsPosition, LhTabRecord, LhTabNavDirection,
+} from '@lh-ui/share/core/tabs'
+```
+
+## Design intent
+
+**`!= null` rather than a truthy short-circuit**: `resolveActiveName` checks modelValue with `modelValue != null` — because **a tab name is a business identifier and an empty string is a legitimate value**. When a user explicitly binds to a tab with `name: ''`, a truthy short-circuit (`if (modelValue && ...)`) would treat the empty string as "no value passed" and ignore it, activating the first available tab and causing a hard-to-trace state misalignment.
+
+**Activation validation includes disabled**: when `modelValue` exists but the corresponding tab is disabled, **it is not activated** and it falls back to the first available tab — a disabled tab being unselectable is a hard constraint, not even an external forced setting can override it.
+
+**`getNameAfterRemove` goes right before left**: when the removed tab is the currently active one, it prefers the **nearest available item on the right** (keeping the line of sight), and if there is none on the right, the nearest item on the left. This order matches the intuition of "focus shifts right after a deletion". When the removed item is not the active one, the active one is maintained.
+
+**`getNextActiveName` is a @deprecated shell**: the navigation algorithm has been consolidated into `shared/keyboard.getNextListIndex`, and this function keeps the old signature (the semantic direction names 'next'/'prev'/'first'/'last') and the existing behavior of "falling back to the first item when the current value is unknown or disabled". **New code should use the core directly**.
+
+**roving tabindex**: the standard keyboard-navigation pattern for a tab bar is roving tabindex — all tabs get `tabindex="-1"` and only the active tab gets `tabindex="0"`. Arrow keys move focus between tabs, and the Tab key jumps from the tab bar into the panel content. `getNextActiveName` returns the target tab's name, and the UI layer moves focus and sets the tabindex accordingly.
+
+**Two-way aria wiring**: the tab's `aria-controls` → the panel's id; the panel's `aria-labelledby` → the active tab's id. Both ends must be written, so a screen reader can jump from either end to the other. `aria-selected` is only output when active (false is not output — not being active is the default state).
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getTabsClassNames` | `(state: { type, position }) => string[]` | class names | appearance + position |
+| `resolveActiveName` | `(records, modelValue) => string \| null` | active tab name | modelValue validation + fallback |
+| `getNextActiveName` ⚠️ | `(records, currentName, direction) => string \| null` | target tab name | keyboard navigation |
+| `getNameAfterRemove` | `(records, removedName, currentName) => string \| null` | suggested activation | after removal, right before left |
+| `getTablistAria` | `(id?) => LhAriaAttrs` | aria bag | role=tablist |
+| `getTabAria` | `(options: { active, disabled?, panelId?, id? }) => LhAriaAttrs` | aria bag | role=tab |
+| `getTabpanelAria` | `(options: { tabId?, id? }) => LhAriaAttrs` | aria bag | role=tabpanel |
+
+⚠️ marks a `@deprecated` compatibility shell; new code uses `shared/keyboard`'s `getNextListIndex`.
+
+## Type definitions
+
+```ts
+export type LhTabsType = 'line' | 'card'      // underline / card appearance
+export type LhTabsPosition = 'top' | 'bottom' // tab position
+export type LhTabNavDirection = 'next' | 'prev' | 'first' | 'last'
+
+export interface LhTabRecord {
+  name: string       // unique identifier (a stable key, not changing over the lifecycle)
+  label: string      // tab title
+  disabled: boolean
+}
+```
+
+## Accessibility
+
+```ts
+getTabAria({ active: true, panelId: 'panel-1', id: 'tab-1' })
+// { role: 'tab', id: 'tab-1', 'aria-controls': 'panel-1', 'aria-selected': true }
+getTabAria({ active: false, disabled: true })
+// { role: 'tab', 'aria-disabled': true } (aria-selected is not output when inactive)
+
+getTabpanelAria({ tabId: 'tab-1', id: 'panel-1' })
+// { role: 'tabpanel', id: 'panel-1', 'aria-labelledby': 'tab-1' }
+```
+
+- **The keyboard conventions of role=tab** (APG): ←/→ switch tabs (and **activation follows focus** — moving the focus switches, no extra Enter needed); Home/End jump to the first/last tab. The Tab key leaves the tab bar and enters the current panel.
+- **The first/last of `getNextActiveName`**: direction supports 'first' / 'last', corresponding to the Home/End keys — do not write your own boundary checks again.
+- **The panel needs a tabindex**: the panel itself usually gets `tabindex="0"`, so keyboard users can Tab into the panel content (an APG recommendation). This is not core's responsibility; the UI layer implements it.
+- **The correct way to hide panels**: inactive panels are removed from the accessibility tree with `v-if`/`hidden`; **do not leave a panel focusable by any means other than `visibility: hidden`**. When preservation is needed (a form draft), use `display: none` + cached rendering.
+- **The omission semantics of aria-selected**: when inactive, this attribute is not output (rather than outputting false) — APG specifies that a tab's aria-selected defaults to false; explicitly outputting false is legal but redundant. `getTabAria` follows `shared/a11y`'s falsy-omission convention.
+
+## Usage examples
+
+```ts
+import { resolveActiveName, getNameAfterRemove, getNextActiveName } from '@lh-ui/share/core/tabs'
+
+const records = [
+  { name: 'a', label: 'Basic', disabled: false },
+  { name: 'b', label: 'Security', disabled: false },
+  { name: 'c', label: 'Notifications', disabled: true },
+]
+
+resolveActiveName(records, 'b')   // 'b'
+resolveActiveName(records, 'c')   // 'a' (c is disabled, fall back to the first available)
+resolveActiveName(records, '')    // 'a' (an empty string != null goes through the validation branch, but no tab has name '' → fallback)
+resolveActiveName(records, undefined)  // 'a'
+resolveActiveName([], undefined)       // null (no available tab)
+
+getNextActiveName(records, 'a', 'next')  // 'b' (going next from a skips the disabled c and yields b)
+getNextActiveName(records, 'b', 'next')  // 'a' (only a/b are available, cyclic)
+getNextActiveName(records, 'unknown', 'next')  // 'a' (unknown falls back to the first item)
+
+getNameAfterRemove(records, 'b', 'b')  // 'a' (the removed item is the active one b: nothing available on the right → nearest on the left)
+getNameAfterRemove(records, 'a', 'b')  // 'b' (the removed item is not the active one; b is maintained)
+getNameAfterRemove([{ name: 'a', disabled: true }], 'a', 'a')  // null (none available)
+```
+
+```ts
+// Controlled activation (UI layer)
+const activeName = ref<string | null>(null)
+const records = ref<LhTabRecord[]>([])
+
+function onTabClick(name: string) {
+  activeName.value = name
+}
+function onRemove(name: string) {
+  const next = getNameAfterRemove(records.value, name, activeName.value ?? '')
+  records.value = records.value.filter((r) => r.name !== name)
+  activeName.value = next
+}
+watch(records, () => {
+  activeName.value = resolveActiveName(records.value, activeName.value)
+}, { immediate: true })
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTabs v-model="activeName" type="card">
+    <LhTabPane name="basic" label="Basic settings">…</LhTabPane>
+    <LhTabPane name="security" label="Security settings">…</LhTabPane>
+  </LhTabs>
+</template>
+```
+
+```tsx
+// React: records are registered by the TabPane children (useEffect + context) or passed in directly via props;
+// keyboard navigation uses onKeyDown to call getNextActiveName + focus()
+```
+
+```ts
+// uniapp: <view> tabs + scroll-view for horizontal scrolling; the active underline is positioned with a transform
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-tabs` | root container |
+| `.lh-tabs--{line\|card}` | appearance |
+| `.lh-tabs--{top\|bottom}` | tab position (the underline/card border flips accordingly) |
+| `.lh-tabs__header` / `__nav` / `__nav-wrap` | tab bar / navigation / scroll wrapper (for a scrollable tab bar) |
+| `.lh-tabs__item` / `--active` / `--disabled` | tab |
+| `.lh-tabs__active-bar` | active underline (the line type, positioned with a transform) |
+| `.lh-tabs__content` / `__pane` | panel area |
+
+Active text color `--lh-tabs-active-color`, the underline is the same color; the card type uses a `--lh-border-color` border and an elevated active-state background `--lh-bg-color`.
+
+## Caveats
+
+- **Tab bar scrolling**: when there are enough tabs to overflow, you need left/right scroll buttons or a swipe gesture — `__nav-wrap`'s `overflow: hidden` + `__nav`'s transform translation is a common implementation, and the scroll amount is computed by the UI layer (core does not manage it).
+- **Border splicing for `type: card`**: a card tab's active state must drop the border that coincides with the content area (the top position drops the bottom border, the bottom position drops the top border), otherwise a double border appears — this is why the position class name exists.
+- **Dynamically adding/removing tabs**: after adding or removing, `resolveActiveName` must be re-run (watch records). Use `getNameAfterRemove` on removal so the active state is not left dangling.
+- **A close button inside a tab**: the ✕ button of a `closable` tab needs `@click.stop` (otherwise it also triggers a tab switch), and it needs an `aria-label`.
+- **keep-alive and performance**: heavy panels switched frequently (charts, tables) are best kept alive rather than destroyed and recreated — Vue uses `<keep-alive>`, React uses a CSS-hide + unmount strategy. Core is unaware of this.
+- **The old signature of `getNextActiveName`**: direction uses semantic names ('next'/'prev') rather than the core's 1/-1, and **when the current value is unknown it falls back to the first item regardless of direction** (not following the direction) — this is a preservation of the old behavior; be careful when migrating.
+- **The pitfall of an empty-string tab name**: `resolveActiveName(records, '')` will look inside records for a tab with `name === ''` — if the business uses an empty string to mean "nothing selected", it conflicts with a legitimate empty-string tab name. Use `null` instead of `''` to represent "not selected".
+
+<FnPlayground module="tabs" fn="getNameAfterRemove" params='{"records": [{"name": "a", "label": "Basic", "disabled": false}, {"name": "b", "label": "Security", "disabled": false}, {"name": "c", "label": "Notifications", "disabled": true}], "removedName": "b", "currentName": "b"}' />

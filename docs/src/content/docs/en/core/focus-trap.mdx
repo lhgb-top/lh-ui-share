@@ -1,0 +1,154 @@
+---
+title: 'focus-trap — focus management'
+description: 'Focusable element enumeration, Tab focus trapping, an inert ownership registry, and save-on-open / restore-on-close, shared by Dialog / Drawer / Popover'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+**Overlay components** like modal dialogs, drawers, and image viewers have three focus obligations: remember where the user was when it opens, keep Tab inside the floating layer while it is open, and return focus when it closes. Written separately in dialog / drawer / popover / popconfirm / image-viewer, these three things inevitably drift; `shared/focus-trap` is their single implementation.
+
+## Import
+
+```ts
+import {
+  getFocusableElements,
+  focusFirst,
+  focusLast,
+  saveActiveElement,
+  restoreActiveElement,
+  trapTabKey,
+  supportsInert,
+  setInertOutside,
+} from '@lh-ui/share/core/shared/focus-trap'
+```
+
+## Function table
+
+| Function | Signature | Purpose |
+| --- | --- | --- |
+| `getFocusableElements` | `(container: HTMLElement \| null \| undefined) => HTMLElement[]` | Enumerates the elements inside a container that can receive Tab focus |
+| `focusFirst` | `(container) => boolean` | Focuses the first focusable element; `false` if there is none |
+| `focusLast` | `(container) => boolean` | Focuses the last focusable element; `false` if there is none |
+| `saveActiveElement` | `() => HTMLElement \| null` | Records the currently active element for later restoration (SSR-guarded) |
+| `restoreActiveElement` | `(el: HTMLElement \| null \| undefined) => void` | Restores focus |
+| `trapTabKey` | `(container: HTMLElement, event: KeyboardEvent) => boolean` | Handles Tab / Shift+Tab, keeping focus inside the container |
+| `supportsInert` | `() => boolean` | Whether the current environment supports the `inert` attribute |
+| `setInertOutside` | `(container, active: boolean, locked?: HTMLElement[]) => HTMLElement[]` | Adds / removes inert on the DOM outside the container |
+
+## Behavioral details of each function
+
+### getFocusableElements
+
+First it matches candidates by selector: `a[href]`, `button:not([disabled])`, `input:not([disabled]):not([type="hidden"])`, `select` / `textarea:not([disabled])`, `video[controls]`, `audio[controls]`, `[contenteditable]:not([contenteditable="false"])`, `[tabindex]:not([tabindex="-1"])`. Then it uses `isHiddenForFocus` **along the ancestor chain** to drop elements occluded by `disabled`, negative tabindex, `hidden`, `aria-hidden="true"`, `display:none`, or `visibility:hidden`.
+
+Walking the ancestor chain matters: teleported popovers are often affected by an ancestor's `aria-hidden`, and checking only the element itself misses that case. An empty `container` returns `[]`.
+
+### focusFirst / focusLast
+
+Focus with `{ preventScroll: true }`. **Why**: within the first tick after a popover is teleported to `body`, the element's position may still be temporary, and the default `focus()` scrolls the page to that temporary position. Preventing the scroll avoids this visual jump. Returns `false` when there is nothing focusable, so the UI layer can decide to place focus on the container itself (`tabindex="-1"`).
+
+### saveActiveElement / restoreActiveElement
+
+When the popover opens, `const last = saveActiveElement()`; when it closes, `restoreActiveElement(last)`. The skip conditions for restoration:
+
+- `el` is empty, no `document`: return immediately.
+- `!el.isConnected`: the trigger button was unmounted by `v-if` (e.g. destroyed as it closes) — do not focus it.
+- **The target is locked by an ancestor's `inert`**: fall back to `blur()` on the currently focused element. This is the spec-guaranteed fallback path — after blur, focus returns to body instead of getting stuck on a locked element.
+
+### trapTabKey
+
+```
+event.key !== 'Tab' or event.defaultPrevented  →  return false (do not handle)
+No available focus inside the container  →  preventDefault(), return true (trap it, do not let focus escape)
+Focus at a boundary  →  preventDefault(), jump to the other end, return true
+```
+
+Boundary detection uses **list indices** rather than reference comparison. Why: focus may land on an element inside the container that is not part of the Tab sequence (for example the container itself with `tabindex="-1"` being focused); in that case `document.activeElement` is not found in the `getFocusableElements()` result (`idx === -1`), and the algorithm treats it as "before the head" — Shift+Tab jumps to the last item and plain Tab to the first, which matches intuition.
+
+### setInertOutside and the ownership registry
+
+`inert` is a W3C standard attribute (supported by all browsers since 2024): adding `inert` to an element hides it and its entire subtree from assistive technology, makes it unfocusable, and makes it unclickable. This is a more thorough background lock than "Tab focus trapping" — screen reader users cannot wander into the covered page content.
+
+`setInertOutside`'s locking path: starting from `container`, it walks the ancestor chain up to `body` and marks every **sibling subtree that does not contain the container** as inert. This leaves only the popover and its ancestor chain reachable and locks everything else.
+
+The hard part is **stacked overlays**: opening a popover on top of a dialog must not unlock the dialog when the popover closes. The solution is an ownership registry (`WeakMap`):
+
+- On lock, every locked node records "who locked it"; repeated calls only record ownership and **do not setAttribute again** (idempotent).
+- On unlock, inert is removed from a node only when **no container still holds ownership** of it.
+- The `locked` parameter is an extra exemption list (e.g. another overlay container that is still open); those nodes are not locked even if they are not on container's ancestor chain.
+
+Return value: on lock, the array of locked nodes (for debugging / test assertions); on unlock, `[]`.
+
+Boundaries: returns `[]` when inert is not supported (falls back to the trapTabKey focus-trap scheme); returns `locked` when there is no `document.body`; when the container has already left the document, it releases residual ownership first and then returns the deduplicated `locked`.
+
+### supportsInert
+
+For progressive enhancement: older browsers (before Safari 15.4) do not have `inert`, and `setInertOutside` simply returns an empty array — components should **still enable `trapTabKey`** as a fallback. Both schemes can coexist, with inert being the more thorough layer.
+
+## Usage examples
+
+### A complete modal focus lifecycle
+
+```ts
+// Vue3 dialog component
+let lastFocused: HTMLElement | null = null
+let lockedNodes: HTMLElement[] = []
+
+function open() {
+  lastFocused = saveActiveElement()
+  dialogVisible.value = true
+  nextTick(() => {
+    if (!panelRef.value) return
+    focusFirst(panelRef.value)
+    lockedNodes = setInertOutside(panelRef.value, true)
+  })
+}
+
+function close() {
+  setInertOutside(panelRef.value, false, lockedNodes)
+  dialogVisible.value = false
+  restoreActiveElement(lastFocused)
+}
+
+function onKeydown(e: KeyboardEvent) {
+  trapTabKey(panelRef.value, e)   // a false return means it was not Tab; hand it to other logic
+}
+```
+
+### React wiring
+
+```tsx
+useEffect(() => {
+  if (!open) return
+  const last = saveActiveElement()
+  focusFirst(panelRef.current)
+  const locked = setInertOutside(panelRef.current, true)
+
+  const onKeydown = (e: KeyboardEvent) => trapTabKey(panelRef.current, e)
+  document.addEventListener('keydown', onKeydown)
+
+  return () => {
+    document.removeEventListener('keydown', onKeydown)
+    setInertOutside(panelRef.current, false, locked)
+    restoreActiveElement(last)
+  }
+}, [open])
+```
+
+### Nested overlays
+
+```ts
+// the dialog is already open; now open a popover inside it
+const popoverLocked = setInertOutside(popoverRef.value, true, lockedNodes)
+// the popover closes: the dialog is still in the lockedNodes exemption list and will not be unlocked
+setInertOutside(popoverRef.value, false, popoverLocked)
+```
+
+## Caveats
+
+- **SSR-safe**: `saveActiveElement` returns `null` when there is no `document`; `getFocusableElements` returns `[]` for `null`. But `trapTabKey` / `setInertOutside` need a DOM — only call them on the client.
+- **Do not forget to restore focus**: this is a hard accessibility requirement. Only locking and never restoring drops keyboard users' focus to body every time they close a popover, which is a bad experience.
+- **Triggers unmounted by `v-if`**: `restoreActiveElement` skips elements that are already `disconnected` (`isConnected === false`); focus then naturally returns to body — do not force a `focus()` on a node that is not in the document.
+- **The ownership registry is module-level state**: the `WeakMap` is GC-friendly, but multiple instances in the same process share one table — this is deliberate, otherwise two overlays would not know about each other and would wrongly unlock one another.
+
+<FnPlayground module="focus-trap" fn="supportsInert" params='{}' />

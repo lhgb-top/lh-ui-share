@@ -1,0 +1,174 @@
+---
+title: 'a11y — aria attribute builders'
+description: 'Unified atomic aria builders with "omit on falsy" semantics; trigger and decorative attribute bags ready out of the box'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Spelling and valuing aria attributes is drudgery: `aria-haspopup` or `ariaHaspopup`? `'true'` or `true`? Should a falsy value be rendered at all? When every component builds its own, it either misspells something or forgets to omit an empty value (leaving a pile of `aria-controls="undefined"` for screen readers to hit). `shared/a11y` freezes these conventions into a set of pure functions.
+
+## Core convention: omit on falsy
+
+All boolean aria builders follow the same rule:
+
+| Attribute | Falsy behavior | Reason |
+| --- | --- | --- |
+| `aria-required: false` | Returns `{}`, not rendered | An explicit "not required" declaration is noise to screen readers |
+| `aria-haspopup: false` | Returns `{}`, not rendered | Same as above |
+| `aria-current: false` | Never occurs | The builder's type does not accept `false` (most screen readers ignore it) |
+| `aria-controls` / `aria-labelledby` / `aria-describedby` | Returns `{}` when the id is empty | Rendering `aria-controls="undefined"` is a common bug |
+| **`aria-expanded: false`** | **Emitted as-is** | The collapsed state needs to be announced explicitly |
+| **`aria-invalid: false`** | **Emitted as-is** | "Validation passed" needs to be announced explicitly |
+
+The two "exceptions" are deliberate: the falsy values of `aria-expanded` / `aria-invalid` carry semantic information, and screen readers say "collapsed" / "input valid" based on them.
+
+## Import
+
+```ts
+import {
+  generateAriaId,
+  ariaExpanded,
+  ariaControls,
+  ariaLabelledby,
+  ariaDescribedby,
+  ariaInvalid,
+  ariaRequired,
+  ariaCurrent,
+  ariaHaspopup,
+  getPopupTriggerAria,
+  getDecorativeAria,
+  type LhAriaAttrs,
+  type LhAriaHaspopup,
+} from '@lh-ui/share/core/shared/a11y'
+```
+
+## Types
+
+```ts
+// Shape of an aria attribute bag: keys are 'aria-*' or 'role'; v-bind / {...spread} directly
+export type LhAriaAttrs = Record<string, string | number | boolean | undefined>
+
+// Legal values of aria-haspopup (APG)
+export type LhAriaHaspopup =
+  | 'false' | 'true' | 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog' | 'combobox'
+```
+
+## Function table
+
+| Function | Signature | Purpose |
+| --- | --- | --- |
+| `generateAriaId` | `(prefix = 'lh-aria') => string` | Generates a unique id for aria relationships |
+| `ariaExpanded` | `(expanded: boolean) => LhAriaAttrs` | Expanded / collapsed state |
+| `ariaControls` | `(id: string \| undefined) => LhAriaAttrs` | References the panel it controls |
+| `ariaLabelledby` | `(id: string \| undefined) => LhAriaAttrs` | References visible text as the accessible name |
+| `ariaDescribedby` | `(id: string \| undefined) => LhAriaAttrs` | References a supplementary description |
+| `ariaInvalid` | `(invalid: boolean) => LhAriaAttrs` | Validation-failure flag |
+| `ariaRequired` | `(required: boolean) => LhAriaAttrs` | Required semantics |
+| `ariaCurrent` | `(current: 'page' \| 'step' \| 'location' \| 'date' \| 'time' \| true \| undefined) => LhAriaAttrs` | Current-position flag |
+| `ariaHaspopup` | `(kind: LhAriaHaspopup \| boolean) => LhAriaAttrs` | Declares what kind of popup is opened |
+| `getPopupTriggerAria` | `(options: { expanded; popupId?; haspopup? }) => LhAriaAttrs` | The **shared attribute bag** for popup triggers |
+| `getDecorativeAria` | `(decorative = true) => LhAriaAttrs` | Hides a decorative element from assistive technology |
+
+## The two composite bags
+
+### getPopupTriggerAria
+
+The triggers of popover / popconfirm / select / cascader / date-picker / dropdown **all** use it, getting three things in one call:
+
+```ts
+getPopupTriggerAria({ expanded: true, popupId: 'lh-popover-1' })
+// {
+//   'aria-expanded': true,
+//   'aria-controls': 'lh-popover-1',
+//   'aria-haspopup': 'true',      // default
+// }
+
+getPopupTriggerAria({ expanded: false, popupId: 'lh-popover-1', haspopup: 'menu' })
+// { 'aria-expanded': false, 'aria-controls': 'lh-popover-1', 'aria-haspopup': 'menu' }
+
+getPopupTriggerAria({ expanded: false })   // no popupId passed
+// { 'aria-expanded': false, 'aria-haspopup': 'true' }   —— aria-controls is not emitted
+```
+
+`haspopup` defaults to `'true'`. A semantically more precise value (`listbox` for dropdowns, `menu` for cascaders, `dialog` for calendars) makes screen reader announcements more accurate; each component passes the value that matches its own semantics.
+
+### getDecorativeAria
+
+```ts
+getDecorativeAria()       // { 'aria-hidden': true }
+getDecorativeAria(false)  // {}   —— explicitly cancel the hiding
+```
+
+Decorative elements (a plain divider, a loading decoration, the geometric shapes of a skeleton screen) are noise to assistive technology. Note: **use it only for genuinely information-free elements** — adding `aria-hidden` to an element that has text is an accessibility violation. Passing `false` returns an empty object, useful for the "hidden by default but visible in some cases" conditional branch.
+
+## generateAriaId
+
+```ts
+const id = generateAriaId('lh-popover')  // 'lh-popover-1', 'lh-popover-2' …
+```
+
+The prefix is fixed to the value passed in, and a module-internal auto-incrementing counter keeps ids from colliding across instances in the same process. SSR-safe (no DOM access).
+
+**Note**: the counter is **module-level mutable state**, so this function is not pure — the same input returns different outputs at different moments in a process. During server-side rendering the count starts at 0, and it also starts at 0 during client hydration; as long as the render order matches, the ids match. But if the SSR / CSR render orders differ (async components, conditional rendering differences), id mismatches can occur. The popover components of each UI library generate ids only on the client (after `onMounted`), sidestepping this issue.
+
+## Usage examples
+
+### Vue3
+
+```vue
+<template>
+  <button
+    v-bind="getPopupTriggerAria({ expanded: open, popupId: panelId, haspopup: 'dialog' })"
+    @click="toggle"
+  >
+    Open
+  </button>
+  <div :id="panelId" role="dialog" v-show="open">……</div>
+</template>
+
+<script setup lang="ts">
+const panelId = generateAriaId('lh-popover')
+</script>
+```
+
+`v-bind`ing a function that returns an object is idiomatic Vue — the `undefined` values in the attribute bag are automatically skipped by Vue, which fits the "omit on falsy" convention naturally.
+
+### React
+
+```tsx
+const panelId = generateAriaId('lh-popover')
+
+return (
+  <>
+    <button {...getPopupTriggerAria({ expanded: open, popupId: panelId })} onClick={toggle} />
+    {open && <div id={panelId} role="dialog">……</div>}
+  </>
+)
+```
+
+### Form validation
+
+```ts
+// input component
+const aria = {
+  ...ariaRequired(props.required),      // when not required, the whole attribute is not rendered
+  ...ariaInvalid(!!errorMessage.value), // validation passing is also announced explicitly
+  ...ariaDescribedby(errorMessage.value ? errorId : undefined),
+}
+```
+
+### Current position in pagination / breadcrumbs
+
+```ts
+ariaCurrent(isActive ? 'page' : undefined)   // not emitted for non-current pages, avoiding noise
+ariaCurrent(isActive ? 'page' : undefined)   // pagination uses 'page', step bars 'step', dates 'date'
+```
+
+## Caveats
+
+- **The id in `aria-controls` must really exist**: this module only assembles the attribute; whether the id is correct is the component's responsibility. When a popover is rendered lazily with `v-if`, the panel is not in the DOM while closed, so `aria-controls` points at a non-existent element — that is acceptable (screen readers ignore it), and still better than pointing at the wrong element.
+- **Never add `aria-hidden` to an element that has text**: that is a hard accessibility violation.
+- **Choose `ariaCurrent`'s value by semantics**: `'page'` for pagination, `'step'` for step bars, `'location'` for breadcrumbs, `'date'` for calendars. The type accepts these literals plus `true`.
+- **Composite bags must not be mixed with atomic functions for overriding**: `getPopupTriggerAria` already includes `aria-haspopup`; spreading `ariaHaspopup(...)` after it gets overwritten by whichever is spread last — pick one per need.
+
+<FnPlayground module="a11y" fn="getPopupTriggerAria" params='{"options": {"expanded": true, "popupId": "lh-popover-demo", "haspopup": "menu"}}' />

@@ -1,0 +1,166 @@
+---
+title: 'anchor — Anchor'
+description: 'flattenAnchorItems depth-first flattening (ancestor-chain cycle protection), resolveActiveAnchor scroll-linked highlighting, level-based indentation'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+An anchor is "the table-of-contents sidebar for a long document": the "Basic usage / API / Caveats" list on the right side of a docs site — click it to scroll to the corresponding heading, and scroll to highlight the section you are currently in. The difference from `menu` is that an anchor is associated with **a content position within the same page**, not different pages.
+
+## When to use
+
+- Each framework implements `<LhAnchor>`: docs-site tables of contents, long-article reading guides, API documentation section navigation, landing-page block navigation.
+- The page content is **long enough to need quick jumping**, and the sections have clear titles.
+- **Do not use it for**: navigation between pages within a site (use `menu` / `breadcrumb`); short pages (no table of contents needed within one screen); sections without titles (anchors rely on the title text as link copy).
+
+## Import
+
+```ts
+import {
+  flattenAnchorItems,
+  collectAnchorIds,
+  resolveActiveAnchor,
+  getAnchorClassNames,
+  getAnchorLinkClassNames,
+} from '@lh-ui/share/core/anchor'
+import type { LhAnchorItem, LhFlatAnchorItem } from '@lh-ui/share/core/anchor'
+```
+
+## Design intent
+
+**Tree structure → flat list**: the anchor configuration is a tree (sections containing subsections), but the rendering is a one-dimensional list (with indentation). `flattenAnchorItems` does a depth-first traversal, **preserving document order** — a table of contents in the wrong order is worse than none at all. `level` records the original depth and drives the indentation styles.
+
+**The ancestor-chain seen protects against circular references**: `seen` is the **set of ancestors on the current DFS path** (not a global set). The comment explicitly says "ancestor-chain dedup to protect against circular references" — if the data has A's children containing A itself (dirty data), a global seen only dedupes, while the ancestor chain can directly break the recursion and avoid an infinite loop. This is a fallback for structural errors in tree data.
+
+**`resolveActiveAnchor`'s "last one past the threshold"**: among the offsets arranged in document order, it finds the **last anchor with `offset <= currentTop`**. Key detail: **it breaks on the first `offset > currentTop`** — since the offsets are ordered, everything after can only be larger, and continuing the traversal is wasted work. This is an O(n) write-up with early termination.
+
+**Falling back to the first item on a miss**: when scrolled before all anchors (the top of the page), it returns `ids[0]` — the first item is always highlighted, avoiding the confusing state of "no highlighted item". An empty array returns an empty string (the UI layer renders no highlight).
+
+**`offsets` and `ids` must be in the same order**: the function signature takes two arrays — the offsets are measured one by one by the UI layer via `getBoundingClientRect()` and passed in the same order. Misaligned ordering yields the wrong highlighted item; this is a caller contract that core cannot validate.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `flattenAnchorItems` | `(items, level?, seen?) => LhFlatAnchorItem[]` | flat list | depth-first, order-preserving |
+| `collectAnchorIds` | `(items) => string[]` | id list | id array in flat order |
+| `resolveActiveAnchor` | `(ids, offsets, currentTop) => string` | active id | scroll-linked determination |
+| `getAnchorClassNames` | `(state: { direction }) => string[]` | class names | container direction |
+| `getAnchorLinkClassNames` | `(state: { active, level }) => string[]` | class names | active state + level indentation |
+
+## Type definitions
+
+```ts
+export interface LhAnchorItem {
+  id: string          // target element id
+  title: string       // display text
+  children?: LhAnchorItem[]
+}
+
+export interface LhFlatAnchorItem {
+  id: string
+  title: string
+  level: number       // original depth (root is 0), drives indentation
+}
+```
+
+## Accessibility
+
+An anchor link points to **an anchor within the same page**; the standard approach is a native `<a href="#section">`:
+
+```html
+<a href="#usage" class="lh-anchor__link">Usage examples</a>
+...
+<section id="usage" tabindex="-1">…</section>
+```
+
+- **Native anchor jump + tabindex="-1"**: clicking `<a href="#id">` makes the browser scroll and try to focus the target. When the target is not a focusable element, the focus does not move after the jump — adding `tabindex="-1"` to the target lets it receive programmatic focus, so after jumping the screen reader starts reading from there. This is the WAI-ARIA recommended accessible anchor pattern.
+- **aria-current marks the current section**: the `--active` from `getAnchorLinkClassNames` is a visual class; for accessibility it is recommended that the UI layer also add `aria-current="location"` to the active link (same-page position semantics, distinct from `breadcrumb`'s `aria-current="page"`).
+- **The side effect of jumping and changing the URL hash**: hash changes go into browser history, so clicking anchors five times means pressing back five times to leave the page. The UI layer can use `history.replaceState` or `scrollIntoView` instead of the default jump — this is an interaction trade-off; core does not care.
+- **A `nav` wrapper + aria-label**: same as `breadcrumb`, `<nav aria-label="On this page">` declares it as a navigation region.
+
+## Usage examples
+
+```ts
+import {
+  flattenAnchorItems, collectAnchorIds, resolveActiveAnchor,
+} from '@lh-ui/share/core/anchor'
+
+const items = [
+  { id: 'intro', title: 'Introduction', children: [
+    { id: 'why', title: 'Why use it' },
+  ] },
+  { id: 'usage', title: 'Usage' },
+]
+
+flattenAnchorItems(items)
+// [ { id: 'intro', title: 'Introduction', level: 0 },
+//   { id: 'why', title: 'Why use it', level: 1 },
+//   { id: 'usage', title: 'Usage', level: 0 } ]
+
+collectAnchorIds(items)  // ['intro', 'why', 'usage']
+
+// Scroll linking: offsets are each anchor's position relative to the container top (same order as ids)
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 350)  // 'why'
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 50)   // 'intro' (has not passed why)
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 0)    // 'intro' (miss falls back to the first item)
+resolveActiveAnchor([], [], 0)  // '' (empty list)
+```
+
+```ts
+// UI layer: scroll listener + offset measurement
+const activeId = ref('')
+
+function refresh() {
+  const flat = flattenAnchorItems(props.items)
+  const ids = flat.map((item) => item.id)
+  const offsets = ids.map((id) => {
+    const el = document.getElementById(id)
+    return el ? el.getBoundingClientRect().top - containerTop : Infinity
+  })
+  activeId.value = resolveActiveAnchor(ids, offsets, scrollTop.value)
+}
+
+onMounted(() => window.addEventListener('scroll', refresh, { passive: true }))
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhAnchor :items="items" :offset-top="80" @click="onAnchorClick" />
+</template>
+```
+
+```tsx
+// React: useEffect registers the scroll listener; offsets measured with a ref array + getBoundingClientRect;
+// throttle with requestAnimationFrame or a throttle (scroll fires at high frequency)
+```
+
+```ts
+// uniapp: <scroll-view scroll-into-view="id"> is the mini-program's native anchor jump;
+// scroll linking uses the scroll-view scroll event to get scrollTop
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-anchor` | container |
+| `.lh-anchor--{vertical\|horizontal}` | direction (vertical sidebar / horizontal top navigation) |
+| `.lh-anchor__link` | anchor link |
+| `.lh-anchor__link--level-{0..n}` | level indentation (increasing padding-left) |
+| `.lh-anchor__link--active` | active state (primary color + left indicator bar) |
+
+Active color `--lh-primary-color`; regular links `--lh-text-regular`; level indentation unit `--lh-anchor-indent` (e.g. 12px/level).
+
+## Caveats
+
+- **Offset measurement must subtract the container offset**: if the anchors are inside an internal scrolling container (not window scrolling), `getBoundingClientRect().top` must subtract the container's top position, otherwise the highlight will always be offset. This is the most common bug.
+- **`getBoundingClientRect` forces layout**: calling it on N elements inside every scroll event triggers N reflows. Optimization: cache the offsets and only recompute when the content size changes; or use IntersectionObserver to observe each one.
+- **Offset compensation for a sticky header**: when the page has a fixed header (`affix`), the target may be covered by the header after an anchor jump. Add `scroll-margin-top` to the target element (CSS) or subtract the header height from the scroll amount in the UI layer — this is a layout coordination point.
+- **Offsets going stale with dynamic content**: after the content height changes (expand/collapse, images finishing loading), the cached offsets are wrong. Re-measure when the content changes.
+- **The ancestor-chain semantics of `seen`**: the third parameter `seen` of `flattenAnchorItems` is the **ancestors on the path**, defaulting to `new Set()`. The business side generally does not pass it — it mainly guards against infinite loops from dirty data. If two sibling subtrees reference the same node (DAG sharing), the ancestor chain lets it appear once per path (the same trade-off as `tree`'s ancestor chain vs `table`'s global seen).
+- **Empty `id` and duplicate `id`**: `id` must be globally unique (an HTML anchor requirement). `document.getElementById` only returns the first match — duplicate ids cause wrong jumps, and core cannot validate this.
+- **Anchor vs table-of-contents routing**: anchors associate same-page positions; if each item of the "table of contents" is a different page, that is `menu`, not `anchor` — do not mix them up (anchors do not refresh the page, and the way they enter route history is different).
+
+<FnPlayground module="anchor" fn="resolveActiveAnchor" params='{"ids": ["intro", "why", "usage"], "offsets": [0, 300, 600], "currentTop": 350}' />

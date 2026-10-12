@@ -1,0 +1,141 @@
+---
+title: 'virtual — virtual scrolling'
+description: 'computeRange / computeWindow compute fixed-height virtual scroll ranges; virtual-list and table share the same algorithm'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Fixed-height virtual scrolling used to have two implementations, one in `virtual-list` and one in `table` — even the default overscan differed (2 vs 3), so fixing an edge case in one missed the other. `shared/virtual` distills the algorithm into a single implementation, and both call sites are now thin wrappers.
+
+## When to use it
+
+- **Virtual lists / tables**: with thousands of rows, render only the dozen or so inside the viewport.
+- **Horizontal virtual scrolling**: `computeWindow` is axis-agnostic, so horizontal timelines and horizontally scrolling tab bars work too.
+- **Don't use it for**: variable-height scenarios — there is only a "get offset" capability (`getItemOffsetAt`), no variable-height windowing algorithm. Virtual scrolling with dynamic heights requires the UI layer to maintain a cumulative height table; this module only provides the offset lookup step.
+
+## Import
+
+```ts
+import {
+  computeRange,
+  computeWindow,
+  getItemOffsetAt,
+  LH_VIRTUAL_OVERSCAN,
+  type LhVirtualRange,
+} from '@lh-ui/share/core/shared/virtual'
+```
+
+## Types and constants
+
+```ts
+export interface LhVirtualRange {
+  start: number        // start index of the render range (inclusive)
+  end: number          // end index of the render range (exclusive)
+  offsetY: number      // offset of the start element relative to the container top (the negative start of the stretched height)
+  totalHeight: number  // total height of all the data (used to stretch the container)
+}
+
+export interface LhAxisRange {
+  start: number
+  end: number
+  offset: number
+  totalSize: number
+}
+
+export const LH_VIRTUAL_OVERSCAN = 2   // default overscan rows
+```
+
+## Function table
+
+| Function | Signature | Purpose |
+| --- | --- | --- |
+| `computeRange` | `(scrollTop, viewportHeight, itemHeight, total, overscan?) => LhVirtualRange` | Vertical fixed-height virtual range |
+| `computeWindow` | `(scrollOffset, viewportSize, itemSize, total, overscan?) => LhAxisRange` | Axis-agnostic fixed-height window (for horizontal use) |
+| `getItemOffsetAt` | `(items: { offset: number }[], index: number) => number` | Scroll offset of a given item in dynamic-height mode |
+
+## Computation logic
+
+The core of `computeRange` is three steps:
+
+1. **First index**: `first = floor(scrollTop / itemHeight)`, then expanded by `overscan` rows on each side.
+2. **Last index**: `end = min(total, start + visible + overscan × 2)`, where `visible = ceil(viewportHeight / itemHeight)`.
+3. **Total height**: `totalHeight = total × itemHeight`, used to stretch the container to its true height so the scrollbar ratio is correct.
+
+The returned `offsetY` is "the position of the render start within the total height"; the UI layer uses it as the content container's `translateY` (or padding-top).
+
+## Boundary protection
+
+This module's defenses target mainly **the frame where the data shrinks**: the user is looking at row 500, the data suddenly becomes 10 items, and `scrollTop` has not been clamped back by the browser yet — a naive algorithm computes `start = 490 > end`, `slice()` returns an empty array, and you get a blank screen.
+
+The fix: `first` is clamped to `total - 1`, guaranteeing `start <= end` always holds. Similar guards:
+
+| Bad input | Behavior |
+| --- | --- |
+| `itemHeight` not finite / ≤ 0 | Returns an all-zero range (renders nothing, no error) |
+| `total` not finite / ≤ 0 | Returns an all-zero range |
+| `scrollTop` not finite | Falls back to 0 |
+| `viewportHeight` not finite | Falls back to 0 (→ only the overscan portion renders, no blank screen) |
+| `overscan` not finite | Falls back to `LH_VIRTUAL_OVERSCAN` |
+
+## Usage examples
+
+### Pure function
+
+```ts
+computeRange(400, 300, 40, 1000)
+// first = 10, visible = 8, overscan = 2
+// start = 10 - 2 = 8, end = min(1000, 10 + 8 + 4) = 22
+// offsetY = 8 * 40 = 320, totalHeight = 40000
+// → render items 8~21, container translateY 320px
+```
+
+### Vue3 wiring
+
+```vue
+<template>
+  <div class="lh-virtual-list" @scroll="onScroll" :style="{ height: `${viewportHeight}px` }">
+    <div :style="{ height: `${range.totalHeight}px` }">
+      <div :style="{ transform: `translateY(${range.offsetY}px)` }">
+        <LhVirtualItem v-for="i in visibleItems" :key="i.index" :data="i.data" />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+const range = ref<LhVirtualRange>({ start: 0, end: 0, offsetY: 0, totalHeight: 0 })
+
+function onScroll(e: Event) {
+  range.value = computeRange(
+    (e.target as HTMLElement).scrollTop,
+    viewportHeight.value,
+    props.itemHeight,
+    props.data.length,
+  )
+}
+</script>
+```
+
+### Horizontal scrolling
+
+```ts
+// same algorithm, different axis
+const window = computeWindow(scrollLeft, viewportWidth, itemWidth, total)
+```
+
+### Scrolling to a given item (dynamic heights)
+
+```ts
+// the UI layer maintains a cumulative offset table [{ offset: 0 }, { offset: 40 }, ...]
+const offset = getItemOffsetAt(itemOffsets, targetIndex)
+container.scrollTop = offset
+```
+
+## Caveats
+
+- **Fixed heights are a precondition**: `computeRange` assumes every item has exactly the same height. If list item heights vary, the UI layer must maintain its own height table and use `getItemOffsetAt` for jumps — this module provides no variable-height windowing algorithm.
+- **`getItemOffsetAt` returns 0 when out of range**: empty lists and out-of-bounds indices both return 0, no error thrown.
+- **The overscan trade-off**: `LH_VIRTUAL_OVERSCAN = 2` is the balance point between "no flicker during fast scrolling" and "rendering more rows"; when the user scrolls quickly, the `overscan` region ensures the next frame's content is already rendered. It can be overridden per call, but anything below 1 flickers while scrolling.
+- **`computeWindow` and `computeRange` share their origin**: the former delegates to the latter internally and renames the fields, so the behavior is identical — use either one for vertical scenarios.
+
+<FnPlayground module="virtual" fn="computeRange" params='{"scrollTop": 400, "viewportHeight": 300, "itemHeight": 40, "total": 1000}' />

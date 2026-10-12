@@ -1,0 +1,166 @@
+---
+title: slider — Slider
+description: 'snapToStep step snapping, getValueFromPosition percentage conversion, getInitialValue range initial values, slider semantic attribute bag'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A slider turns numeric selection into a **spatial operation**: dragging is more intuitive than typing, and the value's position within the range is visible at a glance. `core/slider` handles the bidirectional "value ↔ position" conversion, step snapping, the two-thumb initial values of range mode, and APG slider semantics.
+
+## When to use
+
+- Each port implements `LhSlider`: volume, price ranges, opacity adjustment.
+- Scenarios with a continuous value domain or coarse step granularity.
+- **Should not use it**: precise numeric input (use `input-number` — a slider cannot express a non-step value like "37").
+
+## Import
+
+```ts
+import {
+  snapToStep,
+  clampAndSnap,
+  getValueFromPosition,
+  getPositionFromValue,
+  getSliderClassNames,
+  getInitialValue,
+  buildMarksList,
+  getSliderThumbAria,
+} from '@lh-ui/share/core/slider'
+import type { LhSliderState, LhSliderMark } from '@lh-ui/share/core/slider'
+```
+
+## Design intent
+
+`snapToStep` returns the **original value** when `step` is not finite or `<= 0` instead of returning NaN — `step: 0` would make the modulo operation produce NaN; here an "invalid step" is treated as "no snapping," leaving pure boundary clamping to `clampAndSnap`. Separation of concerns: snapping and clamping are two independent things.
+
+`getPositionFromValue` returning 0 when `max === min` avoids division by zero: when the value domain degenerates to a point, the thumb should naturally be at the start.
+
+`getInitialValue` returns `[min-clamped, (min+max)/2-clamped]` for range mode — the second thumb defaults to the **midpoint** rather than max, a visual consideration (two thumbs stuck together looks like a bug).
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `snapToStep` | `(value: number, min: number, step: number) => number` | snapped value | align to the nearest step grid point |
+| `clampAndSnap` | `(value: number, min: number, max: number, step: number) => number` | normalized value | snap first, then clamp |
+| `getValueFromPosition` | `(pct: number, min: number, max: number, step: number) => number` | numeric value | percentage → value |
+| `getPositionFromValue` | `(value: number, min: number, max: number) => number` | percentage [0,1] | value → position |
+| `getSliderClassNames` | `(state: LhSliderState) => string[]` | class names | disabled/range/size |
+| `getInitialValue` | `(state: LhSliderState) => number \| [number, number]` | initial value | range returns two values |
+| `buildMarksList` | `(marks?: Record<number, string>) => LhSliderMark[]` | marks array | ascending by value |
+| `getSliderThumbAria` | `(options: { value, min, max, vertical?, disabled?, ariaValueText? }) => LhAriaAttrs` | aria attribute bag | slider semantics |
+
+## Type definitions
+
+```ts
+export interface LhSliderMark {
+  label: string
+  value: number
+}
+
+export interface LhSliderState {
+  value: number | [number, number] | null
+  min: number
+  max: number
+  step: number
+  disabled: boolean
+  range: boolean              // range mode (two thumbs)
+  showInput: boolean          // paired with an input-number
+  size: LhComponentSize
+  marks: Record<number, string> | undefined
+}
+```
+
+## Accessibility
+
+`getSliderThumbAria` emits APG slider semantics. **In range mode it must be called once per thumb**:
+
+```ts
+getSliderThumbAria({ value: 30, min: 0, max: 100 })
+// { role: 'slider', 'aria-valuenow': 30, 'aria-valuemin': 0, 'aria-valuemax': 100 }
+
+getSliderThumbAria({ value: 60, min: 0, max: 100, vertical: true, disabled: true })
+// { role: 'slider', 'aria-valuenow': 60, 'aria-valuemin': 0, 'aria-valuemax': 100,
+//   'aria-orientation': 'vertical', 'aria-disabled': true }
+```
+
+- `vertical` emits `aria-orientation: 'vertical'` (horizontal is the default direction and is not declared).
+- `ariaValueText` emits `aria-valuetext` — used when the number needs a semantic expression (like "30%" or "slow"), **announced in preference to valuenow**.
+- Keyboard interaction (UI layer): ←/→ or ↓/↑ change by step, Home/End jump to min/max, PageUp/Down take large steps.
+
+## Usage examples
+
+```ts
+import { getValueFromPosition, getPositionFromValue, snapToStep } from '@lh-ui/share/core/slider'
+
+getValueFromPosition(0.5, 0, 100, 1)   // 50
+getValueFromPosition(0.333, 0, 100, 5) // 35 (snapped to a multiple of 5)
+getPositionFromValue(30, 0, 100)       // 0.3
+getPositionFromValue(150, 0, 100)      // 1 (clamped)
+getPositionFromValue(50, 50, 50)       // 0 (max===min avoids division by zero)
+snapToStep(7, 0, 5)                    // 5
+snapToStep(8, 0, 5)                    // 10
+snapToStep(7, 0, 0)                    // 7 (invalid step does not snap)
+buildMarksList({ 0: 'Low', 100: 'High' })  // [{ label: 'Low', value: 0 }, { label: 'High', value: 100 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSliderClassNames({ value, min, max, step, disabled, range, showInput, size, marks })">
+  <div class="lh-slider__track">
+    <div class="lh-slider__bar" :style="{ width: pct + '%' }" />
+    <div
+      class="lh-slider__button-wrapper"
+      :style="{ left: pct + '%' }"
+      v-bind="getSliderThumbAria({ value, min, max, disabled })"
+      @pointerdown="startDrag"
+    >
+      <div class="lh-slider__button" />
+    </div>
+    <template v-if="marks">
+      <div v-for="mark in buildMarksList(marks)" :key="mark.value" class="lh-slider__marks">
+        <span class="lh-slider__mark" :style="{ left: getPositionFromValue(mark.value, min, max) * 100 + '%' }">
+          {{ mark.label }}
+        </span>
+      </div>
+    </template>
+  </div>
+</div>
+```
+
+```tsx
+// React: dragging uses pointer events + getBoundingClientRect to compute the percentage
+// const pct = (clientX - rect.left) / rect.width
+// onChange(getValueFromPosition(pct, min, max, step))
+```
+
+```ts
+// uniapp: <slider> is a built-in component (single thumb), supporting min/max/step/show-value;
+// range mode and marks need a custom view implementation, with dragging via @touchmove
+```
+
+## Styles and tokens
+
+| Class | Semantics |
+| --- | --- |
+| `.lh-slider` | Base class |
+| `.lh-slider--{small\|large}` | Size tiers (thumb size) |
+| `.lh-slider--disabled` | Disabled |
+| `.lh-slider--range` | Range mode (two thumbs + a highlighted middle segment) |
+| `.lh-slider__track` | Track |
+| `.lh-slider__bar` | Selected range (highlighted segment) |
+| `.lh-slider__button-wrapper` / `__button` | Thumb |
+| `.lh-slider__marks` / `__mark` | Marks |
+| `.lh-slider__input` / `__input-text` | Paired input box |
+
+The track color is `--lh-fill-color`; the selected segment is `--lh-primary-color`.
+
+## Caveats
+
+- **`getPositionFromValue` returns a decimal in [0,1]**; the UI layer appends `%` — do not mistake it for returning a percentage.
+- **Alignment of snapping and marks**: a mark's value should be a multiple of step, otherwise the mark point falls between two snapped values and the user cannot drag there.
+- **Crossing in range mode**: the two thumbs can pass each other (the UI layer usually forbids this or auto-swaps them); core's `clampAndSnap` does not handle this semantics.
+- **Vertical mode**: when `vertical`, the track height replaces the width and the conversion denominator changes; core's `getValueFromPosition` is axis-agnostic (it takes a percentage), and the UI layer is responsible for computing pct.
+- **`showInput` pairing**: the input-number's min/max/step should match the slider's, otherwise the two value domains disagree.
+
+<FnPlayground module="slider" fn="getValueFromPosition" params='{"pct": 0.35, "min": 0, "max": 100, "step": 5}' />

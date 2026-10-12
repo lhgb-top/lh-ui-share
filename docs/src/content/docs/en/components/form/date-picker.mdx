@@ -1,0 +1,250 @@
+---
+title: date-picker — Date Picker
+description: 'generateCalendarDays six-week grid, the LhDateAdapter date adapter seam, five modes, dialog semantics'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Date picking is one of the most complex controls in a UI library: a single 6×7 grid must simultaneously express six states — "current-month dates / previous and next month padding / today / selected / range highlight / disabled." `core/date-picker` distills calendar-grid generation, month and year panels, and the **date adapter seam** into pure functions, leaving the UI layer to only render and wire things up.
+
+## When to use
+
+- Each port implements `LhDatePicker`: birthdays, schedules, order dates, start and end date ranges.
+- The value is a "date" or a "date range."
+- **Should not use it**: when only time is needed (use `time-picker`); when the user should freely type any textual date (use `input` with your own validation for more flexibility).
+
+## Import
+
+```ts
+import {
+  generateCalendarDays,
+  generateMonths,
+  generateYears,
+  getDatePickerClassNames,
+  getDatePickerTriggerAria,
+  getDatePickerPanelAria,
+  // General date primitives (re-exported from shared/date to keep existing import paths intact)
+  parseDate,
+  formatDate,
+  compareDate,
+  isSameDay,
+  isSameMonth,
+  isDateDisabled,
+  getDaysInMonth,
+  getFirstDayOfMonth,
+} from '@lh-ui/share/core/date-picker'
+import type {
+  LhDatePickerMode,
+  LhDatePickerDayData,
+  LhDatePickerMonthData,
+  LhDatePickerYearData,
+  LhDatePickerState,
+  LhFirstDayOfWeek,
+  LhDateAdapter,
+} from '@lh-ui/share/core/date-picker'
+```
+
+## Design intent
+
+**The adapter is this module's core design.** `LhDateAdapter` is a deliberately minimal seam (parse / format / getDaysInMonth / getFirstDayOfMonth / compare / isSameDay / addDays — seven methods): the default implementation wraps the shared kernel `core/shared/date`'s hand-written algorithms, and when you need to plug in dayjs / date-fns / `Intl`, you just implement the interface — **the core layer depends on no date library**.
+
+There are two injection paths:
+
+- Explicit parameter (recommended): `generateCalendarDays(year, month, …, firstDayOfWeek, myAdapter)` — no global state is polluted, and multiple instances do not interfere.
+- `setDateAdapter(adapter)` (**@deprecated**): a module-level singleton. It is marked deprecated because of **cross-instance leakage** — two date pickers on one page would pollute each other's injection. It is kept only for compatibility with existing downstream calls; no new consumers are added.
+
+**Unraveling the circular dependency**: in the early days `logic.ts` and `adapter.ts` imported each other; the general primitives have since sunk into `core/shared/date`, and the adapter depends only on the kernel and no longer reverse-imports logic, breaking the cycle (see commit 9e21865).
+
+**Grid padding alignment**: `totalCells = Math.ceil(days.length / 7) * 7` guarantees the total cell count is a multiple of 7 (5 or 6 rows), and `firstDayOfWeek` computes the leading empty slots via `(firstDay - firstDayOfWeek + 7) % 7` — the `+7` avoids negative modulo.
+
+**Day-level range comparison**: cell dates are local 00:00, while `rangeStart` / `rangeEnd` may carry a time component; comparing directly would make the "end day" also count as `isInRange`. Uniformly use `adapter.compare` for day-level comparison.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `generateCalendarDays` | `(year, month, selected, rangeStart, rangeEnd, today, firstDayOfWeek?, adapter?) => LhDatePickerDayData[]` | 42 or 35 cells | Six-state grid |
+| `generateMonths` | `(year, selected) => LhDatePickerMonthData[]` | 12 items | Month panel |
+| `generateYears` | `(startYear, selected) => LhDatePickerYearData[]` | year panel | Year selection |
+| `getDatePickerClassNames` | `(state: { size, disabled, visible }) => string[]` | class names | size/disabled/expanded |
+| `getDatePickerTriggerAria` | `(visible, panelId?) => LhAriaAttrs` | aria attribute bag | haspopup dialog |
+| `getDatePickerPanelAria` | `(id?) => LhAriaAttrs` | aria attribute bag | role=dialog |
+| `parseDate` / `formatDate` | `(value, format) => Date \| null` / `(date, format) => string` | inverses | fixed-width tokens |
+| `compareDate` | `(a, b) => number` | day-level comparison | drops the time component |
+| `isSameDay` / `isSameMonth` | `(a, b) => boolean` | same day/month or not | selection determination |
+| `isDateDisabled` | `(date, min, max, disabledDate?) => boolean` | disabled or not | three sources merged |
+| `getDaysInMonth` / `getFirstDayOfMonth` | `(year, month) => number` | day count / first weekday | grid computation |
+
+## Type definitions
+
+```ts
+export type LhDatePickerMode = 'date' | 'month' | 'year' | 'datetime' | 'range'
+export type LhFirstDayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6  // 0=Sunday (default)
+
+export interface LhDatePickerDayData {
+  date: Date
+  day: number
+  month: number        // 0-based
+  year: number
+  isCurrentMonth: boolean  // current month vs previous/next month padding
+  isToday: boolean
+  isSelected: boolean
+  isInRange: boolean   // range mode only, open interval
+  isStart: boolean
+  isEnd: boolean
+}
+
+export interface LhDatePickerMonthData { month: number; year: number; isSelected: boolean }
+export interface LhDatePickerYearData  { year: number; isSelected: boolean }
+
+export interface LhDateAdapter {
+  parse(value: string, format: string): Date | null
+  format(date: Date, format: string): string
+  getDaysInMonth(year: number, month: number): number
+  getFirstDayOfMonth(year: number, month: number): number
+  compare(a: Date, b: Date): number
+  isSameDay(a: Date, b: Date): boolean
+  addDays(date: Date, amount: number): Date
+}
+```
+
+## Accessibility
+
+The date panel pops up as a **dialog**, with the same semantics as time-picker (both go through `getPopupTriggerAria`, `haspopup: 'dialog'`):
+
+```ts
+getDatePickerTriggerAria(true, 'lh-date-panel')
+// { 'aria-expanded': true, 'aria-haspopup': 'dialog', 'aria-controls': 'lh-date-panel' }
+
+getDatePickerPanelAria('lh-date-panel')
+// { role: 'dialog', id: 'lh-date-panel' }
+```
+
+The grid itself should carry `role="grid"`, each row `role="row"`, each cell `role="gridcell"`; the month/year panels use `role="listbox"`. Keyboard interaction (implemented by the UI layer):
+
+- Inside the panel, ↑/↓/←/→ move between cells (`adapter.addDays(date, ±1|±7)`); Enter selects.
+- Moving onto a previous/next-month padding cell (`isCurrentMonth: false`) **auto-flips the month**.
+- Esc closes the panel and returns focus to the trigger.
+- Cells for which `disabledDate` returns true must have `aria-disabled="true"` and be unselectable.
+
+## Usage examples
+
+```ts
+import { generateCalendarDays, parseDate, formatDate, isDateDisabled } from '@lh-ui/share/core/date-picker'
+
+// October 2026 (month is 0-based), starting on Sunday
+const days = generateCalendarDays(2026, 9, parseDate('2026-10-12', 'yyyy-MM-dd'), null, null, new Date(), 0)
+days.length        // 35 or 42
+days.filter((d) => d.isCurrentMonth).length  // 31
+days[0]            // leading padding cell 2026-09-27 (Sunday)
+days.find((d) => d.isToday)?.day   // 12 (if today is in 2026-10)
+
+parseDate('2026-10-12', 'yyyy-MM-dd')  // Date(2026, 9, 12)
+formatDate(new Date(2026, 9, 12), 'yyyy-MM-dd')  // '2026-10-12'
+parseDate('not a date', 'yyyy-MM-dd')  // null
+isSameDay(new Date(2026, 9, 12, 5), new Date(2026, 9, 12, 23))  // true
+```
+
+```ts
+// Plugging in a dayjs adapter (explicit parameter, does not pollute the global state)
+import type { LhDateAdapter } from '@lh-ui/share/core/date-picker'
+import dayjs from 'dayjs'
+import customParseFormat from 'dayjs/plugin/customParseFormat'
+dayjs.extend(customParseFormat)
+
+const dayjsAdapter: LhDateAdapter = {
+  parse: (v, f) => { const d = dayjs(v, f, true); return d.isValid() ? d.toDate() : null },
+  format: (d, f) => dayjs(d).format(f),
+  getDaysInMonth: (y, m) => dayjs(new Date(y, m, 1)).daysInMonth(),
+  getFirstDayOfMonth: (y, m) => dayjs(new Date(y, m, 1)).day(),
+  compare: (a, b) => dayjs(a).startOf('day').valueOf() - dayjs(b).startOf('day').valueOf(),
+  isSameDay: (a, b) => dayjs(a).isSame(dayjs(b), 'day'),
+  addDays: (d, n) => dayjs(d).add(n, 'day').toDate(),
+}
+
+const days = generateCalendarDays(2026, 9, null, null, null, new Date(), 1, dayjsAdapter)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getDatePickerClassNames({ size, disabled, visible })">
+  <input
+    class="lh-date-picker__input"
+    :value="value ? formatDate(value, format) : ''"
+    v-bind="getDatePickerTriggerAria(visible, panelId)"
+    @click="open"
+  />
+  <div v-if="visible" class="lh-date-picker__panel" v-bind="getDatePickerPanelAria(panelId)">
+    <div class="lh-date-picker__header">
+      <button type="button" class="lh-date-picker__prev" @click="prevMonth">‹</button>
+      <span class="lh-date-picker__title">{{ year }} / {{ month + 1 }}</span>
+      <button type="button" class="lh-date-picker__next" @click="nextMonth">›</button>
+    </div>
+    <div class="lh-date-picker__body" role="grid">
+      <div v-for="row in weekRows" :key="row[0].date.getTime()" class="lh-date-picker__row" role="row">
+        <button
+          v-for="cell in row"
+          :key="cell.date.getTime()"
+          type="button"
+          class="lh-date-picker__cell"
+          :class="{
+            'is-other-month': !cell.isCurrentMonth,
+            'is-today': cell.isToday,
+            'is-selected': cell.isSelected,
+            'is-in-range': cell.isInRange,
+            'is-start': cell.isStart,
+            'is-end': cell.isEnd,
+          }"
+          role="gridcell"
+          :aria-disabled="isDateDisabled(cell.date, minDate, maxDate, disabledDate)"
+          @click="onPick(cell)"
+        >
+          {{ cell.day }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+```tsx
+// React: two-step selection in range mode
+// The first click sets rangeStart (rangeEnd cleared); the second sets rangeEnd (swapped if earlier than start)
+// generateCalendarDays recomputes on every render, and isInRange highlights the middle segment automatically
+```
+
+```ts
+// uniapp: <picker mode="date"> is a built-in component (start/end constrain the range);
+// for a custom panel use <scroll-view> + a grid; core's generateCalendarDays works as-is
+```
+
+## Styles and tokens
+
+| Class | Semantics |
+| --- | --- |
+| `.lh-date-picker` | Base class |
+| `.lh-date-picker--{small\|large}` | Size tiers |
+| `.lh-date-picker--disabled` | Disabled |
+| `.lh-date-picker__input` | Trigger input |
+| `.lh-date-picker__panel` | Popup panel |
+| `.lh-date-picker__header` / `__prev` / `__next` / `__title` | Header navigation |
+| `.lh-date-picker__body` | Grid area |
+| `.lh-date-picker__row` | One week |
+| `.lh-date-picker__cell` | Date cell (is- prefixed state modifiers) |
+| `.lh-date-picker__cell.is-other-month` / `.is-today` / `.is-selected` / `.is-in-range` / `.is-start` / `.is-end` | Six states |
+| `.lh-date-picker__footer` | Shortcut bar (today/clear) |
+
+Selected uses `--lh-primary-color`, the range uses a low-opacity `--lh-primary-color`, today gets a `--lh-primary-color` outline, and previous/next-month padding text uses `--lh-text-disabled`.
+
+## Caveats
+
+- **month is always 0-based** (consistent with the native `Date`), and the UI layer must display it `+1`. This is the most common source of off-by-one errors.
+- **`firstDayOfWeek` and the locale pack**: `zh-CN` usually uses 1 (Monday), `en-US` usually 0 (Sunday); set it in ConfigProvider or the locale, do not hardcode it.
+- **Cross-instance leakage of `setDateAdapter`**: on pages where multiple date pickers coexist, do not use global injection — use the explicit parameter instead.
+- **Fixed-width tokens of `parseDate` / `formatDate`**: `yyyy` / `MM` / `dd` / `HH` / `mm` / `ss`, **case-sensitive** (`mm` is minutes, `MM` is months). parse and format must use the same format string, otherwise the round trip breaks.
+- **`datetime` mode**: the panel embeds time-picker columns, and the time part uses `core/time-picker`'s functions; when merging values, note that `compareDate` **drops the time component** — use `isSameDay` to compare selection state.
+- **Swapping in `range` mode**: core does not handle the "second click earlier than the first swaps them" interaction rule; the UI layer decides that itself.
+- **`disabledDate` and min/max are merged**: `isDateDisabled(date, min, max, disabledDate)` — a hit on any of the three sources disables the date.
+- **6 rows vs 5 rows**: `totalCells` rounds up to a multiple of 7; some months are 35 cells (5 rows), others 42 (6 rows). The panel height must accommodate 6 rows, otherwise the panel jumps when the month changes.
+
+<FnPlayground module="date-picker" fn="parseDate" params='{"value": "2026-10-12", "format": "yyyy-MM-dd"}' />

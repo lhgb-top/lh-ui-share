@@ -1,0 +1,224 @@
+---
+title: time-picker — Time Picker
+description: 'parseTime/formatTime fixed-width token parsing, generateTimeColumn stepped columns, wrapTimeValueInRange wrapping, dialog semantics'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Time picking is the interaction of **three scrolling columns** (hours/minutes/seconds): the user spins each column separately instead of typing numbers into one input box. `core/time-picker` handles parsing and formatting of fixed-width format strings, column generation by step, filtering and wrapping of selectable value domains, and APG dialog + listbox semantics. It supports two modes: `time` (pure time) and `date-time` (date + time).
+
+## When to use
+
+- Each port implements `LhTimePicker`: appointment times, scheduled tasks, business-hours settings.
+- Scenarios where the value is a "time of day" with minute or second granularity.
+- **Should not use it**: when only a date is needed without a time (use `date-picker`); for a time span (use two time-pickers or the range mode `isRange`).
+
+## Import
+
+```ts
+import {
+  padNumber,
+  formatTime,
+  parseTime,
+  extractTime,
+  generateTimeColumn,
+  createDateTime,
+  isValidTime,
+  formatDateToTimeString,
+  getHourStep,
+  getMinuteStep,
+  getSecondStep,
+  getDisabledHours,
+  getDisabledMinutes,
+  getDisabledSeconds,
+  getHourRange,
+  filterTimeColumnByRange,
+  wrapTimeValueInRange,
+  clampTimeValue,
+  getTimePickerClassNames,
+  getTimePickerTriggerAria,
+  getTimePickerPanelAria,
+  getTimePickerColumnAria,
+} from '@lh-ui/share/core/time-picker'
+import type {
+  LhTimeData,
+  LhTimeColumn,
+  LhTimePickerState,
+  LhTimePickerOptions,
+  LhTimeColumnType,
+  LhTimePickerMode,
+  LhTimeSelectEventData,
+} from '@lh-ui/share/core/time-picker'
+```
+
+## Design intent
+
+`parseTime` / `formatTime` use **fixed-width tokens** (`HH` / `mm` / `ss` each occupy 2 characters) instead of a general date library — a deliberate trade-off: time has only three components, and positional parsing via `substring(idx, idx+2)` is far lighter than regex or moment, and it is strictly symmetric with `formatTime` — what you write is what you get back. Parse failures always return null, never partially returned dirty data.
+
+`generateTimeColumn`'s `step` is defensive: non-positive values normalize to 1 (`step: 0` would make the `for` loop spin forever), and decimals are floored (`step: 2.5` becomes 2). `wrapTimeValueInRange` **returns the original value when the range covers the full domain** — this is legacy-behavior compatibility: for example, if the hour column's range is [0,23], scrolling past the boundary should stop at the edge rather than wrap to the other end; wrapping happens only when a sub-interval is explicitly constrained (like [9, 18]). `clampTimeValue` does the opposite, always clamping into the interval; it is used to collapse an existing selected value back into the legal range.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `padNumber` | `(n: number) => string` | `'09'` | zero-pad to two digits |
+| `formatTime` | `(hours, minutes, seconds, format?) => string` | `'09:30:00'` | assemble per format |
+| `parseTime` | `(timeStr, format?) => LhTimeData \| null` | time data \| null | positional parsing |
+| `extractTime` | `(date: Date) => LhTimeData` | hours/minutes/seconds | extract from a Date |
+| `generateTimeColumn` | `(type, step?, disabledValues?) => LhTimeColumn[]` | column options | includes isDisabled |
+| `createDateTime` | `(baseDate, hours, minutes, seconds) => Date` | new Date | keep the date, swap the time |
+| `isValidTime` | `(hours, minutes, seconds) => boolean` | valid or not | domain validation |
+| `formatDateToTimeString` | `(date: Date, format: string) => string` | string | Date → display text |
+| `getHourStep` / `getMinuteStep` / `getSecondStep` | `(options?) => number` | step | defaults to 1 |
+| `getDisabledHours` / `getDisabledMinutes` / `getDisabledSeconds` | `(options?, …) => number[]` | disabled values | caller callbacks |
+| `getHourRange` | `(start, end) => { start, end }` | collapsed range | clamp to [0,23] |
+| `filterTimeColumnByRange` | `(columns, start, end) => LhTimeColumn[]` | filtered column | keep only values inside the range |
+| `wrapTimeValueInRange` | `(value, start, end) => number` | wrapped value | wrap on overflow |
+| `clampTimeValue` | `(value, start, end) => number` | clamped value | clamp to the boundary on overflow |
+| `getTimePickerClassNames` | `(state: { size, disabled, visible }) => string[]` | class names | size/disabled/expanded |
+| `getTimePickerTriggerAria` | `(visible, panelId?) => LhAriaAttrs` | aria attribute bag | haspopup dialog |
+| `getTimePickerPanelAria` | `(id?) => LhAriaAttrs` | aria attribute bag | role=dialog |
+| `getTimePickerColumnAria` | `(label?) => LhAriaAttrs` | aria attribute bag | role=listbox |
+
+## Type definitions
+
+```ts
+export type LhTimePickerMode = 'time' | 'date-time'
+export type LhTimeColumnType = 'hour' | 'minute' | 'second'
+
+export interface LhTimeData {
+  hours: number
+  minutes: number
+  seconds: number
+}
+
+export interface LhTimeColumn {
+  value: number
+  text: string
+  isSelected: boolean
+  isDisabled: boolean
+}
+
+export interface LhTimePickerOptions {
+  hours?:   { step?: number; disabledHours?:   () => number[] }
+  minutes?: { step?: number; disabledMinutes?: (hour: number) => number[] }
+  seconds?: { step?: number; disabledSeconds?: (hour: number, minute: number) => number[] }
+}
+
+export interface LhTimeSelectEventData {
+  column: LhTimeColumnType
+  value: number
+}
+```
+
+## Accessibility
+
+The time panel pops up as a **dialog** (the trigger has `aria-haspopup="dialog"`), and the three columns inside the panel are each a **listbox**. This set of semantics comes from the shared kernel's `getPopupTriggerAria`:
+
+```ts
+getTimePickerTriggerAria(true, 'lh-time-panel')
+// { 'aria-expanded': true, 'aria-haspopup': 'dialog', 'aria-controls': 'lh-time-panel' }
+
+getTimePickerPanelAria('lh-time-panel')
+// { role: 'dialog', id: 'lh-time-panel' }
+
+getTimePickerColumnAria('Hours')
+// { role: 'listbox', 'aria-label': 'Hours' }
+```
+
+- Options inside a column should have `role="option"` + `aria-selected` (the UI layer renders `LhTimeColumn.isSelected`) + `aria-disabled` (`isDisabled`).
+- Keyboard: after a column is focused, ↑/↓ move between **non-disabled** options and select them; Esc closes the panel.
+- The dialog semantics mean focus should be trapped when the panel is open (`core/shared/focus-trap`), so focus does not escape the panel.
+
+## Usage examples
+
+```ts
+import {
+  parseTime, formatTime, generateTimeColumn, isValidTime, createDateTime,
+} from '@lh-ui/share/core/time-picker'
+
+formatTime(9, 30, 5)                    // '09:30:05'
+formatTime(9, 30, 5, 'HH:mm')           // '09:30'
+parseTime('09:30:05')                   // { hours: 9, minutes: 30, seconds: 5 }
+parseTime('09:30:05', 'HH:mm')          // { hours: 9, minutes: 30, seconds: 0 } (missing ss defaults to 0)
+parseTime('99:99:99')                   // null (values out of domain)
+parseTime('abc', 'HH:mm:ss')            // null (NaN)
+parseTime('09:30', 'YYYY-MM-DD')        // null (format has no time tokens)
+generateTimeColumn('hour', 1)           // 24 items: 00..23
+generateTimeColumn('minute', 15)        // 4 items: 00 15 30 45
+generateTimeColumn('minute', 0)         // 60 items (step 0 normalized to 1)
+generateTimeColumn('hour', 1, [0, 1, 2])// first three items have isDisabled: true
+isValidTime(23, 59, 59)                 // true
+isValidTime(24, 0, 0)                   // false
+createDateTime(new Date('2026-10-12'), 9, 30, 0)  // 2026-10-12 09:30:00
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTimePickerClassNames({ size, disabled, visible })">
+  <input
+    class="lh-time-picker__input"
+    :value="formatDateToTimeString(value, format)"
+    v-bind="getTimePickerTriggerAria(visible, panelId)"
+    @click="open"
+  />
+  <div v-if="visible" class="lh-time-picker__panel" v-bind="getTimePickerPanelAria(panelId)">
+    <div
+      v-for="col in columns"
+      :key="col.type"
+      class="lh-time-picker__column"
+      v-bind="getTimePickerColumnAria(col.label)"
+    >
+      <div
+        v-for="opt in col.items"
+        :key="opt.value"
+        class="lh-time-picker__option"
+        :class="{ 'is-selected': opt.isSelected, 'is-disabled': opt.isDisabled }"
+        role="option"
+        :aria-selected="opt.isSelected"
+        @click="onSelect(col.type, opt.value)"
+      >
+        {{ opt.text }}
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+```tsx
+// React: column generation
+// const hours = generateTimeColumn('hour', getHourStep(options), getDisabledHours(options))
+// The minutes column depends on the selected hour: getDisabledMinutes(options, selectedHour)
+```
+
+```ts
+// uniapp: <picker mode="time"> is a built-in component (values in 'HH:mm' format);
+// custom scrolling columns need <picker-view> + <picker-view-column>; core's column
+// generation functions work as-is
+```
+
+## Styles and tokens
+
+| Class | Semantics |
+| --- | --- |
+| `.lh-time-picker` | Base class |
+| `.lh-time-picker--{small\|large}` | Size tiers |
+| `.lh-time-picker--disabled` | Disabled |
+| `.lh-time-picker__input` | Trigger input |
+| `.lh-time-picker__panel` | Popup panel |
+| `.lh-time-picker__column` | Single scrolling column |
+| `.lh-time-picker__option` | Option inside a column |
+| `.lh-time-picker__footer` | confirm/cancel bar (date-time mode) |
+
+Known issue (recorded in the "control-height tokens" initiative): the time-picker-related controls are 33px tall, inconsistent with input (37) and select (32); the root cause is the missing `--lh-control-height-*` tokens.
+
+## Caveats
+
+- **The token order in format can be arbitrary**: both `formatTime` and `parseTime` read by token position within the format, so `'mm:HH'` also round-trips correctly. But when non-token characters are mixed in (like `'HH时mm分'` — a Chinese-locale format meaning `HH` hours, `mm` minutes), `parseTime` still slices at a fixed 2-character width — non-Latin characters do not matter (they are not tokens), but **numeric separators get misaligned** — in `'09点30'` (meaning 09 o'clock 30), the `mm` position slices into `'点3'`, which parses to NaN and returns null. Keep the format to only tokens and non-numeric separators.
+- **`parseTime` tolerance**: it returns null instead of throwing; the UI layer must handle null when the input loses focus (usually keeping the original value and showing a hint).
+- **Interaction between step and disabling**: `disabledValues` only marks things disabled, it does not filter — the UI layer's keyboard navigation must skip `isDisabled` items itself.
+- **`date-time` mode**: the date part is handled by `date-picker`, and the time part reuses this module; the panel usually picks the date first and then the time, and `createDateTime(baseDate, …)` merges the two. Note that when `baseDate` is null, the **current moment's** date is used.
+- **Range mode `isRange`**: `rangeStart` / `rangeEnd` are two `LhTimeData` values, and the second column's disabled values depend on the first column's selection (e.g. the end time must be later than the start); the UI layer computes this dynamically with callbacks like `getDisabledMinutes`.
+- **Uppercase `SS` is not seconds**: only lowercase `ss` is seconds; `HH` uppercase and `mm`/`ss` lowercase is the fixed spelling, consistent with libraries like day.js.
+
+<FnPlayground module="time-picker" fn="generateTimeColumn" params='{"type": "minute", "step": 15}' />

@@ -1,0 +1,175 @@
+---
+title: popover — Popover
+description: 'A floating layer that can hold interactive content: a 100ms hide delay on hover-out, role=dialog + aria-labelledby, aria-haspopup trigger semantics'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A popover is "a tooltip that can hold things": the hint can contain buttons, forms, menus, images. It does not replace tooltip — tooltip can only hold plain text and forbids interaction; nor does it replace dialog — dialog is modal and grabs focus. `core/popover` is as thin as tooltip; the difference is entirely in **interaction weight**.
+
+## When to use
+
+- Each framework implements `<LhPopover>`: card-style details, filter panels, inline forms, groups of action buttons.
+- Situations where the user needs to **linger inside the floating layer and interact** with it.
+- **Do not use it for**: a one-sentence plain-text hint (use `tooltip`, lighter and more restrained); strong confirmations that must interrupt the user's flow (use `dialog`, modal); secondary confirmation of an operation (use `popconfirm`, semantically more accurate).
+
+## Import
+
+```ts
+import {
+  LH_POPOVER_TRIGGERS,
+  LH_POPOVER_PLACEMENT_DEFAULT,
+  getPopoverClass,
+  getPopoverWidthStyle,
+  getPopoverTriggerAria,
+  getPopoverPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+import type { LhPopoverTrigger, LhPopoverState } from '@lh-ui/share/core/popover'
+```
+
+## Design intent
+
+**Why the 100ms hide delay exists**: tooltip hides with 0ms (disappears the moment you leave), while popover keeps 100ms — **so the pointer can travel from the trigger into the floating layer**. While moving the mouse from the trigger to the layer, the pointer briefly leaves the trigger element; a 0ms delay would close the layer mid-path and the user could never get in. This is a direct constraint imposed by popover being interactive.
+
+**`LH_POPOVER_TRIGGERS` as a validation constant**: the trigger types are a finite enumeration (click/hover/focus/manual), exported as a readonly array for the UI layer to validate props against (Vue's validator, React's runtime assertion), and it is also the runtime counterpart of the TS type.
+
+**`role="dialog"` rather than `"tooltip"`**: WAI-ARIA rules that a tooltip must not contain interactive elements; an interactive floating layer must have dialog semantics. Pair it with `aria-labelledby` pointing at the title element, so screen readers announce the title rather than the whole content when it opens.
+
+**The disabled guard of `canCloseOnEscape`**: Esc closing is allowed by default and blocked when `disabled` — in a disabled state the layer should not be triggered in the first place, and this guard prevents an already-open layer from still being closed by Esc after the component gets disabled (business-wise, disabled usually means "operation locked").
+
+**The arrow is optional**: the `--arrow` class is only added when `arrow !== false` — the arrow needs extra positioning math (`shared/popper`'s `computeArrowOffset`), and a purely informational popover can skip it.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | delays | defaults 200 / 100 |
+| `getPopoverClass` | `(state: { placement, arrow?, popperClass? }) => string[]` | class names | position + arrow + custom |
+| `getPopoverWidthStyle` | `(width?: string \| number) => Record<string, string>` | inline styles | width normalization |
+| `getPopoverTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | aria bag | aria-expanded/controls/haspopup |
+| `getPopoverPopperAria` | `(id?, titleId?) => LhAriaAttrs` | aria bag | role=dialog + aria-labelledby |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | whether allowed | blocks when disabled |
+
+Constants: `LH_POPOVER_TRIGGERS` (4 trigger types), `LH_POPOVER_PLACEMENT_DEFAULT = 'top'`.
+
+## Type definitions
+
+```ts
+export type LhPopoverTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopoverState {
+  placement?: LhPlacement        // 12 positions (shared/popper)
+  trigger?: LhPopoverTrigger
+  width?: string | number        // popover width
+  title?: string
+  visible?: boolean
+  disabled?: boolean
+  arrow?: boolean                // default true
+  showAfter?: number
+  hideAfter?: number
+}
+```
+
+## Accessibility
+
+```ts
+getPopoverTriggerAria(true, 'pop-1')
+// { 'aria-expanded': true, 'aria-controls': 'pop-1', 'aria-haspopup': 'true' }
+getPopoverTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'true' }
+
+getPopoverPopperAria('pop-1', 'pop-1-title')
+// { role: 'dialog', id: 'pop-1', 'aria-labelledby': 'pop-1-title' }
+```
+
+- **The trigger triple**: `aria-haspopup` declares "I will pop something up", `aria-expanded` declares "is it open right now", and `aria-controls` points at "which element pops up". Keyboard users rely on the expanded state to judge the current situation.
+- **`aria-controls` needs the layer to exist**: the id only exists when the layer is rendered with `v-if`; when popperId is not passed, only expanded/haspopup are output. **Do not let controls point at an unmounted element** — after closing, the layer is removed and the trigger's controls dangle (screen readers tolerate it, but strict validators complain).
+- **The title is the front door**: `aria-labelledby` points to `<div class="lh-popover__title" :id="titleId">`. The title should clearly state what this popover is ("Filter conditions", "Order details"), not a verb ("Click here").
+- **Focus management is the UI layer's job**: `role="dialog"` does not come with a focus trap — whether to trap focus and where the initial focus lands is decided by the UI layer using `shared/focus-trap`. A non-modal popover usually **does not trap** (the user can still operate the rest of the page), but clicking outside should close it.
+- **Keyboard opening**: with a click trigger, the trigger being a button lets Enter/Space open it; a hover trigger is unreachable for keyboard users — **do not offer hover as the only trigger for a critical operation**.
+
+## Usage examples
+
+```ts
+import {
+  getDefaultDelay, getPopoverClass, getPopoverWidthStyle, canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 100 }
+getDefaultDelay(0, 0)                   // { show: 0, hide: 0 } (explicit immediate)
+
+getPopoverClass({ placement: 'bottom' })
+// ['lh-popover__popper', 'lh-popover__popper--bottom', 'lh-popover__popper--arrow']
+getPopoverClass({ placement: 'top', arrow: false })
+// ['lh-popover__popper', 'lh-popover__popper--top']
+getPopoverClass({ placement: 'top', popperClass: 'my-pop' })
+// ['lh-popover__popper', '…--top', '…--arrow', 'my-pop']
+
+getPopoverWidthStyle(240)     // { width: '240px' }
+getPopoverWidthStyle('50%')   // { width: '50%' }
+getPopoverWidthStyle(undefined) // {}
+
+canCloseOnEscape({ disabled: false })  // true
+canCloseOnEscape({ disabled: true })   // false
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopover :width="280" trigger="click" title="Filter conditions">
+    <template #reference>
+      <LhButton>Filter</LhButton>
+    </template>
+    <div class="filter-body">
+      <LhCheckbox v-model="form.active">Show enabled only</LhCheckbox>
+      <LhButton type="primary" @click="apply">Apply</LhButton>
+    </div>
+  </LhPopover>
+</template>
+```
+
+```ts
+// Close on outside click (UI layer): document listens for click and checks whether the target is outside both the trigger and the layer
+function onDocumentClick(e: MouseEvent) {
+  if (!triggerEl.value?.contains(e.target as Node) && !popperEl.value?.contains(e.target as Node)) {
+    state.visible = false
+  }
+}
+watch(() => state.visible, (v) => {
+  v ? document.addEventListener('click', onDocumentClick) : document.removeEventListener('click', onDocumentClick)
+})
+```
+
+```tsx
+// React: useRef to get the trigger and layer nodes; outside clicks via a custom useClickOutside hook;
+// the layer is portaled to document.body to avoid being clipped by an ancestor's overflow:hidden
+```
+
+```ts
+// uniapp: a <view> layer; "close on outside click" is implemented on the mini-program side with a catchtouchstart global mask
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-popover__popper` | popover container |
+| `.lh-popover__popper--{top\|top-start\|…}` | 12 positions (including the actual position after flipping) |
+| `.lh-popover__popper--arrow` | with an arrow |
+| `.lh-popover__title` | title |
+| `.lh-popover__body` | content area |
+
+Background `--lh-bg-color`, border `--lh-border-color`, shadow `--lh-box-shadow-popover`, border radius `--lh-border-radius-base`, z-index `--lh-z-index-popover`.
+
+## Caveats
+
+- **The layer must be teleported to body**: staying in its original DOM position gets you bitten by an ancestor's `overflow: hidden`, `transform`, or `z-index` stacking context. After teleporting, the positioning coordinates are computed relative to the viewport by `shared/popper`'s `computePosition`.
+- **The class name after flipping**: `getPopoverClass` consumes the **actually-effective placement** (the value after the popper flip), not the original prop value — otherwise the arrow direction and alignment will not match the visuals. The UI layer must pass in the real position returned by the popper.
+- **`width` vs content-driven sizing**: with a fixed width, narrow content gets stretched; without a width, wide content may overflow the viewport. For complex content, prefer passing `min-width` over `width` (via popperClass custom styles).
+- **Hover triggering on mobile**: touch screens have no hover; a hover-triggered popover on mobile requires a tap to enter the "hovered" state and another tap elsewhere to close — a bad experience. Cross-platform components should switch the trigger per platform.
+- **Nested popovers**: opening B from inside A's layer requires cascading the close of B when A closes, otherwise B is left dangling. Be careful when sharing popper state.
+- **The `manual` trigger**: fully controlled by the external `v-model:visible` — often paired with logic like "expand on row selection", in which case you must write your own outside-click-to-close logic (core's outside-click closing is also implemented by the UI layer).
+- **Code reuse with tooltip**: the two share `shared/popper` and `shared/delay`, but **the aria roles must not be mixed** — do not reuse tooltip's `role="tooltip"` on an interactive layer just for reuse's sake; it violates ARIA and screen-reader behavior becomes unpredictable.
+
+<FnPlayground module="popover" fn="getDefaultDelay" params='{"showAfter": null, "hideAfter": null}' />

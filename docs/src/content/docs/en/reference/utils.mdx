@@ -1,0 +1,189 @@
+---
+title: utils — general utilities
+description: '15 framework-agnostic utility functions including createNamespace / deepMerge / debounce / throttle / cssVars'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`src/utils/` is the lowest-level general utility layer: not even core depends on these (core uses the more specialized algorithms in `core/shared/`); they serve each UI library's component implementation and the business side.
+
+## How to import
+
+```ts
+import { createNamespace, deepMerge, debounce, generateId } from '@lh-ui/share/utils'
+```
+
+## Function table
+
+| Function | Signature | Purpose |
+| --- | --- | --- |
+| `generateId` | `(prefix = 'lh') => string` | Generate a unique ID (`${prefix}_${Date.now()}_${counter}`) |
+| `generateRandomId` | `() => string` | Generate a random ID (7-character base36) |
+| `isEmpty` | `(val: unknown) => boolean` | Whether the value is empty (only `null` / `undefined` / `''`) |
+| `isString` | `(val: unknown) => val is string` | Type guard: string |
+| `isNumber` | `(val: unknown) => val is number` | Type guard: number (`NaN` returns `false`) |
+| `isPlainObject` | `(val: unknown) => val is Record<string, unknown>` | Type guard: plain object |
+| `debounce` | `<T>(fn: T, delay = 300) => LhDebounced<T>` | Debounce (with `cancel` / `flush`) |
+| `throttle` | `<T>(fn: T, delay = 300) => LhThrottled<T>` | Throttle (leading immediate + trailing catch-up) |
+| `deepMerge` | `<T>(target: T, ...sources: Partial<T>[]) => T` | Deep-merge objects |
+| `getScrollbarWidth` | `() => number` | Get the scrollbar width (result cached) |
+| `toggleClass` | `(el, className, force?) => void` | Add / remove a CSS class |
+| `getEventValue` | `(e: Event) => string` | Get the target value from an event |
+
+Sub-module exports (re-exported at the end of `@lh-ui/share/utils`):
+
+| Function | Signature | Purpose |
+| --- | --- | --- |
+| `createNamespace` | `(block: string) => LhNamespace` | BEM namespace utility |
+| `toCssVarName` | `(key: string) => string` | Build a CSS variable name (returned as-is if it already has the `--lh-` prefix — **idempotent**) |
+| `cssVars` | `(vars: Record<string, string>) => Record<string, string>` | themeVars key-value pairs → a CSS-variable object bindable to `:style` |
+| `stripCssVarName` | `(key: string) => string` | Strip the `--lh-` prefix to recover the themeVars prop key |
+
+## createNamespace — the BEM namespace
+
+```ts
+const ns = createNamespace('button')
+
+ns.b()              // 'lh-button'
+ns.e('text')        // 'lh-button__text'
+ns.m('primary')     // 'lh-button--primary'
+ns.em('text', 'disabled')  // 'lh-button__text--disabled'
+ns.is('loading', true)     // 'is-loading'
+ns.is('loading', false)    // '' (empty string; the framework ignores it)
+```
+
+Every lh-ui component's class names go through it, guaranteeing a consistent BEM structure and no missing `lh-` prefix. The state class from `is()` **carries no namespace prefix** (`is-loading` rather than `lh-button--is-loading`) — this is a family convention.
+
+The types:
+
+```ts
+export interface LhNamespace {
+  b: () => string                       // block
+  e: (element: string) => string        // element
+  m: (modifier: string) => string       // modifier
+  em: (element: string, modifier: string) => string  // element modifier
+  is: (name: string, state?: boolean | string) => string  // state class
+}
+```
+
+## debounce / throttle
+
+### debounce — only the last call executes within the quiet window
+
+```ts
+const debounced = debounce((q: string) => search(q), 300)
+input.addEventListener('input', (e) => debounced(e.target.value))
+
+debounced.cancel()   // clear pending calls on unmount
+debounced.flush()    // immediately run the pending call (a no-op when nothing is pending)
+```
+
+`cancel` / `flush` are not optional decoration: if a component unmounts without clearing the timer, it would call into an already-destroyed context; a "search now" button needs `flush()` to fire the not-yet-triggered query immediately.
+
+### throttle — leading immediate + trailing catch-up
+
+```ts
+const throttled = throttle(onScroll, 100)
+window.addEventListener('scroll', throttled)
+```
+
+It executes **immediately at the start** of the time window (leading edge); the last call within the window is **caught up at the window's end** (trailing edge). A naive throttle drops the last frame of a fast scroll — yet the moment scrolling stops is exactly when an update matters most (the position decision for sticky / affix).
+
+`throttle` only has `cancel` (clears the trailing timer and resets `lastTime`); there is no `flush` (the trailing edge semantically means "execute later").
+
+The types:
+
+```ts
+export interface LhDebounced<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+  flush(): void
+}
+
+export interface LhThrottled<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+}
+```
+
+## The cssVars trio
+
+ConfigProvider's `themeVars` prop uses **shorthand keys** (`'primary-color'`), while components consume CSS variables (`--lh-primary-color`). These three functions convert in both directions:
+
+```ts
+cssVars({ 'primary-color': '#1677ff' })
+// { '--lh-primary-color': '#1677ff' }   ← bindable directly to :style
+
+toCssVarName('primary-color')      // '--lh-primary-color'
+toCssVarName('--lh-primary-color') // '--lh-primary-color' (idempotent)
+
+stripCssVarName('--lh-primary-color')  // 'primary-color'
+```
+
+**The idempotence of `toCssVarName` matters**: it prevents keys that already carry the prefix on some code path from being prefixed twice into `--lh---lh-primary-color` — such a key fails silently (the CSS variable does not exist), and theme switching looks like it "has no effect".
+
+## deepMerge
+
+```ts
+deepMerge({ a: 1, nested: { x: 1 } }, { nested: { y: 2 } })
+// { a: 1, nested: { x: 1, y: 2 } }
+```
+
+- Recurses only when **both sides are plain objects**.
+- Overrides only when `sourceVal !== undefined` (explicitly passing `undefined` does not override).
+- **Mutates target in place and returns it** — note this; if you do not want to pollute the original object, shallow-copy one level first with `{ ...target }`.
+
+## getScrollbarWidth
+
+```ts
+getScrollbarWidth()   // e.g. 15 (Windows) / 0 (macOS with no scrollbar)
+```
+
+The result is cached in the module variable `_scrollbarWidth`. **SSR guard**: returns `0` when `typeof document === 'undefined'`.
+
+Purpose: when a dialog / drawer opens and body scrolling is locked, the right side loses a scrollbar's width, and `padding-right` must compensate — otherwise the page content shifts horizontally.
+
+## Usage examples
+
+### BEM + class merging inside a component
+
+```ts
+const ns = createNamespace('dialog')
+
+const headerClass = computed(() => [
+  ns.e('header'),
+  ns.is('centered', props.centered),
+  // the class passed in by the user
+  ...(typeof attrs.class === 'string' ? attrs.class.split(' ') : []),
+])
+```
+
+### ConfigProvider injecting theme variables
+
+```ts
+const styleVars = computed(() => cssVars(props.themeVars))
+// <div :style="styleVars">
+```
+
+### Throttling a scroll listener
+
+```ts
+onMounted(() => {
+  const onScroll = throttle(updateAffixPosition, 100)
+  window.addEventListener('scroll', onScroll, true)
+  onUnmounted(() => {
+    window.removeEventListener('scroll', onScroll, true)
+    onScroll.cancel()
+  })
+})
+```
+
+## Caveats
+
+- **`isEmpty` only checks three things**: `null` / `undefined` / `''`. `0` / `false` / `[]` are **not empty**. Write your own check for "empty array / empty object".
+- **`isNumber(NaN)` is `false`**: NaN is deliberately excluded.
+- **`deepMerge` mutates target in place**: the most common source of misuse.
+- **`generateId` is not a pure function**: it uses a module-level incrementing counter, so repeated calls in the same process give different results (SSR / CSR call order must agree; see the generateAriaId note in [accessibility](/core/a11y#generateariaid)).
+- **Composables like `useLhSize` do not live here**: anything depending on Vue's composition API belongs to each framework's UI layer; share does not export it.
+
+<FnPlayground module="utils" fn="createNamespace" params='{"block": "button"}' />

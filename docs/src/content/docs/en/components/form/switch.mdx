@@ -1,0 +1,142 @@
+---
+title: switch — Switch
+description: 'getSwitchLabel returns the active/inactive text, getSwitchAria emits the role=switch semantic attribute bag'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A switch is a "two-state control": on or off, with no third state. It looks like a checkbox (two states) but has different semantics — a checkbox expresses "whether an option is selected," while a switch expresses "whether a feature is enabled." APG defines a dedicated `role="switch"` for it.
+
+## When to use
+
+- Each port implements `LhSwitch`: enabling/disabling settings items, permission toggles, subscription status.
+- Two-state operations with an "instant effect" semantics (checking it takes effect immediately, no need to wait for submission).
+- **Should not use it**: multi-select inside a form (use checkbox); multi-tier selection (use segmented or radio).
+
+## Import
+
+```ts
+import { getSwitchClassNames, getSwitchLabel, getSwitchAria } from '@lh-ui/share/core/switch'
+import type { LhSwitchState } from '@lh-ui/share/core/switch'
+```
+
+## Design intent
+
+The `disabled || loading` merge in `getSwitchAria` is intentional: a loading switch and a disabled switch **behave the same** at the accessibility level — both are non-operable, and the screen reader should announce "unavailable" rather than "available but nothing happens when clicked."
+
+`getSwitchLabel` returns `activeText` / `inactiveText`: the switch's text sits on either side of the thumb, which is the switch's visual advantage over a checkbox — the state is readable at a glance, not relying only on positional memory.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getSwitchClassNames` | `(state: LhSwitchState) => string[]` | class name array | checked/disabled/loading/size modifiers |
+| `getSwitchLabel` | `(state: LhSwitchState) => string` | text | returns activeText when checked, otherwise inactiveText |
+| `getSwitchAria` | `(state: Pick<LhSwitchState, 'checked' \| 'disabled' \| 'loading'>) => LhAriaAttrs` | aria attribute bag | `role="switch"` semantics |
+
+Output examples:
+
+```ts
+getSwitchClassNames({ checked: true, disabled: false, loading: false, name: '', size: 'medium', activeText: '', inactiveText: '' })
+// ['lh-switch', 'lh-switch--checked']
+
+getSwitchLabel({ checked: true, activeText: 'On', inactiveText: 'Off' })  // 'On'
+
+getSwitchAria({ checked: true, disabled: false, loading: false })
+// { role: 'switch', 'aria-checked': true }
+
+getSwitchAria({ checked: false, disabled: false, loading: true })
+// { role: 'switch', 'aria-checked': false, 'aria-disabled': true }
+```
+
+## Type definitions
+
+```ts
+export interface LhSwitchState {
+  checked: boolean
+  disabled: boolean
+  loading: boolean
+  name: string            // key name on form submission
+  size: LhComponentSize
+  activeText: string      // text when on
+  inactiveText: string    // text when off
+}
+```
+
+## Accessibility
+
+`getSwitchAria` is the APG switch-pattern attribute bag. **The key question is whether to use a native input or a custom control**:
+
+```ts
+// Option A (recommended): native <input type="checkbox"> + role="switch" overriding the semantics
+// The browser's built-in checkbox semantics are enhanced by role="switch"; aria-checked stays
+// in sync with :checked automatically, and keyboard Space toggling and form submission are free
+<input type="checkbox" role="switch" :aria-checked="checked" />
+
+// Option B: a fully custom control (div simulation), where you must attach all semantics manually
+// getSwitchAria exists precisely for this — role + aria-checked + aria-disabled
+```
+
+Non-h5 targets like uniapp often can only go with option B (native checkbox styling is hard to customize), and there `getSwitchAria` is a necessity.
+
+## Usage examples
+
+```ts
+import { getSwitchClassNames, getSwitchAria } from '@lh-ui/share/core/switch'
+
+getSwitchAria({ checked: true, disabled: false, loading: false })
+// { role: 'switch', 'aria-checked': true }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSwitchClassNames({ checked, disabled, loading, name, size, activeText, inactiveText })">
+  <span class="lh-switch__label lh-switch__label--left">{{ inactiveText }}</span>
+  <div class="lh-switch__core" v-bind="getSwitchAria({ checked, disabled, loading })" @click="toggle">
+    <LhSpinner v-if="loading" class="lh-switch__loading" :size="12" />
+  </div>
+  <span class="lh-switch__label lh-switch__label--right">{{ activeText }}</span>
+</div>
+```
+
+```tsx
+// React
+const aria = getSwitchAria({ checked, disabled, loading })
+return (
+  <div className="lh-switch">
+    <div className="lh-switch__core" {...aria} onClick={() => !disabled && !loading && onChange(!checked)} />
+  </div>
+)
+```
+
+```ts
+// uniapp: use a view to simulate the thumb; role/aria support is limited on non-h5 targets,
+// and getSwitchAria's output degrades safely (attributes with undefined values are ignored
+// by the framework, so no invalid markup is produced)
+```
+
+## Styles and tokens
+
+| Class | Semantics |
+| --- | --- |
+| `.lh-switch` | Base class |
+| `.lh-switch--checked` | On state (thumb shifts right, background turns primary) |
+| `.lh-switch--checked__core` | On-state thumb (nested notation, avoids clashing with `--checked`) |
+| `.lh-switch--{small\|large}` | Size tiers |
+| `.lh-switch--disabled` / `--loading` | Disabled / loading |
+| `.lh-switch__core` | Track |
+| `.lh-switch__label` | Text on either side |
+| `.lh-switch__loading` | Loading spinner |
+
+The on color is `var(--lh-primary-color)`; the off color is `--lh-fill-color` (neutral gray).
+
+Known issue (recorded in the "control-height tokens" initiative): the switch thumb's `translate(-50%,-50%)` is **duplicated and hardcoded** in both the base and the keyframes; changing the size requires updating both places.
+
+## Caveats
+
+- **Consistency of `aria-checked` and the visuals**: a custom control's `checked` state must share the same source as `getSwitchAria`'s output, otherwise "aria says on but it looks off" occurs.
+- **Loading state swallows clicks**: clicking while loading must not toggle the value; the UI layer's click handler must check `disabled || loading`.
+- **Direction of the text**: `activeText` sits on the on-side (usually right), `inactiveText` on the off-side; when the text is empty, the styles automatically collapse the space on both sides.
+- The criterion for choosing between switch and checkbox: **whether it takes effect instantly**. Flipping a switch takes effect immediately; a checkbox is usually submitted with the form.
+
+<FnPlayground module="switch" fn="getSwitchAria" params='{"state": {"checked": true, "disabled": false, "loading": false}}' />

@@ -1,0 +1,251 @@
+---
+title: tree — Tree
+description: 'flattenTree flattening, getNodeCheckState tri-state, toggleCheckKeys cascading and ancestor backtracking, lazy-load merging, tree/treeitem semantics'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A tree is the universal container for hierarchical data: file directories, organizational structures, permission trees, cascading menus. Its difficulty lies in **state management of a recursive structure** — expanding, checking, and lazy loading are all operations on an entire subtree, and it also has to handle circular references in the data, disabled nodes, and the indeterminate state. `core/tree` converges this set of algorithms with pure functions + immutable updates.
+
+## When to use
+
+- Each framework implements `LhTree`: directory browsing, permission assignment, organizational structure display, category filtering.
+- Scenarios where hierarchical data needs expanding / collapsing, checking (including parent-child linkage), and lazy loading.
+- **Don't use it**: flat categories of two levels or fewer (a cascader or a segmented control is simpler); linear lists (use `virtual-list`).
+
+## Import
+
+```ts
+import {
+  isTreeNodeLeaf,
+  flattenTree,
+  getDescendantKeys,
+  findTreeNode,
+  getNodeCheckState,
+  collectLeafKeys,
+  toggleCheckKeys,
+  findParentNode,
+  moveTreeFocus,
+  mergeLoadedChildren,
+  isNodeLoadable,
+  getTreeClassNames,
+  getTreeNodeClassNames,
+  getTreeAria,
+  getTreeNodeAria,
+} from '@lh-ui/share/core/tree'
+import type {
+  LhTreeNode,
+  LhFlatTreeNode,
+  LhTreeCheckState,
+} from '@lh-ui/share/core/tree'
+```
+
+## Design intent
+
+**Rendering is flattening**: a tree is essentially a **list with indentation levels** in the UI. `flattenTree` does a depth-first traversal, expanding only the subtrees hit by `expandedKeys`, and outputs a flat array (each item carries `level` / `parentKey` / `ancestorKeys`). The UI layer does a `v-for` over a one-dimensional array — this is much simpler than a recursive component and is naturally compatible with virtual scrolling.
+
+**Ancestor-chain deduplication vs global deduplication**: this module's recursive functions generally use an **ancestor-chain seen** set (`ancestors` / `nextSeen` passed down layer by layer) rather than a global Set. The cost is that the protection is only valid within a single call; the benefit is that **legitimately shared subtrees in a DAG are not mistakenly skipped**, and there is no cross-instance state leakage. Note the difference from `table`'s `flattenLeafColumns` (which uses a global seen) — a table's DAG sharing must emit only once (column-count alignment), while a tree's DAG sharing should be counted once per distinct path.
+
+**Disabled nodes do not count toward the all-selected denominator**: `collectCheckableLeafKeys` skips disabled subtrees — otherwise, after the parent is checked, a missing disabled descendant would keep it **permanently indeterminate**, never able to become fully selected. This is a class of real UX bug.
+
+**Unloaded non-leaf nodes**: when `isLeaf !== true` and there is no `children`, `collectCheckableLeafKeys` returns an empty array, but `toggleCheckKeys` writes the node's **own key** into `checkedKeys` — in a lazy-loading scenario the user can check a node whose children have not loaded yet, and after loading it is up to the UI layer whether to cascade.
+
+**`moveTreeFocus` is @deprecated**: the navigation algorithm has converged on `core/shared/keyboard.getNextListIndex`; this shell retains the old signature and the existing "fall back to the first item when the current value is invalid" semantics.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `isTreeNodeLeaf` | `(node) => boolean` | whether it is a leaf | `isLeaf` first, otherwise inferred from children |
+| `flattenTree` | `(nodes, expandedKeys, …) => LhFlatTreeNode[]` | flat list | expands only the hit subtrees |
+| `getDescendantKeys` | `(node, seen?) => string[]` | descendant keys | ancestor-chain deduplication |
+| `findTreeNode` | `(nodes, key, seen?) => LhTreeNode \| null` | node | depth-first search |
+| `getNodeCheckState` | `(node, checkedKeys, checkStrictly?) => LhTreeCheckState` | tri-state | disabled subtrees excluded from the denominator |
+| `collectLeafKeys` | `(node, seen?) => string[]` | checkable leaf keys | skips disabled |
+| `toggleCheckKeys` | `(roots, checkedKeys, key, options?) => string[]` | new checked keys | cascading + ancestor backtracking |
+| `findParentNode` | `(nodes, key, …) => LhTreeNode \| null` | parent node | returns null at the top level |
+| `moveTreeFocus` | `(flat, currentKey, direction) => string \| null` | target key | **@deprecated** |
+| `mergeLoadedChildren` | `(nodes, loadedMap, seen?) => LhTreeNode[]` | new tree | immutable lazy-load merge |
+| `isNodeLoadable` | `(node, lazy, loadedKeys) => boolean` | loadable or not | not declared a leaf and not yet loaded |
+| `getTreeClassNames` | `(state: { showCheckbox }) => string[]` | class names | checkbox mode |
+| `getTreeNodeClassNames` | `(state) => string[]` | class names | expanded / selected / disabled / leaf |
+| `getTreeAria` | `(id?) => LhAriaAttrs` | aria attribute bag | role=tree |
+| `getTreeNodeAria` | `(options) => LhAriaAttrs` | aria attribute bag | full treeitem semantics |
+
+## Type definitions
+
+```ts
+export interface LhTreeNode {
+  key: string
+  label: string
+  children?: LhTreeNode[]
+  disabled?: boolean
+  isLeaf?: boolean       // inferred from children when omitted
+}
+
+export interface LhFlatTreeNode {
+  node: LhTreeNode
+  key: string
+  level: number                 // 0-based
+  parentKey: string | null
+  ancestorKeys: string[]        // ancestor chain (excluding itself)
+  isLeaf: boolean
+}
+
+export type LhTreeCheckState = 'checked' | 'indeterminate' | 'unchecked'
+```
+
+## Accessibility
+
+`getTreeAria` / `getTreeNodeAria` emit the complete semantics of the APG treeview pattern:
+
+```ts
+getTreeAria('lh-tree-1')  // { role: 'tree', id: 'lh-tree-1' }
+
+getTreeNodeAria({ level: 2, expanded: true, selected: true, checked: 'indeterminate' })
+// { role: 'treeitem', 'aria-level': 2, 'aria-expanded': true,
+//   'aria-selected': true, 'aria-checked': 'indeterminate' }
+
+getTreeNodeAria({ level: 1, leaf: true })
+// { role: 'treeitem', 'aria-level': 1 }  ← leaf nodes do not emit aria-expanded
+```
+
+- `aria-level` is 1-based (note that `flattenTree`'s `level` is 0-based — **add 1** when passing it to aria).
+- **Leaf nodes do not emit `aria-expanded`** — avoiding a meaningless `aria-expanded="false"` is an explicit APG requirement.
+- The three values of `aria-checked`: `true` / `false` / `'indeterminate'` (a string).
+- Keyboard interaction (APG treeview): ↑/↓ move between visible nodes, → expands / enters a child node, ← collapses / returns to the parent, Home/End jump to the first/last, Enter triggers selection.
+- **The source of `aria-level` after flattening**: `flattenTree`'s `level + 1`; do not infer it backwards from the DOM indentation depth.
+
+## Usage examples
+
+```ts
+import { flattenTree, toggleCheckKeys, getNodeCheckState } from '@lh-ui/share/core/tree'
+
+const tree = [
+  { key: '1', label: 'R&D', children: [
+    { key: '1-1', label: 'Frontend', children: [{ key: '1-1-1', label: 'lh-ui' }] },
+    { key: '1-2', label: 'Backend' },
+  ]},
+  { key: '2', label: 'Product' },
+]
+
+flattenTree(tree, ['1'])
+// [R&D(l0), Frontend(l1), Backend(l1), Product(l0)]
+// note that 1-1-1 does not appear: because '1-1' is not in expandedKeys
+
+flattenTree(tree, ['1', '1-1'])
+// [R&D, Frontend, lh-ui(l2), Backend, Product]
+
+toggleCheckKeys(tree, [], '1')
+// ['1', '1-1', '1-1-1', '1-2'] (cascades to select all descendants, including itself)
+
+toggleCheckKeys(tree, ['1', '1-1', '1-1-1', '1-2'], '1-1-1')
+// ['1-2']  —— after unchecking '1-1-1' the cascade backtracks: '1-1' is no longer fully checked and is removed,
+// and '1' is no longer fully checked either and is removed (backtracking walks all the way to the root)
+
+toggleCheckKeys(tree, ['1-1'], '1-2')
+// ['1-1', '1-2']  —— only backtracks ancestors, leaving other branches untouched
+
+getNodeCheckState(tree[0], ['1', '1-1', '1-1-1', '1-2'])  // 'checked' (all checkable leaves hit)
+getNodeCheckState(tree[0], ['1-1-1'])                      // 'indeterminate' (one of two checkable leaves)
+getNodeCheckState(tree[0], ['1-1'])                        // 'unchecked' ('1-1' is not a leaf, not counted)
+getNodeCheckState(tree[0], [])                             // 'unchecked'
+```
+
+```vue
+<!-- Vue3: flattening + a virtual-scroll-friendly render -->
+<div :class="getTreeClassNames({ showCheckbox })" v-bind="getTreeAria(treeId)">
+  <div
+    v-for="item in flatNodes"
+    :key="item.key"
+    class="lh-tree-node-row"
+    :style="{ paddingLeft: item.level * 18 + 'px' }"
+  >
+    <div
+      :class="getTreeNodeClassNames({
+        expanded: expandedKeys.includes(item.key),
+        selected: selectedKey === item.key,
+        disabled: item.node.disabled,
+        leaf: item.isLeaf,
+      })"
+      role="treeitem"
+      :aria-level="item.level + 1"
+      :aria-expanded="item.isLeaf ? undefined : expandedKeys.includes(item.key)"
+      @click="onSelect(item)"
+    >
+      <span v-if="!item.isLeaf" class="lh-tree-node__arrow" @click.stop="onToggle(item)">
+        {{ expandedKeys.includes(item.key) ? '▾' : '▸' }}
+      </span>
+      <input
+        v-if="showCheckbox"
+        type="checkbox"
+        :checked="checkState(item) === 'checked'"
+        :indeterminate.prop="checkState(item) === 'indeterminate'"
+        :disabled="item.node.disabled"
+        @change="onCheck(item)"
+      />
+      <span class="lh-tree-node__label">{{ item.node.label }}</span>
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// check wiring
+function onCheck(item: LhFlatTreeNode) {
+  checkedKeys.value = toggleCheckKeys(props.data, checkedKeys.value, item.key, { checkStrictly })
+}
+function checkState(item: LhFlatTreeNode) {
+  return getNodeCheckState(item.node, checkedKeys.value, checkStrictly)
+}
+```
+
+```ts
+// lazy loading
+async function onLoad(item: LhFlatTreeNode) {
+  if (!isNodeLoadable(item.node, lazy, loadedKeys.value)) return
+  loadingKeys.value = [...loadingKeys.value, item.key]
+  const children = await fetchChildren(item.key)
+  loadedMap.value = { ...loadedMap.value, [item.key]: children }
+  loadedKeys.value = [...loadedKeys.value, item.key]
+  // re-flatten after the immutable merge
+}
+const merged = computed(() => mergeLoadedChildren(props.data, loadedMap.value))
+```
+
+```tsx
+// React: expandedKeys / checkedKeys / selectedKey are all controlled state;
+// flatNodes = useMemo(() => flattenTree(merged, expandedKeys), [merged, expandedKeys])
+```
+
+```ts
+// uniapp: <view> + indent padding; all of core's functions are framework-agnostic and used as-is
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-tree` | base class |
+| `.lh-tree--checkbox` | checkbox mode (node padding leaves room for the checkbox) |
+| `.lh-tree-node` | node |
+| `.lh-tree-node--expanded` | expanded (arrow rotates) |
+| `.lh-tree-node--selected` | selected (primary-color background) |
+| `.lh-tree-node--disabled` | disabled |
+| `.lh-tree-node--leaf` | leaf (the arrow placeholder is collapsed) |
+| `.lh-tree-node__arrow` / `__label` | expand arrow / text |
+
+Indentation is implemented by the UI layer as `paddingLeft: level * 18px` (core does not deal in pixels); the selected background is `--lh-primary-color-light`, the arrow `--lh-text-color-secondary`.
+
+## Caveats
+
+- **`level` is 0-based, `aria-level` is 1-based** — this is the easiest thing to get wrong in this module; always `+1` when binding `aria-level`.
+- **The valid scope of ancestor-chain deduplication**: the protection is only valid within a single call. Two independent `findTreeNode` calls on the same tree deduplicate independently, and a shared subtree will be traversed twice — this is intentional (legitimate DAG sharing), not a bug.
+- **`checkStrictly` (no parent-child linkage)**: `getNodeCheckState` becomes binary, and `toggleCheckKeys` only changes the node's own key without backtracking ancestors. Common in permission-assignment scenarios.
+- **The cascading invariant for disabled nodes**: `toggleCheckKeys`'s ancestor backtracking skips disabled parents — their keys are not rewritten by the cascade. If the business needs "a disabled parent can still be selected programmatically", operate on `checkedKeys` directly instead of using this function.
+- **`isLeaf` takes precedence over `children`**: a node declared with `isLeaf: true` is treated as a leaf even if it has `children` (common in lazy-loading scenarios: declaring it a leaf blocks expansion).
+- **The immutability of `mergeLoadedChildren`**: it returns a new tree and does not modify the passed-in `nodes` — props.data is owned by the consumer, and mutating it directly would break the one-way data flow.
+- **The performance of `flattenTree`**: it is recomputed in full every time `expandedKeys` changes. For deep hierarchies and large data volumes, consider memoizing per subtree (the UI layer caches grouped by parentKey).
+- **Circular references in the data**: all recursive functions are guarded by ancestor-chain deduplication and will not recurse infinitely — but **the data itself having a cycle is an error in the first place**; deduplication just keeps it from crashing.
+
+<FnPlayground module="tree" fn="getNodeCheckState" params='{"node": {"key": "1", "label": "R&D", "children": [{"key": "1-1", "label": "Frontend"}, {"key": "1-2", "label": "Backend"}]}, "checkedKeys": ["1-1"], "checkStrictly": false}' />

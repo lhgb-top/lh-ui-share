@@ -1,0 +1,177 @@
+---
+title: Consuming from each framework
+description: 'Wiring samples showing how Vue3 / Vue2 / React / uniapp connect share''s pure functions to their own reactivity'
+---
+
+# Consuming from each framework
+
+share's core is pure functions with no reactivity at all. Each UI library does exactly one thing:
+**bind the pure functions' output to templates and feed user input back into them**. Below are the
+wiring shapes for the four ports.
+
+## The common pattern
+
+Every component's wiring is three steps:
+
+1. The framework side holds a piece of state (`ref` / `useState` / reactive data)
+2. User interaction → call a core pure function to compute the new state → write it back
+3. The template calls the class-name / aria pure functions to render
+
+```ts
+// the core side (framework-agnostic, this repo)
+export function getSwitchClasses(state: LhSwitchState): string
+export function getSwitchAria(state: LhSwitchState): Record<string, string>
+export function toggleSwitch(state: LhSwitchState, checked: boolean): LhSwitchState
+```
+
+## Vue3 (lh-ui-plus)
+
+```vue
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { getSwitchClasses, getSwitchAria, toggleSwitch } from '@lh-ui/share/core/switch'
+
+const checked = ref(false)
+const classes = computed(() => getSwitchClasses({ checked: checked.value, disabled: false }))
+const aria = computed(() => getSwitchAria({ checked: checked.value }))
+
+function onToggle() {
+  checked.value = toggleSwitch({ checked: checked.value }, !checked.value).checked
+}
+</script>
+
+<template>
+  <button :class="classes" v-bind="aria" @click="onToggle">
+    <span class="lh-switch__handle" />
+  </button>
+</template>
+
+<style lang="scss">
+@use '@lh-ui/share/styles/switch';
+</style>
+```
+
+Styles are injected in full as a side effect at the library entry, so components generally do not
+import them themselves (see [injection strategies](/guide/injection)).
+
+## Vue2 (lh-ui-vue2)
+
+```vue
+<script lang="ts">
+import { getSwitchClasses, getSwitchAria, toggleSwitch } from '@lh-ui/share/core/switch'
+
+export default {
+  name: 'LhSwitch',
+  data() {
+    return { checked: false }
+  },
+  computed: {
+    classes() {
+      return getSwitchClasses({ checked: this.checked, disabled: false })
+    },
+    aria() {
+      return getSwitchAria({ checked: this.checked })
+    },
+  },
+  methods: {
+    onToggle() {
+      this.checked = toggleSwitch({ checked: this.checked }, !this.checked).checked
+    },
+  },
+}
+</script>
+```
+
+Styles are imported on demand by the user:
+
+```ts
+import '@lh-ui/vue2/theme.css'
+import '@lh-ui/vue2/style/switch'
+```
+
+## React (lh-ui-react)
+
+`useMemo` replaces `computed`; a state change triggering a re-render is inherently reactive:
+
+```tsx
+import { memo, useMemo, useState } from 'react'
+import {
+  getSwitchClasses,
+  getSwitchAria,
+  toggleSwitch,
+} from '@lh-ui/share/core/switch'
+import '@lh-ui/react/style/switch'
+
+export const LhSwitch = memo(function LhSwitch() {
+  const [checked, setChecked] = useState(false)
+
+  const classes = useMemo(
+    () => getSwitchClasses({ checked, disabled: false }),
+    [checked],
+  )
+  const aria = useMemo(() => getSwitchAria({ checked }), [checked])
+
+  return (
+    <button
+      type="button"
+      className={classes}
+      {...aria}
+      onClick={() => setChecked((c) => !c)}
+    >
+      <span className="lh-switch__handle" />
+    </button>
+  )
+})
+```
+
+## uniapp (lh-ui-uniapp)
+
+uniapp's `<view>` / `<text>` cannot bind arbitrary aria attributes, so `getSwitchAria`'s output is
+filtered out on the mini-program side; the app / h5 targets still work. Class binding uses a
+`:class` string or array:
+
+```vue
+<template>
+  <view :class="classes" @tap="onToggle">
+    <view class="lh-switch__handle" />
+  </view>
+</template>
+
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { getSwitchClasses, toggleSwitch } from '@lh-ui/share/core/switch'
+
+const checked = ref(false)
+const classes = computed(() => getSwitchClasses({ checked: checked.value }))
+function onToggle() {
+  checked.value = !checked.value
+}
+</script>
+```
+
+## Internationalization: one emitter, four subscriptions
+
+LhLocale is a pure event emitter whose `version` increments on any language change. Each port
+converts it into its own re-render signal:
+
+| Port | Wiring |
+| --- | --- |
+| vue2 / vue3 / uniapp | `ref(lhlocale.version)` + `lhlocale.subscribe(v => version.value = v)` |
+| react | `useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)` |
+
+```ts
+import { lhlocale } from '@lh-ui/share/locales'
+
+lhlocale.setLocale('en-US')          // switch; version increments and broadcasts
+const text = lhlocale.t('input.placeholder')
+```
+
+For a live demo, see the [internationalization reference](/reference/locales).
+
+## Local linkage: editing share source takes effect immediately
+
+Under the family layout, each UI library's dev / test config aliases to the sibling
+`lh-ui-share/`, so **dev works from the TS / SCSS source rather than build artifacts**. A new deep
+file (such as `core/foo/bar.ts`) is available in dev immediately, but if `sync-exports` has not run
+the npm side has no matching exports key — **always run the full `pnpm build` before a release**,
+otherwise a downstream `pnpm up` hits MODULE_NOT_FOUND.

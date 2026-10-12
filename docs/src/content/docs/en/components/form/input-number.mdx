@@ -1,0 +1,147 @@
+---
+title: input-number — Number Input
+description: 'incrementValue/decrementValue stepping and precision sanitization, shouldDisableIncrement button-disable checks, spinbutton semantic attribute bag'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A number input adds three things on top of a regular input: **stepping** (add/subtract by step), **clamping** (staying within min/max), and **precision** (decimal places). `core/input-number` extracts the pure computation of these three things, and the UI layer only wires up the increment/decrement button events.
+
+## When to use
+
+- Each port implements `LhInputNumber`: quantity selection, amount input, page size.
+- **Should not use it**: plain text numbers (use `core/input` — the user may want to type something like "about 10," which is not a strict numeric value); slider-style selection (use `core/slider`, which is more intuitive).
+
+## Import
+
+```ts
+import {
+  incrementValue,
+  decrementValue,
+  shouldDisableIncrement,
+  shouldDisableDecrement,
+  getDisplayValue,
+  getInputNumberAria,
+} from '@lh-ui/share/core/input-number'
+import type { LhInputNumberState } from '@lh-ui/share/core/input-number'
+```
+
+## Design intent
+
+The three lines of defense of `incrementValue` / `decrementValue`:
+
+1. **null starting value**: when `value === null`, incrementing adds `step` and decrementing subtracts `-step` instead of starting from 0 — if the user has not entered a value yet and clicks plus, it should land on "one step," not on "min."
+2. **Precision sanitization**: `precision` is sanitized to an integer in `[0, 100]` via `shared/sanitize`'s `safePrecision`, avoiding a `toFixed(101)` RangeError. This line of defense is shared with `core/statistic`.
+3. **Non-finite result fallback**: the internal `clampSafe` falls back to `clamp(0, min, max)` when the result is NaN — dirty props (`step: NaN`) will not turn the value into NaN propagating into the view.
+
+The check of `shouldDisableIncrement` is `value !== null && value >= max`: not disabled when null (clicking turns it into step), disabled only when the upper bound is reached. This `!== null` cannot be dropped, otherwise the plus button of an empty input appears grayed out.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `incrementValue` | `(value: number \| null, step: number, min: number, max: number, precision?: number) => number` | new value | add step |
+| `decrementValue` | `(value: number \| null, step: number, min: number, max: number, precision?: number) => number` | new value | subtract step |
+| `shouldDisableIncrement` | `(state: LhInputNumberState) => boolean` | boolean | disabled or at the upper bound |
+| `shouldDisableDecrement` | `(state: LhInputNumberState) => boolean` | boolean | disabled or at the lower bound |
+| `getDisplayValue` | `(value: number \| null, _placeholder: string) => string` | display string | String-ify when there is a value, empty string for null |
+| `clampValue` | same as `shared/sanitize.clamp` | clamped value | re-exported as a compatibility alias |
+
+Note that the second parameter of `getDisplayValue` is `_placeholder` — underscore-prefixed and unused in the body — because rendering the placeholder is the UI layer's job (the placeholder is a "hint when there is no value," which is a different concern from "display of the value").
+
+## Type definitions
+
+```ts
+export interface LhInputNumberState {
+  value: number | null
+  min: number
+  max: number
+  step: number
+  disabled: boolean
+  size: LhComponentSize
+  controls: boolean       // whether to show the increment/decrement buttons
+  precision: number | undefined
+  placeholder: string
+}
+```
+
+## Accessibility
+
+`getInputNumberAria` emits the APG **spinbutton** semantics:
+
+```ts
+getInputNumberAria({ value: 5, min: 0, max: 10, step: 1 })
+// { role: 'spinbutton', 'aria-valuemin': 0, 'aria-valuemax': 10, 'aria-valuenow': 5 }
+
+getInputNumberAria({ value: null, min: 0, max: 10, step: 1 })
+// { role: 'spinbutton', 'aria-valuemin': 0, 'aria-valuemax': 10 }  —— null does not emit valuenow
+```
+
+- `aria-valuenow` is emitted only when `value != null`; attaching `aria-valuenow="NaN"` for an empty value would make screen readers announce an anomaly.
+- `disabled` emits `aria-disabled` (rather than relying on the native disabled, since some ports use custom controls).
+- `ariaValueText` emits `aria-valuetext` — used when the number alone does not convey the semantics (like "3 days" instead of "3"); it is **announced in preference to valuenow**.
+
+## Usage examples
+
+```ts
+import { incrementValue, shouldDisableIncrement } from '@lh-ui/share/core/input-number'
+
+incrementValue(4, 1, 0, 10)      // 5
+incrementValue(null, 2, 0, 10)   // 2 (null start follows step)
+incrementValue(9, 1, 0, 10)      // 10 (clamped to max)
+incrementValue(9, 1, 0, 10, 2)   // 10, and Number-ified after toFixed(2)
+decrementValue(null, 2, 0, 10)   // -2 (before clamping it is -2, then clamped to 0)
+
+shouldDisableIncrement({ value: 10, max: 10, min: 0, step: 1, disabled: false, ... })  // true
+shouldDisableIncrement({ value: null, max: 10, ... })                                   // false
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-input-number', `lh-input-number--${size}`]">
+  <button
+    v-if="controls"
+    class="lh-input-number__decrease"
+    :disabled="shouldDisableDecrement(state)"
+    aria-label="Decrease"
+    @click="emit('update:modelValue', decrementValue(modelValue, step, min, max, precision))"
+  >−</button>
+  <input
+    class="lh-input-number__input"
+    v-bind="getInputNumberAria({ value: modelValue, min, max, step, disabled })"
+  />
+  <button v-if="controls" class="lh-input-number__increase" :disabled="shouldDisableIncrement(state)">+</button>
+</div>
+```
+
+```tsx
+// React
+const next = incrementValue(value, step, min, max, precision)
+return <button onClick={() => onChange(next)} disabled={shouldDisableIncrement(state)}>+</button>
+```
+
+```ts
+// uniapp: increment/decrement buttons use view + @tap; after the stepped value changes it is
+// written back in a controlled way — mind the race between keyboard input and the buttons
+```
+
+## Styles and tokens
+
+| Class | Semantics |
+| --- | --- |
+| `.lh-input-number` | Base class |
+| `.lh-input-number--{small\|large}` | Size tiers (medium is the default and has no modifier class) |
+| `.lh-input-number--disabled` | Disabled state |
+| `.lh-input-number__input` | Middle input area |
+| `.lh-input-number__increase` / `__decrease` | Increment/decrement buttons |
+
+Height is 32px (which, together with input's 37px and select's 32px, forms the inconsistent list recorded in the "control-height tokens" initiative).
+
+## Caveats
+
+- **`step` of 0 or negative**: `incrementValue` does not validate the step; `step: 0` leaves the value unchanged — the UI layer should guarantee a positive step.
+- **The relationship between precision and step**: `precision` only governs the displayed digits and does not auto-align to step. `step: 0.5` with `precision: 0` makes `incrementValue(0, 0.5, ...)` display as `1` (compute first, then round).
+- **Semantics of the empty value**: `value === null` and `value === 0` are two different things; the former means "not filled in." `getDisplayValue(null)` returns an empty string, not `'0'`.
+- Floating-point accumulation: the classic `0.1 + 0.2` problem is real in stepping; the `toFixed` path of `precision` is the only line of defense — with precision set, it is stable; without it, drift is possible.
+
+<FnPlayground module="input-number" fn="incrementValue" params='{"value": 4, "step": 1, "min": 0, "max": 10, "precision": 2}' />

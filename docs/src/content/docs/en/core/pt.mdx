@@ -1,0 +1,121 @@
+---
+title: 'pt — pass-through prop merging'
+description: 'mergePt shallowly merges a PT attribute bag (class / style / attrs) with the base class name, for styling inner elements of a component'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+A component has multiple inner elements (a button's `<button>` and the `<span>` inside it, an input's `<input>` and its leading icon `<i>`) — how does the user tweak one of them from the outside? lh-ui's answer is the **PT (PassThrough) attribute bag**: the component exposes a `pt` prop that passes `class` / `style` / `attrs` through to each inner element by name. `mergePt` merges it with the component's own base class name.
+
+## When to use it
+
+- Inside the component library: each inner element calls `mergePt(props.pt?.icon, 'lh-button__icon')` to get the class / style / attrs to apply.
+- From the user's side, reach inside a component for fine-tuning via the `pt` prop instead of `:deep()` piercing.
+
+**Don't use it for**: theme-level customization (use [themeVars](/theme/customization)); plain class addition (use the `class` prop).
+
+## Import
+
+```ts
+import { mergePt, type LhPtAttrs } from '@lh-ui/share/core/shared/pt'
+```
+
+## Types and functions
+
+```ts
+export interface LhPtAttrs {
+  class?: string | string[] | Record<string, boolean>
+  style?: Record<string, string>
+  attrs?: Record<string, any>
+}
+```
+
+| Function | Signature | Purpose |
+| --- | --- | --- |
+| `mergePt` | `(pt: LhPtAttrs \| undefined, baseClass: string) => { class: string[]; style: Record<string, string>; attrs: Record<string, any> }` | Merges a PT attribute bag with the base class name |
+
+## Merge rules
+
+### class
+
+`baseClass` is **always first in the array**, the user's class follows:
+
+```ts
+mergePt({ class: 'my-icon' }, 'lh-button__icon')
+// { class: ['lh-button__icon', 'my-icon'], style: {}, attrs: {} }
+
+mergePt({ class: ['a', 'b'] }, 'lh-button__icon')
+// class: ['lh-button__icon', 'a', 'b']
+
+mergePt({ class: { active: true, disabled: false } }, 'lh-button__icon')
+// class: ['lh-button__icon', 'active']   —— for objects only truthy keys are taken
+
+mergePt({ class: 'a  b ' }, 'lh-button__icon')
+// class: ['lh-button__icon', 'a', 'b']   —— the string is split on whitespace and empty strings filtered out
+```
+
+Why `baseClass` comes first: **the BEM base class's specificity must not be overridden by the user's class** (with both being single classes, the later one wins). The component's `--primary` modifier must still be able to override the user's `my-icon`.
+
+### style / attrs
+
+```ts
+mergePt(undefined, 'lh-button__icon')
+// { class: ['lh-button__icon'], style: {}, attrs: {} }   —— everything else is empty when pt is empty
+
+mergePt({ style: { color: 'red' }, attrs: { 'data-x': '1' } }, 'lh-button__icon')
+// { class: ['lh-button__icon'], style: { color: 'red' }, attrs: { 'data-x': '1' } }
+```
+
+**Note**: `style` / `attrs` are **passed through by reference**, not copied. The UI layer can directly `v-bind="merged.attrs"` / `:style="merged.style"`; do not mutate the return value inside the component.
+
+## Usage examples
+
+### Inside a component (a button's icon element)
+
+```ts
+// button component
+const iconPt = computed(() => mergePt(props.pt?.icon, 'lh-button__icon'))
+```
+
+```vue
+<template>
+  <button class="lh-button">
+    <i v-if="icon" v-bind="iconPt.attrs" :class="iconPt.class" :style="iconPt.style" />
+    <span><slot /></span>
+  </button>
+</template>
+```
+
+### From the user's side
+
+```vue
+<lh-button
+  :pt="{
+    icon: { class: 'text-lg', style: { marginRight: '4px' } },
+    $root: { attrs: { 'data-test': 'submit' } },
+  }"
+>
+  Submit
+</lh-button>
+```
+
+### React
+
+```tsx
+const iconPt = mergePt(pt?.icon, 'lh-button__icon')
+
+return (
+  <button className="lh-button">
+    {icon && <i className={iconPt.class.join(' ')} style={iconPt.style} {...iconPt.attrs} />}
+  </button>
+)
+```
+
+## Caveats
+
+- **Shallow merge, no deepMerge**: `class` is concatenated at the array level, `style` / `attrs` are replaced wholesale. A deep merge has no meaningful semantics here (a class list is a list, not a tree).
+- **An empty `pt` returns an all-empty object**: the UI layer can destructure it unconditionally, with no null check.
+- **The returned class is an array**: Vue's `:class` accepts an array; React needs `.join(' ')`.
+- **The base class is not optional**: `mergePt(pt, '')` yields an array whose first item is an empty string — the BEM base class is the style anchor, and every inner element must have one.
+
+<FnPlayground module="pt" fn="mergePt" params='{"pt": {"class": "my-icon text-lg"}, "baseClass": "lh-button__icon"}' />

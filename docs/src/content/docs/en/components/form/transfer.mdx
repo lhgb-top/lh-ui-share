@@ -1,0 +1,180 @@
+---
+title: transfer — Transfer
+description: 'partitionTransferData immutable partitioning, moveTransferKeys ghost-key cleanup, getTransferCheckAllState three states, sourceKeys single source of truth'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+A transfer solves **bidirectional multi-select moving**: the left column is "to select," the right column is "selected," and two arrow buttons in the middle move items back and forth. It suits large option sets better than a checkbox group (pagination + search) and is more intuitive than multiple selects (both sides are visible). `core/transfer` models this with a **single source of truth, `sourceKeys`** — the left column is simply "the items not in sourceKeys," the right column is "the items in sourceKeys," and every operation is just a transformation of that array.
+
+## When to use
+
+- Each port implements `LhTransfer`: permission assignment, role member selection, tag filtering, data-field checking.
+- Scenarios with many options (>10) that need search filtering and where both "selected/unselected" sides should be visible at once.
+- **Should not use it**: fewer than 6 options (a checkbox group or segmented control saves space); one-way selection where "moving back" is not needed (select is a better fit).
+
+## Import
+
+```ts
+import {
+  partitionTransferData,
+  toggleTransferChecked,
+  toggleTransferCheckAll,
+  moveTransferKeys,
+  getTransferCheckAllState,
+  filterTransferItems,
+  getTransferClassNames,
+  getTransferPanelClassNames,
+} from '@lh-ui/share/core/transfer'
+import type { LhTransferItem, LhTransferSide } from '@lh-ui/share/core/transfer'
+```
+
+## Design intent
+
+**The `sourceKeys` single source of truth**: the component's "value" is exactly the right column's key array. The left column holds no separate state — `partitionTransferData(data, sourceKeys)` slices it out from the full data each time. This avoids the classic "left column and right column are out of sync" bug: any move only needs to change one array, and both views recompute automatically.
+
+**`moveTransferKeys` ghost-key cleanup**: `checked` may contain keys that are not in `data` (old selections lingering after a data refresh — called **ghost keys**). They can neither be moved away nor should they remain in the source area polluting the next frame — so the function **also filters ghost keys out of the source area after the move**. The comments spell out the two layers of reasoning behind this decision.
+
+**`toggleTransferCheckAll` skips disabled items**: "select all" only selects the "selectable" ones (`!disabled`), and "unselect all" only clears those — the disabled items' checked state is left untouched, matching the intuition that "disabled = not operable."
+
+**The three states of `getTransferCheckAllState`**: `all` / `some` / `none` drive the select-all checkbox's `indeterminate` state — this is the standard interaction for a select-all checkbox (a dash shown when partially selected).
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `partitionTransferData` | `(data, sourceKeys) => { left, right }` | both side lists | split by the keySet |
+| `toggleTransferChecked` | `(checked, key) => Array` | new checked array | remove on hit / otherwise add |
+| `toggleTransferCheckAll` | `(checked, sideItems) => Array` | new checked array | select all / none (skipping disabled) |
+| `moveTransferKeys` | `(sourceKeys, data, checked, direction) => Array` | new sourceKeys | move and clean ghost keys |
+| `getTransferCheckAllState` | `(checked, sideItems) => 'all' \| 'some' \| 'none'` | three states | drives indeterminate |
+| `filterTransferItems` | `(items, query) => LhTransferItem[]` | filtered list | case-insensitive |
+| `getTransferClassNames` | `(state: { disabled }) => string[]` | class names | disabled |
+| `getTransferPanelClassNames` | `(side) => string[]` | class names | panel side |
+
+## Type definitions
+
+```ts
+export interface LhTransferItem {
+  key: string | number
+  label?: string       // the runtime contract allows it to be missing (the UI layer falls back to showing key)
+  disabled?: boolean   // disabled (not movable, and excluded from select-all)
+}
+
+export type LhTransferSide = 'left' | 'right'
+```
+
+## Accessibility
+
+The transfer's accessibility structure is assembled by the UI layer; core provides no attribute-bag functions (there is no popup or complex semantics): the two panels are each a `role="listbox"`, list items are `role="option"` + `aria-selected`; the move buttons in the middle are plain `<button>` elements that describe their direction with `aria-label` (like "Move 3 items to the right"); the select-all checkbox uses checkbox semantics, and the `indeterminate` state is set on the DOM attribute driven by the `some` value of `getTransferCheckAllState`.
+
+Keyboard conventions: after a list item is focused, Space checks it and ↑/↓ move; after a move button is focused, Enter executes it.
+
+## Usage examples
+
+```ts
+import {
+  partitionTransferData, moveTransferKeys, getTransferCheckAllState, filterTransferItems,
+} from '@lh-ui/share/core/transfer'
+
+const data = [
+  { key: 'a', label: 'Apple' },
+  { key: 'b', label: 'Banana', disabled: true },
+  { key: 'c', label: 'Cherry' },
+]
+
+partitionTransferData(data, ['c'])
+// { left: [Apple, Banana], right: [Cherry] }
+
+moveTransferKeys(['c'], data, ['a', 'b'], 'left-to-right')
+// ['c', 'a']  —— b is disabled and not moved; a moves from left to right
+
+moveTransferKeys(['c'], data, ['a', 'ghost'], 'left-to-right')
+// ['c', 'a']  —— the ghost key 'ghost' is discarded and not kept in the result
+
+getTransferCheckAllState(['a'], [{ key: 'a' }, { key: 'b', disabled: true }, { key: 'c' }])
+// 'some' (the selectable items are a and c; only a is checked → partial; b is disabled and excluded from the count)
+
+filterTransferItems(data, 'nan')   // [{ key: 'b', label: 'Banana' }]
+filterTransferItems(data, '')     // the original array (an empty query does not filter)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTransferClassNames({ disabled })">
+  <transfer-panel
+    side="left"
+    :items="partition.left"
+    :checked="leftChecked"
+    @toggle="onToggle"
+    @check-all="onCheckAll"
+  />
+  <div class="lh-transfer__buttons">
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="leftChecked.length === 0"
+      :aria-label="`Move ${leftChecked.length} item(s) to the right`"
+      @click="move('left-to-right')"
+    >→</button>
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="rightChecked.length === 0"
+      :aria-label="`Move ${rightChecked.length} item(s) to the left`"
+      @click="move('right-to-left')"
+    >←</button>
+  </div>
+  <transfer-panel side="right" :items="partition.right" :checked="rightChecked" />
+</div>
+```
+
+```ts
+// State wiring (computed partitioning; checked is the local selection state)
+const partition = computed(() => partitionTransferData(props.data, props.modelValue))
+const leftChecked = computed(() => state.checked.filter((k) => !props.modelValue.includes(k)))
+const rightChecked = computed(() => state.checked.filter((k) => props.modelValue.includes(k)))
+
+function move(direction) {
+  const checked = direction === 'left-to-right' ? leftChecked.value : rightChecked.value
+  emit('update:modelValue', moveTransferKeys(props.modelValue, props.data, checked, direction))
+  state.checked = state.checked.filter((k) => !checked.includes(k))  // clear the moved selections
+}
+```
+
+```tsx
+// React: sourceKeys is the controlled value; the selection state is local useState, cleared after a move
+```
+
+```ts
+// uniapp: two <view> columns + <scroll-view> scrolling; the search box filters with filterTransferItems
+```
+
+## Styles and tokens
+
+| Class | Semantics |
+| --- | --- |
+| `.lh-transfer` | Base class (flex horizontal layout) |
+| `.lh-transfer--disabled` | Disabled |
+| `.lh-transfer-panel` | Single-side panel |
+| `.lh-transfer-panel--left` / `--right` | Side |
+| `.lh-transfer-panel__header` | Panel header (select-all checkbox + count) |
+| `.lh-transfer-panel__search` | Search box |
+| `.lh-transfer-panel__body` | List area |
+| `.lh-transfer-panel__item` | List item |
+| `.lh-transfer-panel__item--disabled` | Disabled item |
+| `.lh-transfer-panel__footer` | Empty state / count footer |
+| `.lh-transfer__buttons` / `__button` | Middle button group |
+
+The panel header checkbox's `indeterminate` state is driven by `getTransferCheckAllState`.
+
+## Caveats
+
+- **`checked` and `sourceKeys` are two independent states**: `checked` is "what is currently selected" (possibly spanning both sides), and `sourceKeys` is "what is in the right column" (the component's value). After a move, you must manually clear the moved keys from `checked`, otherwise they linger in the selection state (`moveTransferKeys` does not modify checked for you).
+- **Where ghost keys come from**: when data loads asynchronously, the user first selects several items, and then a data refresh makes some keys disappear — those keys left in `checked` are ghost keys. `moveTransferKeys` cleans them, but `toggleTransferCheckAll`'s select-all counting (`getTransferCheckAllState`) can also be affected; when the UI layer renders the selection state, filtering once more with `byKey.has(key)` is safer.
+- **Boundaries of disabled items**: an item with `disabled: true` **cannot be moved, does not participate in select-all, and is not cleared by unselect-all** — it keeps its original checked state. If the business needs "disabled items must be unchecked," handle it at the data layer; do not rely on core.
+- **`label` is allowed to be missing**: in the types `label?` is optional, and the UI layer must fall back to showing `key` (`item.label ?? item.key`).
+- **Performance with large data**: `partitionTransferData` fully traverses data each time; `filterTransferItems` runs when the query changes. With thousands of items, consider virtual scrolling (`core/shared/virtual`); core's partitioning function itself is O(n) and is not the bottleneck.
+- **Order of stacking search and partitioning**: run `partitionTransferData` first, then `filterTransferItems` on each side — reversing the order makes the search box filter the unpartitioned full data.
+
+<FnPlayground module="transfer" fn="moveTransferKeys" params='{"sourceKeys": ["c"], "data": [{"key": "a", "label": "Apple"}, {"key": "b", "label": "Banana", "disabled": true}, {"key": "c", "label": "Cherry"}], "checked": ["a", "b"], "direction": "left-to-right"}' />

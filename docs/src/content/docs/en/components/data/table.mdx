@@ -1,0 +1,269 @@
+---
+title: table — Table
+description: 'sortTableRows with nulls last, buildHeaderCells multi-level header expansion, getStickyOffsets fixed-column offsets, computeVisibleRange virtual scrolling'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+The table is the "heavy weapon" of data display: sorting, filtering, multi-level headers, fixed columns, virtual scrolling, and column resizing — each is its own algorithmic puzzle. `core/table` abstracts all of these into pure functions — the UI layer only binds the results to the DOM. It is one of the component modules with the most functions in this package.
+
+## When to use
+
+- Each framework implements `LhTable`: admin lists, data reports, tables with bulk operations.
+- Scenarios where structured data needs sorting / filtering / fixed columns / multi-level headers.
+- **Don't use it**: extremely small data sets with no interaction (a simple `descriptions` or a hand-written table is lighter); card-style information feeds (use the `card` layout).
+
+## Import
+
+```ts
+import {
+  LH_TABLE_ROW_HEIGHT,
+  LH_TABLE_OVERSCAN,
+  LH_TABLE_MIN_COL_WIDTH,
+  computeVisibleRange,
+  cycleSortOrder,
+  sortTableRows,
+  getCellValue,
+  getColumnWidth,
+  getGridTemplate,
+  getStickyOffsets,
+  getTableClassNames,
+  getTableCellClassNames,
+  flattenLeafColumns,
+  buildHeaderCells,
+  getHeaderStickyOffsets,
+  filterTableRows,
+  clampColumnWidth,
+  getTableSortAria,
+} from '@lh-ui/share/core/table'
+import type {
+  LhTableAlign,
+  LhTableColumn,
+  LhTableFilterOption,
+  LhTableHeaderCell,
+  LhTableRow,
+  LhTableSortOrder,
+  LhTableVisibleRange,
+  LhTableCellSticky,
+} from '@lh-ui/share/core/table'
+```
+
+## Design intent
+
+**Nulls last**: `sortTableRows` handles `null` / `undefined` / `NaN` uniformly — they do not participate in normal comparison and are always sorted to the end, **and stay at the end under desc as well**. This is a deliberate product decision: rows with empty data should not jump to the first row and block valid data just because the order is reversed.
+
+**DAG safety for multi-level headers**: `flattenLeafColumns` and `buildHeaderCells` use a **global seen** set rather than a per-ancestor-chain seen — because the same column object may be shared in a DAG-style reference (the same column appearing under two groups), global deduplication guarantees it is emitted only once, so the body's column count matches the header's leaf-cell count. `buildHeaderCells`'s `leafSpan` uses "the number of leaves actually emitted by recursion" rather than an a-priori count, precisely to prevent a shared subtree from being counted twice and throwing off the column count.
+
+**Sticky inheritance for group headers**: `getHeaderStickyOffsets` only lets a group header inherit the offset of its first/last leaf when **all leaf columns in its span are fixed on the same side** — a group header that spans both the fixed zone and the flowing zone cannot be positioned with a single offset, so it is simply not fixed.
+
+**`clampColumnWidth`'s isomorphic overloads**: number in / number out, string in / string out — callers do not need an extra type assertion for an isomorphic transform; NaN returns the lower bound directly (NaN coordinates can appear during a drag).
+
+**`computeVisibleRange` is @deprecated**: the virtual scrolling algorithm has converged on `computeRange` in the shared kernel `core/shared/virtual` (same origin as VirtualList); this function is retained as a compatibility alias for existing references in downstream libraries such as vue2.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `computeVisibleRange` | `(scrollTop, viewportHeight, rowHeight, total, overscan?) => LhTableVisibleRange` | visible range | **@deprecated**, delegates to `computeRange` |
+| `cycleSortOrder` | `(current?) => LhTableSortOrder \| undefined` | next sort state | none→asc→desc→none |
+| `sortTableRows` | `(rows, prop, order, sorter?) => LhTableRow[]` | new array | nulls last |
+| `getCellValue` | `(row, column) => string` | display value | formatter takes priority |
+| `getColumnWidth` | `(column) => string` | `'120px'` / `'1fr'` | evenly divided when no width |
+| `getGridTemplate` | `(columns) => string` | grid template | for CSS grid layout |
+| `getStickyOffsets` | `(columns) => LhTableCellSticky[]` | left/right offsets | fixed-column accumulation |
+| `getTableClassNames` | `(state: { stripe, border, size, virtual }) => string[]` | class names | four modifiers |
+| `getTableCellClassNames` | `(state) => string[]` | class names | alignment / fixed column / resize |
+| `flattenLeafColumns` | `(columns) => LhTableColumn[]` | leaf columns | for multi-level header body |
+| `buildHeaderCells` | `(columns) => LhTableHeaderCell[]` | flat header cells | includes rowspan/colspan |
+| `getHeaderStickyOffsets` | `(leafColumns, headerCells) => LhTableCellSticky[]` | header offsets | conditional group-header inheritance |
+| `filterTableRows` | `(rows, filters) => LhTableRow[]` | new array | AND across columns, OR within a column |
+| `clampColumnWidth` | `(width: number \| string) => number \| string` | clamped width | lower bound 40px |
+| `getTableSortAria` | `(options: { sortOrder?, sortable? }) => LhAriaAttrs` | aria attribute bag | aria-sort |
+
+Constants: `LH_TABLE_ROW_HEIGHT = 48` (default row height), `LH_TABLE_OVERSCAN = 3` (scroll buffer rows), `LH_TABLE_MIN_COL_WIDTH = 40` (resize lower bound).
+
+## Type definitions
+
+```ts
+export type LhTableAlign = 'left' | 'center' | 'right'
+export type LhTableSortOrder = 'asc' | 'desc'
+export type LhTableRow = Record<string, any>
+
+export interface LhTableColumn {
+  prop: string
+  label: string
+  width?: number | string          // a number is px
+  align?: LhTableAlign
+  fixed?: 'left' | 'right'         // requires a width
+  sortable?: boolean
+  slot?: string                    // custom cell slot name
+  formatter?: (row: LhTableRow, value: any) => string
+  children?: LhTableColumn[]       // config-as-data multi-level header
+  filters?: LhTableFilterOption[]  // effective only on leaf columns
+  filterMethod?: (value: string | number, row: LhTableRow) => boolean
+  filterMultiple?: boolean         // default true
+  resizable?: boolean              // must be a leaf column with a numeric width
+}
+
+export interface LhTableHeaderCell {
+  column: LhTableColumn
+  level: number          // header level, 0-based
+  leafStart: number      // leaf column index start
+  leafSpan: number       // number of leaf columns spanned
+  rowspan: number        // padded to the maximum depth
+  colspan: number        // = leafSpan
+  isLeaf: boolean
+}
+
+export interface LhTableVisibleRange { start: number; end: number; offsetY: number; totalHeight: number }
+export interface LhTableCellSticky { left?: number; right?: number }
+```
+
+## Accessibility
+
+`getTableSortAria` emits `aria-sort`, strictly aligned with the state machine of `cycleSortOrder`:
+
+```ts
+getTableSortAria({ sortable: true, sortOrder: 'asc' })    // { 'aria-sort': 'ascending' }
+getTableSortAria({ sortable: true, sortOrder: 'desc' })   // { 'aria-sort': 'descending' }
+getTableSortAria({ sortable: true })                      // { 'aria-sort': 'none' }
+getTableSortAria({ sortable: false })                     // {} (not emitted for non-sortable columns)
+```
+
+Note the third case: when unsorted it emits `aria-sort="none"` rather than omitting it — this is an explicit APG requirement, **explicitly declaring "this column is sortable but currently unsorted"**, which lets screen readers hint to the user that a sort action is available on this column.
+
+The remaining conventions (implemented by the UI layer): headers use `<th scope="col">`; fixed columns should not use `tabindex` to create extra focus stops; the pagination area is a separate `nav`; the row-selection checkbox needs an `aria-label` (e.g. "Select row 3").
+
+## Usage examples
+
+```ts
+import { cycleSortOrder, sortTableRows, filterTableRows, buildHeaderCells } from '@lh-ui/share/core/table'
+
+cycleSortOrder(undefined)  // 'asc'
+cycleSortOrder('asc')      // 'desc'
+cycleSortOrder('desc')     // undefined (sort canceled)
+
+const rows = [
+  { name: 'Charlie', age: 30 },
+  { name: 'Bob', age: null },
+  { name: 'Alice', age: 20 },
+]
+sortTableRows(rows, 'age', 'asc')
+// Alice 20 → Charlie 30 → Bob null (empty values are always last)
+sortTableRows(rows, 'age', 'desc')
+// Charlie 30 → Alice 20 → Bob null (empty values are still last when reversed)
+sortTableRows(rows, 'age', undefined)  // a copy in the original order
+
+filterTableRows(rows, [{ column: { prop: 'name' }, values: ['Alice'] }])
+// [{ name: 'Alice', age: 20 }]
+filterTableRows(rows, [])  // a full copy (no active filters)
+
+// Multi-level headers
+const columns = [
+  { label: 'Basic info', children: [{ prop: 'name', label: 'Name' }, { prop: 'age', label: 'Age' }] },
+  { prop: 'city', label: 'City' },
+]
+flattenLeafColumns(columns)  // [Name, Age, City] (the body renders against this)
+buildHeaderCells(columns)
+// Basic info (level 0, leafStart 0, colspan 2), Name (rowspan 2 padded),
+// Age (rowspan 2), City (level 0, rowspan 2)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTableClassNames({ stripe, border, size, virtual })">
+  <div class="lh-table__wrapper">
+    <div class="lh-table__header" :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }">
+      <div
+        v-for="cell in headerCells"
+        :key="`${cell.level}-${cell.leafStart}`"
+        class="lh-table__header-cell"
+        :style="cellStyle(cell)"
+        v-bind="getTableSortAria({ sortOrder: sortState[cell.column.prop], sortable: cell.column.sortable })"
+        @click="onSort(cell.column)"
+      >
+        {{ cell.column.label }}
+        <span v-if="cell.column.sortable" class="lh-table__sort-indicator">
+          {{ sortState[cell.column.prop] === 'asc' ? '↑' : sortState[cell.column.prop] === 'desc' ? '↓' : '↕' }}
+        </span>
+      </div>
+    </div>
+    <div class="lh-table__body">
+      <div
+        v-for="row in displayRows"
+        :key="row.id"
+        class="lh-table__row"
+        :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }"
+      >
+        <div
+          v-for="column in leafColumns"
+          :key="column.prop"
+          :class="getTableCellClassNames({ align: column.align ?? 'left', fixed: column.fixed })"
+        >
+          {{ getCellValue(row, column) }}
+        </div>
+      </div>
+    </div>
+  </div>
+  <LhPagination :total="total" v-model:current="current" v-model:page-size="pageSize" />
+</div>
+```
+
+```ts
+// sort wiring (controlled)
+function onSort(column: LhTableColumn) {
+  if (!column.sortable) return
+  const next = cycleSortOrder(sortState.value[column.prop])
+  if (next) sortState.value = { ...sortState.value, [column.prop]: next }
+  else delete sortState.value[column.prop]
+}
+
+const displayRows = computed(() =>
+  filterTableRows(
+    sortTableRows(props.data, sortProp.value, sortOrder.value),
+    activeFilters.value,
+  ),
+)
+```
+
+```tsx
+// React: virtual scrolling
+// const range = computeRange(scrollTop, viewportHeight, rowHeight, rows.length, 3)
+// render range.start..range.end; the outer layer uses totalHeight to set the height, the inner one translateY(range.offsetY)
+```
+
+```ts
+// uniapp: <scroll-view scroll-y> + computing the visible range; CSS grid has limited support on some
+// targets and can degrade to flex columns; core's sort / filter / header-expansion functions are
+// framework-agnostic and used as-is
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-table` / `--{small\|medium\|large}` | base class / size scale (row height and padding) |
+| `.lh-table--stripe` / `--border` / `--virtual` | zebra striping / borders / virtual scrolling |
+| `.lh-table__header` / `__header-cell` | header |
+| `.lh-table__body` / `__row` | body |
+| `.lh-table__cell` / `--{left\|center\|right}` | cell / alignment |
+| `.lh-table__cell--fixed-left` / `--fixed-right` | fixed columns (sticky) |
+| `.lh-table__cell--fixed-left-last` / `--fixed-right-first` | fixed-column boundary (shadow divider) |
+| `.lh-table__cell--resizable` | resizable column |
+| `.lh-table__empty` | empty state |
+
+The default row height is 48px (`LH_TABLE_ROW_HEIGHT`) and must match the `rowHeight` parameter of the virtual scrolling algorithm, otherwise the window will misalign. Header background `--lh-fill-color`, borders `--lh-border-color`, hover row `--lh-fill-color-light`.
+
+## Caveats
+
+- **Row-height consistency is a prerequisite for virtual scrolling**: `computeRange` assumes every row has equal height; if in-row content stretches the height (long text wrapping), virtual scrolling will misalign — do not enable `virtual` for tables with irregular heights.
+- **Fixed columns must declare a `width`**: `getStickyOffsets` only converts offsets for numeric px or `'Npx'` strings; units like `'20%'` cannot be converted and accumulate as 0, so fixed columns end up stacked on top of each other.
+- **Prerequisites for `resizable`**: it must be a leaf column with a numeric `width`; after resizing, clamp to the lower bound with `clampColumnWidth` before writing it back to the column config.
+- **The sort `prop` and data keys**: `sortTableRows` reads `row[prop]`; nested fields (`user.name`) are not supported automatically — use a custom `sorter`.
+- **OR within a filter column**: multiple selected values within one column are "or"-related, and different columns are "and"-related — this is the common convention shared with Element.
+- **Body column order for multi-level headers**: the body must use `flattenLeafColumns(columns)` rather than `columns`, otherwise the column count will not match the header's leaf cells.
+- **DAG-shared columns**: when the same column object is referenced under two groups, the global seen set guarantees it is emitted only once — but **the side effect of sharing one object is that changing it in one place changes it in both**; if you need "same name, different config", deep-copy it.
+- **Sorting large data sets is O(n log n)**: sorting tens of thousands of rows per frame will stall; consider server-side sorting (`sortable: 'custom'` as agreed by the UI layer).
+- **`getTableSortAria`'s `aria-sort` goes on the `<th>`**, not on every cell of the column.
+
+<FnPlayground module="table" fn="cycleSortOrder" params='{"current": "asc"}' />

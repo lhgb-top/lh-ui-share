@@ -1,0 +1,139 @@
+---
+title: 'sx — style shorthand'
+description: 'sxToStyle turns Tailwind-style sx props into inline styles, with a fixed precedence: single side > axis pair > shorthand'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`sx` is lh-ui's **inline style shorthand**: use `mt: 4` instead of `style="margin-top: 32px"`, and `p: 2` instead of writing all four paddings at once. It is not Tailwind (it generates no classes and pulls in no CSS) — it evaluates a props bag into a `Record<string, string>` at runtime, which the UI layer binds to `:style`.
+
+## When to use it
+
+- Inside the component library: `sx` lets components avoid adding a new prop for "layout tweaks" — `<LhButton sx={{ mt: 2 }} />` pushes the button away from what is above it.
+- Spacing that needs to change with data: the number-to-pixel conversion (`×8`) gives "move a bit closer to me" semantics a stable scale.
+- **Don't use it for**: systematic visual design. sx is a "temporary tweak at the call site"; design tokens like theme colors and control heights still go through CSS variables (see [Theme system](/theme/overview)). Writing `color: 'var(--lh-primary-color)'` in sx works, but having the component consume the token directly is preferred.
+
+## Import
+
+```ts
+// Precise import (recommended, tree-shaking friendly)
+import { sxToStyle, mergeSx } from '@lh-ui/share/core/shared/sx'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+
+// Or from the aggregate entry point
+import { sxToStyle } from '@lh-ui/share/core/shared'
+```
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `sxToStyle` | `(sx: LhSxProps) => Record<string, string>` | Inline style object | Evaluates an sx props bag into CSS styles |
+| `mergeSx` | `(...list: (LhSxProps \| undefined \| null)[]) => LhSxProps` | Merged sx | Later entries overwrite earlier ones, so the UI layer can combine "default sx + caller sx" |
+
+### `sxToStyle` precedence rules
+
+**"Single side > axis pair > shorthand", regardless of key order.** The implementation writes into the style object in the fixed order `shorthand → axis pair → single side`, with later writes overwriting earlier ones, so no matter how you order the keys:
+
+```ts
+sxToStyle({ m: 2, mt: 4 })   // { marginTop: '32px', marginRight: '16px', marginBottom: '16px', marginLeft: '16px' }
+sxToStyle({ mt: 4, m: 2 })   // identical
+sxToStyle({ my: 2, mt: 4 })  // the mt single side wins: 32px; mb stays 16px
+```
+
+This rule lets the component library safely write "default bag + user override": a user-supplied `mt` always overrides the component's internal `m`.
+
+### Numbers and strings
+
+- **Numbers are converted at `×8px`**: `mt: 4` → `32px`. 8 is lh-ui's spacing base (the same scale as the `--lh-spacing-*` tokens).
+- **Strings are passed through as-is**: `w: '50%'` → `50%`, `p: '1rem'` → `1rem`.
+- **Layout keys are not converted**: the values of `display` / `flex` / `flexDirection` / `alignItems` / `justifyContent` are written directly as strings (`flexDirection: 'column'` does not become `columnpx`).
+- All keys are tested with `!== undefined`: passing an empty string `''` counts as an **explicit clear** and is written.
+
+## Type definition
+
+```ts
+export interface LhSxProps {
+  // Size
+  w?: string | number
+  h?: string | number
+  // Margin: single side / axis pair / shorthand
+  mt?: string | number
+  mr?: string | number
+  mb?: string | number
+  ml?: string | number
+  my?: string | number
+  mx?: string | number
+  m?: string | number
+  // Padding: same shape
+  pt?: string | number
+  pr?: string | number
+  pb?: string | number
+  pl?: string | number
+  py?: string | number
+  px?: string | number
+  p?: string | number
+  // Layout
+  display?: string
+  flex?: string
+  flexDirection?: 'row' | 'column'
+  alignItems?: string
+  justifyContent?: string
+  // Allow downstream custom keys; unknown keys are silently dropped
+  [key: string]: any
+}
+```
+
+The index signature `[key: string]: any` is deliberate: each UI library puts `sx?: LhSxProps` alongside component-specific props in its own `LhXxxProps`, and the index signature keeps the types from conflicting. Unknown keys are dropped during evaluation and never leak into the styles.
+
+## Usage examples
+
+### Pure function
+
+```ts
+sxToStyle({ mt: 2, px: 3, display: 'flex', alignItems: 'center' })
+// {
+//   marginTop: '16px',
+//   paddingLeft: '24px',
+//   paddingRight: '24px',
+//   display: 'flex',
+//   alignItems: 'center',
+// }
+```
+
+### Wiring per port
+
+```vue
+<!-- Vue3 / Vue2: bind directly to :style -->
+<template>
+  <lh-button :style="sxToStyle($props.sx)">Button</lh-button>
+</template>
+```
+
+```tsx
+// React
+<div style={sxToStyle({ my: 4, w: '100%' })} />
+```
+
+```ts
+// uniapp: sxToStyle outputs a plain object, feed it straight into the style binding
+// (the ×8px number conversion may need platform-specific handling on non-h5 targets,
+//  handled by the UI layer)
+```
+
+The typical use of `mergeSx` is combining defaults inside a component:
+
+```ts
+// Inside the component
+const merged = mergeSx({ py: 2, px: 4 }, props.sx) // the user's sx overrides the defaults
+const style = sxToStyle(merged)                    // evaluated once, the precedence rules settle once
+```
+
+## Caveats
+
+- **`mergeSx` is a shallow merge** (`Object.assign`), not recursive; sx values are all scalars, so a shallow merge is enough.
+- **`sxToStyle` returns `{}` for falsy input**: `sxToStyle(undefined)` is an empty object, so the UI layer can call it unconditionally.
+- The 8px base of the number conversion is aligned with the token system, but sx itself **does not reference CSS variables** — it produces computed literals, suited for "offset this one call a bit", not for "change with the theme".
+- Cross-port: uniapp's rpx on non-h5 targets must be converted by the UI layer; the sx core only emits px.
+
+<FnPlayground module="sx" fn="sxToStyle" params='{"sx": {"mt": 4, "px": 3, "display": "flex"}}' />

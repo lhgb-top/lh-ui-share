@@ -1,0 +1,165 @@
+---
+title: locales — internationalization
+description: 't / tm / use / add / setLocale / subscribe of the lhlocale singleton, 38 top-level message keys and six languages'
+---
+
+import LocaleInspector from '../../../../components/LocaleInspector.astro'
+
+Internationalization in the lh-ui family is a **pure event emitter**: `lhlocale` carries no framework reactivity at all, and each UI library's adapter layer converts its `version` number into its own framework's re-render signal. This way one language pack serves Vue3 / Vue2 / React / uniapp simultaneously, while the core layer depends on no framework.
+
+## The singleton and how to import it
+
+```ts
+import { lhlocale, zhCN, enUS, formatMessage } from '@lh-ui/share/locales'
+import type { LhLocalePath, LhLocaleType, LhLocaleMessages } from '@lh-ui/share/locales'
+```
+
+## Member table
+
+| Member | Signature | Behavior |
+| --- | --- | --- |
+| `version` | `get version(): number` | Version number: incremented on any language change (the UI adapter subscribes to it to trigger re-renders) |
+| `subscribe` | `(listener: LhLocaleListener) => () => void` | Subscribe to language changes; returns an unsubscribe function |
+| `use` | `(options: { locale: LhLocaleType; messages: LhLocaleMessages }) => void` | Register a language and switch to it |
+| `t` | `(path: LhLocalePath, fallbackOrParams?) => string` | Get translated copy by path |
+| `tm` | `(path: string, fallback?: string[]) => string[]` | Get array copy (month names / weekday names) |
+| `getLocale` | `() => LhLocaleType` | Get the current language |
+| `setLocale` | `(locale: LhLocaleType) => void` | Switch the current language |
+| `add` | `(locale: string, messages: LhLocaleMessages) => void` | Add a custom language pack (deep merge) |
+
+## Behavioral details of each method
+
+### t — literal-key autocompletion
+
+```ts
+const t = lhlocale.t   // arrow-function property; destructuring does not lose `this`
+
+t('pagination.total')                       // '共 {total} 条'
+t('pagination.total', { total: 42 })        // '共 42 条'
+t('not.exists', 'fallback text')             // 'fallback text'
+t('not.exists')                             // 'not.exists' (falls back to the path itself)
+```
+
+The type of `path` is `LhLocalePath` — a union of **every string-leaf path** derived from the `as const` structure of the `zh-CN` language pack (e.g. `'input.placeholder'`). Get a key wrong and the editor errors. Dynamically built paths (`t(\`pagination.\${key}\`)`) go through a lenient overload that widens the type to `string`.
+
+The second argument takes two forms: a **string** is the fallback value; an **object** is the `{key}` interpolation parameters (handled internally by [formatMessage](/core/format)).
+
+### tm — array copy
+
+```ts
+lhlocale.tm('datepicker.months')
+// ['1月', '2月', …, '12月']
+
+lhlocale.tm('datepicker.weeks')   // ← wrong: weeks is an object, not an array
+lhlocale.tm('datepicker.weeks.sun', ['日'])   // ← also wrong: only t() can reach an object's string leaves
+```
+
+`t()` only returns strings; array leaves (`months`) are reached through `tm()`. A miss or a non-array returns `fallback` (defaulting to `[]`).
+
+### use vs add — two easily confused methods
+
+| | `use` | `add` |
+| --- | --- | --- |
+| Action | Registers **and switches** | Only registers (broadcasts only if it is the current language) |
+| Where messages are stored | Recorded into the user registry `userLocales`; **does not overwrite the built-in registry** | Same as left |
+| Merge strategy | Set as a whole package | **Deep-merged** into the "currently effective package" |
+
+Why `add` deep-merges: business code usually only wants to change a few keys (turn "Confirm" into "Submit") and keep the rest available from the built-in pack. The old implementation replaced the whole package, so any key not passed in disappeared.
+
+Why `use` does not overwrite the built-in registry: the old implementation's `locales[locale] = messages` would **permanently destroy the built-in language pack** (a later `setLocale` could not get back to it). Now the built-in packs are read-only and user packs take precedence.
+
+### setLocale's "no-divergence" semantics
+
+```ts
+lhlocale.setLocale('en-US')   // the language pack was never registered
+lhlocale.getLocale()          // 'en-US'  ← reports the requested language
+lhlocale.t('pagination.total')// copy from the built-in default pack, not en-US's
+```
+
+This looks contradictory but is deliberate: the resolution order is `userLocales ?? built-in locales ?? default pack`. When unregistered, `getLocale()` reports the requested language while `t()` uses the default pack's content — **the two never diverge** (you never get the odd combination of "reports English but the copy is Chinese"), so the business side can tell it needs to `add` or `use`.
+
+### version and subscribe
+
+```ts
+const unsubscribe = lhlocale.subscribe((version: number) => {
+  // the language changed; trigger a re-render
+})
+unsubscribe()   // call on component unmount
+```
+
+`subscribe` returns an unsubscribe function (RxJS style). `bump()` internally wraps listener calls in `try/catch` to isolate bad subscribers and logs `[lhlocale] listener error:`, so one component's throwing listener does not affect the others.
+
+## How each port subscribes to version
+
+```ts
+// Vue3 / Vue2 / uniapp
+const version = ref(lhlocale.version)
+lhlocale.subscribe(() => (version.value = lhlocale.version))
+// the template depends on version; a change re-renders
+
+// React
+useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)
+```
+
+## Language files
+
+| File | Status |
+| --- | --- |
+| `zh-CN.ts` | ✅ default language (`as const`; the derivation source for `LhLocalePath`) |
+| `en-US.ts` | ✅ enabled |
+| `ja-JP.ts` / `ko-KR.ts` / `de-DE.ts` / `fr-FR.ts` | reserved language skeletons, **falling back to English translations**; you can `setLocale` to them directly |
+
+Subpath import: `@lh-ui/share/locales/lang/zh-CN`.
+
+### The 38 top-level keys
+
+`common` / `input` / `datepicker` / `timepicker` / `cascader` / `tag` / `badge` / `select` / `form` / `switch` / `slider` / `progress` / `avatar` / `descriptions` / `empty` / `alert` / `dialog` / `message` / `breadcrumb` / `pagination` / `tabs` / `steps` / `popconfirm` / `drawer` / `notification` / `loading` / `collapse` / `rate` / `backtop` / `image` / `menu` / `table` / `tree` / `treeSelect` / `transfer` / `upload` / `anchor` / `ariaLabels`
+
+All six language files have the same top-level key count (38 each) and an aligned structure. Among them `ariaLabels` holds the accessibility copy keys (about 40 entries); each component reads from it to generate its aria-label.
+
+Typical interpolated copy:
+
+```ts
+pagination.total: '共 {total} 条'
+pagination.sizeChanger: '{size} 条/页'
+pagination.page: '第 {page} 页'
+steps.step: '第 {index} 步'
+rate.stars: '{n} 星'
+cascader.columnLabel: '第 {n} 级'
+collapse.toggle: '展开或折叠 {title}'
+datepicker.panelTitle: '{year}年{month}'
+menu.submenuLabel: '子菜单 {title}'
+```
+
+## Adding a new language
+
+Three steps (the same instructions live in `src/locales/lang/README.md`):
+
+1. Create `src/locales/lang/<lang>.ts` exporting a `LhLocaleMessages` structure (the top-level keys must align with the 38; you can validate with `satisfies`).
+2. Add the constant to `LH_LANGUAGE_CONST` in `src/constants/index.ts`.
+3. Mount it in the built-in registry `locales` in `src/locales/locale.ts`.
+
+Then run `pnpm test` (`theme.spec` and the locale-related cases have structural-consistency regressions).
+
+## Related types
+
+| Type | Definition | Purpose |
+| --- | --- | --- |
+| `LhLocaleType` | Derived from `LH_LANGUAGE_CONST` | Union of supported language codes |
+| `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | The language pack type as a whole |
+| `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | Language pack leaf node (recursively readonly) |
+| `LhLeaves<T>` | Recursive mapped type | Derives the dotted-path union of every string leaf from the pack's structure |
+| `LhLocalePath` | `LhLeaves<typeof zhCN>` | The literal-key type for `t()` |
+| `LhTranslate` | Overloaded type | The call signature of `t()` |
+| `LhTranslateArray` | `(path: string, fallback?: string[]) => string[]` | The call signature of `tm()` |
+| `LhLocaleListener` | `(version: number) => void` | Language-change listener |
+| `LhLocaleOptions` | `{ locale: LhLocaleType; messages: LhLocaleMessages }` | The argument shape for `use()` |
+
+## Caveats
+
+- **`LhLeaves` returns `never` for array keys**: `datepicker.months` is an array and is not addressed by key, so `t()`'s dotted paths can never hit it — arrays always go through `tm()`.
+- **`t` is destructurable**: it is an arrow-function property, so `const t = lhlocale.t` does not lose `this`.
+- **core components do not call `lhlocale` directly**: rate / pagination use [formatMessage](/core/format) for interpolation, and the message-key lookup still happens in the UI layer — core does not depend on the singleton's side effects.
+- **`add` is a deep merge**: it only overrides the keys you pass in; everything else is kept.
+
+<LocaleInspector />

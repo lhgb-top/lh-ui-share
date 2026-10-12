@@ -1,0 +1,230 @@
+---
+title: 'keyboard — keyboard navigation algorithms'
+description: 'LH_KEYS key constants, three navigation algorithms for list / grid / range, plus type-ahead, shared by select / menu / tree / tabs'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Accessible components have standard answers for keyboard interaction (the APG listbox / menu / grid patterns), but "which item should ArrowUp jump to" gets written — and miswritten — over and over in select / menu / tree / tabs / segmented. `shared/keyboard` turns it into pure functions: input is "list + current index + direction", output is "the target index".
+
+**The core layer listens to no keys at all** — keyboard event listening belongs to the UI layer (Vue3's `@keydown`, React's `onKeyDown`). This module only provides detection and computation.
+
+## Import
+
+```ts
+import {
+  LH_KEYS,
+  isActivationKey,
+  getNextListIndex,
+  getNextGridCell,
+  getNextRangeValue,
+  findTypeAheadIndex,
+  getRovingTabIndex,
+  type LhListNavigationOptions,
+} from '@lh-ui/share/core/shared/keyboard'
+```
+
+## Constants and types
+
+```ts
+// Key name constants (KeyboardEvent.key); the UI layer must not write bare string literals anymore
+export const LH_KEYS = {
+  Escape: 'Escape',
+  Enter: 'Enter',
+  Space: ' ',          // note: the value is a single space
+  ArrowUp: 'ArrowUp',
+  ArrowDown: 'ArrowDown',
+  ArrowLeft: 'ArrowLeft',
+  ArrowRight: 'ArrowRight',
+  Home: 'Home',
+  End: 'End',
+  Tab: 'Tab',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
+} as const
+
+// Accepts a real event or a bare key value (needed for pure-function tests)
+export type LhKeyEvent = KeyboardEvent | { key: string }
+
+// Navigation direction: a numeric offset or first/last sentinels
+export type LhListDirection = 1 | -1 | 'first' | 'last'
+
+// Minimal constraint on list items: only the disabled flag; the concrete shape is provided by the caller
+export interface LhListItem {
+  disabled?: boolean
+}
+
+export interface LhListNavigationOptions<T = unknown> {
+  loop?: boolean                    // loop at the ends, default true
+  skipDisabled?: boolean            // skip disabled items, default true
+  isDisabled?: (item: T) => boolean // custom disabled test; defaults to reading item.disabled
+}
+
+export interface LhGridNavOptions {
+  cols: number                      // columns per row
+  total: number                     // total cells in the grid
+  loop?: boolean                    // in-row / overall looping, default false (returns null at the boundary so the UI layer can page)
+}
+
+export interface LhRangeNavOptions {
+  min: number
+  max: number
+  step: number                      // arrow-key step; non-finite or ≤0 degrades to 1 and only clamps to the bounds
+  pageStep?: number                 // PageUp / PageDown step, default max(step, (max-min)/10)
+}
+```
+
+## Function table
+
+### Key detection
+
+| Function | Signature | Purpose |
+| --- | --- | --- |
+| `isActivationKey` | `(e: LhKeyEvent) => boolean` | Enter or Space |
+| `isArrowKey` | `(e: LhKeyEvent) => boolean` | The four arrow keys |
+| `isEscapeKey` | `(e: LhKeyEvent) => boolean` | Escape (popover close) |
+| `isHomeOrEndKey` | `(e: LhKeyEvent) => boolean` | Home / End (jump to list ends) |
+| `isSpaceKey` | `(e: LhKeyEvent) => boolean` | Space (for cases where it must be distinguished from Enter, e.g. paging inside a scroll container) |
+| `isHorizontalArrowKey` | `(e: LhKeyEvent) => boolean` | Horizontal arrow keys |
+| `isVerticalArrowKey` | `(e: LhKeyEvent) => boolean` | Vertical arrow keys |
+
+`isHorizontalArrowKey` / `isVerticalArrowKey` **only detect the physical key** — whether "left" means "previous" or "next" in an RTL layout is a UI-layer semantic; the algorithm does not flip it for you.
+
+### Navigation computation
+
+| Function | Signature | Purpose |
+| --- | --- | --- |
+| `getNextListIndex` | `<T>(items, current, direction, options?) => number` | Generic list navigation, returns the target index |
+| `findTypeAheadIndex` | `(labels: string[], query: string, startIndex?) => number` | type-ahead first-character matching |
+| `getRovingTabIndex` | `<T>(items, activeIndex) => number` | roving tabindex: returns the index that should hold tabindex 0 |
+| `getNextGridCell` | `(current, key, opts: LhGridNavOptions) => number \| null` | Two-dimensional grid navigation (date grids, month grids) |
+| `getNextRangeValue` | `(current, key, opts: LhRangeNavOptions) => number` | range control navigation (slider keyboard stepping) |
+
+### Return-value semantics of getNextListIndex
+
+This is the easiest function to misuse, so it gets its own section:
+
+| Case | Return value |
+| --- | --- |
+| `'first'` / `'last'` | Jump directly to the first / last **enabled** item |
+| Normal move | The target index |
+| Not looping and already at the boundary | **Stops at the boundary** (returns the boundary index, not -1) |
+| Empty list / all disabled with `skipDisabled` | `-1` (no available item) |
+| Only the boundary item is disabled and you are at the boundary | `-1` |
+| `current` out of range or `-1` | Treated as "nothing selected": forward takes the first item, backward the last |
+
+**When not looping it never returns -1 to mean "reached the end"** — it returns the boundary index so focus stops on that item. The UI layer decides whether to `preventDefault`; -1 is only returned when "there really is nothing selectable".
+
+### getRovingTabIndex returns an index
+
+The name is misleading: it **returns "the index of the item that should hold tabindex 0"**, not the tabindex value itself. The caller assigns values from it:
+
+```ts
+const activeIndex = getRovingTabIndex(items, selectedIndex)
+items.forEach((item, i) => (item.tabindex = i === activeIndex ? 0 : -1))
+```
+
+This guarantees the group **always has one Tab-enterable anchor**; when no item is available, `activeIndex` falls back to the first enabled item, so the group can never end up all -1 with no way in by keyboard.
+
+### Matching rules of findTypeAheadIndex
+
+- An item label **starting with** the query string is a match (case-insensitive).
+- The search wraps around **after** `startIndex` (default `-1`, start from the beginning).
+- Multi-character accumulation is supported: when the user quickly types `zh`, the UI layer accumulates the query within 500ms and clears it on timeout.
+- No match / empty `query` / empty `labels` → `-1`.
+
+### Row-crossing flow of getNextGridCell
+
+ArrowRight at the **end of a row flows to the start of the next row** (continuous movement within the viewport; it returns `null` only when crossing the whole grid boundary); ArrowDown / ArrowUp move vertically by `±cols`; Home / End go to the **row start / row end** (when the last row has fewer than `cols` cells, row end converges to `total` and never jumps outside the grid).
+
+Non-navigation keys, out-of-bounds when not looping, out-of-bounds `current`, `cols` / `total` ≤ 0 → `null`.
+
+`loop` defaults to `false` on purpose: in a date panel, "ArrowRight past the edge" usually means **switch to next month**, a decision the UI layer makes — the algorithm just says "reached the end".
+
+### getNextRangeValue only clamps, never snaps
+
+```ts
+getNextRangeValue(25, 'ArrowUp', { min: 0, max: 100, step: 10 })
+// 25 + 10 = 35 (no step alignment)
+```
+
+**Why no snapping**: if the current value is 25 (an unaligned value the user dragged), a snapping algorithm would jump to 30 first and then to 40, looking like a double jump. Clamp + step only; alignment is the component layer's job when writing localValue (snap to the scale on drag release).
+
+Non-navigation keys **return `current` as-is** — the caller uses that to decide "do I need to handle this keypress" and whether to `preventDefault`.
+
+## Usage examples
+
+### select keyboard navigation (roving tabindex + list nav)
+
+```ts
+function onKeydown(e: KeyboardEvent) {
+  if (isArrowKey(e)) {
+    e.preventDefault()
+    const next = getNextListIndex(
+      options.value,
+      selectedIndex.value,
+      e.key === LH_KEYS.ArrowDown ? 1 : -1,
+      { loop: true },
+    )
+    if (next !== -1) selectedIndex.value = next
+  } else if (isHomeOrEndKey(e)) {
+    selectedIndex.value = getNextListIndex(
+      options.value,
+      -1,
+      e.key === LH_KEYS.Home ? 'first' : 'last',
+    )
+  } else if (isActivationKey(e)) {
+    open.value = !open.value
+  } else if (isEscapeKey(e)) {
+    open.value = false
+  }
+}
+```
+
+### date-picker's date grid
+
+```ts
+const next = getNextGridCell(focusedIndex.value, e.key, {
+  cols: 7,                    // 7 days a week
+  total: daysInMonth.value,   // days in the current month
+})
+if (next === null) {
+  // out of bounds → switch to previous / next month (UI layer decides)
+  switchMonth(e.key === LH_KEYS.ArrowRight ? 1 : -1)
+} else {
+  focusedIndex.value = next
+}
+```
+
+### slider keyboard stepping
+
+```ts
+if (isArrowKey(e) || isHomeOrEndKey(e) || e.key === LH_KEYS.PageUp || e.key === LH_KEYS.PageDown) {
+  e.preventDefault()
+  modelValue.value = getNextRangeValue(modelValue.value, e.key, {
+    min: props.min,
+    max: props.max,
+    step: props.step,
+  })
+}
+```
+
+### Character input navigation
+
+```ts
+// accumulate the query string (the UI layer maintains the 500ms timeout)
+typeAheadBuffer.value += e.key
+const idx = findTypeAheadIndex(labels, typeAheadBuffer.value, selectedIndex.value)
+if (idx !== -1) selectedIndex.value = idx
+```
+
+## Caveats
+
+- **Listening happens in the UI layer**: wiring `onKeydown`, the timing of `preventDefault`, and the `focus()` call after moving focus are each framework component's responsibility; core only hands back the computation result.
+- **RTL layouts**: the semantic flip of left/right arrow keys is implemented by the UI layer reversing `direction` before the call; the algorithm itself keeps physical-key semantics.
+- **The default of `isDisabled`**: it reads `item.disabled` and treats a missing value as not disabled — when items of type `{}` are passed, every item is navigable.
+- **Empty-list safety**: all navigation functions return `-1` / `null` for an empty list; the UI layer just checks the result, and nothing throws.
+
+<FnPlayground module="keyboard" fn="getNextListIndex" params='{"items": [{"disabled": false}, {"disabled": true}, {"disabled": false}, {"disabled": false}], "current": 0, "direction": 1, "options": {"loop": true}}' />

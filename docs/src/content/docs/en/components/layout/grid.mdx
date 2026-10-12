@@ -1,0 +1,182 @@
+---
+title: grid — Layout
+description: 'A 24-column CSS Grid system: resolveBreakpoint breakpoint detection, resolveResponsiveSize downward fallback, clamped mapping of span/offset/push/pull to grid-column'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+The grid is the skeleton of layout: it slices the page into 24 columns, arranges content by column-width ratios, and responds responsively at breakpoints. The lh-ui grid is based on **CSS Grid** (not flex with percentage widths), which gives higher positioning precision and supports explicit start-point positioning. What `core/grid` manages is **breakpoint detection, responsive fallback, and the clamping arithmetic of column positioning** — CSS itself cannot compute "downward fallback" or "out-of-bounds clamping".
+
+## When to use
+
+- Each framework implements `<LhRow>` / `<LhCol>`: page main layouts, two/three-column form layouts, card walls, dashboards.
+- Scenarios needing **responsive** column widths (three columns on desktop, two on tablet, one on mobile).
+- **Don't use it**: simple two-element left/right alignment (flex or `space` is more direct); fluid layouts with indeterminate widths (fixed-ratio grid columns are instead awkward).
+
+## Import
+
+```ts
+import {
+  LH_GRID_COLUMNS,
+  LH_GRID_BREAKPOINTS,
+  LH_GRID_BREAKPOINT_ORDER,
+  resolveBreakpoint,
+  resolveResponsiveSize,
+  getGridRowClassNames,
+  normalizeColSize,
+  clampSpan,
+  getColStyle,
+  getGridColClassNames,
+} from '@lh-ui/share/core/grid'
+import type {
+  LhGridBreakpoint, LhGridSpan, LhColSize, LhBreakpointSizes,
+} from '@lh-ui/share/core/grid'
+```
+
+## Design intent
+
+**CSS Grid rather than flex percentages**: in a flex grid every col is `width: x/24`, in-row wrapping relies on flex-wrap, and column gutters are offset with negative margins — a pile of hacks. CSS Grid simply uses `grid-template-columns: repeat(24, 1fr)`, gutters via `gap`, and cols positioned with `grid-column` — clean semantics. The cost is no IE support — lh-ui's target platforms (modern browsers + mini-program webviews) are all covered.
+
+**Breakpoint downward fallback**: `resolveResponsiveSize(sizes, 'md')` searches from the md tier downward and hits the first tier that is **declared**. If the user only wrote `{ xs: 24, lg: 12 }`, at md width (768~1024) it falls back to xs's 24 — **not undefined**. This is the core experience of the responsive API: the user declares only key breakpoints, and the intermediate tiers automatically inherit the small-screen configuration.
+
+**`span = 0` is a sentinel, not a bug**: `span: 0, offset: 6` means "occupy no columns, just push the following content 6 columns". Here `getColStyle` outputs `7 / 25` (extending to the last column) rather than `7 / span 0` — the latter would collapse the element to zero width.
+
+**Start-point clamping prevents breaking the container**: `offset 21 + span 8` yields a start point of 22, which is out of bounds. `getColStyle` clamps the start point to `24 + 1 - 8 = 17` — the element shifts left as a whole until it fits. The comment explains why: an out-of-bounds `grid-column` makes Grid generate an **implicit track** that breaks the container's width.
+
+**The dividing line between auto-placement and explicit positioning**: a pure span uses `span N` (no start point specified, Grid auto-places); with offset/push/pull it uses `start / span N` (an explicit start point, interrupting auto-placement). A comment records a real trap: if a pure span is written as `1 / span N`, all Cols in the same row start at column 1, and Grid can only push the later ones to the next row — visually becoming a "vertical arrangement".
+
+**A class-name mapping table instead of direct concatenation**: if `justify="center"` and `align="center"` directly concatenated class names they would collide into two `lh-row--center` (justify maps to justify-items, align to align-items — two different CSS properties). With an explicit mapping table: justify's center → `lh-row--center`, align's center → `lh-row--middle` (with center as a compatible alias for middle, aligning with mainstream library API conventions). A side benefit: unknown values do not produce dirty class names.
+
+## Function table
+
+| Function / constant | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `resolveBreakpoint` | `(width: number) => LhGridBreakpoint` | breakpoint | viewport width → tier |
+| `resolveResponsiveSize` | `(sizes, breakpoint) => LhColSize \| undefined` | effective size | falls back downward to the nearest declared tier |
+| `getGridRowClassNames` | `(state: { justify?, align?, wrap? }) => string[]` | class names | alignment / wrapping |
+| `normalizeColSize` | `(size?: LhColSize) => LhGridSpan` | descriptor object | number → `{ span }` |
+| `clampSpan` | `(span?: number) => number` | integer in [0, 24] | non-finite values become 0 |
+| `getColStyle` | `(size?: LhColSize) => Record<string, string>` | inline style | grid-column positioning |
+| `getGridColClassNames` | `(size?: LhColSize) => string[]` | class names | span / offset |
+
+Constants: `LH_GRID_COLUMNS = 24`, `LH_GRID_BREAKPOINTS` (xs 0 / sm 640 / md 768 / lg 1024 / xl 1280), `LH_GRID_BREAKPOINT_ORDER` (largest to smallest).
+
+## Type definitions
+
+```ts
+export type LhGridBreakpoint = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+
+export interface LhGridSpan {
+  span?: number        // number of columns occupied (0 = occupy none, used only for offset positioning)
+  offset?: number      // number of empty columns on the left
+  push?: number        // shift the start point right
+  pull?: number        // shift the start point left
+}
+
+export type LhColSize = number | LhGridSpan
+export type LhBreakpointSizes = Partial<Record<LhGridBreakpoint, LhColSize>>
+```
+
+## Accessibility
+
+The grid is a pure layout primitive and **has no accessibility semantics of its own** — do not add roles to Row/Col. Content semantics are provided by the components inside. One related principle:
+
+- **Layout changes must not change the DOM order**: during responsive reflow the Col's order in the DOM is fixed; only the visual column count changes. If content order needs to differ across breakpoints ("main content on the left on desktop, at the top on mobile"), keep the source order and use `order` styles rather than switching the DOM order — screen readers announce in DOM order, and a mismatch between the visual and announced order causes confusion.
+
+## Usage examples
+
+```ts
+import {
+  resolveBreakpoint, resolveResponsiveSize, getColStyle, clampSpan,
+} from '@lh-ui/share/core/grid'
+
+resolveBreakpoint(800)   // 'md'
+resolveBreakpoint(600)   // 'xs' (< 640)
+resolveBreakpoint(1300)  // 'xl'
+
+// downward fallback: the md tier is not declared → take xs
+resolveResponsiveSize({ xs: 24, lg: 12 }, 'md')  // 24
+resolveResponsiveSize({ xs: 24, lg: 12 }, 'lg')  // 12
+resolveResponsiveSize({ xs: 24 }, 'xl')          // 24
+resolveResponsiveSize(undefined, 'md')           // undefined (nothing declared)
+```
+
+```ts
+getColStyle(8)             // { gridColumn: 'span 8' } (auto-placement)
+getColStyle({ span: 8, offset: 4 })
+// { gridColumn: '5 / span 8' } (start point = offset+1, not out of bounds after clamping)
+getColStyle({ span: 0, offset: 6 })
+// { gridColumn: '7 / 25' } (sentinel: occupies no columns, extends to the last column)
+getColStyle({ span: 8, offset: 21 })
+// { gridColumn: '17 / span 8' } (out-of-bounds clamping: start point 22 → 17)
+getColStyle({ span: 8, push: 4 })
+// { gridColumn: '5 / span 8' } (push 4 = start point shifted right by 4)
+getColStyle({ span: 8, pull: 4 })
+// { gridColumn: '1 / span 8' } (start point 5-4=1, clamped to the lower bound of 1)
+getColStyle({})            // { gridColumn: 'span 24' } (undeclared fills the row)
+
+clampSpan(8)    // 8
+clampSpan(30)   // 24 (clamped to the upper bound)
+clampSpan(-5)   // 0
+clampSpan(NaN)  // 0 (non-finite values become 0)
+```
+
+```vue
+<!-- Vue3: responsive three columns → two columns → one column -->
+<template>
+  <LhRow :gutter="16">
+    <LhCol v-for="item in list" :key="item.id" :xs="24" :sm="12" :lg="8">
+      <LhCard>{{ item.title }}</LhCard>
+    </LhCol>
+  </LhRow>
+</template>
+```
+
+```vue
+<!-- a two-column form layout + an offset-positioned button -->
+<template>
+  <LhRow :gutter="20">
+    <LhCol :span="12"><LhFormItem label="Name" prop="name" /></LhCol>
+    <LhCol :span="12"><LhFormItem label="Email" prop="email" /></LhCol>
+    <LhCol :span="12" :offset="12">
+      <LhButton type="primary" @click="submit">Submit</LhButton>
+    </LhCol>
+  </LhRow>
+</template>
+```
+
+```tsx
+// React: breakpoint listening is driven by the UI layer with a resize listener or useMediaQuery driving state;
+// getColStyle is called as a pure function inside render
+```
+
+```ts
+// uniapp: <view> + grid; the mini-program side has no window, so breakpoints are driven by the UI layer
+// converting safeArea/windowWidth or res.rpx from uni.getSystemInfoSync(); core's resolveBreakpoint is used as-is
+```
+
+## Styles and tokens
+
+| Class name | Semantics |
+| --- | --- |
+| `.lh-row` | row container (`display: grid; grid-template-columns: repeat(24, 1fr)`) |
+| `.lh-row--{end\|center\|space-between\|space-around}` | horizontal alignment (justify-items) |
+| `.lh-row--{middle\|bottom}` | vertical alignment (align-items) |
+| `.lh-row--nowrap` | no wrapping |
+| `.lh-col` | column container |
+| `.lh-col--{1..24}` | span column count |
+| `.lh-col--offset-{1..24}` | left offset column count |
+
+The gutter token `--lh-row-gutter` (row spacing, overridden by the `gutter` prop); inter-column spacing comes from the grid `gap`.
+
+## Caveats
+
+- **`gutter` and the grid gap**: Grid's gap applies to both rows **and** columns simultaneously; when you only want column spacing and not row spacing, the row container must separately override `row-gap: 0`.
+- **Responsive breakpoints need UI-layer listening**: `resolveBreakpoint` is a pure function; the UI layer must listen to resize itself (or use `matchMedia`) to feed the width in. Under SSR there is no window on the first paint, so render the xs tier by default and correct it after client-side hydration.
+- **Do not mix auto and explicit positioning**: in the same row, if one Col uses a pure span and another uses offset, the explicitly positioned one interrupts auto-placement — the in-row arrangement may be unintuitive. Either go all-pure-span or all-explicit.
+- **The difference between `push` / `pull` and `offset`**: all three change the start point but differ in semantics — `offset` is "leave space on the left" (placeholder semantics), while `push/pull` is "translate" (visual ordering). The implementation inside `getColStyle` changes the start point for all of them, but **at the class-name level only offset has a corresponding class** (push/pull only go through the inline style).
+- **The 24-column coordinate system is a hard constraint**: `span 25` is clamped to 24; `offset 24 + span 1` clamps the start point to 24. If the business side needs finer granularity than 24, nest `LhRow`s instead of increasing the column count.
+- **Nested grids**: putting an `LhRow` inside an `LhCol` restarts the count from 24 columns — the sub-grid does not inherit the parent's span context. This is natural CSS Grid behavior.
+- **Class-name span and inline style coexist**: `lh-col--8` from `getGridColClassNames` and `getColStyle`'s `grid-column` are two mechanisms (class names serve SCSS media queries; inline serves JS-driven responsiveness). **The UI layer picks one**; writing both overrides each other (the inline style wins).
+
+<FnPlayground module="grid" fn="getColStyle" params='{"size": {"span": 8, "offset": 4}}' />
