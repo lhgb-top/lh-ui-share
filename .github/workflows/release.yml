@@ -63,6 +63,13 @@ jobs:
           echo "❌ npm 上拉取 @lh-ui/share@${VERSION} 失败，请确认已执行 pnpm release"
           exit 1
 
+      # 补建历史版本时 actions/checkout 是 master 的浅检出（depth 1，不含 tag），
+      # 而 gh release create --verify-tag 只认本地 tag，故先把目标 tag 单独拉下来。
+      # 发版场景下该 tag 刚推上去，本地已有，fetch 是无副作用的幂等操作。
+      - name: 拉取目标 tag 到本地
+        if: steps.meta.outputs.skip != 'true'
+        run: git fetch origin "refs/tags/${{ steps.meta.outputs.tag }}:refs/tags/${{ steps.meta.outputs.tag }}"
+
       - name: 创建 GitHub Release 并挂载 .tgz
         if: steps.meta.outputs.skip != 'true'
         env:
