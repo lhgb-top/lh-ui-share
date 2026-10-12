@@ -120,7 +120,7 @@ pnpm verify:versions
 
 **查什么**：lh-ui-plus / lh-ui-vue2 的 `package.json` 里 `@lh-ui/share` 的依赖范围**覆盖 share 当前版本**。
 
-**当前状态**：share 是 `0.3.0` 时通过。**发 0.4.0 之后会失败**——因为两个 UI 库的依赖范围还是 `^0.3.0`。这是**预期行为**：按 [红线 5](/guide/introduction#红线)（share 先发版，UI 库随其后），发版后去两兄弟仓各自 `pnpm up @lh-ui/share@0.4.0` 并回归。
+**当前状态**：share 是 `0.3.0` 时通过。**发 0.4.0 之后会失败**——因为两个 UI 库的依赖范围还是 `^0.3.0`。这是**预期行为**：按 [红线 5](/development/contribution#六条红线)（share 先发版，UI 库随其后），发版后去两兄弟仓各自 `pnpm up @lh-ui/share@0.4.0` 并回归。
 
 ## lint 与 typecheck
 
@@ -131,7 +131,7 @@ pnpm verify:versions
 
 **`docs/` 不在扫描范围内**——文档站是独立 Astro 项目，质量由 `pnpm docs:build` 把关。同理 `styles/` 不在 typecheck 范围（SCSS 由 verify:styles 管）。
 
-**lint 的框架依赖门禁**：CI 会 grep `src/` 里是否出现 `import 'vue'` / `import 'react'` / `@dcloudio/*`——这是 [红线 1](/guide/introduction#红线)，core 必须框架无关。
+**lint 的框架依赖门禁**：CI 会 grep `src/` 里是否出现 `import 'vue'` / `import 'react'` / `@dcloudio/*`——这是 [红线 1](/development/contribution#六条红线)，core 必须框架无关。
 
 ## 测试
 

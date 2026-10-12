@@ -1,0 +1,131 @@
+---
+title: 0.4.0 migration guide
+description: 'The LH-prefix rename mapping tables — mechanical replacements for types, constants, and preset identifiers'
+---
+
+# 0.4.0 migration guide
+
+0.4.0 uniformly adds the `LH` prefix to this repo's non-third-party public symbols, aligning with the
+family naming convention in the plus repo's `docs/project/development-guide.md` (background in
+[Naming conventions](/guide/naming)).
+
+**Everything is an identifier-level mechanical replacement.** Behavior is unchanged and export paths
+are unchanged. The UI libraries (plus / vue2 / uniapp) have renamed in sync; standalone users, please
+update your imports per the tables below.
+
+## Types / interfaces: `LhXxx`
+
+| Old | New | Owner |
+| --- | --- | --- |
+| `ThemePreset` | `LhThemePreset` | `theme` |
+| `ThemePresetName` | `LhThemePresetName` | `theme` |
+| `ThemeVars` | `LhThemeVars` | `theme` |
+| `SxProps` | `LhSxProps` | `core/shared/sx` |
+| `DOMRectLike` | `LhDOMRectLike` | `core/shared/popper` |
+| `ComputePositionOptions` | `LhComputePositionOptions` | `core/shared/popper` |
+| `PopperPosition` | `LhPopperPosition` | `core/shared/popper` |
+| `PtAttrs` | `LhPtAttrs` | `core/shared/pt` |
+| `SanitizeNumberOptions` | `LhSanitizeNumberOptions` | `core/shared/sanitize` |
+| `VirtualRange` | `LhVirtualRange` | `core/shared/virtual` |
+| `AxisRange` | `LhAxisRange` | `core/shared` |
+| `LocalePath` | `LhLocalePath` | `locales` |
+| `Leaves` | `LhLeaves` | `types/locale` |
+| `LocaleOptions` | `LhLocaleOptions` | `types/locale` |
+
+## Constants: `LH_<Module>_<Concept>`
+
+| Old | New | Owner |
+| --- | --- | --- |
+| `DEFAULT_THEME` | `LH_THEME_DEFAULT` | `core/config` |
+| `DEFAULT_DRAWER_DIRECTION` | `LH_DRAWER_DIRECTION_DEFAULT` | `core/drawer` |
+| `DEFAULT_DRAWER_SIZE` | `LH_DRAWER_SIZE_DEFAULT` | `core/drawer` |
+| `DEFAULT_DROPDOWN_PLACEMENT` | `LH_DROPDOWN_PLACEMENT_DEFAULT` | `core/dropdown` |
+| `DROPDOWN_TRIGGERS` | `LH_DROPDOWN_TRIGGERS` | `core/dropdown` |
+| `DEFAULT_POPCONFIRM_TYPE` | `LH_POPCONFIRM_TYPE_DEFAULT` | `core/popconfirm` |
+| `DEFAULT_POPCONFIRM_PLACEMENT` | `LH_POPCONFIRM_PLACEMENT_DEFAULT` | `core/popconfirm` |
+| `POPOVER_TRIGGERS` | `LH_POPOVER_TRIGGERS` | `core/popover` |
+| `DEFAULT_POPOVER_PLACEMENT` | `LH_POPOVER_PLACEMENT_DEFAULT` | `core/popover` |
+| `THEME_PRESETS` | `LH_THEME_PRESETS` | `theme` |
+| `PRESET_THEME_STYLE_ID` | `LH_PRESET_THEME_STYLE_ID` | `theme` |
+
+Note that default-value constants are **`LH_<Module>_<Concept>_DEFAULT`** (DEFAULT at the **end**),
+not `LH_DEFAULT_<...>`.
+
+## Theme preset objects: lowercase → `LhXxx`
+
+| Old | New |
+| --- | --- |
+| `cerblue` | `LhCerblue` |
+| `songhua` | `LhSonghua` |
+| `zhusha` | `LhZhusha` |
+| `shuimo` | `LhShuimo` |
+| `golden` | `LhGolden` |
+
+## Unchanged (exemptions)
+
+The following symbols **keep their original names** — do not touch them during migration:
+
+| Symbol | Reason |
+| --- | --- |
+| `zhCN` / `enUS` | standard locale naming, and re-exported as a public API by three UI libraries |
+| the **string value** of preset names (`name: 'cerblue'` etc.) | the configuration value users write in ConfigProvider's `theme`; changing it breaks every downstream configuration |
+| function names (`getThemeVars` / `sxToStyle` etc.) | this round only converges constants / types / interfaces / classes |
+
+```ts
+// ✅ after migration
+import { LH_THEME_PRESETS, LhCerblue, getThemeVars } from '@lh-ui/share/theme'
+import type { LhThemePreset, LhSxProps } from '@lh-ui/share/core/shared/sx'
+
+const preset: LhThemePreset = LhCerblue
+getThemeVars('cerblue')          // the string value is unchanged
+```
+
+## A one-shot replacement example
+
+```ts
+// before
+import { THEME_PRESETS, PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+import type { SxProps, ThemeVars } from '@lh-ui/share'
+
+// after
+import { LH_THEME_PRESETS, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+import type { LhSxProps, LhThemeVars } from '@lh-ui/share'
+```
+
+## What else is in this release
+
+Besides the rename, 0.4.0 includes these pending changesets:
+
+- **Local linkage and style governance** (minor) — the family-layout alias mechanism and the six
+  `verify:styles` checks
+- **Three-repo audit fixes** (minor)
+- **Control-height tokens** (minor) — adds the `--lh-control-height-*` tokens to unify control
+  heights; **visually breaking**: see "Control height changes" below
+- **divider vertical text support** (minor) — vertical dividers now accept default-slot text, so
+  `aria-orientation="vertical"` is finally reachable
+- **GUI regression batch** (patch) — Form required-message precedence (a user-supplied `message` is
+  no longer swallowed by the synthetic rule), dark-mode lightening for deep-primary presets (the main
+  button of the ink-wash preset is no longer near-invisible in dark mode), and more
+- **date-picker circular-dependency removal** (patch) — `formatDate` / `parseDate` moved down into
+  `core/shared/date`; the `logic ↔ adapter` two-way cycle broken into a one-way dependency
+- **divider border style and tests** (patch)
+- **form-control centering fixes** (patch)
+- **steps title wrapping and line breaks** (patch)
+- **hairline marker rule retired** (patch) — uniapp v3 emits px directly, so new 1px borders no
+  longer need the `/* hairline */` marker (the 65 historical markers remain as ordinary comments)
+- **Documentation site** (minor) — the site you are reading right now
+
+## Control height changes (visually breaking)
+
+New `--lh-control-height-{mini,small,medium,large,x-large}` tokens (semantics: the control's
+**outer border-box height**); every form control now references them. Most controls previously did
+not declare `box-sizing: border-box`, so after aligning on outer heights the rendered height of the
+following controls **decreases**:
+
+| Control | Change |
+| --- | --- |
+| input | padding-derived height replaced by fixed heights: mini 28→20, small 32→24, medium 39→32, large 50→40 |
+| Other form controls | aligned to the same set of height tiers; vertical centers and baselines line up when mixed in one form |
+
+This break is **visual** only (the DOM structure and API are unchanged). If your project has snapshot
+tests pinned to the old pixel values or fixed-height layouts, re-verify them.

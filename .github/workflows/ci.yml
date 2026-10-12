@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   ci:
@@ -27,3 +27,4 @@ jobs:
       - run: pnpm build:dts
       - run: node scripts/verify-dts.mjs
       - run: node scripts/verify-styles.mjs
+      - run: pnpm docs:build

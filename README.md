@@ -4,11 +4,17 @@
 
 [English](./README.en.md) | 中文
 
+📚 **文档站**：<https://www.lhgb.top/lhui/share/> —— 每个纯函数的签名、返回值、边界与示例都可交互试运行（中英双语）。
+
 各框架 UI 层（lh-ui-vue2 / lh-ui-react / lh-ui-uniapp）以 npm 依赖消费本包。**本包不依赖任何 UI 库、任何框架**——`vite` 构建配置 `external: []`，且 `verify:dts` 会扫描产物 `.d.ts`，一旦出现 `vue` / `react` / `@dcloudio/*` 或旧别名导入即失败。
 
 ## 特性
 
-- **框架无关的组件逻辑**：55 个组件的纯函数（`logic.ts` / `types.ts` / `index.ts` 三件套）+ 10 个共享内核（`sx` / `pt` / `popper` / `focus-trap` / `sanitize` / `virtual` / `format` / `date` / `delay` / `types`）。状态进、类名/样式出，零副作用，可直接单测。
+- **框架无关的组件逻辑**：56 个组件的纯函数（`logic.ts` / `types.ts` / `index.ts` 三件套）+ 12 个共享内核（`a11y` / `date` / `delay` / `focus-trap` / `format` / `keyboard` / `popper` / `pt` / `sanitize` / `sx` / `types` / `virtual`）。状态进、类名/样式出，零副作用，可直接单测。
+  - **计数口径**（`src/core/` 与 `styles/` 目录数不同，以 core 为准）：`src/core/config/` 与
+    `styles/config-provider/` 是同一组件（ConfigProvider，目录名不一致）；`styles/` 另有
+    `layout` / `tree-select` 两个组件目录**暂无 core 纯函数层**（逻辑仍在各 UI 库，未下沉），
+    故 core 计 56、styles 计 58。
 - **样式唯一源**：`styles/` 是全部组件 BEM 样式的唯一来源；过渡类名已**双写**（`-enter` 与 `-enter-from` 并列），同时服务 Vue2 / Vue3 / React。
 - **国风主题系统**：SCSS 令牌（`variables.scss`，全部 `!default` 可覆盖）+ 5 个预设主题（青花瓷 / 松花绿 / 朱砂 / 水墨 / 藤黄）+ 暗色模式 + 6 种内置纹理（柳 / 云 / 水 / 雪 / 梅 / 竹）。
 - **纯 emitter 国际化**：`LhLocale` 不含任何框架响应式，靠 `version` 自增 + `subscribe` 供各框架自行接线。
@@ -74,9 +80,9 @@ import { focusFirst, trapTabKey, setInertOutside } from '@lh-ui/share/core/share
 TS 侧提供 5 个预设（主色重染）：
 
 ```ts
-import { THEME_PRESETS, getThemeVars, getThemePreset } from '@lh-ui/share/theme'
+import { LH_THEME_PRESETS, getThemeVars, getThemePreset } from '@lh-ui/share/theme'
 
-THEME_PRESETS // [{ name: 'cerblue', label: '青花瓷', labelEn: 'Ceramic Blue', ... }, ...]
+LH_THEME_PRESETS // [{ name: 'cerblue', label: '青花瓷', labelEn: 'Ceramic Blue', ... }, ...]
 getThemeVars('zhusha') // => { '--lh-primary-color': '#B23A3A', ... }
 ```
 
@@ -231,8 +237,9 @@ scripts/            build-styles / normalize-styles / sync-exports / verify-dts 
 | dts 校验（镜像完整性 + 禁止框架导入） | `pnpm verify:dts` |
 | 单测 | `pnpm test` |
 | Lint / 类型 | `pnpm lint` / `pnpm typecheck` |
+| 文档站构建（Astro Starlight，中英双语） | `pnpm docs:build` |
 
-CI 按 `lint → typecheck → test → build → build:styles → build:dts → verify:dts` 顺序执行。测试、构建等验证由**用户手动运行**，交付后仅列出命令清单。
+CI 按 `lint → typecheck → test → build → build:styles → build:dts → verify:dts → verify:styles → docs:build` 顺序执行。测试、构建等验证由**用户手动运行**，交付后仅列出命令清单。
 
 ## 边界与贡献
 

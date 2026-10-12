@@ -4,11 +4,14 @@
 
 English | [中文](./README.md)
 
+📚 **Docs site**: <https://www.lhgb.top/lhui/share/> — every pure function's signature, return value, edge cases, and runnable examples (bilingual Chinese / English).
+
 Each framework UI layer (lh-ui-vue2 / lh-ui-react / lh-ui-uniapp) consumes this package as an npm dependency. **This package depends on no UI library and no framework** — the `vite` build sets `external: []`, and `verify:dts` scans the emitted `.d.ts`, failing on any `vue` / `react` / `@dcloudio/*` or stale-alias import.
 
 ## Features
 
-- **Framework-agnostic component logic**: pure functions for 55 components (a `logic.ts` / `types.ts` / `index.ts` triple per component) + 10 shared kernels (`sx` / `pt` / `popper` / `focus-trap` / `sanitize` / `virtual` / `format` / `date` / `delay` / `types`). State in, classNames/styles out — no side effects, directly unit-testable.
+- **Framework-agnostic component logic**: pure functions for 56 components (a `logic.ts` / `types.ts` / `index.ts` triple per component) + 12 shared kernels (`a11y` / `date` / `delay` / `focus-trap` / `format` / `keyboard` / `popper` / `pt` / `sanitize` / `sx` / `types` / `virtual`). State in, classNames/styles out — no side effects, directly unit-testable.
+  - **Counting convention** (`src/core/` and `styles/` have different directory counts; core is the baseline): `src/core/config/` and `styles/config-provider/` are the same component (ConfigProvider, directory names differ); `styles/` also has `layout` / `tree-select` component directories that **have no core pure-function layer yet** (the logic still lives in each UI library and has not been pushed down), so core counts 56 and styles counts 58.
 - **Single source of truth for styles**: `styles/` is the only home for every component's BEM styles; transition classes are **dual-written** (`-enter` alongside `-enter-from`) so they serve Vue2 / Vue3 / React at once.
 - **Chinese-style theme system**: SCSS tokens (`variables.scss`, all `!default` and overridable) + 5 preset themes (Ceramic Blue / Pine Green / Vermilion / Ink Wash / Golden Autumn) + dark mode + 6 built-in patterns (willow / cloud / water / snow / plum / bamboo).
 - **Pure-emitter i18n**: `LhLocale` contains no framework reactivity — it drives updates via a monotonically increasing `version` and `subscribe`, letting each framework wire it up itself.
@@ -74,9 +77,9 @@ import { focusFirst, trapTabKey, setInertOutside } from '@lh-ui/share/core/share
 The TS side provides 5 presets (primary-color recoloring):
 
 ```ts
-import { THEME_PRESETS, getThemeVars, getThemePreset } from '@lh-ui/share/theme'
+import { LH_THEME_PRESETS, getThemeVars, getThemePreset } from '@lh-ui/share/theme'
 
-THEME_PRESETS // [{ name: 'cerblue', label: '青花瓷', labelEn: 'Ceramic Blue', ... }, ...]
+LH_THEME_PRESETS // [{ name: 'cerblue', label: '青花瓷', labelEn: 'Ceramic Blue', ... }, ...]
 getThemeVars('zhusha') // => { '--lh-primary-color': '#B23A3A', ... }
 ```
 
@@ -231,8 +234,9 @@ scripts/            build-styles / normalize-styles / sync-exports / verify-dts 
 | Verify dts (mirror completeness + no framework imports) | `pnpm verify:dts` |
 | Unit tests | `pnpm test` |
 | Lint / types | `pnpm lint` / `pnpm typecheck` |
+| Docs site build (Astro Starlight, bilingual) | `pnpm docs:build` |
 
-CI runs, in order: `lint → typecheck → test → build → build:styles → build:dts → verify:dts`. Testing, building and other verification steps are **run manually by the user**; after delivery, only the command list is provided.
+CI runs, in order: `lint → typecheck → test → build → build:styles → build:dts → verify:dts → verify:styles → docs:build`. Testing, building and other verification steps are **run manually by the user**; after delivery, only the command list is provided.
 
 ## Boundaries and contributing
 

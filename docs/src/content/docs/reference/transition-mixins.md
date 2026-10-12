@@ -119,7 +119,7 @@ UI 层（Vue2）：
 
 ## 注意事项
 
-- **组件样式禁止再手写双份过渡类名**，一律 `@include`（[红线 2](/guide/introduction#红线)）。`verify:styles` 第 5 项（过渡类名单源）会扫描裸写的 `-enter-from` / `-leave-from` 字面量。
+- **组件样式禁止再手写双份过渡类名**，一律 `@include`（[红线 2](/development/contribution#六条红线)）。`verify:styles` 第 5 项（过渡类名单源）会扫描裸写的 `-enter-from` / `-leave-from` 字面量。
 - **`@use` 路径**：`@use 'theme/common/transition' as *;`（各组件 scss 的相对路径或构建期的 bare specifier 由 [注入策略](/guide/injection) 决定）。
 - **React 场景**：React 版用 headless 过渡（状态驱动 className），mixin 生成的 `-enter-from` 类名同样适用。
 - **`$child` 后缀是后代选择器**：不是 `&` 拼接，生成的选择器是 `.parent-enter .child`，依赖根元素带过渡类名。

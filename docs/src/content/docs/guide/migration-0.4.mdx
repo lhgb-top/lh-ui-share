@@ -96,6 +96,12 @@ import type { LhSxProps, LhThemeVars } from '@lh-ui/share'
 
 - **本地联动与样式治理**（minor）——家族布局 alias 机制、`verify:styles` 六项校验落地
 - **三仓审计修复**（minor）
+- **高度令牌专项**（minor）——新增 `--lh-control-height-*` 令牌统一控件外高，
+  **有视觉破坏性变化**：见下方「控件高度变化」
+- **divider 竖向支持文案**（minor）——竖向分割线支持默认插槽文案，
+  `aria-orientation="vertical"` 从此可达
+- **GUI 回归缺陷批次**（patch）——Form 必填文案优先级（用户自定义 `message` 不再被
+  合成规则吞掉）、深主色预设暗色提亮（水墨等预设的主要按钮暗色下不再近乎不可见）等
 - **date-picker 循环依赖拆除**（patch）——`formatDate` / `parseDate` 下沉到
   `core/shared/date`，`logic ↔ adapter` 二元环拆为单向
 - **divider 边框样式与单测**（patch）
@@ -104,3 +110,17 @@ import type { LhSxProps, LhThemeVars } from '@lh-ui/share'
 - **hairline 标记规则废止**（patch）——uniapp v3 px 直出，新增 1px 边框不再需要
   `/* hairline */` 标记（历史 65 处标记保留为普通注释）
 - **文档站**（minor）——就是你现在看的这个站
+
+## 控件高度变化（视觉破坏性）
+
+新增 `--lh-control-height-{mini,small,medium,large,x-large}` 令牌（语义为控件
+**外高 border-box**），全部表单控件改引令牌。此前多数控件未声明 `box-sizing: border-box`，
+统一按外高对齐后下列控件实际渲染高度**降低**：
+
+| 控件 | 变化 |
+| --- | --- |
+| input | 由 padding 派生改为固定高度：mini 28→20、small 32→24、medium 39→32、large 50→40 |
+| 其他表单控件 | 统一到同一组高度档，同表单混排时垂直中心与基线对齐 |
+
+这是**视觉**层面的破坏（DOM 结构与 API 不变）。若项目里有针对旧像素值的快照测试或
+固定高度布局，需要回归确认。
