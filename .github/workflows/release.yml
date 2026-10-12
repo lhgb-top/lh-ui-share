@@ -43,7 +43,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: steps.meta.outputs.skip != 'true'
         with:
-          node-version: 20
+          node-version: 24
 
       # CHANGELOG 只增不减，master 上含全部历史版本段落，两条路径都能提取
       - name: 生成 release notes
