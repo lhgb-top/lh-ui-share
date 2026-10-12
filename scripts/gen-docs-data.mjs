@@ -16,7 +16,7 @@
  * 用法：pnpm docs:data
  */
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from 'node:fs';
-import { resolve, dirname, basename } from 'node:path';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as sass from 'sass';
 
