@@ -1,0 +1,180 @@
+---
+title: transfer —— 穿梭框
+description: 'partitionTransferData 不可变分区、moveTransferKeys 幽灵键清理、getTransferCheckAllState 三态、sourceKeys 单一数据源'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+穿梭框解决的是**双向的多选搬运**：左列是「待选」，右列是「已选」，中间两个箭头按钮来回搬。它比 checkbox 组更适合大量选项（分页 + 搜索），比多个 select 更直观（两边都可见）。`core/transfer` 用**单一数据源 `sourceKeys`** 建模——左列就是「不在 sourceKeys 里的项」，右列就是「在 sourceKeys 里的项」，所有操作都只是变换这个数组。
+
+## 何时使用
+
+- 各端实现 `LhTransfer`：权限分配、角色成员选择、标签筛选、数据字段勾选。
+- 选项较多（>10）、需要搜索过滤、且要同时看到「已选/未选」两边的场景。
+- **不该用它**：选项少于 6 个（checkbox 组或 segmented 更省地方）；单向选择不需要「搬回去」（select 更合适）。
+
+## 导入方式
+
+```ts
+import {
+  partitionTransferData,
+  toggleTransferChecked,
+  toggleTransferCheckAll,
+  moveTransferKeys,
+  getTransferCheckAllState,
+  filterTransferItems,
+  getTransferClassNames,
+  getTransferPanelClassNames,
+} from '@lh-ui/share/core/transfer'
+import type { LhTransferItem, LhTransferSide } from '@lh-ui/share/core/transfer'
+```
+
+## 设计意图
+
+**`sourceKeys` 单一数据源**：组件的「值」就是右列的 key 数组。左列不单独存状态——`partitionTransferData(data, sourceKeys)` 每次从全量数据切出来。这避免了「左列和右列状态不同步」的经典 bug：任何搬运只需改一个数组，两侧视图自动重算。
+
+**`moveTransferKeys` 的幽灵键清理**：`checked` 里可能出现不在 `data` 中的键（数据刷新后残留的旧勾选，称为**幽灵键**）。它们既不能被搬走，也不该留在源区污染下一帧——所以函数在搬运后**顺手把源区里的幽灵键也过滤掉**。注释写明了这个决策的两层考虑。
+
+**`toggleTransferCheckAll` 跳过禁用项**：全选只选「可选的」（`!disabled`），全不选也只清这些——禁用项的勾选状态保持不动，符合「禁用 = 不可操作」的直觉。
+
+**`getTransferCheckAllState` 的三态**：`all` / `some` / `none` 驱动全选复选框的 `indeterminate` 态——这是全选框的标准交互（部分选中时显示横线）。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `partitionTransferData` | `(data, sourceKeys) => { left, right }` | 两侧列表 | 按 keySet 切分 |
+| `toggleTransferChecked` | `(checked, key) => Array` | 新勾选数组 | 命中移除/否则加入 |
+| `toggleTransferCheckAll` | `(checked, sideItems) => Array` | 新勾选数组 | 全选/全不选（跳过禁用） |
+| `moveTransferKeys` | `(sourceKeys, data, checked, direction) => Array` | 新 sourceKeys | 搬运并清幽灵键 |
+| `getTransferCheckAllState` | `(checked, sideItems) => 'all' \| 'some' \| 'none'` | 三态 | 驱动 indeterminate |
+| `filterTransferItems` | `(items, query) => LhTransferItem[]` | 过滤列表 | 大小写不敏感 |
+| `getTransferClassNames` | `(state: { disabled }) => string[]` | 类名 | 禁用 |
+| `getTransferPanelClassNames` | `(side) => string[]` | 类名 | 面板侧别 |
+
+## 类型定义
+
+```ts
+export interface LhTransferItem {
+  key: string | number
+  label?: string       // 运行时契约允许缺失（UI 层回退显示 key）
+  disabled?: boolean   // 禁用（不可移动，也不参与全选）
+}
+
+export type LhTransferSide = 'left' | 'right'
+```
+
+## 无障碍
+
+穿梭框的无障碍结构由 UI 层组装，core 不提供属性包函数（没有弹层或复杂语义）：两个面板各是 `role="listbox"`，列表项 `role="option"` + `aria-selected`；中间的搬运按钮是普通 `<button>`，用 `aria-label` 说明方向（如「向右移动 3 项」）；全选框用 checkbox 语义，`indeterminate` 态通过 `getTransferCheckAllState` 的 `some` 触发 DOM 属性。
+
+键盘约定：列表项聚焦后 Space 勾选，↑/↓ 移动；搬运按钮聚焦后 Enter 执行。
+
+## 使用示例
+
+```ts
+import {
+  partitionTransferData, moveTransferKeys, getTransferCheckAllState, filterTransferItems,
+} from '@lh-ui/share/core/transfer'
+
+const data = [
+  { key: 'a', label: '苹果' },
+  { key: 'b', label: '香蕉', disabled: true },
+  { key: 'c', label: '樱桃' },
+]
+
+partitionTransferData(data, ['c'])
+// { left: [苹果, 香蕉], right: [樱桃] }
+
+moveTransferKeys(['c'], data, ['a', 'b'], 'left-to-right')
+// ['c', 'a']  —— b 禁用不搬；a 从左搬到右
+
+moveTransferKeys(['c'], data, ['a', 'ghost'], 'left-to-right')
+// ['c', 'a']  —— 幽灵键 'ghost' 被丢弃，不留在结果里
+
+getTransferCheckAllState(['a'], [{ key: 'a' }, { key: 'b', disabled: true }, { key: 'c' }])
+// 'some'（可选项是 a 与 c，只勾了 a → 部分；b 禁用不参与计数）
+
+filterTransferItems(data, '蕉')   // [{ key: 'b', label: '香蕉' }]
+filterTransferItems(data, '')     // 原数组（空 query 不过滤）
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTransferClassNames({ disabled })">
+  <transfer-panel
+    side="left"
+    :items="partition.left"
+    :checked="leftChecked"
+    @toggle="onToggle"
+    @check-all="onCheckAll"
+  />
+  <div class="lh-transfer__buttons">
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="leftChecked.length === 0"
+      :aria-label="`向右移动 ${leftChecked.length} 项`"
+      @click="move('left-to-right')"
+    >→</button>
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="rightChecked.length === 0"
+      :aria-label="`向左移动 ${rightChecked.length} 项`"
+      @click="move('right-to-left')"
+    >←</button>
+  </div>
+  <transfer-panel side="right" :items="partition.right" :checked="rightChecked" />
+</div>
+```
+
+```ts
+// 状态接线（computed 分区，checked 是本地勾选状态）
+const partition = computed(() => partitionTransferData(props.data, props.modelValue))
+const leftChecked = computed(() => state.checked.filter((k) => !props.modelValue.includes(k)))
+const rightChecked = computed(() => state.checked.filter((k) => props.modelValue.includes(k)))
+
+function move(direction) {
+  const checked = direction === 'left-to-right' ? leftChecked.value : rightChecked.value
+  emit('update:modelValue', moveTransferKeys(props.modelValue, props.data, checked, direction))
+  state.checked = state.checked.filter((k) => !checked.includes(k))  // 清掉已搬走的勾选
+}
+```
+
+```tsx
+// React：sourceKeys 就是受控值；勾选态是本地 useState，搬运后清空对应勾选
+```
+
+```ts
+// uniapp：<view> 两列 + <scroll-view> 滚动；搜索框过滤用 filterTransferItems
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-transfer` | 基础类（flex 横向布局） |
+| `.lh-transfer--disabled` | 禁用 |
+| `.lh-transfer-panel` | 单侧面板 |
+| `.lh-transfer-panel--left` / `--right` | 侧别 |
+| `.lh-transfer-panel__header` | 面板头（全选框 + 计数） |
+| `.lh-transfer-panel__search` | 搜索框 |
+| `.lh-transfer-panel__body` | 列表区 |
+| `.lh-transfer-panel__item` | 列表项 |
+| `.lh-transfer-panel__item--disabled` | 禁用项 |
+| `.lh-transfer-panel__footer` | 空态/计数页脚 |
+| `.lh-transfer__buttons` / `__button` | 中间按钮组 |
+
+面板头复选框的 `indeterminate` 态由 `getTransferCheckAllState` 驱动。
+
+## 注意事项
+
+- **`checked` 与 `sourceKeys` 是两个独立状态**：`checked` 是「当前勾选了哪些」（可能跨两侧），`sourceKeys` 是「右列有哪些」（组件值）。搬运后要手动把已搬走的 key 从 `checked` 里清掉，否则它们会残留在勾选态里（`moveTransferKeys` 不会帮你改 checked）。
+- **幽灵键的来源**：数据异步加载时，用户先勾选了若干项，然后数据刷新导致某些 key 消失——这些 key 留在 `checked` 里就是幽灵键。`moveTransferKeys` 清理它们，但 `toggleTransferCheckAll` 的全选计数（`getTransferCheckAllState`）也可能被影响，UI 层渲染勾选态时用 `byKey.has(key)` 过滤一遍更稳。
+- **禁用项的边界**：`disabled: true` 的项**不能搬、不参与全选、也不被全不选清掉**——它保持原有勾选状态。若业务需要「禁用项强制不勾选」，在数据层处理，别依赖 core。
+- **`label` 允许缺失**：类型里 `label?` 是可选的，UI 层要回退显示 `key`（`item.label ?? item.key`）。
+- **大数据量的性能**：`partitionTransferData` 每次完整遍历 data；`filterTransferItems` 在 query 变化时跑。数据上千条时考虑虚拟滚动（`core/shared/virtual`），core 的分区函数本身是 O(n)，不是瓶颈。
+- **搜索与分区的叠加顺序**：先 `partitionTransferData` 再对每侧 `filterTransferItems`——顺序反了会导致搜索框过滤的是未分区的全量数据。
+
+<FnPlayground module="transfer" fn="moveTransferKeys" params='{"sourceKeys": ["c"], "data": [{"key": "a", "label": "苹果"}, {"key": "b", "label": "香蕉", "disabled": true}, {"key": "c", "label": "樱桃"}], "checked": ["a", "b"], "direction": "left-to-right"}' />

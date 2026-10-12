@@ -1,0 +1,221 @@
+---
+title: form —— 表单
+description: 'validateFormField 规则引擎（异步不短路）、getFormFieldValue 点号路径取值、getFormFieldAria 错误关联'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+表单控件本身不收集数据——**校验与错误关联**才是表单的核心价值。`core/form` 提供三件事：一个规则引擎（`validateFormField`）、一个取值器（`getFormFieldValue`，支持点号路径）、一组错误关联属性包（`getFormFieldAria`）。它刻意**不包含表单整体编排**（字段注册、提交时机、重置），那些是 UI 层 `LhForm` 组件的职责。
+
+## 何时使用
+
+- 各端实现 `LhForm` / `LhFormItem`：任何需要校验的输入场景。
+- 需要把校验错误关联到读屏软件（`aria-invalid` + `aria-describedby`）的场景。
+- **不该用它**：单一字段、无跨字段依赖的简单校验（组件自带 `required` 可能就够）；需要复杂跨字段依赖图（如「A 为 x 时 B 必填且 C 需等于 D」）时，用 `validator` 自定义函数表达，不要试图组合多条内置规则。
+
+## 导入方式
+
+```ts
+import {
+  getFormFieldValue,
+  isEmptyValue,
+  validateFormField,
+  getFormFieldErrorId,
+  getFormFieldAria,
+} from '@lh-ui/share/core/form'
+import type { LhFormRule, LhFormState } from '@lh-ui/share/core/form'
+```
+
+## 设计意图
+
+**规则引擎的三个关键决策**：
+
+1. **空值只关心 required**——非必填且空值时**跳过全部规则**，与主流库（Element / Ant Design）约定一致：没填就不报错。这意味着 `type: 'email'` 不会对空串报「邮箱格式错误」——必填意图用 `required` 表达。
+
+2. **异步规则不短路**——这是与旧实现的行为差异，也是本模块最微妙的地方。`validator` 可以返回 Promise。旧实现在遇到第一个 thenable 后**跳过后续所有规则**，导致「异步邮箱查重之后的长度校验被吞掉」。新实现把每条规则包成 lazy 求值函数（`RuleCheck`），遇到 thenable 时挂起、**继续求值后面的规则**，最后把所有错误并入同一个 Promise 汇总。首个同步错误仍然立即返回（短路同步错误，不短路异步规则）。
+
+3. **同步抛错的 validator 按校验失败处理**——取 `error.message` 作为错误文案，不穿透为未捕获异常。用户写错自定义校验器（里面抛了 TypeError）时，表单表现为「该字段校验失败」而不是页面崩溃。
+
+**required 文案的优先级**：空值时找「显式提供了 message 的必填规则」优先，否则取首个必填规则。这条处理是为了修一个真实 bug——组件层（form item）在 `required` 属性为真时会**合成一条无 message 的 `{ required: true }` 规则**，若它排在用户带 message 的规则之前，`find` 会命中合成规则并回退到通用文案，**吞掉用户自定义文案**。
+
+**`getFormFieldValue` 的点号路径**：`'user.address.city'` 逐层 reduce，中途遇到非对象（null / 原始值）返回 undefined，不抛异常。这让表单字段可以直接绑定嵌套模型，不需要 UI 层手动拍平数据。
+
+**`isEmptyValue` 的口径**：undefined / null / 空串 / 空数组算空；**空格串与空对象不算空**——空格的语义由组件层按需在传入前 trim，core 不替业务做这个决定。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getFormFieldValue` | `(model, prop: string) => unknown` | 字段值 | 点号路径，缺失返 undefined |
+| `isEmptyValue` | `(value: unknown) => boolean` | 是否为空 | 四种空态 |
+| `validateFormField` | `(value, rules?, model, requiredMessage?) => string \| undefined \| Promise<string \| undefined>` | 错误文案 / undefined | 规则引擎 |
+| `getFormFieldErrorId` | `(prop: string) => string` | 元素 id | 与 aria-describedby 对应 |
+| `getFormFieldAria` | `(options: { prop, error?, required? }) => LhAriaAttrs` | aria 属性包 | invalid + describedby + required |
+
+## 类型定义
+
+```ts
+export interface LhFormRule {
+  required?: boolean
+  message?: string
+  trigger?: string  // 触发时机（blur / change / submit）；core 不解释，UI 层按事件过滤规则
+  /** 内置类型校验；空值跳过（与 required 同规则） */
+  type?: 'string' | 'number' | 'boolean' | 'array' | 'email' | 'url'
+  pattern?: string | RegExp       // 正则（仅对字符串值生效）
+  min?: number                    // 数值下限，或 string/array 的最小长度
+  max?: number                    // 数值上限，或 string/array 的最大长度
+  len?: number                    // 精确长度（string/array）
+  /** 自定义校验器：返回错误文案，通过时不返回；支持异步 */
+  validator?: (value: unknown, model: Record<string, unknown>) => string | undefined | Promise<string | undefined>
+}
+
+export interface LhFormState {
+  model: Record<string, unknown>
+  rules?: Record<string, LhFormRule[]>
+}
+```
+
+**`min` / `max` 的双重语义**是设计上的便利：数值值按大小比较，字符串/数组按长度比较。代价是类型不够精确，但规则配置的简洁性收益更大（`{ min: 6, message: '至少 6 位' }` 对密码和人数都成立）。
+
+## 无障碍
+
+`getFormFieldAria` 是表单无障碍的**最后一公里**：校验失败时把错误提示关联到控件，读屏软件播报「无效输入，错误是……」。
+
+```ts
+getFormFieldAria({ prop: 'username', error: '用户名必填', required: true })
+// { 'aria-invalid': true, 'aria-describedby': 'lh-form-error-username', 'aria-required': true }
+
+getFormFieldAria({ prop: 'username', required: true })
+// { 'aria-required': true }（无错误时不关联空提示元素）
+
+getFormFieldAria({ prop: 'username' })
+// {}（无状态时空对象）
+```
+
+配套约定：
+
+- 错误提示元素必须以 `getFormFieldErrorId(prop)` 为 id 渲染——`aria-describedby` 指向它。
+- **`aria-describedby` 的时序**：只有 error 有值时才输出该属性（避免引用一个不存在的空元素），所以属性包与错误文案必须同帧更新。
+- `required` 字段输出 `aria-required`，让读屏软件在进入控件时就播报「必填」。
+- `trigger` 的无障碍含义：blur 触发的校验不要在用户输入中途打断（每敲一个字符就报错是糟糕的体验）；change 触发适合「输入即校验」的轻量场景。
+
+## 使用示例
+
+```ts
+import { validateFormField, isEmptyValue, getFormFieldValue } from '@lh-ui/share/core/form'
+
+isEmptyValue('')           // true
+isEmptyValue([])           // true
+isEmptyValue('  ')         // false（空格串不算空）
+isEmptyValue({})           // false（空对象不算空）
+isEmptyValue(0)            // false（0 是有效值！）
+
+getFormFieldValue({ user: { name: 'lh' } }, 'user.name')   // 'lh'
+getFormFieldValue({ user: null }, 'user.name')             // undefined（中途非对象）
+getFormFieldValue({}, 'missing')                           // undefined
+```
+
+```ts
+// 必填
+validateFormField('', [{ required: true, message: '用户名必填' }], {})
+// '用户名必填'
+
+// 非必填空值：跳过全部规则
+validateFormField('', [{ required: false, type: 'email', message: '邮箱格式错误' }], {})
+// undefined
+
+// 内置类型 + 长度
+validateFormField('ab', [{ min: 6, message: '至少 6 个字符' }], { username: 'ab' })
+// '至少 6 个字符'
+
+// 正则
+validateFormField('123', [{ pattern: /^\d{4}$/, message: '4 位数字' }], {})
+// '4 位数字'
+
+// 自定义同步校验器
+validateFormField('abc', [{
+  validator: (v) => (v as string).includes('@') ? undefined : '必须包含 @',
+}], {})
+// '必须包含 @'
+
+// 自定义校验器抛错：按校验失败处理
+validateFormField('x', [{ validator: () => { throw new Error('校验器炸了') } }], {})
+// '校验器炸了'
+
+// 异步校验器（不短路：后面的同步规则仍会求值）
+validateFormField('ab', [
+  { validator: async (v) => await checkUnique(v) ? undefined : '已被占用', message: 'x' },
+  { min: 6, message: '至少 6 个字符' },
+], {})
+// Promise<['已被占用', '至少 6 个字符'] 中的首个错误>
+```
+
+```vue
+<!-- Vue3：form-item 的典型接线 -->
+<script setup>
+const error = ref('')
+async function validate(trigger: string) {
+  const rules = (props.rules ?? []).filter((r) => !r.trigger || r.trigger === trigger)
+  error.value = (await validateFormField(
+    getFormFieldValue(props.model, props.prop),
+    rules,
+    props.model,
+    t('form.required'),
+  )) ?? ''
+}
+</script>
+
+<template>
+  <div class="lh-form-item" :class="{ 'is-error': error }">
+    <label class="lh-form-item__label" :for="inputId">{{ label }}</label>
+    <div class="lh-form-item__content">
+      <slot :aria-props="getFormFieldAria({ prop, error, required })" />
+      <p
+        v-if="error"
+        :id="getFormFieldErrorId(prop)"
+        class="lh-form-item__error"
+        role="alert"
+      >
+        {{ error }}
+      </p>
+    </div>
+  </div>
+</template>
+```
+
+```tsx
+// React：把属性包透传给被包裹的控件
+// <input {...getFormFieldAria({ prop, error, required })} aria-describedby={error ? getFormFieldErrorId(prop) : undefined} />
+```
+
+```ts
+// uniapp：core 层完全可用；注意非 h5 端 aria 属性支持有限，错误文案主要靠视觉 + role="alert"
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-form` | 表单容器 |
+| `.lh-form--inline` | 行内布局（label 与控件同一行） |
+| `.lh-form--label-top` / `--label-left` / `--label-right` | label 位置 |
+| `.lh-form-item` | 字段项 |
+| `.lh-form-item.is-error` | 校验失败（控件红框） |
+| `.lh-form-item__label` | 标签（必填星号由 `::before` 渲染） |
+| `.lh-form-item__content` | 控件区 |
+| `.lh-form-item__error` | 错误提示（`role="alert"`） |
+| `.lh-form-item__required` | 必填星号 |
+
+错误色 `--lh-danger-color`；必填星号同色。label 宽度由 `--lh-form-label-width` 令牌控制（右对齐时的对齐基准）。
+
+## 注意事项
+
+- **`0` / `false` 不是空值**：`isEmptyValue(0)` 返回 false。这是最容易被踩的坑——「数量为 0」是有效输入，`required` 不该报错。同理 `false` 对 checkbox 也是有效值。
+- **`validator` 的第二个参数是整个 model**：跨字段校验（如确认密码）用它，不要在闭包里 capture 旧值。
+- **异步校验的防抖**：`validator` 里发请求时，UI 层要防抖（通常 300ms）并处理「请求返回时字段已改值」的竞态——core 层不管这个，返回过期的错误文案是调用方的问题。
+- **`trigger` 由 UI 层解释**：core 只是承载声明、不消费它。组件层按事件（blur/change/submit）过滤规则后再传入 `validateFormField`。
+- **`requiredMessage` 是通用兜底文案**：通常来自语言包（`form.required`），只在规则的 `message` 为 undefined 时使用；显式提供空串 `message: ''` 也会被原样使用（不当作缺失）。
+- **多规则的首个错误**：同步规则短路（首个命中即返回），异步规则全部求值后取首个 resolve 的错误。错误展示顺序与规则数组顺序一致。
+- **嵌套字段的 prop**：`'user.name'` 同时用于取值与生成 error id（`lh-form-error-user.name`）——id 里的点号在 CSS 选择器里需要转义，用 `document.getElementById` 或 `querySelector` 时注意。
+
+<FnPlayground module="form" fn="validateFormField" params='{"value": "ab", "rules": [{"min": 6, "message": "至少 6 个字符"}], "model": {}}' />

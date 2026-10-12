@@ -1,0 +1,133 @@
+---
+title: radio —— 单选框
+description: 'isRadioChecked 用 Object.is 判定 modelValue 与 value，getRadioClassNames 输出类型修饰'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+单选框的语义是「一组里只有一个生效」。`core/radio` 把它抽象成最简的判定：**当前组值 `modelValue` 等于我的 `value` 吗**。与 checkbox 的集合运算不同，radio 是单值比较。
+
+## 何时使用
+
+- 各端实现 `LhRadio` 与 `LhRadioGroup`（group 持有 `modelValue`，item 判定自身选中态）。
+- 互斥选择：性别、支付方式、选项卡式的表单分支。
+- **不该用它**：多选用 `checkbox`；开关用 `switch`；分段切换用 `segmented`（视觉更轻量）。
+
+## 导入方式
+
+```ts
+import { isRadioChecked, getRadioClassNames } from '@lh-ui/share/core/radio'
+import type { LhRadioState } from '@lh-ui/share/core/radio'
+```
+
+## 设计意图
+
+`isRadioChecked` 用 `Object.is(modelValue, value)` 而非 `===`，与 checkbox 同理：NaN / -0 的集合语义一致性，以及「任何类型的值都能做单选键」。
+
+radio 不需要 toggle 函数——选中就是**赋值**（`modelValue = value`），这是单选与多选在数学上的区别（一个变量的赋值 vs 一个集合的增删）。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `isRadioChecked` | `(state: LhRadioState) => boolean` | 布尔 | `Object.is(modelValue, value)` |
+| `getRadioClassNames` | `(type: string) => string[]` | 类名数组 | `lh-radio` + 类型修饰 |
+
+```ts
+getRadioClassNames('primary')  // ['lh-radio', 'lh-radio--primary']
+getRadioClassNames('')         // ['lh-radio']
+```
+
+## 类型定义
+
+```ts
+export interface LhRadioState {
+  modelValue: unknown   // 组的当前值
+  value: unknown        // 本 radio 的值
+  checked: boolean
+}
+```
+
+## 无障碍
+
+与 checkbox 同理：**用原生 `<input type="radio">`**，语义、键盘、表单提交全部免费。radio 的 name 属性是关键——同组 radio 必须共享 name，浏览器的方向键导航（arrow keys 在同组间移动）依赖它。
+
+```ts
+// 读屏软件播报的是 label 文字 + 「选中/未选中」状态，原生 radio 全部覆盖
+```
+
+## 使用示例
+
+```ts
+import { isRadioChecked, getRadioClassNames } from '@lh-ui/share/core/radio'
+
+isRadioChecked({ modelValue: 'b', value: 'b', checked: false })  // true
+isRadioChecked({ modelValue: 'b', value: 'a', checked: false })  // false
+```
+
+```vue
+<!-- Vue3 -->
+<div class="lh-radio-group" :class="`lh-radio-group--${size}`">
+  <label
+    v-for="opt in options"
+    :key="String(opt.value)"
+    :class="getRadioClassNames(type)"
+    :class-mod="{ 'lh-radio--checked': isRadioChecked({ modelValue, value: opt.value, checked: false }) }"
+  >
+    <span class="lh-radio__box">
+      <input
+        class="lh-radio__input"
+        type="radio"
+        :name="groupName"
+        :checked="modelValue === opt.value"
+        @change="emit('update:modelValue', opt.value)"
+      />
+    </span>
+    <span class="lh-radio__label">{{ opt.label }}</span>
+  </label>
+</div>
+```
+
+```tsx
+// React
+const [value, setValue] = useState('a')
+return options.map((opt) => (
+  <label key={opt.value} className="lh-radio">
+    <input
+      type="radio"
+      name={groupName}
+      checked={value === opt.value}
+      onChange={() => setValue(opt.value)}
+    />
+    <span className="lh-radio__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp：<radio-group> + <radio> 是内置组件，change 事件直接给选中项的 value；
+// 注意 uniapp 的 radio value 只支持字符串
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-radio` | 基础类 |
+| `.lh-radio--checked` / `--disabled` | 状态 |
+| `.lh-radio--{small\|large}` | 尺寸档 |
+| `.lh-radio__box` | 自定义单选圈（覆盖原生外观） |
+| `.lh-radio__input` | 原生 input（视觉隐藏，保留语义） |
+| `.lh-radio__label` | 文字 |
+| `.lh-radio-group` / `--{small\|large}` | 组容器 |
+
+选中态内圆点用 `var(--lh-primary-color)`，禁用态用 `--lh-text-disabled`。
+
+## 注意事项
+
+- **`type` 参数与 checkbox-group 的尺寸是两回事**：radio 的 `getRadioClassNames(type)` 输出的是**类型**修饰（如 primary），尺寸修饰在 group 上（`lh-radio-group--{size}`）。
+- **name 必须同组一致**：否则浏览器的键盘导航（同组间箭头移动）失效，且表单提交时会提交多个值。
+- **`modelValue` 的初值**：应当是某个 option 的 value，或 `undefined`（什么都不选）。给一个不在选项里的值会让所有 radio 都未选中，且无法通过 UI 恢复。
+- radio 与 segmented 都能做互斥切换：radio 是「表单控件」语义（原生、可提交），segmented 是「视图切换」语义（更轻量、更像按钮组）。
+
+<FnPlayground module="radio" fn="getRadioClassNames" params='{"type": "primary"}' />

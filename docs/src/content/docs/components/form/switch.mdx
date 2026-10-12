@@ -1,0 +1,141 @@
+---
+title: switch —— 开关
+description: 'getSwitchLabel 取激活/非激活文案，getSwitchAria 输出 role=switch 语义属性包'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+开关是「二态控件」：开或关，没有第三种状态。它看起来像复选框（两态），但语义不同——复选框表达「是否选中某个选项」，开关表达「某个功能是否启用」。APG 为它专门定义了 `role="switch"`。
+
+## 何时使用
+
+- 各端实现 `LhSwitch`：设置项的启停、权限开关、订阅状态。
+- 二态且带「即时生效」语义的操作（勾上就生效，不用等提交）。
+- **不该用它**：表单里的多选（用 checkbox）；多档位选择（用 segmented 或 radio）。
+
+## 导入方式
+
+```ts
+import { getSwitchClassNames, getSwitchLabel, getSwitchAria } from '@lh-ui/share/core/switch'
+import type { LhSwitchState } from '@lh-ui/share/core/switch'
+```
+
+## 设计意图
+
+`getSwitchAria` 的 `disabled || loading` 合并是有意为之：加载中的开关与禁用的开关在无障碍层面**行为相同**——都不可操作，读屏软件应当播报「不可用」而不是「可用但点了没反应」。
+
+`getSwitchLabel` 返回 `activeText` / `inactiveText`：开关的文案贴在滑块两侧，是开关相对 checkbox 的视觉优势——状态一眼可读，不只靠位置记忆。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getSwitchClassNames` | `(state: LhSwitchState) => string[]` | 类名数组 | checked/disabled/loading/size 修饰 |
+| `getSwitchLabel` | `(state: LhSwitchState) => string` | 文案 | 选中返回 activeText，否则 inactiveText |
+| `getSwitchAria` | `(state: Pick<LhSwitchState, 'checked' \| 'disabled' \| 'loading'>) => LhAriaAttrs` | aria 属性包 | `role="switch"` 语义 |
+
+输出示例：
+
+```ts
+getSwitchClassNames({ checked: true, disabled: false, loading: false, name: '', size: 'medium', activeText: '', inactiveText: '' })
+// ['lh-switch', 'lh-switch--checked']
+
+getSwitchLabel({ checked: true, activeText: '开', inactiveText: '关' })  // '开'
+
+getSwitchAria({ checked: true, disabled: false, loading: false })
+// { role: 'switch', 'aria-checked': true }
+
+getSwitchAria({ checked: false, disabled: false, loading: true })
+// { role: 'switch', 'aria-checked': false, 'aria-disabled': true }
+```
+
+## 类型定义
+
+```ts
+export interface LhSwitchState {
+  checked: boolean
+  disabled: boolean
+  loading: boolean
+  name: string            // 表单提交时的键名
+  size: LhComponentSize
+  activeText: string      // 开时文案
+  inactiveText: string    // 关时文案
+}
+```
+
+## 无障碍
+
+`getSwitchAria` 是 APG 的 switch 模式属性包。**关键在于是用原生 input 还是自定义控件**：
+
+```ts
+// 方案 A（推荐）：原生 <input type="checkbox"> + role="switch" 覆盖语义
+// 浏览器自带的 checkbox 语义被 role="switch" 增强，aria-checked 自动与 :checked 同步，
+// 键盘 Space 切换、表单提交全部免费
+<input type="checkbox" role="switch" :aria-checked="checked" />
+
+// 方案 B：纯自定义控件（div 模拟），必须手动挂全部语义
+// getSwitchAria 就是为此准备的——role + aria-checked + aria-disabled
+```
+
+uniapp 等非 h5 端往往只能走方案 B（原生 checkbox 样式难以定制），此时 `getSwitchAria` 是必需品。
+
+## 使用示例
+
+```ts
+import { getSwitchClassNames, getSwitchAria } from '@lh-ui/share/core/switch'
+
+getSwitchAria({ checked: true, disabled: false, loading: false })
+// { role: 'switch', 'aria-checked': true }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSwitchClassNames({ checked, disabled, loading, name, size, activeText, inactiveText })">
+  <span class="lh-switch__label lh-switch__label--left">{{ inactiveText }}</span>
+  <div class="lh-switch__core" v-bind="getSwitchAria({ checked, disabled, loading })" @click="toggle">
+    <LhSpinner v-if="loading" class="lh-switch__loading" :size="12" />
+  </div>
+  <span class="lh-switch__label lh-switch__label--right">{{ activeText }}</span>
+</div>
+```
+
+```tsx
+// React
+const aria = getSwitchAria({ checked, disabled, loading })
+return (
+  <div className="lh-switch">
+    <div className="lh-switch__core" {...aria} onClick={() => !disabled && !loading && onChange(!checked)} />
+  </div>
+)
+```
+
+```ts
+// uniapp：用 view 模拟滑块；非 h5 端 role/aria 支持有限，getSwitchAria 的产物可安全降级
+// （undefined 值的属性会被框架忽略，不会产生无效标记）
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-switch` | 基础类 |
+| `.lh-switch--checked` | 开启态（滑块右移、底色变主色） |
+| `.lh-switch--checked__core` | 开启态滑块（嵌套写法，避免与 `--checked` 冲突） |
+| `.lh-switch--{small\|large}` | 尺寸档 |
+| `.lh-switch--disabled` / `--loading` | 禁用 / 加载 |
+| `.lh-switch__core` | 滑轨 |
+| `.lh-switch__label` | 两侧文案 |
+| `.lh-switch__loading` | 加载 spinner |
+
+开启色 `var(--lh-primary-color)`，关闭色 `--lh-fill-color`（中性灰）。
+
+已知问题（「高度令牌专项」记录）：开关滑块的 `translate(-50%,-50%)` 在 base 与 keyframes 里**重复硬编码**，改尺寸时需两处同步。
+
+## 注意事项
+
+- **`aria-checked` 与视觉的一致性**：自定义控件的 `checked` 状态必须与 `getSwitchAria` 的输出同源，否则会出现「aria 说是开、看起来是关」。
+- **loading 态吞点击**：加载中点击不应切换值，UI 层的 click 处理要判 `disabled || loading`。
+- **文案的方向**：`activeText` 贴在开启侧（通常是右），`inactiveText` 贴在关闭侧；文案为空时样式会自动收起两侧空间。
+- switch 与 checkbox 的选择标准：**是否即时生效**。开关拨动即刻生效，复选框通常随表单提交。
+
+<FnPlayground module="switch" fn="getSwitchAria" params='{"state": {"checked": true, "disabled": false, "loading": false}}' />

@@ -1,0 +1,147 @@
+---
+title: checkbox —— 复选框
+description: 'isCheckboxChecked 用 Object.is 判定，toggleCheckboxValue 不可变切换'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+复选框是表单里最小的状态机：一个值在不在数组里。`core/checkbox` 只有两个函数，因为它把「勾选」抽象成了**集合运算**——复选框组的值是一个数组，勾选就是加元素，取消就是删元素。
+
+## 何时使用
+
+- 各端实现 `LhCheckbox` 与 `LhCheckboxGroup`（group 持有值数组，item 从中判定自身勾选态）。
+- 多选场景；二态开关用 `switch` 更贴切。
+- **不该用它**：单选用 `radio`；需要半选语义（父节点部分勾选）用 `tree` 的勾选级联。
+
+## 导入方式
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+import type { LhCheckboxState } from '@lh-ui/share/core/checkbox'
+```
+
+## 设计意图
+
+用 `Object.is` 判定而非 `includes` 的隐式等值，是因为复选框的值可能是任意类型（字符串、数字、甚至对象引用）。`includes` 对 NaN 返回 false，`Object.is(NaN, NaN)` 返回 true——虽然实际场景罕见，但集合语义应当一致。
+
+`toggleCheckboxValue` 是**不可变**的：先过滤掉同值项（去重），再按 `checked` 决定是否追加。这个顺序保证了**幂等**——重复调用同值同方向结果一致，不会在数组里出现重复元素。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `isCheckboxChecked` | `(values: unknown[], value: unknown) => boolean` | 布尔 | value 是否在数组中 |
+| `toggleCheckboxValue` | `(values: unknown[], value: unknown, checked: boolean) => unknown[]` | 新数组 | 不可变切换 |
+
+## 类型定义
+
+```ts
+export interface LhCheckboxState {
+  values: unknown[]
+  value: unknown
+  checked: boolean
+}
+```
+
+## 无障碍
+
+`core/checkbox` 不输出 aria 属性包——**强烈建议各端用原生 `<input type="checkbox">`**：原生元素自带 `aria-checked`、支持键盘操作、表单提交语义，是任何自定义控件的等价实现都难以完全复刻的。
+
+原生 checkbox 的 `indeterminate`（半选）态**只能通过 JS 设置**（没有对应 HTML 属性），这是 group 场景下 UI 层唯一需要处理的特殊点：
+
+```ts
+// 父复选框的半选态（如「全选」框）
+input.indeterminate = checkedCount > 0 && checkedCount < total
+```
+
+## 使用示例
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+
+isCheckboxChecked(['a', 'b'], 'b')   // true
+isCheckboxChecked(['a', 'b'], 'c')   // false
+
+toggleCheckboxValue(['a', 'b'], 'c', true)   // ['a', 'b', 'c']
+toggleCheckboxValue(['a', 'b', 'c'], 'b', false)  // ['a', 'c']
+toggleCheckboxValue(['a', 'b'], 'b', false)       // ['a']
+toggleCheckboxValue(['a'], 'a', true)             // ['a']（已存在，幂等）
+```
+
+```vue
+<!-- Vue3：LhCheckboxGroup -->
+<script setup>
+const model = defineModel<Array<string>>({ default: [] })
+const toggle = (value: string, checked: boolean) => {
+  model.value = toggleCheckboxValue(model.value, value, checked)
+}
+</script>
+
+<template>
+  <div class="lh-checkbox-group" :class="`lh-checkbox-group--${size}`">
+    <label
+      v-for="opt in options"
+      :key="String(opt.value)"
+      class="lh-checkbox"
+      :class="{
+        'lh-checkbox--checked': isCheckboxChecked(model, opt.value),
+        'lh-checkbox--disabled': disabled || opt.disabled,
+      }"
+    >
+      <span class="lh-checkbox__box">
+        <input
+          class="lh-checkbox__input"
+          type="checkbox"
+          :checked="isCheckboxChecked(model, opt.value)"
+          :disabled="disabled || opt.disabled"
+          @change="toggle(opt.value, ($event.target as HTMLInputElement).checked)"
+        />
+      </span>
+      <span class="lh-checkbox__label">{{ opt.label }}</span>
+    </label>
+  </div>
+</template>
+```
+
+```tsx
+// React
+const [values, setValues] = useState<string[]>([])
+return options.map((opt) => (
+  <label key={opt.value} className="lh-checkbox">
+    <input
+      type="checkbox"
+      checked={isCheckboxChecked(values, opt.value)}
+      onChange={(e) => setValues(toggleCheckboxValue(values, opt.value, e.target.checked))}
+    />
+    <span className="lh-checkbox__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp：<checkbox-group> + <checkbox> 是内置组件，change 事件直接给值数组；
+// 自定义勾选样式时用 .lh-checkbox__box 覆盖默认外观（非 h5 端注意 :checked 的响应性）
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-checkbox` | 基础类（label 包裹） |
+| `.lh-checkbox--checked` / `--indeterminate` / `--disabled` | 三态 |
+| `.lh-checkbox--{small\|large}` | 尺寸档 |
+| `.lh-checkbox__box` | 自定义勾选框（覆盖原生外观） |
+| `.lh-checkbox__input` | 原生 input（视觉隐藏，保留语义） |
+| `.lh-checkbox__label` | 文字 |
+| `.lh-checkbox-group` / `--{small\|large}` | 组容器与组尺寸 |
+
+对勾的定位是固定 `top: 2px / left: 5px`——**只在 16px 盒下正确**，这是「高度令牌专项」记录的待统一项（应改 50% 居中）。
+
+## 注意事项
+
+- **值的类型一致性**：`toggleCheckboxValue(['1'], 1, true)` 会得到 `['1', 1]`——字符串 `'1'` 与数字 `1` 是两个不同的值。后端给的 id 类型必须在 UI 层统一。
+- **空数组的语义**：`values: []` 是「都没选」，与 `values: undefined` 不同；group 的默认值应当是 `[]`。
+- **`checked` 参数的方向**：它是「目标态」而非「当前态」，`toggleCheckboxValue(v, x, false)` 一定移除 x，无论它原来在不在。
+- 大量选项时考虑 `virtual-list`；group 本身不做虚拟化。
+
+<FnPlayground module="checkbox" fn="toggleCheckboxValue" params='{"values": ["a", "b"], "value": "c", "checked": true}' />

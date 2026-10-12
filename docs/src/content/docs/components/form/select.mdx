@@ -1,0 +1,154 @@
+---
+title: select —— 下拉选择器
+description: 'findSelectOption 精确匹配、getSelectOptionId 确定性 id、combobox/listbox/option 三层无障碍属性包'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+下拉选择器是「触发器 + 浮层列表」模式的最简实现。`core/select` 管选项查找、确定性 option id 生成、以及 APG combobox 模式的三层无障碍属性包。**定位计算不在这里**——浮层的坐标由 `core/shared/popper` 负责（见 [popper](/core/popper)）。
+
+## 何时使用
+
+- 各端实现 `LhSelect`。
+- 单选场景；多选用级联或 checkbox-group。
+- **不该用它**：选项需要树形层级（用 `cascader`）、选项超过几百个（考虑 `virtual-list` 虚拟化）。
+
+## 导入方式
+
+```ts
+import {
+  findSelectOption,
+  getNextEnabledIndex,
+  getSelectOptionId,
+  getSelectTriggerAria,
+  getSelectListboxAria,
+  getSelectOptionAria,
+} from '@lh-ui/share/core/select'
+import type { LhSelectOption, LhSelectState } from '@lh-ui/share/core/select'
+```
+
+## 设计意图
+
+`getSelectOptionId(listboxId, index)` 的「确定性」是 APG combobox 模式能工作的前提：触发器用 `aria-activedescendant` 引用当前高亮项，两者必须指向**同一个 DOM id**。与其让 UI 层随手生成 id 再想办法同步，不如在 core 层规定 `${listboxId}-option-${index}`，两端都按这个规则取值。
+
+它的守卫同样重要：`listboxId` 为空、index 非整数、或 `index < 0`（-1 表示无高亮）时返回 **undefined**——undefined 的属性会被框架 v-bind 忽略，不会产生指向不存在元素的 `aria-activedescendant`。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `findSelectOption` | `(options: LhSelectOption[], value: unknown) => LhSelectOption \| undefined` | 选项 | 用 `Object.is` 精确匹配 value |
+| `getNextEnabledIndex` | `(options: LhSelectOption[], currentIndex: number, direction: 1 \| -1) => number` | 下标 | **@deprecated**，转调 `shared/keyboard.getNextListIndex` |
+| `getSelectOptionId` | `(listboxId: string \| undefined, index: number) => string \| undefined` | id | 确定性拼接，非法输入返回 undefined |
+| `getSelectTriggerAria` | `(options: { visible: boolean; listboxId?: string; highlightedIndex: number }) => LhAriaAttrs` | aria 属性包 | combobox 触发器 |
+| `getSelectListboxAria` | `(id?: string) => LhAriaAttrs` | aria 属性包 | listbox 容器 |
+| `getSelectOptionAria` | `(options: { listboxId?: string; index: number; selected: boolean; disabled?: boolean }) => LhAriaAttrs` | aria 属性包 | 单个选项 |
+
+## 类型定义
+
+```ts
+export interface LhSelectOption {
+  label: string
+  value: unknown
+  disabled?: boolean
+}
+
+export interface LhSelectState {
+  options: LhSelectOption[]
+  highlightedIndex: number
+}
+```
+
+## 无障碍
+
+三层属性包构成完整的 combobox 模式：
+
+```ts
+// 触发器：aria-haspopup="listbox" + aria-expanded + aria-controls
+getSelectTriggerAria({ visible: true, listboxId: 'my-listbox', highlightedIndex: 2 })
+// { role: 'combobox', 'aria-expanded': true, 'aria-controls': 'my-listbox',
+//   'aria-haspopup': 'listbox', 'aria-activedescendant': 'my-listbox-option-2' }
+
+// 浮层：role="listbox" + id（与触发器 aria-controls 对应）
+getSelectListboxAria('my-listbox')  // { role: 'listbox', id: 'my-listbox' }
+
+// 选项：role="option" + id + aria-selected
+getSelectOptionAria({ listboxId: 'my-listbox', index: 2, selected: true })
+// { role: 'option', id: 'my-listbox-option-2', 'aria-selected': true }
+```
+
+键盘交互的完整闭环（UI 层实施，core 提供算法）：ArrowDown/Up 移动 `highlightedIndex`（用 `shared/keyboard.getNextListIndex`，首尾循环、跳过 disabled），Enter 选中，Esc 关闭。**视觉高亮必须与 `highlightedIndex` 同源**，否则会出现「aria 指向 A、眼睛看到 B」。
+
+## 使用示例
+
+```ts
+import { findSelectOption, getSelectOptionId, getSelectTriggerAria } from '@lh-ui/share/core/select'
+
+const options = [
+  { label: '青花瓷', value: 'cerblue' },
+  { label: '水墨', value: 'shuimo', disabled: true },
+]
+findSelectOption(options, 'cerblue')   // { label: '青花瓷', value: 'cerblue' }
+findSelectOption(options, 'nope')      // undefined
+getSelectOptionId('lb', 0)             // 'lb-option-0'
+getSelectOptionId('lb', -1)            // undefined（无高亮）
+getSelectOptionId(undefined, 0)        // undefined
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-select', `lh-select--${size}`, { 'lh-select--open': visible, 'lh-select--disabled': disabled }]">
+  <button
+    class="lh-select__trigger"
+    v-bind="getSelectTriggerAria({ visible, listboxId, highlightedIndex })"
+    @click="toggle"
+  >
+    <span class="lh-select__value" :class="{ 'lh-select__value--placeholder': !selected }">
+      {{ selected ? selected.label : placeholder }}
+    </span>
+    <LhIcon class="lh-select__arrow" name="more" :size="12" />
+  </button>
+  <div v-if="visible" :id="listboxId" class="lh-select__dropdown" v-bind="getSelectListboxAria(listboxId)">
+    <div
+      v-for="(opt, i) in options"
+      :key="i"
+      class="lh-select__option"
+      :class="{ 'lh-select__option--highlighted': i === highlightedIndex, 'lh-select__option--selected': i === selectedIdx, 'lh-select__option--disabled': opt.disabled }"
+      v-bind="getSelectOptionAria({ listboxId, index: i, selected: i === selectedIdx, disabled: opt.disabled })"
+      @click="choose(opt)"
+    >{{ opt.label }}</div>
+  </div>
+</div>
+```
+
+```tsx
+// React：visible 状态 + useRef 持有 listboxId（用 useId 生成稳定 id）
+```
+
+```ts
+// uniapp：浮层用 view 绝对定位；aria-activedescendant 在非 h5 端不支持，
+// 键盘导航降级为只移动焦点（focus 项），读屏靠 focus 事件播报
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-select` | 基础类 |
+| `.lh-select--{small\|large}` / `--disabled` / `--open` | 状态修饰 |
+| `.lh-select__trigger` | 触发器按钮 |
+| `.lh-select__value` / `--placeholder` | 显示值 / 占位态 |
+| `.lh-select__arrow` / `__clear` / `__actions` | 箭头 / 清除 / 操作区 |
+| `.lh-select__dropdown` / `--teleported` | 浮层（teleported 表示传送到 body） |
+| `.lh-select__option` / `--highlighted` / `--selected` / `--disabled` | 选项四态 |
+| `.lh-select__empty` | 无选项占位 |
+| `.lh-select-fade-*` | 浮层出入过渡（Vue3 类名，Vue2 端用 mixin 对齐） |
+
+## 注意事项
+
+- **`Object.is` 而非 `===`**：`findSelectOption` 用 `Object.is`，能正确处理 `NaN` 与 `-0` 这类边界（虽然实际选项值很少用到）。
+- **`getNextEnabledIndex` 已废弃**：实现已收敛到 `shared/keyboard.getNextListIndex`，本函数仅转调，保留旧签名。新代码直接引内核。
+- **id 稳定性**：`listboxId` 在组件生命周期内不能变（否则 `aria-activedescendant` 指向旧 id），用各端的稳定 id 生成。
+- **传送门（teleport）**：浮层传送到 body 时，`aria-controls` 仍然有效（同文档内），但**焦点管理**要小心——选项点击后焦点应回到触发器。
+
+<FnPlayground module="select" fn="findSelectOption" params='{"options": [{"label": "青花瓷", "value": "cerblue"}, {"label": "水墨", "value": "shuimo"}], "value": "cerblue"}' />

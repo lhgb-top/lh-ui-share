@@ -1,0 +1,145 @@
+---
+title: input —— 输入框
+description: 'getWordCount 字数统计、clampString 截断、getInputAria 属性包，尺寸内联样式按档映射'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+输入框是表单的基石。`core/input` 管四件事：字数统计的显示与计算、超长输入的截断、按尺寸档的内联样式、以及输入框的无障碍属性包。它刻意**不碰**校验（那是 `core/form` 的职责）和防抖（那是 UI 层响应式的事）。
+
+## 何时使用
+
+- 各端实现 `LhInput`（含 textarea 变体：`--textarea` 修饰类）。
+- 需要在自定义输入控件上复用同一套字数统计与 aria 属性。
+- **不该用它**：数字输入用 `core/input-number`（有步进与钳制），时间用 `core/time-picker`，日期用 `core/date-picker`。
+
+## 导入方式
+
+```ts
+import {
+  getWordCount,
+  shouldShowWordLimit,
+  clampString,
+  getInputStyle,
+  getInputAria,
+} from '@lh-ui/share/core/input'
+import type { LhInputState } from '@lh-ui/share/core/input'
+```
+
+## 设计意图
+
+`getWordCount` 的两个边界都来自真实的跨端差异：
+
+- `value` 为 undefined 时计数兜底为 0——React/uniapp 在挂载前受控值可能短暂为 undefined，`undefined.length` 会直接崩。
+- `maxlength` 为 undefined 时上限显示 `∞`，而不是 `'undefined'`。这个符号让「没设上限」在视觉上明确，而不是看起来像 bug。
+
+`getInputStyle` 的尺寸样式是**内联的**而非类名：lh-ui 的输入框支持 ConfigProvider 全局尺寸，而全局尺寸的切换不需要重新算类名——内联样式随 props 重算即可。注意这里的尺寸映射与按钮不同（按钮走类名），是各组件历史演化的结果。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getWordCount` | `(state: Pick<LhInputState, 'value' \| 'maxlength'>) => string` | `"已用/上限"` | 字数统计串 |
+| `shouldShowWordLimit` | `(state: Pick<LhInputState, 'maxlength' \| 'minlength'>) => boolean` | 布尔 | 设了 maxlength 或 minlength 就显示统计 |
+| `clampString` | `(value: string, maxlength?: number) => string` | 字符串 | 超长截断 |
+| `getInputStyle` | `(size: string) => Record<string, string>` | 内联样式 | 按尺寸档映射 padding/字号 |
+| `getInputAria` | `(options: { label?: string; describedby?: string; invalid?: boolean; required?: boolean }) => LhAriaAttrs` | aria 属性包 | 按需输出四属性 |
+
+`getInputStyle` 的档位映射：`mini` padding `4px 8px` / 字号 12，`small` `6px 10px` / 12，`medium` `8px 12px` / 14，`large` `12px 16px` / 16；未知 size 兜底 `medium`。
+
+## 类型定义
+
+```ts
+export interface LhInputState {
+  value: string
+  size: LhComponentSize
+  maxlength: number | undefined
+  minlength: number | undefined
+}
+```
+
+## 无障碍
+
+`getInputAria` 的四个属性都是**按需挂载**（真值才输出，假值不出现键）：
+
+```ts
+getInputAria({ label: '用户名', required: true })
+// { 'aria-label': '用户名', 'aria-required': true }
+
+getInputAria({ invalid: true, describedby: 'lh-form-error-username' })
+// { 'aria-invalid': true, 'aria-describedby': 'lh-form-error-username' }
+```
+
+与 `core/form` 的联动是关键用法：`LhFormItem` 渲染错误提示元素（id 由 `getFormFieldErrorId(prop)` 生成），把该 id 通过 `describedby` 传进来，读屏软件就会播报「无效输入，错误是……」。见 [form](/components/form/form)。
+
+## 使用示例
+
+```ts
+import { getWordCount, clampString, getInputAria } from '@lh-ui/share/core/input'
+
+getWordCount({ value: 'hello', maxlength: 10 })   // '5/10'
+getWordCount({ value: 'hello', maxlength: undefined })  // '5/∞'
+getWordCount({ value: undefined, maxlength: 10 })       // '0/10'
+clampString('abcdef', 3)   // 'abc'
+clampString('abcdef')      // 'abcdef'（无上限原样返回）
+getInputAria({ label: '搜索' })  // { 'aria-label': '搜索' }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-input', `lh-input--${size}`, { 'lh-input--textarea': type === 'textarea' }]">
+  <div class="lh-input__wrapper">
+    <input
+      class="lh-input__inner"
+      :style="getInputStyle(size)"
+      v-bind="getInputAria({ label, describedby, invalid: !!error, required })"
+    />
+  </div>
+  <span v-if="shouldShowWordLimit({ maxlength, minlength })" class="lh-input__count">
+    {{ getWordCount({ value, maxlength }) }}
+  </span>
+</div>
+```
+
+```tsx
+// React
+const aria = getInputAria({ label, describedby, invalid: !!error, required })
+return (
+  <div className={`lh-input lh-input--${size}`}>
+    <div className="lh-input__wrapper">
+      <input className="lh-input__inner" style={getInputStyle(size)} {...aria} />
+    </div>
+  </div>
+)
+```
+
+```ts
+// uniapp：<input> 是内置组件，class 与 style 绑定都支持；
+// textarea 用 <textarea> 组件，字数统计在非 h5 端由组件自带属性 count 接管
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-input` | 基础类 |
+| `.lh-input--{mini\|small\|medium\|large}` | 尺寸档 |
+| `.lh-input--textarea` | textarea 变体 |
+| `.lh-input--disabled` / `.lh-input--prefix` / `.lh-input--suffix` | 状态与插槽 |
+| `.lh-input__wrapper` | 包裹层（边框、聚焦态） |
+| `.lh-input__wrapper--focused` / `--disabled` / `--has-label` | 包裹层状态 |
+| `.lh-input__inner` | 原生输入元素 |
+| `.lh-input__label` / `--float` | 浮动标签（material 风格） |
+| `.lh-input__prefix` / `__suffix` | 前后插槽（图标、按钮） |
+| `.lh-input__clear` / `__count` | 清除按钮 / 字数统计 |
+
+聚焦边框色走 `var(--lh-primary-color)`，错误态 `var(--lh-danger-color)`。
+
+## 注意事项
+
+- **`--has-label` 的非对称 padding**：带浮动标签时 `padding-top` 是 16px（给标签留位），其余档位对称。这是「高度令牌专项」记录的待统一项。
+- **控件高度不统一**：input 37px / select 32px / cascader 27→32px 等，根因是 `var.scss` 缺 `--lh-control-height-*` 令牌（同上，待后续 changeset）。
+- `maxlength` 的「字符」语义：`clampString` 用 `slice`，按 UTF-16 码元计数；emoji 增补平面字符会计 2。UI 层若需按码点计数自行处理。
+- 不要用 `getInputStyle` 的返回值覆盖 `sx`——sx 优先级更高，两者应合并而非覆盖。
+
+<FnPlayground module="input" fn="getWordCount" params='{"state": {"value": "青花瓷", "maxlength": 10}}' />

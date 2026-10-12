@@ -1,0 +1,171 @@
+---
+title: segmented —— 分段控制器
+description: 'normalizeSegmentedOptions 选项规范化、moveSegmentedIndex 键盘导航、radiogroup 语义属性包'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+分段控制器是**紧凑版单选**：把选项平铺成一带高亮的按钮组，选中项用一个滑动块标注。相比 radio 组它省垂直空间、视觉更现代；相比 select 它把所有选项暴露出来，少一次点击。`core/segmented` 管的是选项的两种写法归一、整组禁用判定、键盘导航、以及 APG radiogroup 语义。
+
+## 何时使用
+
+- 各端实现 `LhSegmented`：视图切换（列表/网格/卡片）、时间范围（日/周/月）、紧凑型枚举设置。
+- 选项数少（2~5）且**互斥**的场景。
+- **不该用它**：选项超过 6 个（换 select 或 radio 组）；多选（用 checkbox 组）；选项文案很长（会换行很难看）。
+
+## 导入方式
+
+```ts
+import {
+  normalizeSegmentedOptions,
+  isSegmentedDisabled,
+  getSegmentedClassNames,
+  moveSegmentedIndex,
+  getSegmentedAria,
+  getSegmentedItemAria,
+} from '@lh-ui/share/core/segmented'
+import type {
+  LhSegmentedInput,
+  LhSegmentedNormalized,
+  LhSegmentedState,
+} from '@lh-ui/share/core/segmented'
+```
+
+## 设计意图
+
+`normalizeSegmentedOptions` 接受两种写法——`['日', '周', '月']` 或 `[{ label: '日', value: 'day' }]`——归一为统一形态。这是「输入宽容、内部严格」的取舍：UI 库的 props 越宽容，用户的心智负担越低；内部统一成 `LhSegmentedNormalized` 后，后续的禁用判定、导航、渲染都只面对一种结构。
+
+`isSegmentedDisabled(options, disabled)` 做的是**两级禁用的合并**：组级 `disabled` 或任一选项自身 `disabled` 都会让整组不可用——因为分段控制器的选中块是联动滑动的，存在「半禁用」组会让滑块卡住。
+
+`moveSegmentedIndex` 委托给共享内核的 `getNextListIndex`（`core/shared/keyboard`），跳过禁用项做循环导航，空数组返回 current。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `normalizeSegmentedOptions` | `(options: LhSegmentedInput[]) => LhSegmentedNormalized[]` | 规范化选项 | 字符串快捷写法归一 |
+| `isSegmentedDisabled` | `(options: LhSegmentedNormalized[], disabled?: boolean) => boolean` | 是否禁用 | 组级 + 选项级合并 |
+| `getSegmentedClassNames` | `(state: LhSegmentedState) => string[]` | 类名 | disabled/block |
+| `moveSegmentedIndex` | `(options, current: number, direction: 1 \| -1) => number` | 目标索引 | 跳过禁用项循环 |
+| `getSegmentedAria` | `(options?: { disabled?; label? }) => LhAriaAttrs` | aria 属性包 | radiogroup 语义 |
+| `getSegmentedItemAria` | `(options: { selected; disabled? }) => LhAriaAttrs` | aria 属性包 | radio 语义 |
+
+## 类型定义
+
+```ts
+export type LhSegmentedValue = string | number
+
+export interface LhSegmentedOption {
+  label: string
+  value: LhSegmentedValue
+  disabled?: boolean
+}
+
+/** 输入选项（字符串快捷写法或对象） */
+export type LhSegmentedInput = LhSegmentedValue | LhSegmentedOption
+
+export interface LhSegmentedNormalized {
+  label: string
+  value: LhSegmentedValue
+  disabled: boolean
+}
+
+export interface LhSegmentedState {
+  disabled: boolean
+  block: boolean   // 撑满父宽（等宽分段）
+}
+```
+
+## 无障碍
+
+分段控制器在无障碍层面是**单选组**：容器 `role="radiogroup"`，每个分段项 `role="radio"` + `aria-checked`。整套语义由两个属性包函数提供：
+
+```ts
+getSegmentedAria({ disabled: false, label: '视图' })
+// { role: 'radiogroup', 'aria-label': '视图' }
+
+getSegmentedItemAria({ selected: true })
+// { role: 'radio', 'aria-checked': true }
+
+getSegmentedItemAria({ selected: false, disabled: true })
+// { role: 'radio', 'aria-checked': false, 'aria-disabled': true }
+```
+
+- 容器若无可见 label，用 `label` 参数提供 `aria-label`（可达名称）。
+- 键盘交互（UI 层）：←/↑ 与 →/↓ 用 `moveSegmentedIndex` 移动并直接选中（radio 模式是「移动即选中」，不是 button 模式的「移动 + Enter」）。
+- `roving tabindex`：只有选中项（或第一项）`tabindex="0"`，其余 `-1`，避免 Tab 在组内逐项停留。
+
+## 使用示例
+
+```ts
+import { normalizeSegmentedOptions, moveSegmentedIndex, isSegmentedDisabled } from '@lh-ui/share/core/segmented'
+
+normalizeSegmentedOptions(['日', '周', '月'])
+// [{ label: '日', value: '日', disabled: false }, ...]
+
+normalizeSegmentedOptions([{ label: '日', value: 'day' }, '周'])
+// [{ label: '日', value: 'day', disabled: false }, { label: '周', value: '周', disabled: false }]
+
+const opts = normalizeSegmentedOptions([
+  { label: '日', value: 'day' },
+  { label: '周', value: 'week', disabled: true },
+  { label: '月', value: 'month' },
+])
+moveSegmentedIndex(opts, 0, 1)   // 2（跳过禁用的 week）
+moveSegmentedIndex(opts, 2, 1)   // 0（循环）
+moveSegmentedIndex([], 0, 1)     // 0（空数组）
+isSegmentedDisabled(opts, false) // true（week 被禁用 → 整组禁用）
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSegmentedClassNames({ disabled, block })" v-bind="getSegmentedAria({ disabled, label })">
+  <div class="lh-segmented__indicator" :style="{ transform: `translateX(${index * 100}%)`, width: `${100 / normalized.length}%` }" />
+  <button
+    v-for="(opt, i) in normalized"
+    :key="String(opt.value)"
+    type="button"
+    class="lh-segmented__item"
+    :class="{ 'lh-segmented__item--active': i === index, 'lh-segmented__item--disabled': opt.disabled }"
+    :tabindex="i === index ? 0 : -1"
+    v-bind="getSegmentedItemAria({ selected: i === index, disabled: opt.disabled })"
+    @click="onSelect(i)"
+    @keydown.left.prevent="onMove(-1)"
+    @keydown.right.prevent="onMove(1)"
+  >
+    {{ opt.label }}
+  </button>
+</div>
+```
+
+```tsx
+// React：indicator 用 CSS transition 滑动；onMove 里 onChange(normalized[moveSegmentedIndex(normalized, index, dir)].value)
+```
+
+```ts
+// uniapp：<view> + <view> 遍历；非 h5 端键盘事件不可用，触摸直接点选
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-segmented` | 基础类（圆角容器 + 内边距） |
+| `.lh-segmented--disabled` | 禁用 |
+| `.lh-segmented--block` | 撑满父宽，分段等宽 |
+| `.lh-segmented__indicator` | 滑动高亮块（绝对定位 + transform） |
+| `.lh-segmented__item` | 单个分段项 |
+| `.lh-segmented__item--active` | 选中项（文字主色） |
+| `.lh-segmented__item--disabled` | 禁用项 |
+
+容器底色 `--lh-fill-color`（浅灰凹槽），indicator `--lh-bg-color`（白）+ 阴影，选中文字 `--lh-primary-color`。
+
+## 注意事项
+
+- **indicator 的定位**：UI 层用 `transform: translateX(index * 100%)` + `width: 100/count%`；count 必须是**规范化后**的长度（`normalizeSegmentedOptions` 的结果），否则选项增减时滑块错位。
+- **字符串写法与对象写法的 value**：字符串写法下 `value === label`；UI 层 `v-model` 绑的是 `value` 而非 label，两种写法混用时要注意取值来源。
+- **整组禁用的判定时机**：`isSegmentedDisabled` 依赖 options，选项动态变化时要重算，否则禁用态不更新。
+- **与 radio 的取舍**：分段控制器的选中块是**视觉滑动**的，动画依赖 JS 定位 indicator；若目标端不支持 transform 动画（部分小程序），退化为 radio 组更稳妥。
+- **空 options**：`normalizeSegmentedOptions([])` 返回 `[]`，`moveSegmentedIndex` 返回 current——UI 层要处理空态，别渲染出空的凹槽。
+
+<FnPlayground module="segmented" fn="moveSegmentedIndex" params='{"options": [{"label": "日", "value": "day", "disabled": false}, {"label": "周", "value": "week", "disabled": true}, {"label": "月", "value": "month", "disabled": false}], "current": 0, "direction": 1}' />
