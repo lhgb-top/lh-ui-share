@@ -1,0 +1,165 @@
+---
+title: popconfirm —— 气泡确认框
+description: '二次确认的轻量方案：alertdialog 语义、warning 默认语气、确认/取消按钮的事件契约'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+删除、提交、发布——这类「做了就难撤销」的操作需要用户再确认一次。`dialog` 太重（模态、抢焦点、遮罩），`popconfirm` 就地弹一个小气泡：一句话 + 两个按钮，确认完立刻消失。它是**交互重量刚好卡在 tooltip 与 dialog 之间**的组件。
+
+## 何时使用
+
+- 各端实现 `<LhPopconfirm>`：删除行、撤销操作、清空数据、提交订单。
+- **轻量、就地、可撤销余地小**的二次确认。
+- **不该用它**：后果严重到需要用户全神贯注的（用 `dialog`——模态遮罩强制聚焦）；只是提示信息（用 `tooltip` / `message`）；需要填写理由或勾选项的确认（用 `dialog` 带表单）。
+
+## 导入方式
+
+```ts
+import {
+  LH_POPCONFIRM_TYPE_DEFAULT,
+  LH_POPCONFIRM_PLACEMENT_DEFAULT,
+  getPopconfirmIconName,
+  getPopconfirmClass,
+  getPopconfirmTriggerAria,
+  getPopconfirmPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popconfirm'
+import type { LhPopconfirmType, LhPopconfirmTrigger, LhPopconfirmState } from '@lh-ui/share/core/popconfirm'
+```
+
+## 设计意图
+
+**默认语气是 warning 而非 info**：`LH_POPCONFIRM_TYPE_DEFAULT = 'warning'`——确认框出现基本都意味着「有风险」，默认就该是警示语气。info 留给纯告知性确认（「确定标记为已读？」），danger 留给不可逆操作（「删除后不可恢复」）。
+
+**三种语气、三个图标**：info → `info`、warning → `warning`、danger → `error`（图标名用 error 而非 danger——图标库的命名是 error，这是跨命名的映射）。未知 type 回退 warning。
+
+**`role="alertdialog"` 而非 popover 的 `"dialog"`**：alertdialog 是 ARIA 里「需要用户立即响应的对话框」——读屏软件会**优先播报**（类似 alert 的打断性，但要求用户做选择）。这比 dialog 更贴合「等你拍板」的语义。
+
+**确认/取消的事件契约在 UI 层**：core 只出类名、图标、aria 和延迟；`onConfirm` / `onCancel` 事件、按钮文案、loading 态都在 UI 层——因为它们涉及组件树通信（emit），core 不碰框架 API。
+
+**延迟跟随 popover**：`getDefaultDelay` 的默认是 200/100，与 popover 一致——确认气泡同样允许 hover 触发，指针要能走进去。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getPopconfirmIconName` | `(type: LhPopconfirmType) => string` | 图标名 | 未知 type 回退 warning |
+| `getPopconfirmClass` | `(state: { type, placement, popperClass? }) => string[]` | 类名 | 语气 + 方位 |
+| `getPopconfirmTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | aria 包 | expanded/controls/haspopup |
+| `getPopconfirmPopperAria` | `(id?) => LhAriaAttrs` | aria 包 | role=alertdialog |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | 延迟 | 默认 200 / 100 |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | 是否允许 | disabled 时拦截 |
+
+常量：`LH_POPCONFIRM_TYPE_DEFAULT = 'warning'`、`LH_POPCONFIRM_PLACEMENT_DEFAULT = 'top'`。
+
+## 类型定义
+
+```ts
+export type LhPopconfirmType = 'info' | 'warning' | 'danger'
+export type LhPopconfirmTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopconfirmState {
+  type?: LhPopconfirmType
+  trigger?: LhPopconfirmTrigger
+  placement?: LhPlacement
+  visible?: boolean
+  disabled?: boolean
+  showIcon?: boolean             // 默认 true
+}
+```
+
+## 无障碍
+
+```ts
+getPopconfirmPopperAria('pc-1')
+// { role: 'alertdialog', id: 'pc-1' }
+getPopconfirmTriggerAria(true, 'pc-1')
+// { 'aria-expanded': true, 'aria-controls': 'pc-1', 'aria-haspopup': 'true' }
+```
+
+- **alertdialog 的播报**：读屏软件遇到 alertdialog 会立即播报其内容（aria-labelledby 或内部文本），**用户不需要主动去读**——这是它比 dialog 强制性更强的地方，符合「等你确认」的意图。
+- **按钮要有明确文案**：「确定 / 取消」优于「OK / NO」或图标按钮。`danger` 语气下确认按钮文案建议写清后果（「删除」而非「确定」）。
+- **取消是安全方向**：Enter 默认触发**确认**还是**取消**？常见做法是初始焦点落在**取消**按钮上（Tab 一回车就安全退出）——破坏性操作不要把焦点预设到确认键。这是 UI 层的决定，core 不管。
+- **Esc = 取消**：`canCloseOnEscape` 允许时，Esc 应触发 onCancel 而非单纯关闭——语义上「关闭确认框」就是「不确认」。
+- **图标 aria-hidden**：语义图标（warning/error）已由文案传达，图标本身装饰化，避免读屏重复播报「警告」。
+
+## 使用示例
+
+```ts
+import { getPopconfirmIconName, getPopconfirmClass, LH_POPCONFIRM_TYPE_DEFAULT } from '@lh-ui/share/core/popconfirm'
+
+getPopconfirmIconName('info')     // 'info'
+getPopconfirmIconName('warning')  // 'warning'
+getPopconfirmIconName('danger')   // 'error'
+getPopconfirmIconName('other' as never)  // 'warning'（兜底）
+
+getPopconfirmClass({ type: 'danger', placement: 'top' })
+// ['lh-popconfirm__popper', 'lh-popconfirm__popper--danger', 'lh-popconfirm__popper--top']
+
+LH_POPCONFIRM_TYPE_DEFAULT  // 'warning'
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopconfirm
+    title="删除后不可恢复，确定删除该行？"
+    type="danger"
+    confirm-text="删除"
+    cancel-text="取消"
+    @confirm="remove(row)"
+  >
+    <template #reference>
+      <LhButton type="danger" size="small">删除</LhButton>
+    </template>
+  </LhPopconfirm>
+</template>
+
+<script setup>
+async function remove(row) {
+  // onConfirm 触发；组件内部可支持 confirmLoading：异步完成后才关闭气泡
+  await api.delete(row.id)
+  LhMessage.success('已删除')
+}
+</script>
+```
+
+```ts
+// 异步确认：confirm 期间禁用按钮 + 显示 loading，失败时保持气泡打开
+// 这是 UI 层逻辑：core 不持有异步状态
+```
+
+```tsx
+// React：onConfirm/onCancel 由 props 传入；受控 visible 配合异步确认
+```
+
+```ts
+// uniapp：<view> 气泡；按钮点击态用 hover-class；事件契约同模型
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-popconfirm__popper` | 气泡容器 |
+| `.lh-popconfirm__popper--{info\|warning\|danger}` | 语气（图标色 + 确认按钮色） |
+| `.lh-popconfirm__popper--{top\|bottom\|…}` | 方位 |
+| `.lh-popconfirm__icon` | 语气图标 |
+| `.lh-popconfirm__title` | 标题文案 |
+| `.lh-popconfirm__actions` | 按钮区（右对齐） |
+
+确认按钮颜色随语气：danger 用 `--lh-danger-color`，warning 用 `--lh-warning-color`，info 用 `--lh-primary-color`。
+
+## 注意事项
+
+- **标题写清后果**：「确定删除吗？」是坏文案（没说后果）；「删除后不可恢复，确定删除该行？」是好文案。这是 popconfirm 体验的核心。
+- **不要嵌套**：popconfirm 里再套 popconfirm 会让用户疑惑当前在确认哪一层。需要多步确认用 dialog。
+- **触发器是禁用按钮时**：`disabled` 的按钮不触发事件（原生限制），popconfirm 打不开——业务层要自行处理（包一层非禁用元素，或禁用时直接不渲染）。
+- **异步确认的关闭时机**：confirm 处理中应禁用两个按钮 + 遮罩防重复点击；失败时**保持气泡打开**并提示错误，成功才关闭。直接在 onConfirm 里同步关气泡是常见 bug。
+- **与 message 的配合**：确认完成后用 `message` 给成功反馈（「已删除」），两者是「确认 → 执行 → 反馈」的标准链路。
+- **移动端 hover 触发**：同 popover，触屏无 hover。跨端默认用 click 触发。
+- **`role="alertdialog"` 不含按钮的隐式语义**：按钮区要渲染成真正的 `<button>`（不是 div + onclick），键盘用户才能操作。
+
+<FnPlayground module="popconfirm" fn="getPopconfirmIconName" params='{"type": "danger"}' />

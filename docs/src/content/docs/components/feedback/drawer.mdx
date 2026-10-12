@@ -1,0 +1,177 @@
+---
+title: drawer —— 抽屉
+description: 'normalizeDrawerSize 尺寸归一、四方向面板样式、canDrawerClose 逃逸闸门、与 dialog 的语义差别'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+抽屉是从屏幕边缘滑出的面板。它与对话框的差别不在代码，在**使用语义**：对话框是「打断、必须处理」，抽屉是「侧滑展示、可随时离开」。所以抽屉默认不圈焦点、不锁滚动（可配），遮罩也可点击关闭或干脆不显示。
+
+## 何时使用
+
+- 各端实现 `LhDrawer`：详情侧滑、筛选面板、多步表单分步、移动端全屏面板。
+- 需要侧边滑出、内容比对话框更长的场景。
+- **不该用它**：需要强制处理的确认（用 `dialog`）；瞬时提示（用 `message`）；纯文本提示（用 `tooltip`）。
+
+## 导入方式
+
+```ts
+import {
+  LH_DRAWER_DIRECTION_DEFAULT,
+  LH_DRAWER_SIZE_DEFAULT,
+  normalizeDrawerSize,
+  getDrawerPanelStyle,
+  getDrawerClass,
+  canDrawerClose,
+  shouldDrawerTrapFocus,
+  getDrawerAria,
+} from '@lh-ui/share/core/drawer'
+import type { LhDrawerDirection, LhDrawerState } from '@lh-ui/share/core/drawer'
+```
+
+## 设计意图
+
+**`canDrawerClose` 的默认值与 dialog 对称但不同**：
+
+- `maskClosable` 默认 **false**——抽屉常承载筛选或多步表单，误触遮罩丢失状态。
+- `closeOnEsc` 默认 **true**——同 dialog，留键盘逃生口。
+
+注释记录了一段历史：`closeOnEsc` 此前只在 state 中声明、logic 从不读取，**逃逸闸门形同虚设**；补齐为可计算函数后 Esc 才真正受该开关控制。这类「props 声明了但 logic 没消费」的缺口是状态模型最常见的隐性 bug。
+
+**`shouldDrawerTrapFocus` 的命名带组件前缀**：它与 dialog 的 `shouldTrapFocus` 同签名不同语义（state 字段名不同：`modelValue` vs `visible`）。star 聚合导出时同名二义会被 TS 静默丢弃，故按本仓约定显式区分（对齐 `getDefaultDelay → getPopconfirmDefaultDelay` 的处理）。
+
+**尺寸的方向感知**：`getDrawerPanelStyle` 按方向把 size 作用于 width（left/right）或 height（top/bottom）——这是「size 一个 prop 表达两种维度」的取舍，比 `width` / `height` 两个 prop 更简洁。
+
+**默认值常量**：`LH_DRAWER_DIRECTION_DEFAULT = 'right'`、`LH_DRAWER_SIZE_DEFAULT = '30%'`，供 UI 层的 `withDefaults` / defaultProps 引用，保证三端一致。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `normalizeDrawerSize` | `(size: string \| number \| undefined) => string` | 尺寸字符串 | 数字 → px，空值 → 默认 |
+| `getDrawerPanelStyle` | `(direction, size?) => Record<string, string>` | 样式 | 方向决定 width/height |
+| `getDrawerClass` | `(state: { direction }) => string[]` | 类名 | 方向修饰 |
+| `canDrawerClose` | `(state, reason: 'maskClick' \| 'escape') => boolean` | 是否允许关 | 逃逸闸门 |
+| `shouldDrawerTrapFocus` | `(state: { modelValue, lockScroll }) => boolean` | 是否圈焦 | 决策（不碰 DOM） |
+| `getDrawerAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | aria 属性包 | dialog 语义 |
+
+## 类型定义
+
+```ts
+export type LhDrawerDirection = 'right' | 'left' | 'top' | 'bottom'
+
+export interface LhDrawerState {
+  direction?: LhDrawerDirection
+  size?: string | number
+  modelValue?: boolean
+  title?: string
+  maskClosable?: boolean
+  showClose?: boolean
+  lockScroll?: boolean
+  closeOnEsc?: boolean
+}
+
+export const LH_DRAWER_DIRECTION_DEFAULT: LhDrawerDirection = 'right'
+export const LH_DRAWER_SIZE_DEFAULT = '30%'
+```
+
+## 无障碍
+
+抽屉在无障碍层面**仍是 dialog**（APG 没有专门的 drawer 模式）：
+
+```ts
+getDrawerAria({ id: 'lh-drawer-1', titleId: 'lh-drawer-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-drawer-1', 'aria-labelledby': 'lh-drawer-title' }
+```
+
+- 注意 `aria-modal: true` 是**无条件输出**的——即使 UI 层没显示遮罩、没圈焦点。若你的抽屉是非模态的（不挡背景），UI 层应改用 `aria-modal: false` 或别的角色，别让读屏软件误以为背景不可达。
+- 焦点管理的取舍：模态抽屉（`lockScroll` 且有遮罩）应该圈焦点；非模态抽屉（无遮罩、可同时操作背景）**不应该圈**——`shouldDrawerTrapFocus` 返回 false，UI 层不启用 focus-trap。
+- **滑动手势与键盘**：移动端从边缘右滑关闭是手势交互，键盘等价物是 Esc（`canDrawerClose` 的 `escape` 分支）。两者必须同时可用，否则键盘用户无法关闭。
+- top/bottom 方向的抽屉在移动端应铺满宽度，`aria-modal` 与焦点圈照常。
+
+## 使用示例
+
+```ts
+import { normalizeDrawerSize, getDrawerPanelStyle, canDrawerClose } from '@lh-ui/share/core/drawer'
+
+normalizeDrawerSize(300)      // '300px'
+normalizeDrawerSize('50%')    // '50%'
+normalizeDrawerSize(undefined) // '30%'（默认）
+normalizeDrawerSize('')       // '30%'
+
+getDrawerPanelStyle('right', 300)   // { width: '300px' }
+getDrawerPanelStyle('bottom', '40%') // { height: '40%' }
+getDrawerPanelStyle('left')          // { width: '30%' }
+
+canDrawerClose({ maskClosable: false, closeOnEsc: true }, 'maskClick')  // false
+canDrawerClose({ maskClosable: false, closeOnEsc: true }, 'escape')     // true
+canDrawerClose({}, 'escape')   // true（默认可 Esc 关）
+canDrawerClose({}, 'maskClick') // false（默认不可点遮罩关）
+
+getDrawerClass({ direction: 'right' })  // ['lh-drawer', 'lh-drawer--right']
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-drawer-fade">
+    <div v-if="visible" :class="getDrawerClass({ direction })">
+      <div v-if="showMask" class="lh-drawer__mask" @click="onMaskClick" />
+      <transition :name="`lh-drawer-slide-${direction}`">
+        <div
+          v-if="visible"
+          class="lh-drawer__panel"
+          :class="`lh-drawer__panel--${direction}`"
+          :style="getDrawerPanelStyle(direction, size)"
+          v-bind="getDrawerAria({ id: drawerId, titleId })"
+        >
+          <header class="lh-drawer__header">
+            <h3 class="lh-drawer__title" :id="titleId">{{ title }}</h3>
+            <button v-if="showClose" type="button" class="lh-drawer__close" aria-label="关闭" @click="close">✕</button>
+          </header>
+          <div class="lh-drawer__body"><slot /></div>
+          <footer v-if="$slots.footer" class="lh-drawer__footer"><slot name="footer" /></footer>
+        </div>
+      </transition>
+    </div>
+  </transition>
+</teleport>
+```
+
+```tsx
+// React：四个方向各一个 slide transition；方向类名驱动 transform 的起点
+// right: translateX(100%) → 0；bottom: translateY(100%) → 0
+```
+
+```ts
+// uniapp：fixed + transform 动画；边缘滑动关闭用 @touchstart/@touchmove/@touchend 自行判定
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-drawer` | 基础类 |
+| `.lh-drawer--{right\|left\|top\|bottom}` | 方向（决定遮罩动画与面板定位） |
+| `.lh-drawer__mask` | 遮罩 |
+| `.lh-drawer__panel` | 面板本体 |
+| `.lh-drawer__panel--{方向}` | 面板定位（fixed + 对应边贴合） |
+| `.lh-drawer__header` / `__title` / `__close` | 头部 |
+| `.lh-drawer__body` | 内容区（可滚动） |
+| `.lh-drawer__footer` | 底部 |
+
+面板 `--lh-bg-color`，遮罩 `rgba(0, 0, 0, 0.45)`（比 dialog 略浅，语义上抽屉更弱模态）。
+
+过渡类名由 `styles/theme/common/transition.scss` 的 `lh-transition-ends` mixin 收编（跨端 `-leave-to` 差异），组件样式不再手写双份类名（红线 2）。
+
+## 注意事项
+
+- **`size` 的单位**：数字是 px，字符串原样（支持 `'30%'` / `'50vh'`）。`'50%'` 是相对**视口**的，不是相对触发元素。
+- **top/bottom 抽屉的默认尺寸**：`LH_DRAWER_SIZE_DEFAULT` 是 `'30%'`，对 top/bottom 方向意味着 30% 视口高度——移动端全屏抽屉应显式传 `'100%'`。
+- **方向与过渡动画**：四个方向各需一个 slide 动画（transform 起点不同）。UI 层按方向选 transition name，core 不管动画。
+- **嵌套抽屉**：右侧抽屉里再开一个右侧抽屉，后者会覆盖前者；用不同方向或 zIndex 区分。焦点归还同理于 dialog（内层关闭归还内层触发元素）。
+- **内容滚动**：抽屉内容超长时，`__body` 设 `overflow: auto`；底部 footer 固定在视口内（flex 布局），不要让 footer 被内容顶出去。
+- **`closeOnEsc` 历史缺口**：老版本该 props 声明了但 logic 不读，升级后行为才真正生效——下游若依赖「Esc 永远可关」的老行为，注意显式传 `closeOnEsc`。
+- **与 dialog 的选型**：打断式交互用 dialog（确认删除），并列式查看用 drawer（订单详情）。用户不需要停下来处理的事，就不该用模态层。
+
+<FnPlayground module="drawer" fn="getDrawerPanelStyle" params='{"direction": "bottom", "size": "40%"}' />

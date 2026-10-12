@@ -1,0 +1,178 @@
+---
+title: loading —— 加载遮罩
+description: 'resolveLoadingTarget 挂载目标解析、ensurePositioned 定位修补与还原、aria-busy 语义'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+加载遮罩盖住一块区域（或整个页面）表示「这里在忙」。`core/loading` 管的是**挂载目标解析**和**定位修补**——指令式 `v-loading="true"` 要把遮罩 absolute 到触发元素上，但 static 定位的元素做不了定位祖先，这层修补就是 core 的活。
+
+## 何时使用
+
+- 各端实现 `v-loading` 指令或 `<LhLoading>` 组件：按钮提交、表格刷新、整页加载。
+- 需要**明确遮罩某块区域**（而非全屏）时。
+- **不该用它**：纯文字反馈（用 `message`）；不确定时长的后台任务（用 `notification` + 可取消）；骨架结构（用 `skeleton`——loading 假设内容布局不变，skeleton 假设变了）。
+
+## 导入方式
+
+```ts
+import {
+  getLoadingClassNames,
+  resolveLoadingTarget,
+  isLoadingFullscreen,
+  ensurePositioned,
+  getLoadingAria,
+} from '@lh-ui/share/core/loading'
+import type { LhLoadingOptions, LhLoadingHandle, LhLoadingState } from '@lh-ui/share/core/loading'
+```
+
+## 设计意图
+
+**`resolveLoadingTarget` 的三态归一**：不传 → `document.body`（全屏）；字符串 → `querySelector`，**未命中回退 body**（选择器拼错不至于崩，只是变成全屏遮罩）；元素原样返回。这个回退很关键：指令式 API 收到的 target 来自用户写的 ref/选择器，脏数据必须兜底。
+
+**`ensurePositioned` 的「借了要还」**：static 定位元素被临时改成 relative，返回 `restore()` 供卸载时还原。**只改 inline style 的 position**，不动 class、不动其他样式——还原时把 inline position 恢复成原值（可能是空串）。如果元素本来就有定位（relative/absolute/fixed/sticky），什么都不做，`restore` 是空函数——调用方无需判断，无条件调用即可。
+
+**全屏的判定是「目标是不是 body」**：`isLoadingFullscreen(target)` 而非另传一个 flag——target 是 body 即视为全屏，遮罩类名加 `--fullscreen`（fixed 定位 + 更高 z-index）。SSR 守卫：无 `document` 时返回 false。
+
+**`getLoadingAria` 的双重语义**：`aria-busy="true"` 标记被遮罩区域（读屏软件在加载完成前不播报其陈旧内容），旋转图标是**装饰图形** → `aria-hidden`（避免读屏软件播报「旋转图形」这种废话）。`busy: false` 返回空对象——UI 层可以无条件 `v-bind` 它。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getLoadingClassNames` | `(state: LhLoadingState) => string[]` | 类名 | 全屏 / 带文字 |
+| `resolveLoadingTarget` | `(target: string \| HTMLElement \| undefined) => HTMLElement` | 目标元素 | 字符串选择器未命中回退 body |
+| `isLoadingFullscreen` | `(target: HTMLElement) => boolean` | 是否全屏 | 目标是 body 即全屏 |
+| `ensurePositioned` | `(target: HTMLElement) => { restore }` | 还原句柄 | static → relative，卸载时还原 |
+| `getLoadingAria` | `(busy?: boolean) => LhAriaAttrs` | aria 属性包 | aria-busy + 图标 aria-hidden |
+
+## 类型定义
+
+```ts
+export interface LhLoadingOptions {
+  text?: string                      // 遮罩文案
+  fullscreen?: boolean               // 强制全屏
+  background?: string                // 遮罩背景色（覆盖默认半透明）
+  spinner?: boolean                  // 显示旋转图标（默认 true）
+  target?: string | HTMLElement      // 挂载目标
+  delay?: number                     // 延迟显示毫秒（防闪烁）
+}
+
+export interface LhLoadingHandle {
+  close: () => void                  // 关闭并卸载遮罩
+  setText: (text: string) => void    // 动态更新文案
+}
+
+export interface LhLoadingState {
+  fullscreen: boolean
+  withText: boolean                  // 有文案时给文案容器留位
+}
+```
+
+## 无障碍
+
+```ts
+getLoadingAria(true)   // { 'aria-hidden': true, 'aria-busy': true }
+getLoadingAria(false)  // {}（供无条件 v-bind）
+```
+
+- `aria-busy="true"` 是 WAI-ARIA 的标准「繁忙区域」标记，读屏软件据此知道内容即将变化、暂不播报当前陈旧内容。挂在**被遮罩的内容容器**上，不是遮罩层本身。
+- 旋转图标 `aria-hidden`：它是纯视觉反馈，文案（如有）已通过文本传达。
+- **文案要有意义**：「加载中…」优于「loading」；带百分比的进度（「已加载 76%」）对读屏用户更友好——遮罩层文案变化时读屏软件会播报（配 `aria-live` 由 UI 层决定）。
+- **全屏遮罩与焦点**：全屏遮罩时内容仍可被 Tab 聚焦——如需阻止交互，UI 层应在遮罩上拦截或对内容区加 `inert`（参考 `shared/focus-trap` 的 inert 机制）。
+
+## 使用示例
+
+```ts
+import { resolveLoadingTarget, ensurePositioned, isLoadingFullscreen, getLoadingClassNames } from '@lh-ui/share/core/loading'
+
+resolveLoadingTarget(undefined)              // document.body（全屏）
+resolveLoadingTarget('.table-wrapper')       // 命中的元素；未命中 → body
+resolveLoadingTarget(elRef)                  // 原样返回
+
+const el = resolveLoadingTarget(props.target)
+const restore = ensurePositioned(el).restore  // static → relative，记录原值
+try {
+  // …渲染遮罩…
+} finally {
+  restore()                                   // 卸载时还原 position
+}
+
+isLoadingFullscreen(document.body)  // true
+isLoadingFullscreen(tableEl)        // false
+```
+
+```ts
+// 指令式服务（UI 层）：创建 / 关闭 / 计数
+const instances = new Map<HTMLElement, { count: number; restore: () => void; el: HTMLElement }>()
+
+function showLoading(target: HTMLElement, text?: string) {
+  const hit = instances.get(target)
+  if (hit) { hit.count++; return }
+  const { restore } = ensurePositioned(target)
+  const mask = createMask(text, isLoadingFullscreen(target))
+  target.appendChild(mask)
+  instances.set(target, { count: 1, restore, el: mask })
+}
+
+function closeLoading(target: HTMLElement) {
+  const hit = instances.get(target)
+  if (!hit) return
+  hit.count--
+  if (hit.count > 0) return        // 引用计数：多个 loading 只关一个
+  hit.el.remove()
+  hit.restore()                    // 还原 position
+  instances.delete(target)
+}
+```
+
+```vue
+<!-- Vue3：v-loading 指令 -->
+<template>
+  <div class="table-wrapper" v-loading="loading">
+    <LhTable :data="rows" />
+  </div>
+</template>
+
+<script setup>
+// 指令实现：mounted 时按 binding.value 决定显隐
+const loading = ref(false)
+async function refresh() {
+  loading.value = true
+  try { rows.value = await fetch() } finally { loading.value = false }
+}
+</script>
+```
+
+```tsx
+// React：useLoading hook（ref + useEffect 管理遮罩挂载与 restore）
+```
+
+```ts
+// uniapp：遮罩用 <view> + absolute；ensurePositioned 在非 h5 端仅 h5 有效，
+// 小程序端 fixed/absolute 行为不同，由 UI 层按端适配
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-loading` | 遮罩容器（absolute 覆盖目标） |
+| `.lh-loading--fullscreen` | 全屏（fixed + 更高 z-index） |
+| `.lh-loading--with-text` | 带文案（垂直排列图标 + 文字） |
+| `.lh-loading__spinner` | 旋转图标（`LhSpinner`） |
+| `.lh-loading__text` | 文案 |
+
+遮罩底色 `--lh-mask-color`（半透明，明暗各一份）；文案色 `--lh-text-primary-regular`；z-index `--lh-z-index-loading`。
+
+## 注意事项
+
+- **`restore()` 必须调用**：`ensurePositioned` 改了目标元素的 inline position，不还原会留下「relative」污染布局（尤其在 `position: static` 是刻意为之的场景）。用 try/finally 保证。
+- **选择器未命中静默变全屏**：`resolveLoadingTarget('.typo-selector')` 会回退 body——排查「为什么遮罩盖住整屏」时先查选择器。
+- **引用计数**：同一区域多个并发 loading（同时发两个请求）要计数，最后一个完成才关闭遮罩。core 不持有状态，由 UI 层记账。
+- **`delay` 防闪烁**：快速完成的请求（小于 200ms）会让遮罩一闪而过，反而像 bug。UI 层可用 delay 延迟显示，请求先完成则取消显示。
+- **嵌套遮罩**：A 区域遮罩内还有 B 区域遮罩，z-index 与 pointer-events 要由 UI 层保证 B 的遮罩只盖 B——core 只算单个目标的定位。
+- **SSR 守卫**：`isLoadingFullscreen` 和 `ensurePositioned` 都有 `typeof document/window === 'undefined'` 守卫，但**加载遮罩本身是客户端概念**，SSR 下不应调用服务层。
+- **全屏遮罩不阻塞交互**：默认只是视觉遮罩，背景按钮仍可点击（除非遮罩层处理 pointer-events）。需要强制阻塞时在 UI 层加 `inert`。
+
+<FnPlayground module="loading" fn="getLoadingAria" params='{"busy": true}' />

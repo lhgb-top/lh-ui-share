@@ -1,0 +1,197 @@
+---
+title: tooltip —— 文字提示
+description: 'getDefaultDelay 显隐延迟（显示 200 / 隐藏 0）、role=tooltip 与 aria-describedby 的配对约定'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Tooltip 是「悬停才看的补充说明」：按钮图标看不懂、链接文案被截断、表格单元格放不下完整内容。`core/tooltip` 很薄——定位交给 `shared/popper`，延迟交给 `shared/delay`，它只声明**这个组件的默认节奏**和**aria 配对约定**。
+
+## 何时使用
+
+- 各端实现 `<LhTooltip>`：给触发元素补一行简短说明（一句话）。
+- 文案被截断（ellipsis）时的完整内容展示。
+- 图标按钮的语义解释。
+- **不该用它**：需要交互的内容（用 `popover`——tooltip 内不放按钮）；确认类操作（用 `popconfirm`）；错误反馈（用 `message`）；**移动端**（无 hover，tooltip 在触屏上几乎无法触发，改用 popover 的 click 触发或长按）。
+
+## 导入方式
+
+```ts
+import {
+  getPopperClassNames,
+  getPopperStyle,
+  getDefaultDelay,
+  getTooltipPopperAria,
+  getTooltipTriggerAria,
+} from '@lh-ui/share/core/tooltip'
+import type {
+  LhTooltipPlacementCore,
+  LhTooltipTriggerCore,
+  LhTooltipEffectCore,
+  LhTooltipState,
+} from '@lh-ui/share/core/tooltip'
+```
+
+## 设计意图
+
+**默认延迟的不对称**：显示 200ms、隐藏 0ms——**显示慢、隐藏快**。显示延迟防误触（鼠标扫过一片按钮不该每个都弹提示），隐藏 0ms 保证移出立刻消失、不拖泥带水。对比 `popover` 的隐藏 100ms（见下），两者节奏差异反映交互重量。
+
+**aria 配对约定**：触发器 `aria-describedby` 指向浮层的 id，浮层 `role="tooltip"`。这是 WAI-ARIA 的标准做法：读屏软件聚焦触发器时会一并读出提示内容，**用户不需要去 hover 才能获得信息**——这是无障碍上最容易被忽略的一点，纯视觉的 tooltip 对键盘用户完全不可见。
+
+**`@deprecated` 别名的处理**：`getPopperClass` / `getPopperStyle` 是旧名，下游 vue2 仓在用，保留兼容但标 deprecated，新代码用 `getPopperClassNames`（getXxxClassNames 约定）。**删不得**——下游还在引，改名要同步改下游。
+
+**`getPopperStyle` 只管 maxWidth**：数字 → px，字符串原样用。定位坐标由 `shared/popper` 的 `computePosition` 算，浮层的 transform/位移是 UI 层绑定 popper state 的结果。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getPopperClassNames` | `(state: { effect, placement }) => string[]` | 类名 | 主题效果 + 位置 |
+| `getPopperStyle` ⚠️ | `(state: { maxWidth }) => Record<string, string>` | 内联样式 | maxWidth 归一 |
+| `getDefaultDelay` | `(show?, hide?) => { show, hide }` | 延迟 | 默认 200 / 0 |
+| `getTooltipPopperAria` | `(id?) => LhAriaAttrs` | aria 包 | role="tooltip" |
+| `getTooltipTriggerAria` | `(tooltipId?) => LhAriaAttrs` | aria 包 | aria-describedby |
+
+⚠️ 标注的为 `@deprecated` 兼容别名，新代码用新名。
+
+常量（类型）：`LhTooltipPlacementCore` 12 个位置、`LhTooltipTriggerCore`、`LhTooltipEffectCore = 'dark' | 'light'`。
+
+## 类型定义
+
+```ts
+export type LhTooltipPlacementCore =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhTooltipTriggerCore = 'hover' | 'focus' | 'click' | 'contextmenu'
+export type LhTooltipEffectCore = 'dark' | 'light'
+
+export interface LhTooltipState {
+  visible: boolean
+  effect: LhTooltipEffectCore
+  placement: LhTooltipPlacementCore
+  maxWidth?: number | string
+  showDelay?: number
+  hideDelay?: number
+}
+```
+
+## 无障碍
+
+```ts
+getTooltipPopperAria('tip-1')
+// { role: 'tooltip', id: 'tip-1' }
+getTooltipTriggerAria('tip-1')
+// { 'aria-describedby': 'tip-1' }
+getTooltipTriggerAria()  // {}（未传 id 时不输出，此时应改用 aria-label 兜底）
+```
+
+- **id 必须两端一致**：触发器的 `aria-describedby` 值要等于浮层渲染后的真实 id。服务端渲染时 id 可能为空——未传 id 时函数返回空对象，UI 层应改用 `aria-label` 兜底，不能让 `aria-describedby` 指向不存在的元素（读屏软件会报「引用的元素不存在」）。
+- **focus 触发覆盖键盘用户**：`trigger: 'focus'` 时 Tab 聚焦即显示——这是推荐的默认无障碍行为，hover-only 对键盘用户完全不可见。
+- **role="tooltip" 的内容限制**：WAI-ARIA 规定 tooltip 内**不应有交互元素**（按钮、链接）——需要交互用 `popover`（role=dialog）。这条约束同时反映在样式上：tooltip 通常有 pointer-events: none。
+- **长文本**：`maxWidth` 限制折行宽度，但 tooltip 不应承载段落——超过一句话考虑用 popover。
+
+## 使用示例
+
+```ts
+import { getDefaultDelay, getPopperClassNames, getPopperStyle } from '@lh-ui/share/core/tooltip'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 0 }
+getDefaultDelay(0, 500)                // { show: 0, hide: 500 }（显式覆盖）
+
+getPopperClassNames({ effect: 'dark', placement: 'top' })
+// ['lh-tooltip__popper', 'lh-tooltip__popper--dark', 'lh-tooltip__popper--top']
+
+getPopperStyle({ maxWidth: 200 })    // { maxWidth: '200px' }
+getPopperStyle({ maxWidth: '30em' }) // { maxWidth: '30em' }
+getPopperStyle({})                   // {}
+```
+
+```ts
+// 显隐状态机（UI 层）：延迟由 shared/delay 的 resolveDelay 归一
+const state = reactive<LhTooltipState>({
+  visible: false, effect: 'dark', placement: 'top',
+})
+
+let showTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleShow() {
+  clearTimeout(showTimer)
+  const { show } = getDefaultDelay(props.showDelay, props.hideDelay)
+  showTimer = setTimeout(() => { state.visible = true }, show)
+}
+function scheduleHide() {
+  clearTimeout(showTimer)
+  const { hide } = getDefaultDelay(props.showDelay, props.hideDelay)
+  setTimeout(() => { state.visible = false }, hide)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTooltip content="删除后不可恢复" placement="top">
+    <button type="button" aria-label="删除"><LhIcon name="delete" /></button>
+  </LhTooltip>
+</template>
+
+<!-- 组件内部：触发器与浮层 -->
+<template>
+  <span
+    class="lh-tooltip__trigger"
+    v-bind="getTooltipTriggerAria(popperId)"
+    @mouseenter="scheduleShow" @mouseleave="scheduleHide"
+    @focus="scheduleShow" @blur="scheduleHide"
+  >
+    <slot />
+  </span>
+  <teleport to="body">
+    <transition name="lh-tooltip-fade">
+      <div
+        v-if="state.visible"
+        :id="popperId"
+        :class="getPopperClassNames({ effect: state.effect, placement: state.placement })"
+        :style="{ ...getPopperStyle({ maxWidth: props.maxWidth }), ...popperStyle }"
+        v-bind="getTooltipPopperAria(popperId)"
+        role="tooltip"
+      >
+        <slot name="content">{{ props.content }}</slot>
+      </div>
+    </transition>
+  </teleport>
+</template>
+```
+
+```tsx
+// React：trigger 元素克隆 children 注入事件与 aria（React.cloneElement）；
+// 浮层用 createPortal + useFloating（@floating-ui 或自研 popper）
+```
+
+```ts
+// uniapp：<view> + catchtouchstart；hover 在小程序端不存在，tooltip 在移动端
+// 主要服务 h5，小程序场景应改用 popover 的 click 触发
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-tooltip__trigger` | 触发器包裹（inline） |
+| `.lh-tooltip__popper` | 浮层 |
+| `.lh-tooltip__popper--{dark\|light}` | 主题效果 |
+| `.lh-tooltip__popper--{top\|top-start\|…}` | 12 个位置（含箭头朝向） |
+
+dark 效果：`--lh-tooltip-bg-dark`（近黑）+ 白字；light 效果：`--lh-bg-color` + `--lh-text-primary`。圆角 `--lh-border-radius-small`，内边距 `--lh-tooltip-padding`，字号 `--lh-font-size-small`。
+
+## 注意事项
+
+- **延迟的双向清除**：显示计时器未触发就移出，要 clearTimeout；否则鼠标已经走了提示才弹。上面的状态机示例只清了 showTimer，完整实现要双向清。
+- **移入浮层本身**：tooltip 的 `pointer-events` 通常为 none，所以不存在「移入浮层」——但 popover 允许，两者的隐藏延迟差异由此而来。
+- **受控与非受控**：`v-model:visible` 受控模式下，外部visible 变化要同步内部 state；延迟计时器要随受控状态重置。
+- **多个 tooltip 共存**：每个实例的 popperId 必须唯一（useId 或自增序号），否则 aria-describedby 指错元素。
+- **`getPopperClass` / `getPopperStyle` 是 deprecated 别名**：新代码用 `getPopperClassNames`；旧名在下游 vue2 仓仍被引用，删除前必须先改下游（红线 5 的发版顺序）。
+- **内容为空时的处理**：`content` 为空不应显示空浮层——UI 层在空内容时跳过显示（`v-if="content"`），这不是 core 的职责。
+- **disabled 触发元素**：原生 `disabled` 的按钮不触发 mouseenter/focus 事件，tooltip 失效。常见做法是触发器包裹一层非 disabled 的元素（`.lh-tooltip__trigger` span）接收事件——这是 trigger 类名存在的一个原因。
+
+<FnPlayground module="tooltip" fn="getDefaultDelay" params='{"showDelay": null, "hideDelay": null}' />

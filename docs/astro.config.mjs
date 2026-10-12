@@ -135,6 +135,22 @@ export default defineConfig({
                 { label: 'collapse 折叠面板', link: '/components/data/collapse' },
               ],
             },
+            {
+              label: '反馈',
+              collapsed: true,
+              items: [
+                { label: 'dialog 对话框', link: '/components/feedback/dialog' },
+                { label: 'drawer 抽屉', link: '/components/feedback/drawer' },
+                { label: 'message 消息', link: '/components/feedback/message' },
+                { label: 'notification 通知', link: '/components/feedback/notification' },
+                { label: 'loading 加载遮罩', link: '/components/feedback/loading' },
+                { label: 'tooltip 文字提示', link: '/components/feedback/tooltip' },
+                { label: 'popover 弹出层', link: '/components/feedback/popover' },
+                { label: 'popconfirm 气泡确认框', link: '/components/feedback/popconfirm' },
+                { label: 'alert 警告提示', link: '/components/feedback/alert' },
+                { label: 'backtop 回到顶部', link: '/components/feedback/backtop' },
+              ],
+            },
           ],
         },
         {

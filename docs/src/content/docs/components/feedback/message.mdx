@@ -1,0 +1,205 @@
+---
+title: message —— 全局消息
+description: 'resolveMessageDuration 语义化时长、clampMessageQueue 队列裁剪、live region 角色映射（alert/status）'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+全局消息是「操作完成后的轻反馈」：保存成功、网络错误、复制成功。它从屏幕顶部滑入、停留几秒自动消失，不打断用户操作。`core/message` 管的是**消息队列的记账**——时长按语义推导、超限裁剪、记录生成，以及 live region 角色。
+
+## 何时使用
+
+- 各端实现 `LhMessage`（服务式 API：`LhMessage.success('已保存')`）：操作反馈、轻量错误提示、加载中提示。
+- 短文本、不需要用户处理的瞬时通知。
+- **不该用它**：需要用户操作的确认（用 `dialog` / `popconfirm`）；内容较多或要带标题（用 `notification`）；页面内固定的提示条（用 `alert`）。
+
+## 导入方式
+
+```ts
+import {
+  LH_MESSAGE_DURATION_DEFAULT,
+  LH_MESSAGE_MAX_DEFAULT,
+  LH_MESSAGE_OFFSET_DEFAULT,
+  getMessageRole,
+  getMessageIconName,
+  getMessageClassNames,
+  resolveMessageDuration,
+  clampMessageQueue,
+  createMessageRecord,
+} from '@lh-ui/share/core/message'
+import type { LhMessageType, LhMessageRecord, LhMessageState } from '@lh-ui/share/core/message'
+```
+
+## 设计意图
+
+**`resolveMessageDuration` 的语义化时长**：`loading` 类型默认返回 **0（不自动关闭）**——加载中的消息自动消失是荒谬的，它必须由业务代码显式关闭。但**显式传了 duration 则尊重显式值**——`resolveMessageDuration(0, 'loading')` 返回 0（显式），`resolveMessageDuration(undefined, 'loading')` 也返回 0（语义默认），两者结果相同但路径不同；`resolveMessageDuration(5000, 'loading')` 返回 5000（显式覆盖）。
+
+**`clampMessageQueue` 返回被移除的记录**：不只返回保留的，还返回 `removed`——由调用方负责触发其 `onClose`。这个设计很重要：队列裁剪时消息被强制移除，如果不触发 onClose，业务的清理回调（如埋点、状态重置）永远不执行。
+
+**live region 角色映射**（与 `alert` / `notification` 同范式）：`warning` / `danger` / `error` → `role="alert"`（**立即打断播报**），其余 → `role="status"`（**排队温和播报**）。这个区分有实际意义：错误信息通常需要用户立刻知道，成功信息可以等用户当前操作告一段落再听。
+
+**`getMessageIconName` 对 loading 返回 null**：loading 的旋转图标由 `LhSpinner` 组件呈现（需要动画），不是静态图标——UI 层据此渲染不同组件。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getMessageRole` | `(type: LhMessageType) => LhAlertRole` | 'alert' \| 'status' | live region 角色 |
+| `getMessageIconName` | `(type) => string \| null` | 图标名 | loading 返回 null |
+| `getMessageClassNames` | `(state: LhMessageState) => string[]` | 类名 | 类型 + 可关闭 |
+| `resolveMessageDuration` | `(duration: number \| undefined, type) => number` | 毫秒 | loading 默认 0 |
+| `clampMessageQueue` | `(items, max) => { kept, removed }` | 裁剪结果 | 保留最新 max 条 |
+| `createMessageRecord` | `(partial, seq) => LhMessageRecord` | 记录 | 补默认时长与偏移 |
+
+常量：`LH_MESSAGE_DURATION_DEFAULT = 3000`、`LH_MESSAGE_MAX_DEFAULT = 5`、`LH_MESSAGE_OFFSET_DEFAULT = 20`。
+
+## 类型定义
+
+```ts
+export type LhMessageType = 'info' | 'success' | 'warning' | 'danger' | 'error' | 'loading'
+
+export interface LhMessageRecord {
+  id: number
+  type: LhMessageType
+  content: string
+  duration: number     // 0 表示不自动关闭
+  showClose: boolean
+  offset: number       // 距视口顶部偏移 px
+  sx?: LhSxProps
+  onClose?: () => void
+}
+
+export interface LhMessageState {
+  type: LhMessageType
+  showClose: boolean
+}
+```
+
+`LhMessageType` 在通用语义常量（`LH_TYPES_CONST`：info/success/warning/danger/error）上补了 `loading`。
+
+## 无障碍
+
+```ts
+getMessageRole('danger')   // 'alert'
+getMessageRole('warning')  // 'alert'
+getMessageRole('info')     // 'status'
+getMessageRole('success')  // 'status'
+getMessageRole('loading')  // 'status'
+```
+
+- `role="alert"` 的元素**一出现在 DOM 就立即播报**，适合错误；`role="status"` 排队播报，适合成功/信息。
+- **aria-live 的补充**：UI 层渲染时通常还配 `aria-live="polite"`（status）或 `aria-live="assertive"`（alert）——`role` 已隐含，重复声明一般无害，但部分读屏软件对 role 的支持更稳，两者都写是最保险的。
+- **重复消息的播报**：连续三条「保存成功」会播报三次，这是正确的（每条都是新事件）。若要抑制，由业务层判重。
+- **可关闭按钮**：`aria-label="关闭"`（图标按钮无文本）。
+
+## 使用示例
+
+```ts
+import { resolveMessageDuration, clampMessageQueue, createMessageRecord } from '@lh-ui/share/core/message'
+
+resolveMessageDuration(undefined, 'success')  // 3000
+resolveMessageDuration(undefined, 'loading')  // 0（加载不自动关闭）
+resolveMessageDuration(5000, 'loading')       // 5000（显式覆盖）
+
+clampMessageQueue([{ id: 1 }, { id: 2 }, { id: 3 }], 2)
+// { kept: [{ id: 2 }, { id: 3 }], removed: [{ id: 1 }] }  ← 移除最早的
+
+clampMessageQueue([{ id: 1 }, { id: 2 }], 0)  // { kept: [...], removed: [] }（max <= 0 不裁剪）
+
+createMessageRecord({ type: 'success', content: '已保存', showClose: true }, 7)
+// { id: 7, type: 'success', content: '已保存', showClose: true,
+//   duration: 3000, offset: 20 }
+```
+
+```ts
+// 服务层实现（UI 层）：单例队列 + 自增序号
+let seq = 0
+const queue = ref<LhMessageRecord[]>([])
+
+function open(type: LhMessageType, content: string, options?: Partial<LhMessageRecord>) {
+  const record = createMessageRecord(
+    { type, content, showClose: false, ...options },
+    ++seq,
+  )
+  queue.value = [...queue.value, record]
+  // 队列超限：移除最早的并触发其 onClose
+  const { kept, removed } = clampMessageQueue(queue.value, LH_MESSAGE_MAX_DEFAULT)
+  removed.forEach((r) => r.onClose?.())
+  queue.value = kept
+  // 自动关闭
+  if (record.duration > 0) {
+    setTimeout(() => close(record.id), record.duration)
+  }
+  return record.id
+}
+
+const api = {
+  info: (c: string, o?) => open('info', c, o),
+  success: (c: string, o?) => open('success', c, o),
+  warning: (c: string, o?) => open('warning', c, o),
+  error: (c: string, o?) => open('error', c, o),
+  loading: (c: string, o?) => open('loading', c, o),
+}
+```
+
+```vue
+<!-- Vue3：渲染层 -->
+<teleport to="body">
+  <div class="lh-message" :style="{ top: offset + 'px' }">
+    <transition-group name="lh-message-fade" tag="div" class="lh-message__list">
+      <div
+        v-for="record in queue"
+        :key="record.id"
+        :class="getMessageClassNames({ type: record.type, showClose: record.showClose })"
+        :role="getMessageRole(record.type)"
+      >
+        <LhSpinner v-if="record.type === 'loading'" :size="14" />
+        <LhIcon v-else :name="getMessageIconName(record.type)!" />
+        <span class="lh-message__content">{{ record.content }}</span>
+        <button v-if="record.showClose" type="button" aria-label="关闭" @click="close(record.id)">✕</button>
+      </div>
+    </transition-group>
+  </div>
+</teleport>
+```
+
+```ts
+// loading 的典型用法：保存时开、完成时关
+const id = LhMessage.loading('保存中…')
+await save()
+LhMessage.close(id)
+LhMessage.success('已保存')
+```
+
+```tsx
+// React：createPortal 渲染队列；关闭用 clearTimeout 管理每条的计时器
+```
+
+```ts
+// uniapp：fixed 定位 + 动画；队列同模型，LhSpinner 在非 h5 端用 view 旋转实现
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-message` | 容器（fixed 顶部居中） |
+| `.lh-message__list` | 队列（transition-group） |
+| `.lh-message__item` | 单条消息 |
+| `.lh-message__item--{info\|success\|warning\|danger\|error\|loading}` | 语义类型（图标色 + 边框/底色） |
+| `.lh-message__item--closable` | 可关闭（给关闭按钮留位） |
+| `.lh-message__content` | 文本 |
+
+四语义色：`--lh-info-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`；底色 `--lh-bg-color` + 轻边框 + 阴影。
+
+## 注意事项
+
+- **`loading` 消息必须手动关**：`resolveMessageDuration(undefined, 'loading')` 返回 0，不会自动消失。忘记关闭会永久留一条「加载中」——这是最常见的误用。
+- **`error` 与 `danger` 的关系**：两者都映射到 `alert` 角色和 `error` 图标——`danger` 是通用语义常量里的命名，`error` 是它的别名（为了与 message 常见的 `LhMessage.error()` API 对齐）。业务层用哪个都行。
+- **队列上限 `LH_MESSAGE_MAX_DEFAULT = 5`**：高频场景（如上传进度）很容易超过 5 条被裁掉——被裁掉的记录的 `onClose` 由调用方触发，业务的计时器要同步清理。
+- **`offset` 的含义**：是距视口顶部的**初始**偏移，多条消息的堆叠间距由 UI 层按高度累加（参考 `notification` 的 `computeStackOffsets`）。
+- **`id` 的唯一性**：服务层的 `seq` 在模块级自增即可；若多实例共存（微前端），需要外部传入 id 前缀避免冲突。
+- **SSR 安全**：消息服务依赖 DOM（teleport、setTimeout），SSR 下应跳过自动创建，只在客户端激活后可用。
+- **`duration: 0` 与 `showClose: false` 的死锁**：不自动关闭且不可手动关闭的消息永远存在——除非业务保留 id 调 `close(id)`。给用户留至少一个关闭途径。
+
+<FnPlayground module="message" fn="resolveMessageDuration" params='{"duration": null, "type": "loading"}' />

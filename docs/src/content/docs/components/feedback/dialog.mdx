@@ -1,0 +1,178 @@
+---
+title: dialog —— 对话框
+description: 'canClose 逃逸闸门、shouldTrapFocus 焦点圈决策、getDialogStyle 三种定位、dialog 语义'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+对话框是「打断当前流程、要求用户先处理这件事」的模态层：确认删除、填写表单、展示详情。它的核心不是视觉，而是**焦点与滚动锁定**——模态意味着背后的页面不可交互。`core/dialog` 把「能不能关」「要不要圈焦点」「定位样式」收敛为纯函数，真正的圈焦由 `core/shared/focus-trap` 执行。
+
+## 何时使用
+
+- 各端实现 `LhDialog`：危险操作确认、独立表单（比抽屉更聚焦）、重要信息展示。
+- 需要**模态**（打断主流程、必须先处理）的场景。
+- **不该用它**：非模态的轻提示（用 `message` / `notification`）；侧滑的详情面板（用 `drawer`，不遮挡整屏）；简单的确认（用 `popconfirm`，更轻量）。
+
+## 导入方式
+
+```ts
+import {
+  canClose,
+  getDialogStyle,
+  getDialogPopperClass,
+  shouldTrapFocus,
+  getDialogAria,
+} from '@lh-ui/share/core/dialog'
+import type { LhDialogState } from '@lh-ui/share/core/dialog'
+```
+
+## 设计意图
+
+**`canClose` 的两个默认值不对称**：
+
+- `closeOnClickModal` 默认 **false**（点击遮罩不关）——对话框通常承载需要用户明确操作的表单或确认，误触遮罩关闭会丢失输入。
+- `closeOnPressEscape` 默认 **true**（Esc 可关）——键盘用户需要一个逃生口，这是 APG dialog 模式的约定。
+
+这个不对称是刻意的体验设计：**防误触但留后路**。
+
+**`shouldTrapFocus` 只做决策**：返回「是否启用焦点圈」，具体圈焦由 UI 层配合 `core/shared/focus-trap` 实现（打开时 saveActiveElement + focusFirst、keydown 时 trapTabKey、inert 由 setInertOutside 处理、关闭时 restoreActiveElement 归还焦点）。core 层不碰 DOM。
+
+**`getDialogStyle` 的定位分工**：`top` / `center` / `bottom` 由容器的 flexbox 对齐处理，`marginTop` 只在 `position: 'top'` 或未设置时应用——center/bottom 下再叠加 marginTop 会与 flexbox 打架。
+
+**`getDialogPopperClass` 的 visible 类**：用于过渡动画的起点/终点状态，而不是控制显隐（显隐由 `v-if`/`v-show` 管）。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `canClose` | `(state, reason: 'modalClick' \| 'escape') => boolean` | 是否允许关 | 逃逸闸门 |
+| `getDialogStyle` | `(state: { top?, zIndex?, position? }) => Record<string, string>` | 样式 | 定位与层级 |
+| `getDialogPopperClass` | `(state: LhDialogState) => string[]` | 类名 | visible 态 |
+| `shouldTrapFocus` | `(state: { visible, lockScroll }) => boolean` | 是否圈焦 | 决策（不碰 DOM） |
+| `getDialogAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | aria 属性包 | dialog 语义 |
+
+## 类型定义
+
+```ts
+export interface LhDialogState {
+  visible: boolean
+  lockScroll: boolean
+  closeOnClickModal: boolean   // 默认 false
+  closeOnPressEscape: boolean  // 默认 true
+  width: string | number | undefined
+  top: string | undefined
+  zIndex: number | undefined
+  position: 'top' | 'center' | 'bottom' | undefined
+}
+```
+
+## 无障碍
+
+`getDialogAria` 输出 APG modal dialog 语义：
+
+```ts
+getDialogAria({ id: 'lh-dialog-1', titleId: 'lh-dialog-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-dialog-1', 'aria-labelledby': 'lh-dialog-title' }
+
+getDialogAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true` 告知读屏软件背景不可达（与 inert / focus-trap 配合才是完整的）。
+- **有标题时必须传 `titleId`**；无标题时不输出 `aria-labelledby`，此时 UI 层应保证 `aria-label` 兜底——无可达名称的对话框会被读屏软件播报为空的「对话框」。
+- 焦点管理（UI 层）：打开时焦点进对话框（首个可聚焦元素或内容区），关闭时**归还触发元素**——这是焦点圈的标准约定，漏掉归还会让键盘用户失去位置。
+- **`aria-modal` 不是替代品**：它只是声明，真正的背景隔离要靠 `core/shared/focus-trap` 的 inert 实现。只声明不做隔离的「假模态」是常见缺陷。
+- 对话框内有表单时，回车提交 / Esc 关闭的语义要明确（Esc 关闭前若有未保存修改，应二次确认）。
+
+## 使用示例
+
+```ts
+import { canClose, shouldTrapFocus, getDialogStyle } from '@lh-ui/share/core/dialog'
+
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'modalClick')  // false
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'escape')      // true
+canClose({}, 'escape')        // true（默认可 Esc 关）
+canClose({}, 'modalClick')    // false（默认不可点遮罩关）
+
+shouldTrapFocus({ visible: true, lockScroll: true })   // true
+shouldTrapFocus({ visible: true, lockScroll: false })  // false
+shouldTrapFocus({ visible: false, lockScroll: true })  // false
+
+getDialogStyle({ top: '15vh', position: 'top', zIndex: 2000 })
+// { marginTop: '15vh', zIndex: '2000' }
+getDialogStyle({ top: '15vh', position: 'center' })
+// {}（center 由 flexbox 居中，marginTop 不叠加）
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-dialog-fade">
+    <div v-if="visible" class="lh-dialog__wrapper" :style="{ zIndex }">
+      <div class="lh-dialog__mask" @click="onMaskClick" />
+      <div
+        :class="getDialogPopperClass({ visible })"
+        :style="getDialogStyle({ top, zIndex, position })"
+        v-bind="getDialogAria({ id: dialogId, titleId })"
+      >
+        <header class="lh-dialog__header">
+          <h3 class="lh-dialog__title" :id="titleId">{{ title }}</h3>
+          <button v-if="showClose" type="button" class="lh-dialog__close" aria-label="关闭" @click="close">✕</button>
+        </header>
+        <div class="lh-dialog__body"><slot /></div>
+        <footer class="lh-dialog__footer"><slot name="footer" /></footer>
+      </div>
+    </div>
+  </transition>
+</teleport>
+```
+
+```ts
+function onMaskClick() {
+  if (canClose({ closeOnClickModal, closeOnPressEscape }, 'modalClick')) close()
+}
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && canClose({ closeOnClickModal, closeOnPressEscape }, 'escape')) close()
+}
+
+// 焦点圈（配合 shared/focus-trap）
+watch(visible, async (v) => {
+  if (v) { savedFocus = saveActiveElement(); await nextTick(); focusFirst(dialogRef.value) }
+  else { restoreActiveElement(savedFocus) }
+})
+```
+
+```tsx
+// React：transition 用 CSSTransition 或 headless 方案；焦点圈用同一个 focus-trap 内核
+```
+
+```ts
+// uniapp：<view> + fixed 定位；锁滚动由 UI 层处理（小程序无 body scroll 可锁，
+// 用 scroll-view 包裹内容区控制）；core 的 canClose / getDialogAria 照用
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-dialog__wrapper` | 外层（flex 居中 + zIndex） |
+| `.lh-dialog__mask` | 遮罩（半透明黑） |
+| `.lh-dialog__popper` | 对话框本体 |
+| `.lh-dialog__popper--visible` | 展开态（过渡终点） |
+| `.lh-dialog__header` / `__title` / `__close` | 头部 |
+| `.lh-dialog__body` | 内容区 |
+| `.lh-dialog__footer` | 底部按钮区 |
+
+遮罩 `rgba(0, 0, 0, 0.5)`；本体 `--lh-bg-color` + `--lh-radius-base` 圆角 + 阴影；宽度由 `width` prop 控制（默认 50%）。
+
+## 注意事项
+
+- **`closeOnClickModal` 与表单的冲突**：带表单的对话框建议显式设 `false`（也是默认值），避免用户误触遮罩丢失输入。
+- **`lockScroll` 与焦点圈的关系**：`shouldTrapFocus` 要求 `lockScroll` 也为 true——锁滚动通常意味着完整模态，此时焦点圈是配套行为。只锁滚动不圈焦点会造成「Tab 跑到背后页面」的割裂体验。
+- **嵌套对话框**：内层对话框的 zIndex 必须高于外层（用自增计数器管理），且焦点圈要嵌套保存（内层关闭时归还到内层的触发元素，而非最外层）。
+- **`zIndex` 的管理**：core 只把传入的值写进样式，不做自增。UI 层应用全局 zIndex 计数器（避免与 message / notification 的层级冲突）。
+- **过渡动画的挂载时机**：`v-if` 切换会立即卸载 DOM，关闭动画需要 `<transition>` 配合；若动画期间 DOM 被销毁，焦点归还会失败——用 `@after-leave` 延后真正的卸载逻辑。
+- **`position: 'bottom'`**：底部定位的对话框（移动端 action sheet 风格）由 flexbox 的 flex-end 对齐，`top` 无效。
+- **`width` 为百分比**：`'50%'` 是相对遮罩宽度的，移动端窄屏建议改 `'90%'` 或具体 px。
+
+<FnPlayground module="dialog" fn="canClose" params='{"state": {"closeOnClickModal": false, "closeOnPressEscape": true}, "reason": "escape"}' />

@@ -1,0 +1,145 @@
+---
+title: alert —— 警告提示
+description: '页面内持久提示条：getAlertRole 的 alert/status 双角色映射、closable/showIcon/plain 四状态类名'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Alert 是「钉在页面里的提示」：保存失败的原因、账号即将到期、当前处于只读模式。它和 `message` 的区别是**持久性**——message 几秒就消失，alert 一直留在那里，用户什么时候看都行。`core/alert` 极薄，核心是**语义到 live region 角色的映射**。
+
+## 何时使用
+
+- 各端实现 `<LhAlert>`：表单校验汇总、页面级公告、操作结果常驻提示、引导性说明。
+- 内容需要**用户主动阅读**、不随时间消失的场景。
+- **不该用它**：瞬时操作反馈（用 `message`，自动消失更克制）；系统级异步通知（用 `notification`，贴角不占文档流）；需要用户确认的操作（用 `popconfirm` / `dialog`）。
+
+## 导入方式
+
+```ts
+import {
+  getAlertClassNames,
+  getAlertRole,
+  getAlertIconName,
+} from '@lh-ui/share/core/alert'
+import type { LhAlertType, LhAlertState, LhAlertRole } from '@lh-ui/share/core/alert'
+```
+
+## 设计意图
+
+**双角色映射**：`warning` / `danger` → `role="alert"`（立即打断播报），`info` / `success` → `role="status"`（排队温和播报）。这个二分有依据：APG（ARIA Authoring Practices）明确 alert 用于「重要且时间敏感」的内容。错误提示用户晚 5 秒看到可能已经重复操作了，成功提示晚几秒无伤大雅。
+
+**四个布尔状态独立成类名**：`closable` / `showIcon` / `plain` / `withTitle` 各自一个修饰类——因为它们影响的是**布局**（有图标要给图标留位、有标题要加大内边距、有关闭按钮要留右侧空间），不是单纯的颜色变化。拆成独立类名让 SCSS 可以按组合写布局。
+
+**`plain` 是朴素模式**：去掉底色和边框，只留图标色和文字色——用于「不想太张扬但需要常驻」的场景（如页面顶部的一条灰色说明）。它与默认模式的区别是视觉重量，不是语义。
+
+**图标映射消费现有图标集**：success → `check`（不是 `success`——图标库里没有 success 图标，用对勾表达成功），danger → `error`。这是「语义 → 具体图标」的一层映射，UI 层不必关心图标库具体有什么。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getAlertClassNames` | `(state: LhAlertState) => string[]` | 类名 | 类型 + 4 布尔 |
+| `getAlertRole` | `(type: LhAlertType) => LhAlertRole` | 'alert' \| 'status' | live region 角色 |
+| `getAlertIconName` | `(type: LhAlertType) => string` | 图标名 | 四语义图标 |
+
+## 类型定义
+
+```ts
+export type LhAlertType = 'info' | 'success' | 'warning' | 'danger'
+export type LhAlertRole = 'alert' | 'status'
+
+export interface LhAlertState {
+  type: LhAlertType
+  closable: boolean      // 显示关闭按钮
+  showIcon: boolean      // 显示语义图标
+  plain: boolean         // 朴素模式（无底色边框）
+  withTitle: boolean     // 有标题（标题 + 描述两段式）
+}
+```
+
+## 无障碍
+
+```ts
+getAlertRole('info')     // 'status'
+getAlertRole('success')  // 'status'
+getAlertRole('warning')  // 'alert'
+getAlertRole('danger')   // 'alert'
+```
+
+- **role 放在 alert 根元素上**：`<div class="lh-alert lh-alert--danger" role="alert">`。页面加载时已存在的 alert 会立即播报；动态插入的 alert 配合 `aria-live` 更稳（部分读屏软件对动态插入的 role=alert 响应不一致）。
+- **图标 aria-hidden**：语义已由文字传达，重复播报「警告」是噪音。仅当图标承载文字没有的信息时才暴露。
+- **关闭按钮的无障碍**：`aria-label="关闭"`，点击后 alert 从 DOM 移除——移除本身不需要额外通知（用户主动操作的直接结果）。
+- **标题与描述的层级**：有标题时标题用 `<div class="lh-alert__title" role="heading">`（或直接 `<h4>`），描述另起一段。读屏软件按文档流处理。
+- **不要用 alert 做表单校验错误提示**：字段级错误应贴在字段旁（`form` 的 `aria-describedby` + `aria-invalid`），alert 用于整表单的汇总提示。
+
+## 使用示例
+
+```ts
+import { getAlertClassNames, getAlertRole, getAlertIconName } from '@lh-ui/share/core/alert'
+
+getAlertClassNames({ type: 'warning', closable: true, showIcon: true, plain: false, withTitle: false })
+// ['lh-alert', 'lh-alert--warning', 'lh-alert--closable', 'lh-alert--show-icon']
+
+getAlertRole('danger')     // 'alert'
+getAlertIconName('success')  // 'check'
+```
+
+```vue
+<!-- Vue3：基础用法 -->
+<template>
+  <LhAlert type="warning" :closable="true" show-icon title="注意">
+    当前处于维护窗口期，部分功能可能不可用。
+  </LhAlert>
+</template>
+```
+
+```vue
+<!-- 表单校验汇总：failedRules 非空才渲染 -->
+<template>
+  <LhAlert
+    v-if="failedRules.length"
+    type="danger"
+    show-icon
+    :closable="false"
+    title="表单有 N 处需要修正"
+  >
+    <ul>
+      <li v-for="rule in failedRules" :key="rule.field">{{ rule.message }}</li>
+    </ul>
+  </LhAlert>
+</template>
+```
+
+```tsx
+// React：受控显隐（visible state + 关闭按钮 onClick 置 false）；
+// alert 内容仍保留在 DOM 更利于 SEO 与回退，用 CSS display 切换而非卸载
+```
+
+```ts
+// uniapp：<view> + 语义图标用 <image> 或字体图标；closable 在小程序端用 catchtap
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-alert` | 根容器 |
+| `.lh-alert--{info\|success\|warning\|danger}` | 语义类型（底色 + 边框 + 图标色） |
+| `.lh-alert--closable` | 有关闭按钮（右侧留位） |
+| `.lh-alert--show-icon` | 有图标（左侧留位） |
+| `.lh-alert--plain` | 朴素模式（透明底、无边框） |
+| `.lh-alert--with-title` | 两段式（加大纵向间距） |
+| `.lh-alert__icon` / `__title` / `__content` / `__close` | 图标 / 标题 / 描述 / 关闭钮 |
+
+语义色：`--lh-info-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`；轻底色由语义色低透明度混合（明暗各一套）；圆角 `--lh-border-radius-base`。
+
+## 注意事项
+
+- **alert 是文档流的一部分**：它占据布局空间、推开内容。页面顶部常驻的 alert 会让内容整体下移——位置固定（`position: sticky`）由 UI 层决定，core 不管。
+- **`role="alert"` 的打断性是双刃剑**：页面里同时有多条 danger alert 会连续打断播报，体验很差。错误汇总场景建议只用一条 alert 列出所有问题，而不是每条错误一个 alert。
+- **动态插入的 alert**：role=alert 要求元素**已经存在于 DOM** 时播报；JS 后插入的应配 `aria-live="assertive"`（alert）或 `"polite"`（status）兜底。这是 UI 层的事。
+- **`closable` 与状态持久化**：用户关掉的 alert 刷新后会复活。若需要「关闭后不再出现」（如公告已读），业务层要持久化到 localStorage。
+- **`plain` 模式的语义不变**：朴素只改视觉，`type` 决定的 role 与图标色照常——不要为了让它「不显眼」就把它从 danger 降级成 info，那是语义降级。
+- **alert 内不放交互按钮**：需要「重试」「查看详情」时，按钮放在 `__content` 里没问题（alert 的 role 不禁止交互），但**别用 alert 模拟对话框**。
+
+<FnPlayground module="alert" fn="getAlertRole" params='{"type": "warning"}' />
