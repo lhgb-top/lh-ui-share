@@ -159,6 +159,18 @@ export default defineConfig({
                 { label: 'affix 固定', link: '/components/layout/affix' },
               ],
             },
+            {
+              label: '导航',
+              collapsed: true,
+              items: [
+                { label: 'menu 菜单', link: '/components/navigation/menu' },
+                { label: 'tabs 标签页', link: '/components/navigation/tabs' },
+                { label: 'steps 步骤条', link: '/components/navigation/steps' },
+                { label: 'breadcrumb 面包屑', link: '/components/navigation/breadcrumb' },
+                { label: 'anchor 锚点', link: '/components/navigation/anchor' },
+                { label: 'dropdown 下拉菜单', link: '/components/navigation/dropdown' },
+              ],
+            },
           ],
         },
         {

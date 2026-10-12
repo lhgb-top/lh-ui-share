@@ -1,0 +1,156 @@
+---
+title: 'menu 菜单 —— 导航'
+description: 'toggleMenuOpen 手风琴/常规双模式、子菜单 aria-expanded 联动、@deprecated moveMenuFocus 已收敛到 shared/keyboard'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+菜单是网站的骨架导航：顶部水平菜单、侧边垂直菜单、可折叠的图标菜单。它和 `dropdown` 的区别是**持久性与层级**——菜单常驻页面、可以无限嵌套子级；dropdown 是临时弹出的操作列表。`core/menu` 管的是展开态记账与无障碍语义，布局与定位全在 SCSS。
+
+## 何时使用
+
+- 各端实现 `<LhMenu>` / `<LhSubMenu>` / `<LhMenuItem>`：网站主导航、后台侧边栏、文档站目录。
+- 需要**两级以上层级**的导航。
+- **不该用它**：一行平铺的操作按钮（用 `space` + `button`）；临时弹出的操作菜单（用 `dropdown`）；标签页式的内容切换（用 `tabs`）。
+
+## 导入方式
+
+```ts
+import {
+  getMenuClassNames,
+  getMenuItemClassNames,
+  getSubMenuClassNames,
+  getMenuItemGroupClassNames,
+  toggleMenuOpen,
+  isMenuOpen,
+  moveMenuFocus,
+  getMenuAria,
+  getMenuItemAria,
+  getSubMenuAria,
+} from '@lh-ui/share/core/menu'
+import type { LhMenuMode } from '@lh-ui/share/core/menu'
+```
+
+## 设计意图
+
+**手风琴模式允许零开**：`uniqueOpened: true` 时 `toggleMenuOpen` 点击已展开项返回 `[]`（全收起），点击未展开项返回 `[key]`（只保留它）。注意它不是「至少保持一个开」——零开是允许的，这让「全部收起」成为可交互状态。
+
+**常规模式是增删而非替换**：返回新数组（`filter` 去掉 / 追加），保持其余展开项不动——多级菜单里同时开几个子菜单是常见需求。
+
+**`moveMenuFocus` 是 @deprecated 外壳**：循环导航算法已收敛到 `core/shared/keyboard` 的 `getNextListIndex`，本函数保留旧签名（吃 DOM 元素数组）供下游既有引用。它做的事是：过滤掉 `tabIndex === -1`（等价于内核的 disabled 项）、当前元素不在列表中时回退首项。**新代码直接用 `getNextListIndex`**。
+
+**aria 三件套**：容器 `role="menu"`、叶子项 `role="menuitem"`、子菜单标题 `role="menuitem"` + `aria-expanded` + `aria-controls`。注意**子菜单标题不是 menuitem 的子角色**——APG 的 menu 结构里，可展开的菜单项仍是 menuitem，展开态由 aria-expanded 表达。
+
+**类名与状态分离**：`--active` / `--disabled` / `--opened` 都是独立布尔类，由 SCSS 组合样式。`--collapse`（折叠态）是容器级类名，影响所有子项的渲染方式（图标菜单只显示图标、tooltip 补全文字）。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getMenuClassNames` | `(state: { mode, collapse }) => string[]` | 类名 | 布局模式 + 折叠态 |
+| `getMenuItemClassNames` | `(state: { active, disabled }) => string[]` | 类名 | 叶子项 |
+| `getSubMenuClassNames` | `(state: { active, disabled, opened }) => string[]` | 类名 | 子菜单 |
+| `getMenuItemGroupClassNames` | `() => string[]` | 类名 | 分组容器 |
+| `toggleMenuOpen` | `(openeds, key, uniqueOpened) => string[]` | 新数组 | 展开/收起（不可变） |
+| `isMenuOpen` | `(openeds, key) => boolean` | 是否展开 | includes 查询 |
+| `moveMenuFocus` ⚠️ | `(items, currentEl, direction) => HTMLElement \| null` | 目标元素 | ↑/↓ 焦点移动 |
+| `getMenuAria` | `(id?) => LhAriaAttrs` | aria 包 | role=menu |
+| `getMenuItemAria` | `(state: { disabled? }) => LhAriaAttrs` | aria 包 | menuitem |
+| `getSubMenuAria` | `(options: { opened, disabled?, menuId? }) => LhAriaAttrs` | aria 包 | menuitem + expanded |
+
+⚠️ 为 `@deprecated` 兼容外壳，新代码用 `shared/keyboard` 的 `getNextListIndex`。
+
+## 类型定义
+
+```ts
+export type LhMenuMode = 'horizontal' | 'vertical'
+```
+
+## 无障碍
+
+```ts
+getMenuAria('menu-1')            // { role: 'menu', id: 'menu-1' }
+getMenuItemAria({ disabled: true })  // { role: 'menuitem', 'aria-disabled': true }
+getSubMenuAria({ opened: true, menuId: 'menu-1' })
+// { role: 'menuitem', 'aria-expanded': true, 'aria-controls': 'menu-1' }
+getSubMenuAria({ opened: false })
+// { role: 'menuitem', 'aria-expanded': false }
+```
+
+- **aria-expanded 的假值也输出**：`{ 'aria-expanded': false }` 是有意义的——它明确告诉读屏软件「这个子菜单是收起的」。这遵循 `shared/a11y` 的约定：只有 undefined（未传）才省略，false 是合法状态值。
+- **键盘导航的模式分歧**：水平菜单用 ←/→、垂直菜单用 ↑/↓，这是 APG 的 menu 模式约定。读屏软件用户按方向键时期待对应的行为——`moveMenuFocus` 只提供垂直方向的 1/-1，水平菜单的 ←/→ 由 UI 层映射后同样调用。
+- **aria-current 标记当前页**：激活的菜单项除了 `--active` 类名，建议在 UI 层补 `aria-current="page"`（与 `breadcrumb` 的末项语义一致），让读屏软件播报「当前页」。
+- **折叠菜单的文字补偿**：`collapse` 模式下只显示图标，菜单项的文本应放到 `aria-label` 或 hover tooltip 里——否则图标按钮对读屏软件是无名的。
+- **跳过禁用项**：`--disabled` 的项不响应点击（UI 层拦截），但仍在 DOM 中。键盘导航必须跳过它们（`moveMenuFocus` 的 tabIndex 过滤）。
+
+## 使用示例
+
+```ts
+import { toggleMenuOpen, isMenuOpen } from '@lh-ui/share/core/menu'
+
+toggleMenuOpen(['a', 'b'], 'b', false)  // ['a']（常规模式收起 b）
+toggleMenuOpen(['a'], 'b', false)       // ['a', 'b']（展开 b）
+toggleMenuOpen(['a'], 'a', true)        // []（手风琴：再点收起，允许零开）
+toggleMenuOpen(['a'], 'b', true)        // ['b']（手风琴：只保留 b）
+
+isMenuOpen(['a', 'b'], 'a')  // true
+isMenuOpen(['a'], 'c')       // false
+```
+
+```ts
+// 受控展开态（UI 层）：openeds 是数组而非 Set，便于序列化与 v-model
+const openeds = ref<string[]>([])
+function onSubMenuClick(key: string) {
+  openeds.value = toggleMenuOpen(openeds.value, key, props.uniqueOpened)
+}
+```
+
+```vue
+<!-- Vue3：侧边垂直菜单 -->
+<template>
+  <LhMenu mode="vertical" :collapse="collapsed" :unique-opened="true">
+    <LhSubMenu index="1">
+      <template #title><LhIcon name="settings" /><span>系统设置</span></template>
+      <LhMenuItem index="1-1" @click="go('/users')">用户管理</LhMenuItem>
+      <LhMenuItem index="1-2" disabled>权限管理</LhMenuItem>
+    </LhSubMenu>
+    <LhMenuItem index="2" @click="go('/profile')">个人中心</LhMenuItem>
+  </LhMenu>
+</template>
+```
+
+```tsx
+// React：openeds 用 useState<string[]>；菜单项点击 navigate；
+// 折叠态用 context 下发给子菜单（避免每层透传 props）
+```
+
+```ts
+// uniapp：<view> + catchtap；折叠模式在小程序端用 px 定宽过渡动画
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-menu` | 容器 |
+| `.lh-menu--{horizontal\|vertical}` | 布局模式 |
+| `.lh-menu--collapse` | 折叠态（仅图标） |
+| `.lh-menu-item` | 叶子项 |
+| `.lh-menu-item--active` / `--disabled` | 激活 / 禁用 |
+| `.lh-sub-menu` / `--active` / `--disabled` / `--opened` | 子菜单标题 |
+| `.lh-sub-menu__popup` | 弹出式子级（水平菜单） |
+| `.lh-menu-item-group` | 分组（带组标题） |
+
+激活项背景 `--lh-menu-item-active-background`、文字色 `--lh-menu-item-color`（明色令牌需在 var-dark 显式翻转，见根 AGENTS.md「暗色陷阱」）；高度令牌 `--lh-menu-item-height`。
+
+## 注意事项
+
+- **openeds 用数组而非对象**：顺序无关但要去重；`toggleMenuOpen` 保证唯一性。序列化到路由 query 或 localStorage 时数组更直观。
+- **手风琴只控制同层级**：`uniqueOpened` 只让**同一 menu 下**的直接子菜单互斥；孙级子菜单之间不受影响（各自维护自己的 openeds）。
+- **水平菜单的子级是弹出式**：一级横向排开，二级往下弹（类 `lh-sub-menu__popup`，定位用 `shared/popper`）；垂直菜单的子级是内联展开（挤压下方内容）。两种模式的 DOM 结构不同，由 mode 驱动。
+- **`--active` 需要路由同步**：菜单的激活态通常跟随当前路由，UI 层监听路由变化更新 active index——core 不碰路由。
+- **折叠态的 tooltip**：`collapse: true` 时菜单项只剩图标，文字应通过 `tooltip` 补全（悬停显示）。这是两个组件的协作点。
+- **`moveMenuFocus` 的 DOM 依赖**：它吃 `HTMLElement[]`，只能在浏览器端调用（SSR 跳过）；且它过滤 tabIndex 而非读 disabled 类名——UI 层必须保证禁用项的 tabIndex 为 -1。
+- **菜单 vs dropdown 的角色相同但用法不同**：两者都用 `role="menu"`。menu 是持久导航、dropdown 是临时操作列表——别用 dropdown 冒充网站导航（刷新即消失、无法深链）。
+
+<FnPlayground module="menu" fn="toggleMenuOpen" params='{"openeds": ["a"], "key": "b", "uniqueOpened": true}' />

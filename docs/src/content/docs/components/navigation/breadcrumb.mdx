@@ -1,0 +1,151 @@
+---
+title: 'breadcrumb 面包屑 —— 导航'
+description: 'getEllipsisBeforeIndex 首项+省略号+末尾策略、getCollapsedHiddenIndexes 折叠隐藏集、末项 aria-current="page"'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+面包屑是「我在哪、怎么来的」的路径指示：`首页 / 设置 / 安全 / 两步验证`。它比菜单轻——只表达层级路径，不承载主导航；比步骤条弱——不表达顺序流程，只表达包含关系。层级深的时候路径会很长，折叠是它的核心算法。
+
+## 何时使用
+
+- 各端实现 `<LhBreadcrumb>` / `<LhBreadcrumbItem>`：后台系统层级路径、文档站分类路径、商品分类路径。
+- 需要**标识当前位置**并提供**逐级返回**入口的场景。
+- **不该用它**：主导航（用 `menu`）；步骤流程（用 `steps`）；同级内容切换（用 `tabs`）；只有一级的路径（那不叫面包屑，是页面标题）。
+
+## 导入方式
+
+```ts
+import {
+  getBreadcrumbItemClassNames,
+  getEllipsisBeforeIndex,
+  getCollapsedHiddenIndexes,
+  getBreadcrumbItemAria,
+} from '@lh-ui/share/core/breadcrumb'
+import type { LhBreadcrumbItemState, LhBreadcrumbCollapseState } from '@lh-ui/share/core/breadcrumb'
+```
+
+## 设计意图
+
+**折叠保留首项**：`getEllipsisBeforeIndex` 的规则是「首项 + 省略号 + 末尾 maxItems-1 项」。**首项永远保留**——它是「回到最顶层」的锚点（通常是「首页」），省略掉它会让用户失去回到根的能力。这个取舍和「保留末项」（当前位置）同等重要。
+
+**省略号插在哪个项之前**：返回的是**省略号之后第一个可见项的下标**（`total - (maxItems - 1)`），UI 层在这个位置前插入省略号元素。不折叠时返回 -1——注意 -1 是「不折叠」的哨兵，不是有效下标。
+
+**`maxItems < 2` 不折叠**：至少要显示首项 + 一个后续项，折叠才有意义。`maxItems: 1` 或更小时返回 -1——这是防御性设计，避免配错值时把面包屑折叠成只剩一个省略号。
+
+**`getCollapsedHiddenIndexes` 与省略号下标的关系**：隐藏的是「首项与省略号之间的项」，即 `[1, ellipsisIndex)` 半开区间——首项（下标 0）和省略号位置之后的项都保留。两个函数配合使用：先取省略号位置，再算隐藏集。
+
+**末项 aria-current="page"**：最后一项是「当前页面」，`aria-current="page"` 是 WAI-ARIA 的标准语义——读屏软件播报「当前页面」，比文本提示更精确。非末项不输出任何 aria 属性（链接语义由原生 `<a>` 承载）。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getBreadcrumbItemClassNames` | `(state: LhBreadcrumbItemState) => string[]` | 类名 | 链接态 + 末项 |
+| `getEllipsisBeforeIndex` | `(state: LhBreadcrumbCollapseState) => number` | 下标 / -1 | 省略号位置 |
+| `getCollapsedHiddenIndexes` | `(state: LhBreadcrumbCollapseState) => number[]` | 隐藏下标集 | 折叠隐藏项 |
+| `getBreadcrumbItemAria` | `(isLast: boolean) => LhAriaAttrs` | aria 包 | 末项 aria-current |
+
+## 类型定义
+
+```ts
+export interface LhBreadcrumbItemState {
+  isLast: boolean    // 是否为最后一项（当前页）
+  isLink: boolean    // 是否渲染为链接（传入 to 且非末项）
+}
+
+export interface LhBreadcrumbCollapseState {
+  total: number      // 项总数
+  maxItems: number   // 最大可见项数（含省略号）；小于 2 表示不折叠
+}
+```
+
+## 无障碍
+
+```ts
+getBreadcrumbItemAria(true)   // { 'aria-current': 'page' }
+getBreadcrumbItemAria(false)  // {}
+```
+
+- **aria-current="page" 只给末项**：中间项是可点击的链接，不需要 current 标记。读屏软件进入页面时会播报「首页，链接 / 设置，链接 / 安全，链接 / 两步验证，当前页面」——路径与位置一次传达完整。
+- **用原生 `<a>` 而非 JS 跳转**：中间项是真实链接时用 `<a href="...">`——支持中键新窗口打开、右键复制链接、无 JS 时可用。客户端路由由 UI 层拦截点击实现（`@click.prevent`），href 保留。`getBreadcrumbItemAria` 的注释说明了这一点：有链接时 role 语义由原生 a 承载，无需函数输出。
+- **省略号按钮的无障碍**：折叠后的省略号通常可点击展开全部路径。它是一个控件，需要 `aria-label="展开全部路径"`（或 aria-expanded 表达展开态）——否则它是无名按钮。
+- **nav 包裹 + aria-label**：整个面包屑推荐 `<nav aria-label="面包屑">`——页面上可能有多个 nav（主导航、分页导航），aria-label 区分它们。
+- **分隔符装饰化**：`/` 或 `»` 分隔符是纯装饰，`aria-hidden` 或用 CSS 伪元素实现，避免读屏软件逐个播报斜杠。
+
+## 使用示例
+
+```ts
+import {
+  getEllipsisBeforeIndex, getCollapsedHiddenIndexes, getBreadcrumbItemAria,
+} from '@lh-ui/share/core/breadcrumb'
+
+getEllipsisBeforeIndex({ total: 6, maxItems: 4 })   // 3（省略号插在下标 3 之前）
+getEllipsisBeforeIndex({ total: 4, maxItems: 4 })   // -1（总数 <= maxItems，不折叠）
+getEllipsisBeforeIndex({ total: 6, maxItems: 1 })   // -1（maxItems < 2 不折叠）
+getEllipsisBeforeIndex({ total: 6, maxItems: 2 })   // 5（保留首项 + 末 1 项）
+
+getCollapsedHiddenIndexes({ total: 6, maxItems: 4 })  // [1, 2]（首项与省略号之间）
+getCollapsedHiddenIndexes({ total: 4, maxItems: 4 })  // []（不折叠）
+```
+
+```ts
+// UI 层：折叠渲染（展开态由本地 state 控制）
+const expanded = ref(false)
+const items = ['首页', '系统', '设置', '安全', '账号', '两步验证']
+const ellipsisIndex = computed(() =>
+  getEllipsisBeforeIndex({ total: items.value.length, maxItems: props.maxItems ?? 4 }),
+)
+const hidden = computed(() =>
+  expanded.value ? [] : getCollapsedHiddenIndexes({ total: items.value.length, maxItems: props.maxItems ?? 4 }),
+)
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <nav aria-label="面包屑">
+    <LhBreadcrumb :max-items="4">
+      <LhBreadcrumbItem to="/">首页</LhBreadcrumbItem>
+      <LhBreadcrumbItem to="/system">系统</LhBreadcrumbItem>
+      <LhBreadcrumbItem to="/system/security">安全</LhBreadcrumbItem>
+      <LhBreadcrumbItem>两步验证</LhBreadcrumbItem>
+    </LhBreadcrumb>
+  </nav>
+</template>
+```
+
+```tsx
+// React：路径数据通常由路由表派生（useMatches / 自定义 route meta），
+// 而非手工逐项声明——面包屑与路由的映射是业务约定
+```
+
+```ts
+// uniapp：<navigator> 是原生跳转组件；小程序端无 <nav> 语义，用 view + aria-label 无效，
+// 可接受（小程序读屏生态不同），保持 DOM 结构一致即可
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-breadcrumb` | 容器（inline-flex） |
+| `.lh-breadcrumb__item` | 单项 |
+| `.lh-breadcrumb__item--link` | 链接态（可 hover 变色） |
+| `.lh-breadcrumb__item--last` | 末项（当前页，加粗或主色） |
+| `.lh-breadcrumb__separator` | 分隔符（通常 CSS 伪元素） |
+| `.lh-breadcrumb__ellipsis` | 省略号（可点击展开） |
+
+文字色 `--lh-text-regular`、链接 hover 色 `--lh-primary-color`、末项 `--lh-text-primary`；字号 `--lh-font-size-base`。
+
+## 注意事项
+
+- **`maxItems` 含省略号**：`maxItems: 4` 实际显示「首项 + 省略号 + 末 3 项」= 5 个元素，可见**文字项**是 4 个。配值时按可见文字项算。
+- **折叠的动态性**：路径长度随导航深度变化（`getEllipsisBeforeIndex` 的 total 是动态的），`maxItems` 固定即可——不需要手动判断何时折叠，函数自动处理。
+- **省略号展开的交互**：常见的两种做法——① 点击省略号就地展开全部（`expanded` 状态切换）；② 点击弹出 popover 列出隐藏项。前者简单、后者省空间，按路径深度选。
+- **路径数据的来源**：面包屑通常由路由表派生而非手写——每条路由的 meta 里配 `title`，组件层聚合当前路径的祖先 meta。core 只管渲染算法，路由集成是 UI 层的事。
+- **末项不渲染为链接**：当前页指向自己没有意义（且 `isLink: false`）。注意 `getBreadcrumbItemClassNames` 的 `--link` 类名由 isLink 控制，末项天然没有。
+- **超长标题的省略**：单层标题过长时用 CSS `text-overflow: ellipsis`（UI 层样式），与路径折叠是两个不同的「省略」——折叠省的是层级数，CSS 省的是单层宽度。
+- **不要用面包屑做主导航**：它是辅助定位，主入口仍是菜单。移动端空间有限时常省略面包屑或只保留「返回」按钮。
+
+<FnPlayground module="breadcrumb" fn="getEllipsisBeforeIndex" params='{"total": 6, "maxItems": 4}' />

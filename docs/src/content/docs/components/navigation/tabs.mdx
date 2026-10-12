@@ -1,0 +1,180 @@
+---
+title: 'tabs 标签页 —— 导航'
+description: 'resolveActiveName 的空串页签名、getNameAfterRemove 删页后的激活策略、tab/tabpanel 双向 aria 关联'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+标签页是「同一区域的内容切换器」：设置页的「基础 / 安全 / 通知」、浏览器的标签页。它把多个面板叠在同一块空间，用页签切换显隐——节省纵向空间，代价是同时只能看一个面板。`core/tabs` 管的是**激活态解析、删页后的激活策略、roving tabindex 导航**。
+
+## 何时使用
+
+- 各端实现 `<LhTabs>` / `<LhTabPane>`：设置页、详情页分区、仪表盘面板切换。
+- 内容**互斥**且**平级**的分区。
+- **不该用它**：流程式的步骤（用 `steps`——tabs 无顺序语义）；层级导航（用 `menu`）；需要同时对照两个面板（用 `grid` 并排）；切换会丢失表单草稿时要谨慎（UI 层可用 keep-alive 保活）。
+
+## 导入方式
+
+```ts
+import {
+  getTabsClassNames,
+  resolveActiveName,
+  getNextActiveName,
+  getNameAfterRemove,
+  getTablistAria,
+  getTabAria,
+  getTabpanelAria,
+} from '@lh-ui/share/core/tabs'
+import type {
+  LhTabsType, LhTabsPosition, LhTabRecord, LhTabNavDirection,
+} from '@lh-ui/share/core/tabs'
+```
+
+## 设计意图
+
+**`!= null` 而非真值短路**：`resolveActiveName` 判断 modelValue 时用 `modelValue != null`——因为**页签名是业务标识，空串是合法值**。用户显式绑定到 `name: ''` 的页签时，真值短路（`if (modelValue && ...)`)会把空串当「未传值」而忽略，激活到第一个可用页签，造成难以排查的状态错位。
+
+**激活校验含 disabled**：`modelValue` 存在但对应的页签被禁用时，**不激活它**，回退到第一个可用页签——禁用页签不可选中是硬约束，连外部强制设置都不行。
+
+**`getNameAfterRemove` 的先右后左**：删掉的是当前激活页签时，优先选**右侧最近的可用项**（保持视线位置），右侧没有再选左侧最近项。这个顺序符合「删除后焦点顺势右移」的直觉。被删项不是激活项时维持原激活。
+
+**`getNextActiveName` 是 @deprecated 外壳**：导航算法已收敛到 `shared/keyboard.getNextListIndex`，本函数保留旧签名（'next'/'prev'/'first'/'last' 的语义化方向名）与「当前值未知或被禁用时回退首项」的既有行为。**新代码直接用内核**。
+
+**roving tabindex**：页签栏的键盘导航标准模式是 roving tabindex——所有页签 `tabindex="-1"`，只有激活页签 `tabindex="0"`。方向键在页签间移动焦点，Tab 键从页签栏跳到面板内容。`getNextActiveName` 返回目标页签名，UI 层据此移动焦点并设 tabindex。
+
+**双向 aria 关联**：页签 `aria-controls` → 面板 id；面板 `aria-labelledby` → 激活页签 id。两端都要写，读屏软件从任一端都能跳到另一端。`aria-selected` 只在激活时输出（false 不输出——未激活是默认态）。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getTabsClassNames` | `(state: { type, position }) => string[]` | 类名 | 外观 + 位置 |
+| `resolveActiveName` | `(records, modelValue) => string \| null` | 激活页签名 | modelValue 校验 + 回退 |
+| `getNextActiveName` ⚠️ | `(records, currentName, direction) => string \| null` | 目标页签名 | 键盘导航 |
+| `getNameAfterRemove` | `(records, removedName, currentName) => string \| null` | 建议激活 | 删页后先右后左 |
+| `getTablistAria` | `(id?) => LhAriaAttrs` | aria 包 | role=tablist |
+| `getTabAria` | `(options: { active, disabled?, panelId?, id? }) => LhAriaAttrs` | aria 包 | role=tab |
+| `getTabpanelAria` | `(options: { tabId?, id? }) => LhAriaAttrs` | aria 包 | role=tabpanel |
+
+⚠️ 为 `@deprecated` 兼容外壳，新代码用 `shared/keyboard` 的 `getNextListIndex`。
+
+## 类型定义
+
+```ts
+export type LhTabsType = 'line' | 'card'      // 下划线 / 卡片外观
+export type LhTabsPosition = 'top' | 'bottom' // 页签位置
+export type LhTabNavDirection = 'next' | 'prev' | 'first' | 'last'
+
+export interface LhTabRecord {
+  name: string       // 唯一标识（稳定键，不随生命周期变化）
+  label: string      // 页签标题
+  disabled: boolean
+}
+```
+
+## 无障碍
+
+```ts
+getTabAria({ active: true, panelId: 'panel-1', id: 'tab-1' })
+// { role: 'tab', id: 'tab-1', 'aria-controls': 'panel-1', 'aria-selected': true }
+getTabAria({ active: false, disabled: true })
+// { role: 'tab', 'aria-disabled': true }（未激活不输出 aria-selected）
+
+getTabpanelAria({ tabId: 'tab-1', id: 'panel-1' })
+// { role: 'tabpanel', id: 'panel-1', 'aria-labelledby': 'tab-1' }
+```
+
+- **role=tab 的键盘约定**（APG）：←/→ 切换页签（且**激活跟随焦点**——移动焦点即切换，不需要再按 Enter）；Home/End 跳到首/末页签。Tab 键离开页签栏进入当前面板。
+- **`getNextActiveName` 的 first/last**：direction 支持 'first' / 'last'，对应 Home/End 键——别自己再写一遍边界判断。
+- **面板需要 tabindex**：面板本身通常加 `tabindex="0"`，让键盘用户能 Tab 进面板内容（APG 推荐做法）。这不是 core 的职责，UI 层实现。
+- **隐藏面板的正确方式**：未激活的面板用 `v-if`/`hidden` 移出可访问性树；**不要用 `visibility: hidden` 之外的手段让面板残留可聚焦**。若需要保活（表单草稿），用 `display: none` + 缓存渲染。
+- **aria-selected 的省略语义**：未激活时不输出该属性（而非输出 false）——APG 规定 tab 的 aria-selected 默认为 false，显式输出 false 虽然合法但冗余。`getTabAria` 遵循 `shared/a11y` 的假值省略约定。
+
+## 使用示例
+
+```ts
+import { resolveActiveName, getNameAfterRemove, getNextActiveName } from '@lh-ui/share/core/tabs'
+
+const records = [
+  { name: 'a', label: '基础', disabled: false },
+  { name: 'b', label: '安全', disabled: false },
+  { name: 'c', label: '通知', disabled: true },
+]
+
+resolveActiveName(records, 'b')   // 'b'
+resolveActiveName(records, 'c')   // 'a'（c 禁用，回退首个可用）
+resolveActiveName(records, '')    // 'a'（空串 != null 走校验分支，但无 name 为 '' 的页签 → 回退）
+resolveActiveName(records, undefined)  // 'a'
+resolveActiveName([], undefined)       // null（无可用页签）
+
+getNextActiveName(records, 'a', 'next')  // 'b'（跳过禁用的 c 时从 a next 得 b）
+getNextActiveName(records, 'b', 'next')  // 'a'（只有 a/b 可用，循环）
+getNextActiveName(records, 'unknown', 'next')  // 'a'（未知回退首项）
+
+getNameAfterRemove(records, 'b', 'b')  // 'a'（删的是激活项 b：右侧无可用 → 左侧最近）
+getNameAfterRemove(records, 'a', 'b')  // 'b'（删的不是激活项，维持 b）
+getNameAfterRemove([{ name: 'a', disabled: true }], 'a', 'a')  // null（无可用）
+```
+
+```ts
+// 受控激活（UI 层）
+const activeName = ref<string | null>(null)
+const records = ref<LhTabRecord[]>([])
+
+function onTabClick(name: string) {
+  activeName.value = name
+}
+function onRemove(name: string) {
+  const next = getNameAfterRemove(records.value, name, activeName.value ?? '')
+  records.value = records.value.filter((r) => r.name !== name)
+  activeName.value = next
+}
+watch(records, () => {
+  activeName.value = resolveActiveName(records.value, activeName.value)
+}, { immediate: true })
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTabs v-model="activeName" type="card">
+    <LhTabPane name="basic" label="基础设置">…</LhTabPane>
+    <LhTabPane name="security" label="安全设置">…</LhTabPane>
+  </LhTabs>
+</template>
+```
+
+```tsx
+// React：records 由 TabPane 子组件注册（useEffect + context）或直接由 props 传入；
+// 键盘导航用 onKeyDown 调 getNextActiveName + focus()
+```
+
+```ts
+// uniapp：<view> 页签 + scroll-view 横向滚动；激活下划线用 transform 定位
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-tabs` | 根容器 |
+| `.lh-tabs--{line\|card}` | 外观 |
+| `.lh-tabs--{top\|bottom}` | 页签位置（下划线/卡片边框随之翻转） |
+| `.lh-tabs__header` / `__nav` / `__nav-wrap` | 页签栏 / 导航 / 滚动包裹（可滚动页签栏） |
+| `.lh-tabs__item` / `--active` / `--disabled` | 页签 |
+| `.lh-tabs__active-bar` | 激活下划线（line 类型，transform 定位） |
+| `.lh-tabs__content` / `__pane` | 面板区 |
+
+激活文字色 `--lh-tabs-active-color`、下划线同色；卡片类型用 `--lh-border-color` 边框 + 激活态背景 `--lh-bg-color` 抬高。
+
+## 注意事项
+
+- **页签栏滚动**：页签多到溢出时需要左右滚动按钮或手势滑动——`__nav-wrap` 的 `overflow: hidden` + `__nav` 的 transform 平移是常见实现，滚动量由 UI 层算（core 不管）。
+- **`type: card` 的边框拼接**：卡片页签激活态要去掉与内容区重合的那条边框（top 位置去底边、bottom 位置去顶边），否则出现双重边框——这是 position 类名存在的原因。
+- **动态增删页签**：增删后 `resolveActiveName` 要重跑（watch records）。删页用 `getNameAfterRemove` 保证激活态不悬空。
+- **页签内放关闭按钮**：`closable` 页签的 ✕ 按钮要 `@click.stop`（否则同时触发页签切换），且需 `aria-label`。
+- **keep-alive 与性能**：频繁切换的重面板（图表、表格）建议保活而非销毁重建——Vue 用 `<keep-alive>`、React 用 CSS 隐藏 + 卸载策略。core 无感知。
+- **`getNextActiveName` 的旧签名**：direction 用语义名（'next'/'prev'）而非内核的 1/-1，且**当前值未知时无论方向都回退首项**（不是按方向走）——这是旧行为的保留，迁移时注意。
+- **空串页签名的陷阱**：`resolveActiveName(records, '')` 会在 records 里找 `name === ''` 的页签——若业务用空串表示「未选择」，会与合法的空串页签名冲突。用 `null` 而非 `''` 表示未选择。
+
+<FnPlayground module="tabs" fn="getNameAfterRemove" params='{"records": [{"name": "a", "label": "基础", "disabled": false}, {"name": "b", "label": "安全", "disabled": false}, {"name": "c", "label": "通知", "disabled": true}], "removedName": "b", "currentName": "b"}' />

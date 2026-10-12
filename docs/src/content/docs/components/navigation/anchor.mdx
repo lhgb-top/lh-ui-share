@@ -1,0 +1,166 @@
+---
+title: 'anchor 锚点 —— 导航'
+description: 'flattenAnchorItems 深度优先扁平化（祖先链防循环）、resolveActiveAnchor 滚动联动高亮、level 层级缩进'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+锚点是「长文档的目录侧栏」：文档站右侧的「基础用法 / API / 注意事项」，点了滚动到对应标题，滚动时高亮当前所在节。它和 `menu` 的区别是——锚点关联的是**同一页内的内容位置**，不是不同的页面。
+
+## 何时使用
+
+- 各端实现 `<LhAnchor>`：文档站目录、长文导读、API 文档章节导航、落地页区块导航。
+- 页面内容**长到需要快速跳转**，且区块有明确标题。
+- **不该用它**：站内页面间导航（用 `menu` / `breadcrumb`）；短页面（一屏内不需要目录）；区块无标题（锚点依赖标题文本作为链接文案）。
+
+## 导入方式
+
+```ts
+import {
+  flattenAnchorItems,
+  collectAnchorIds,
+  resolveActiveAnchor,
+  getAnchorClassNames,
+  getAnchorLinkClassNames,
+} from '@lh-ui/share/core/anchor'
+import type { LhAnchorItem, LhFlatAnchorItem } from '@lh-ui/share/core/anchor'
+```
+
+## 设计意图
+
+**树形结构 → 扁平列表**：锚点的配置是树（章节套小节），但渲染是一维列表（带缩进）。`flattenAnchorItems` 深度优先遍历，**保持文档顺序**——顺序错乱的目录比没有目录更糟。`level` 记录原始深度，驱动缩进样式。
+
+**祖先链 seen 防循环引用**：`seen` 是**当前 DFS 路径上的祖先集合**（不是全局集合）。注释明确写了「祖先链判重保护循环引用」——如果数据里 A 的 children 包含 A 自身（脏数据），全局 seen 只能去重，祖先链能直接打断递归不死循环。这是树形数据结构型错误的兜底。
+
+**`resolveActiveAnchor` 的「最后一个越过阈值」**：在按文档顺序排列的偏移量里找**最后一个 `offset <= currentTop`** 的锚点。关键细节：**遇到第一个 `offset > currentTop` 就 break**——因为 offsets 有序，后面的只会更大，继续遍历是浪费。这是 O(n) 但带提前终止的写法。
+
+**未命中回首项**：滚动到所有锚点之前（页面顶部）时返回 `ids[0]`——首项始终高亮，避免「没有高亮项」的困惑状态。空数组返回空串（UI 层不渲染高亮）。
+
+**`offsets` 与 `ids` 必须同序**：函数签名要求两个数组——偏移量由 UI 层逐个 `getBoundingClientRect()` 测量后按同一顺序传入。顺序错位会得到错误的高亮项，这是调用方契约，core 无法校验。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `flattenAnchorItems` | `(items, level?, seen?) => LhFlatAnchorItem[]` | 扁平列表 | 深度优先保序 |
+| `collectAnchorIds` | `(items) => string[]` | id 列表 | 扁平顺序的 id 数组 |
+| `resolveActiveAnchor` | `(ids, offsets, currentTop) => string` | 激活 id | 滚动联动判定 |
+| `getAnchorClassNames` | `(state: { direction }) => string[]` | 类名 | 容器方向 |
+| `getAnchorLinkClassNames` | `(state: { active, level }) => string[]` | 类名 | 激活态 + 层级缩进 |
+
+## 类型定义
+
+```ts
+export interface LhAnchorItem {
+  id: string          // 目标元素 id
+  title: string       // 显示文本
+  children?: LhAnchorItem[]
+}
+
+export interface LhFlatAnchorItem {
+  id: string
+  title: string
+  level: number       // 原始深度（根为 0），驱动缩进
+}
+```
+
+## 无障碍
+
+锚点链接指向**同一页内的锚点**，标准做法是原生 `<a href="#section">`：
+
+```html
+<a href="#usage" class="lh-anchor__link">使用示例</a>
+...
+<section id="usage" tabindex="-1">…</section>
+```
+
+- **原生锚点跳转 + tabindex="-1"**：点击 `<a href="#id">` 浏览器会滚动并尝试聚焦目标。目标非聚焦元素时跳转后焦点不动——给目标加 `tabindex="-1"` 让它能接收编程式焦点，跳转后读屏软件从该处开始读。这是 WAI-ARIA 推荐的无障碍锚点模式。
+- **aria-current 标记当前节**：`getAnchorLinkClassNames` 的 `--active` 是视觉类，无障碍上建议 UI 层对激活链接补 `aria-current="location"`（同页位置语义，与 `breadcrumb` 的 `aria-current="page"` 区分）。
+- **跳转不要改变 URL hash 的副作用**：hash 变化会进浏览器历史，点五次锚点要按五次后退才能离开页面。UI 层可用 `history.replaceState` 或 `scrollIntoView` 替代默认跳转——这是交互取舍，core 不管。
+- **`nav` 包裹 + aria-label**：同 `breadcrumb`，`<nav aria-label="本页目录">` 声明它是一个导航区。
+
+## 使用示例
+
+```ts
+import {
+  flattenAnchorItems, collectAnchorIds, resolveActiveAnchor,
+} from '@lh-ui/share/core/anchor'
+
+const items = [
+  { id: 'intro', title: '介绍', children: [
+    { id: 'why', title: '为什么用' },
+  ] },
+  { id: 'usage', title: '使用' },
+]
+
+flattenAnchorItems(items)
+// [ { id: 'intro', title: '介绍', level: 0 },
+//   { id: 'why', title: '为什么用', level: 1 },
+//   { id: 'usage', title: '使用', level: 0 } ]
+
+collectAnchorIds(items)  // ['intro', 'why', 'usage']
+
+// 滚动联动：offsets 是各锚点相对容器顶部的位置（与 ids 同序）
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 350)  // 'why'
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 50)   // 'intro'（未越过 why）
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 0)    // 'intro'（未命中回首项）
+resolveActiveAnchor([], [], 0)  // ''（空列表）
+```
+
+```ts
+// UI 层：滚动监听 + 偏移量测量
+const activeId = ref('')
+
+function refresh() {
+  const flat = flattenAnchorItems(props.items)
+  const ids = flat.map((item) => item.id)
+  const offsets = ids.map((id) => {
+    const el = document.getElementById(id)
+    return el ? el.getBoundingClientRect().top - containerTop : Infinity
+  })
+  activeId.value = resolveActiveAnchor(ids, offsets, scrollTop.value)
+}
+
+onMounted(() => window.addEventListener('scroll', refresh, { passive: true }))
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhAnchor :items="items" :offset-top="80" @click="onAnchorClick" />
+</template>
+```
+
+```tsx
+// React：useEffect 注册 scroll 监听；偏移量测量用 ref 数组 + getBoundingClientRect；
+// 节流用 requestAnimationFrame 或 throttle（scroll 高频触发）
+```
+
+```ts
+// uniapp：<scroll-view scroll-into-view="id"> 是小程序原生锚点跳转；
+// 滚动联动用 scroll-view 的 scroll 事件取 scrollTop
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-anchor` | 容器 |
+| `.lh-anchor--{vertical\|horizontal}` | 方向（纵向侧栏 / 横向顶部导航） |
+| `.lh-anchor__link` | 锚点链接 |
+| `.lh-anchor__link--level-{0..n}` | 层级缩进（padding-left 递增） |
+| `.lh-anchor__link--active` | 激活态（主色 + 左侧指示条） |
+
+激活色 `--lh-primary-color`；普通链接 `--lh-text-regular`；层级缩进单位 `--lh-anchor-indent`（如 12px/级）。
+
+## 注意事项
+
+- **偏移量测量要减去容器偏移**：如果锚点在一个滚动的内部容器里（不是 window 滚动），`getBoundingClientRect().top` 要减去容器顶部位置，否则高亮永远偏移。这是最常见的 bug。
+- **`getBoundingClientRect` 是强制布局**：每次 scroll 事件里对 N 个元素调用会触发 N 次重排。优化：缓存偏移量、只在内容尺寸变化时重算；或用 IntersectionObserver 逐个观察。
+- **吸顶遮挡的偏移补偿**：页面有固定头部（`affix`）时，锚点跳转后目标可能被头部遮住。给目标元素加 `scroll-margin-top`（CSS）或在 UI 层的滚动量里减去头部高度——这是布局协作点。
+- **动态内容的偏移量失效**：内容高度变化（展开折叠、图片加载完）后缓存的偏移量就错了。内容变化时要重新测量。
+- **`seen` 的祖先链语义**：`flattenAnchorItems` 的第三个参数 `seen` 是**路径上的祖先**，默认 `new Set()`。业务侧一般不传——它主要是防脏数据死循环。若两个兄弟子树引用了同一节点（DAG 共享），祖先链会让它在每个路径都出现一次（与 `tree` 的祖先链 vs `table` 的全局 seen 是同一个取舍）。
+- **空 `id` 与重复 `id`**：`id` 必须全局唯一（HTML 锚点要求）。`document.getElementById` 只返回第一个匹配——重复 id 会导致跳转错误，core 无法校验。
+- **锚点 vs 目录路由**：锚点关联同页位置；如果「目录」的每项是不同页面，那是 `menu` 不是 `anchor`——别混用（锚点不刷新页面、不进路由历史的管理方式不同）。
+
+<FnPlayground module="anchor" fn="resolveActiveAnchor" params='{"ids": ["intro", "why", "usage"], "offsets": [0, 300, 600], "currentTop": 350}' />
