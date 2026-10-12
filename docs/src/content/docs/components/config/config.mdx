@@ -1,0 +1,163 @@
+---
+title: 'config 全局配置 —— 配置'
+description: 'mergeConfig 三层合并、LH_THEME_DEFAULT=cerblue、getEffectiveXxx 取值链（core 只回预设名，DOM 注入在 UI 层）'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+ConfigProvider 是「全局开关的单一入口」：应用包一层 `<LhConfigProvider :size="..." :theme="..." :locale="...">`，内部所有组件的默认尺寸、主题、语言、z-index 基线统一改变。它不渲染任何内容，只提供**配置上下文**。`core/config` 管的是配置的合并与取值链——具体生效方式（注入 CSS 变量、提供 locale 实例）在 UI 层。
+
+## 何时使用
+
+- 各端实现 `<LhConfigProvider>`：应用根包裹、主题切换、国际化切换、全局尺寸调整。
+- 需要**跨组件统一默认值**、且希望**运行时可切换**的场景。
+- **不该用它**：单个组件的尺寸/主题（直接传 props 给该组件即可，ConfigProvider 是「默认值」层）。
+
+## 导入方式
+
+```ts
+import {
+  mergeConfig,
+  getEffectiveSize,
+  getEffectiveZIndex,
+  getEffectiveTheme,
+} from '@lh-ui/share/core/config'
+import {
+  LH_THEME_DEFAULT,
+  createDefaultConfig,
+} from '@lh-ui/share/core/config'
+import type { LhConfigState } from '@lh-ui/share/core/config'
+```
+
+## 设计意图
+
+**三层合并的优先级**：`mergeConfig(defaults, global, local)` 展平合并，后者覆盖前者——`默认值 < 全局（ConfigProvider）< 局部（组件 props）`。`createDefaultConfig()` 打底，保证所有字段都有值（缺省配置不会是 undefined 而让下游解构出错）。
+
+**`size` 的默认值是 undefined 而非 'medium'**：这是刻意的——undefined 表示「未配置，用 SCSS 令牌的默认值」。如果 core 给个 'medium'，就会与 `styles/` 里 `--lh-control-height-medium` 的默认档脱耦，改令牌默认档不生效。**undefined 是「回退到样式层」的信号**。
+
+**`getEffectiveTheme` 只返回预设名**：返回 `'cerblue'` 这样的字符串，**不返回 vars 对象、不碰 DOM**。UI 层拿到名字后调 `getThemeVars(name)` 取 vars、再调 `buildPresetStyleText(vars)` 生成 `<style>` 文本注入。这个拆分让 core 保持零 DOM（红线 1），也让 UI 层控制注入时机与位置。
+
+**`LH_THEME_DEFAULT = 'cerblue'` 的双源同步**：默认预设名与 `styles/theme/common/variables.scss` 的默认主色（`$lh-primary`）必须同源——`theme.spec.ts` 有回归守护。改默认主题要两边一起改，否则 JS 侧注入的预设与 SCSS 编译出的默认色不一致。
+
+**zIndex 基线是 2000**：弹层类组件（dialog/drawer/popover/dropdown…）从这个基线递增。全局提高基线用于「业务页面有更高 z-index 元素」的冲突场景——这是 ConfigProvider 存在的经典理由之一。
+
+## 函数表
+
+| 函数 / 常量 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `createDefaultConfig` | `() => LhConfigState` | 默认配置 | 打底值 |
+| `mergeConfig` | `(defaults, global, local) => LhConfigState` | 合并配置 | 默认 < 全局 < 局部 |
+| `getEffectiveSize` | `(localSize?, globalSize?) => LhComponentSize \| undefined` | 有效尺寸 | undefined 回退样式层 |
+| `getEffectiveZIndex` | `(localZIndex?, globalZIndex) => number` | 有效 z-index | 局部 ?? 全局 |
+| `getEffectiveTheme` | `(localTheme?, globalTheme?) => LhThemePresetName` | 有效预设名 | 只回名字，不碰 DOM |
+
+常量：`LH_THEME_DEFAULT = 'cerblue'`。
+
+## 类型定义
+
+```ts
+export interface LhConfigState {
+  size: LhComponentSize | undefined    // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  zIndex: number                       // 弹层基线
+  locale: LhComponentLanguage          // 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR' | 'de-DE' | 'fr-FR'
+  theme: LhThemePresetName             // 预设名（registerTheme 注册的自定义名同样合法）
+}
+```
+
+`size` 的五档来自 `LH_SIZE_CONST`（`src/constants`），其中 `old: 'x-large'` 是**老年人专用档**的语义别名（大字体大控件），值与 `x-large` 相同——给适老化场景一个有语义的配置入口。
+
+`locale` 的六种语言来自 `LH_LANGUAGE_CONST`，默认 `LH_LANGUAGE_DEFAULT = 'zh-CN'`。
+
+## 无障碍
+
+ConfigProvider 与无障碍的直接关系只有一处：**locale 切换会改变组件内置文案的语言**（如表单校验的「该字段为必填项」/「This field is required」）。这通过 `locales` 的 `lhlocale` 实例下发——参考 `core/locales` 与 `reference/locales` 页。
+
+- **语言切换的生效范围**：locale 由 ConfigProvider 通过 context 下发，**已渲染的组件立即响应**（响应式更新）。SSG 场景下首屏语言由构建期决定，客户端激活后按用户设置切换。
+- **主题切换不需要重渲染**：主题通过注入 CSS 变量生效，组件样式用 `var(--lh-*)` 消费——切换主题只换 style 元素内容，组件 DOM 不动。这是设计上的关键解耦。
+
+## 使用示例
+
+```ts
+import {
+  mergeConfig, getEffectiveSize, getEffectiveZIndex, getEffectiveTheme, createDefaultConfig,
+} from '@lh-ui/share/core/config'
+
+createDefaultConfig()  // { size: undefined, zIndex: 2000, locale: 'zh-CN', theme: 'cerblue' }
+
+mergeConfig(
+  {},                       // 组件级默认（通常空）
+  { size: 'small', theme: 'ink' },  // 全局 ConfigProvider
+  { size: 'large' },        // 局部 props
+)
+// { size: 'large', zIndex: 2000, locale: 'zh-CN', theme: 'ink' }
+
+getEffectiveSize('large', 'small')   // 'large'
+getEffectiveSize(undefined, 'small') // 'small'
+getEffectiveSize(undefined, undefined)  // undefined（回退 SCSS 默认档）
+
+getEffectiveZIndex(3000, 2000)  // 3000
+getEffectiveZIndex(undefined, 2500)  // 2500
+
+getEffectiveTheme('ink', 'cerblue')   // 'ink'
+getEffectiveTheme(undefined, 'cerblue')  // 'cerblue'
+getEffectiveTheme(undefined, undefined)  // 'cerblue'（LH_THEME_DEFAULT 兜底）
+```
+
+```ts
+// UI 层：主题注入（只能写 <style> 元素，不能写 documentElement 内联 style——
+// 内联 style 特异性高于 var-dark.scss 的整段暗色变量，会导致暗色配色失真）
+import { getThemeVars, buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyTheme(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+  const styleText = buildPresetStyleText(vars)
+  let el = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!el) {
+    el = document.createElement('style')
+    el.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(el)
+  }
+  el.textContent = styleText
+}
+```
+
+```vue
+<!-- Vue3：根包裹 -->
+<template>
+  <LhConfigProvider :size="size" :theme="theme" :locale="locale">
+    <App />
+  </LhConfigProvider>
+</template>
+```
+
+```tsx
+// React：createContext + useContext 下发；主题切换在 effect 里调 applyTheme
+```
+
+```ts
+// uniapp：全局配置存在 globalData 或 store 里；主题注入同模型（h5 端写 <style>，
+// 小程序端用 page 的 style 属性逐项传 CSS 变量——小程序不支持 <style> 注入）
+```
+
+## 样式与令牌
+
+ConfigProvider 无自有样式。它影响的令牌：
+
+| 配置 | 影响的令牌 |
+| --- | --- |
+| `size` | `--lh-control-height-mini/small/medium/large/x-large`（通过组件的 size 类名选择） |
+| `theme` | 整套 `--lh-*` 令牌（`buildPresetStyleText` 生成 `:root` 块） |
+| `zIndex` | `--lh-z-index-{dialog/drawer/popover/...}` 的基线 |
+
+## 注意事项
+
+- **`size: undefined` 是特性不是遗漏**：它表示「回退到样式层默认档」。`getEffectiveSize` 链式回退到 undefined 而非硬编码 'medium'——改 SCSS 默认档就能改变全局默认尺寸。
+- **主题只能写 `<style>` 元素**：`buildPresetStyleText` 的注释明确警告——写 `documentElement` 的内联 style 会因特异性高于 `var-dark.scss` 的整段暗色覆盖块，导致暗色模式配色失真。
+- **`theme` 接受 registerTheme 注册的自定义名**：`registerTheme(preset)` 注册后，ConfigProvider 的 theme 可以填自定义名——`getThemeVars` 会查到它。预设不限于内置的 5 个。
+- **嵌套 ConfigProvider**：局部覆盖全局，内层覆盖外层。典型用法：某个区域需要更大尺寸（如触屏操作台）单独包一层。
+- **locale 与 theme 的生效方式不同**：locale 走 context（响应式数据流），theme 走 CSS 变量注入（DOM 操作）。locale 切换由 UI 层调 `lhlocale.setLocale()`；theme 切换由 UI 层调 `applyTheme`——两者不要混在一个 effect 里。
+- **SSR 的主题闪烁**：服务端不知道用户主题（在 cookie/localStorage 里），首屏按默认主题渲染、客户端激活后切换会闪一下。常见解法是内联一段同步脚本在 `<head>` 里提前读 localStorage 注入 `data-theme`——这是部署层的事，core 不参与。
+- **zIndex 基线的意义**：设 2000 是为业务层留出 0~1999 的空间（导航栏、自定义浮层）。如果你的业务有 z-index 9999 的元素遮挡弹层，提高全局基线而非逐个组件改。
+
+<FnPlayground module="config" fn="mergeConfig" params='{"defaults": {}, "global": {"size": "small", "theme": "ink"}, "local": {"size": "large"}}' />

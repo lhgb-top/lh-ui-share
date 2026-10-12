@@ -1,0 +1,197 @@
+---
+title: 'virtual-list 虚拟列表 —— 配置'
+description: '定高 computeRange 与动态高度 build/patch/find 双模式、NaN 净化防白屏、与 table 共享同一内核算法'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+虚拟列表是「万条数据的渲染方案」：只渲染视口内的几十条，滚动时动态替换。10 万行数据全部渲染会卡死浏览器，虚拟列表让 DOM 节点数恒定。代价是**高度必须可预测**——定高模式直接算，动态高度模式要先测量。`core/virtual-list` 封装两套模式，与 `table` 的虚拟滚动共享 `shared/virtual` 同一份内核算法。
+
+## 何时使用
+
+- 各端实现 `<LhVirtualList>`：长消息列表、日志流、通讯录、大数据下拉选项。
+- 数据量**超过视口容纳量 5 倍以上**、且每项渲染成本不低时才值得。
+- **不该用它**：几十上百条数据（直接渲染，虚拟化的测量/定位成本不划算）；项高度**完全不可预测且不测量**（必须接受定高或提供测量能力）；需要全量 DOM 的场景（全选 Ctrl+F 浏览器搜索、打印整页——虚拟列表外的内容不在 DOM 里，搜不到）。
+
+## 导入方式
+
+```ts
+import {
+  LH_VIRTUAL_ITEM_SIZE,
+  LH_VIRTUAL_OVERSCAN,
+  computeWindow,
+  computeVirtualRange,
+  buildVirtualItems,
+  patchMeasuredSize,
+  findVirtualRange,
+  getItemOffset,
+  getVirtualListClassNames,
+} from '@lh-ui/share/core/virtual-list'
+import type { LhVirtualItem, LhVirtualRange } from '@lh-ui/share/core/virtual-list'
+```
+
+## 设计意图
+
+**双模式**：定高（`computeRange`，O(1) 算区间）与动态高度（`buildVirtualItems` + `patchMeasuredSize` + `findVirtualRange`，需测量）。定高是默认推荐——简单、无闪烁。动态高度用于内容高度真的不均的场景（不同长度的聊天消息）。
+
+**与 table 共享同一内核**：`shared/virtual` 的注释记录了历史——定高算法原本在 virtual-list 与 table **各有一份**，连默认过扫描量都不同（2 vs 3），一处修复不会同步到另一处。抽出唯一算法后两处是薄封装。`LH_TABLE_OVERSCAN = 3` 是 table 侧的定制值，virtual-list 用默认的 `LH_VIRTUAL_OVERSCAN = 2`。
+
+**NaN 净化是防白屏**：`computeRange` 的注释写得很清楚——NaN 的 scrollTop 进入 `Math.max` / `Math.floor` 会产出 NaN 窗口，`array.slice(NaN)` 返回空数组 → **白屏**。所有入参都做 `Number.isFinite` 净化。`findVirtualRange` 更进一步：`items[NaN].offset` 直接 TypeError 中断渲染。
+
+**`first` 钳到 `total - 1`**：数据收缩（删了行）后 scrollTop 还没被钳制的那一帧，`first` 可能超过 total，导致 `start > end` → slice 返回空 → 白屏。这个钳制是竞态修复。
+
+**`patchMeasuredSize` 就地修改**：动态高度测到真实高度后，**修改原数组**并顺移后续所有项的 offset，返回尺寸变化量 delta。相比 `buildVirtualItems` 全量重建（O(n) 新数组 + 触发全部 diff），它只遍历一次、且不引起未变化项的重渲染。注释写明了这个取舍——不可变性在这里让位给性能。
+
+**`getItemOffset` 的定高捷径**：定高模式滚动到第 N 项直接 `N * itemHeight`，不需要 items 数组——函数文档明确说动态模式才用它。
+
+**`computeWindow` 是轴无关版本**：水平虚拟滚动（scrollLeft/viewportWidth/itemWidth）与纵向共用同一份算法，只是字段名从 offsetY 换成 offset。`LhAxisRange` 与 `LhVirtualRange` 同义。
+
+## 函数表
+
+| 函数 / 常量 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `computeRange`（经 `computeVirtualRange`） | `(scrollTop, viewportHeight, itemHeight, total, overscan?) => LhVirtualRange` | 可视区间 | 定高模式 |
+| `computeWindow` | `(scrollOffset, viewportSize, itemSize, total, overscan?) => LhAxisRange` | 轴无关区间 | 水平虚拟化 |
+| `buildVirtualItems` | `(count, sizes, defaultSize?) => { items, totalHeight }` | 项数组 | 动态高度预计算 |
+| `patchMeasuredSize` | `(items, index, size, defaultSize?) => number` | delta | 增量更新实测尺寸 |
+| `findVirtualRange` | `(items, scrollTop, viewportHeight, overscan?) => LhVirtualRange` | 可视区间 | 动态高度二分查找 |
+| `getItemOffset` ⚠️ | `(items, index) => number` | 偏移 | 滚动到指定项 |
+| `getVirtualListClassNames` | `() => string[]` | 类名 | 容器 |
+
+常量：`LH_VIRTUAL_ITEM_SIZE = 40`（默认估算项高）、`LH_VIRTUAL_OVERSCAN = 2`（默认过扫描）。
+
+⚠️ `computeVirtualRange` / `getItemOffset` 为 `@deprecated` 兼容别名，新代码直接用 `shared/virtual` 的 `computeRange` / `getItemOffsetAt`。
+
+## 类型定义
+
+```ts
+export interface LhVirtualItem {
+  size: number      // 该项的估算/实测高度
+  offset: number    // 该项相对列表顶部的偏移
+}
+
+export interface LhVirtualRange {
+  start: number     // 起始下标（含）
+  end: number       // 结束下标（不含）
+  offsetY: number   // 窗口偏移 px（撑住滚动条的占位高度）
+  totalHeight: number  // 全量高度 px（撑出滚动条）
+}
+```
+
+## 无障碍
+
+虚拟列表对读屏软件是**隐形的挑战**：DOM 里只有几十项，读屏软件无法播报「第 3000 项，共 10000 项」。
+
+- **aria-rowcount / aria-rowindex**：容器设 `aria-rowcount`（总项数），每项设 `aria-rowindex`（实际下标 + 1）。这是表格虚拟滚动（`table`）的做法，列表场景可借用。**这项属性由 UI 层渲染**，core 只算区间。
+- **滚动时焦点保持**：用户用键盘聚焦某项后滚动，该项被移出 DOM 会丢失焦点。UI 层需要在卸载前记录焦点 index、重新挂载后恢复——这是虚拟列表键盘可用性的核心难点。
+- **不要用虚拟列表做语义列表**：屏幕阅读器的「按元素遍历」只能遍历 DOM 里存在的项。纯展示性大数据流（日志、消息）适合虚拟化；**需要读屏逐项访问的列表慎用**（如商品列表用户想逐个听）。
+- **搜索定位**：虚拟列表外的内容不在 DOM 中，浏览器 Ctrl+F 搜不到。提供「跳转到第 N 项」「搜索过滤」功能作为补偿。
+
+## 使用示例
+
+```ts
+import {
+  computeRange, buildVirtualItems, patchMeasuredSize, findVirtualRange,
+} from '@lh-ui/share/core/virtual-list'
+
+// 定高模式
+computeRange(800, 400, 50, 1000)
+// { start: 14, end: 26, offsetY: 700, totalHeight: 50000 }
+// （first = floor(800/50) = 16，start = 16-2 = 14，visible = ceil(400/50) = 8，
+//   end = 14 + 8 + 4 = 26）
+
+computeRange(0, 400, 50, 10)   // { start: 0, end: 10, offsetY: 0, totalHeight: 500 }
+computeRange(NaN, 400, 50, 10) // { start: 0, end: 10, offsetY: 0, totalHeight: 500 }（NaN 净化）
+computeRange(0, 400, 0, 10)    // { start: 0, end: 0, offsetY: 0, totalHeight: 0 }（itemHeight 非法）
+```
+
+```ts
+// 动态高度模式
+const { items, totalHeight } = buildVirtualItems(5, [30, 0, 60], 40)
+// items: [{ size: 30, offset: 0 }, { size: 40, offset: 30 }, { size: 60, offset: 70 },
+//         { size: 40, offset: 130 }, { size: 40, offset: 170 }]
+// totalHeight: 210（sizes 缺省项按 defaultSize=40 估算）
+
+const delta = patchMeasuredSize(items, 1, 50)  // 10（40 → 50 的变化量）
+// items[2..4].offset 顺移 +10；items[1].size = 50
+
+findVirtualRange(items, 100, 200)
+// 二分找视口区间，返回 { start, end, offsetY, totalHeight }
+```
+
+```ts
+// UI 层：定高模式渲染
+const range = ref<LhVirtualRange>({ start: 0, end: 0, offsetY: 0, totalHeight: 0 })
+
+function onScroll() {
+  range.value = computeRange(
+    container.value!.scrollTop,
+    container.value!.clientHeight,
+    props.itemHeight,
+    props.data.length,
+  )
+}
+const visibleData = computed(() => props.data.slice(range.value.start, range.value.end))
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <div class="lh-virtual-list" @scroll.passive="onScroll">
+    <div class="lh-virtual-list__phantom" :style="{ height: range.totalHeight + 'px' }">
+      <div class="lh-virtual-list__window" :style="{ transform: `translateY(${range.offsetY}px)` }">
+        <div v-for="item in visibleData" :key="item.id" class="lh-virtual-list__item">
+          {{ item.text }}
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+```
+
+```ts
+// 动态高度模式：渲染后测量每个 item 的真实高度
+function onItemMounted(index: number, el: HTMLElement) {
+  const height = el.getBoundingClientRect().height
+  const delta = patchMeasuredSize(items.value, index, height)
+  if (delta !== 0) {
+    // 高度变化会改变 totalHeight 与后续 offset，重新算区间
+    range.value = findVirtualRange(items.value, scrollTop.value, viewportHeight.value)
+  }
+}
+```
+
+```tsx
+// React：useRef 存 items 数组（patchMeasuredSize 就地修改，不触发 setState 重新渲染测量链），
+// 滚动事件用 throttle 或 requestAnimationFrame 节流
+```
+
+```ts
+// uniapp：<scroll-view scroll-y :scroll-top> + 节点查询（createSelectorQuery）
+// 测量高度；小程序的 scroll 事件已有节流，但 scroll-view 的滚动同步比 h5 慢一拍
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-virtual-list` | 滚动容器（固定高度 + overflow: auto） |
+| `.lh-virtual-list__phantom` | 占位元素（高度 = totalHeight，撑出滚动条） |
+| `.lh-virtual-list__window` | 可视窗口（transform: translateY(offsetY)） |
+| `.lh-virtual-list__item` | 单项 |
+
+容器高度由业务定（`height: 400px` 或 flex 填充）；`will-change: transform` 优化窗口位移性能。
+
+## 注意事项
+
+- **定高模式要真的定高**：内容换行、图标尺寸不同都会让项高度不均，定高模式会出现错位（项目被截断或重叠）。不确定就上动态高度模式，或用 CSS `white-space: nowrap; overflow: hidden; text-overflow: ellipsis` 强制单行定高。
+- **`overscan` 的意义**：视口上下各多渲染 2 项，避免快速滚动时出现空白闪动。值越大越顺滑但渲染越多——2 是经验默认值，table 用 3（表格行更复杂）。
+- **动态高度的闪烁问题**：首屏用估算高度渲染，测量后真实高度不同 → 列表跳一下。缓解：估算值尽量准（用历史平均高度）、或首屏渲染时同步测量。
+- **`patchMeasuredSize` 的 delta 用途**：返回的高度差用于**校正 scrollTop**——尺寸变化后滚动位置可能不再对应原来的内容，UI 层据此补偿滚动量。
+- **key 的稳定性**：`v-for` 的 key 必须是稳定业务 id（不是 index）——虚拟列表频繁增删项，用 index 做 key 会复用错 DOM。
+- **水平虚拟化用 `computeWindow`**：横向滚动的轮播、时间轴用轴无关版本，算法同一份。
+- **`@deprecated` 别名**：`computeVirtualRange` / `getItemOffset` 是旧名，委托 `shared/virtual`——新代码直接引内核（`@lh-ui/share/core/shared/virtual`），下游 vue2 仍引用旧名，删除前先改下游。
+- **测量时机的循环依赖**：渲染依赖区间 → 区间依赖高度 → 高度依赖渲染后的测量。破解：首屏用估算高度渲染，测量后更新一次。别在测量回调里同步强制布局（`getBoundingClientRect` 已经是一次重排）。
+- **不要在虚拟列表里做复杂动画**：项频繁挂载卸载，进场/退场动画会闪烁。需要动画用 FLIP 或把动画做在项内部。
+
+<FnPlayground module="virtual-list" fn="computeRange" params='{"scrollTop": 800, "viewportHeight": 400, "itemHeight": 50, "total": 1000}' />

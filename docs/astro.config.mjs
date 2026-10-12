@@ -171,6 +171,14 @@ export default defineConfig({
                 { label: 'dropdown 下拉菜单', link: '/components/navigation/dropdown' },
               ],
             },
+            {
+              label: '配置',
+              collapsed: true,
+              items: [
+                { label: 'config 全局配置', link: '/components/config/config' },
+                { label: 'virtual-list 虚拟列表', link: '/components/config/virtual-list' },
+              ],
+            },
           ],
         },
         {
