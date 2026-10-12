@@ -16,8 +16,8 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-// 未来新增 UI 库（react / uniapp）时在此追加
-const LIBS = ['lh-ui-plus', 'lh-ui-vue2']
+// 家族全部 UI 库；未来新增 UI 库时在此追加
+const LIBS = ['lh-ui-plus', 'lh-ui-vue2', 'lh-ui-react', 'lh-ui-uniapp']
 const PKG = '@lh-ui/share'
 
 const shareVersion = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
