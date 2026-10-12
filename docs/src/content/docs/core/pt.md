@@ -1,0 +1,121 @@
+---
+title: pt —— 透传属性合并
+description: 'mergePt 把 PT 属性包（class / style / attrs）与基础类名浅合并，供组件内部元素样式透传'
+---
+
+import { FnPlayground } from '../../components/FnPlayground.astro'
+
+组件内部有多个元素（按钮的 `<button>` 和里面的 `<span>`、输入框的 `<input>` 和前置图标 `<i>`），用户想从外部微调其中某一个，怎么办？lh-ui 的答案是 **PT（PassThrough）属性包**：组件暴露 `pt` prop，按内部元素名分别透传 `class` / `style` / `attrs`。`mergePt` 负责把它与组件自己的基础类名合并。
+
+## 何时使用
+
+- 组件库内部：每个内部元素调 `mergePt(props.pt?.icon, 'lh-button__icon')`，拿到该挂的 class / style / attrs。
+- 用户侧通过 `pt` prop 深入组件内部做微调，而不必 `:deep()` 穿透。
+
+**不该用它**：主题级定制（用 [themeVars](/theme/customization)）；单纯加类名（用 `class` prop）。
+
+## 导入方式
+
+```ts
+import { mergePt, type LhPtAttrs } from '@lh-ui/share/core/shared/pt'
+```
+
+## 类型与函数
+
+```ts
+export interface LhPtAttrs {
+  class?: string | string[] | Record<string, boolean>
+  style?: Record<string, string>
+  attrs?: Record<string, any>
+}
+```
+
+| 函数 | 签名 | 作用 |
+| --- | --- | --- |
+| `mergePt` | `(pt: LhPtAttrs \| undefined, baseClass: string) => { class: string[]; style: Record<string, string>; attrs: Record<string, any> }` | 合并 PT 属性与基础类名 |
+
+## 合并规则
+
+### class
+
+`baseClass` **永远在数组首位**，用户的 class 在后：
+
+```ts
+mergePt({ class: 'my-icon' }, 'lh-button__icon')
+// { class: ['lh-button__icon', 'my-icon'], style: {}, attrs: {} }
+
+mergePt({ class: ['a', 'b'] }, 'lh-button__icon')
+// class: ['lh-button__icon', 'a', 'b']
+
+mergePt({ class: { active: true, disabled: false } }, 'lh-button__icon')
+// class: ['lh-button__icon', 'active']   —— 对象只取值为真的键
+
+mergePt({ class: 'a  b ' }, 'lh-button__icon')
+// class: ['lh-button__icon', 'a', 'b']   —— 字符串按空格切分，过滤空串
+```
+
+为什么 `baseClass` 在前：**BEM 基础类名的特异性不能被用户类名压过**（同为单类名时后写的覆盖先写的）。组件的 `--primary` 修饰符仍然要能盖住用户的 `my-icon`。
+
+### style / attrs
+
+```ts
+mergePt(undefined, 'lh-button__icon')
+// { class: ['lh-button__icon'], style: {}, attrs: {} }   —— pt 为空时全空
+
+mergePt({ style: { color: 'red' }, attrs: { 'data-x': '1' } }, 'lh-button__icon')
+// { class: ['lh-button__icon'], style: { color: 'red' }, attrs: { 'data-x': '1' } }
+```
+
+**注意**：`style` / `attrs` 是**引用透传**，不做拷贝。UI 层拿到后直接 `v-bind="merged.attrs"` / `:style="merged.style"` 即可；不要在组件内部 mutate 返回值。
+
+## 使用示例
+
+### 组件内部（按钮的图标元素）
+
+```ts
+// button 组件
+const iconPt = computed(() => mergePt(props.pt?.icon, 'lh-button__icon'))
+```
+
+```vue
+<template>
+  <button class="lh-button">
+    <i v-if="icon" v-bind="iconPt.attrs" :class="iconPt.class" :style="iconPt.style" />
+    <span><slot /></span>
+  </button>
+</template>
+```
+
+### 用户侧
+
+```vue
+<lh-button
+  :pt="{
+    icon: { class: 'text-lg', style: { marginRight: '4px' } },
+    $root: { attrs: { 'data-test': 'submit' } },
+  }"
+>
+  提交
+</lh-button>
+```
+
+### React
+
+```tsx
+const iconPt = mergePt(pt?.icon, 'lh-button__icon')
+
+return (
+  <button className="lh-button">
+    {icon && <i className={iconPt.class.join(' ')} style={iconPt.style} {...iconPt.attrs} />}
+  </button>
+)
+```
+
+## 注意事项
+
+- **浅层合并，不做 deepMerge**：`class` 数组级拼接、`style` / `attrs` 整包替换。深合并在这里没有语义（class 是列表不是树）。
+- **`pt` 为空返回全空对象**：UI 层可以无脑解构，不用判空。
+- **返回的 class 是数组**：Vue 的 `:class` 接收数组，React 需要 `.join(' ')`。
+- **基础类名不可省**：`mergePt(pt, '')` 会得到一个首项为空串的数组——BEM 基础类名是样式锚点，每个内部元素都必须有。
+
+<FnPlayground module="pt" fn="mergePt" params='{"pt": {"class": "my-icon text-lg"}, "baseClass": "lh-button__icon"}' />

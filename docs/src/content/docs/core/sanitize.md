@@ -1,0 +1,137 @@
+---
+title: sanitize —— 数值净化
+description: 'sanitizeNumber / clamp / safePrecision 在入口拦截 NaN 与 Infinity，避免污染下游渲染'
+---
+
+import { FnPlayground } from '../../components/FnPlayground.astro'
+
+页码、间距、step、precision、尺寸上限——core 层大量函数接收外部数值。`NaN` / `Infinity` 一旦流入会一路污染下游：`NaNpx` 的样式、`slice(NaN)` 的空数组、`toFixed(1000)` 的 RangeError 崩渲染。这个模块的策略是**在入口统一拦截**，下游算法只处理「已经干净」的数。
+
+## 导入方式
+
+```ts
+import {
+  sanitizeNumber,
+  clamp,
+  safePrecision,
+  LH_PRECISION_MAX,
+  type LhSanitizeNumberOptions,
+} from '@lh-ui/share/core/shared/sanitize'
+```
+
+## 类型与常量
+
+```ts
+export interface LhSanitizeNumberOptions {
+  min?: number       // 允许的最小值（非有限的 min 自身被忽略）
+  max?: number       // 允许的最大值（非有限的 max 自身被忽略）
+  integer?: boolean  // 是否取整（向 0 截断）
+}
+
+export const LH_PRECISION_MAX = 100   // precision 上限：toFixed 超过 100 位会抛 RangeError
+```
+
+## 函数表
+
+| 函数 | 签名 | 作用 |
+| --- | --- | --- |
+| `sanitizeNumber` | `(value: number \| undefined \| null, fallback: number, options?) => number` | 把任意数值净化为有限数 |
+| `clamp` | `(value: number, min: number, max: number) => number` | 原始钳制，**不做任何净化** |
+| `safePrecision` | `(precision: number) => number` | precision 净化为 `[0, 100]` 整数 |
+
+## sanitizeNumber
+
+```ts
+sanitizeNumber(5, 0)                    // 5
+sanitizeNumber(NaN, 0)                  // 0
+sanitizeNumber(Infinity, 10)            // 10
+sanitizeNumber(undefined, 1)            // 1
+sanitizeNumber(null, 1)                 // 1
+sanitizeNumber(3.7, 0, { integer: true })   // 3（向 0 截断，非四舍五入）
+sanitizeNumber(-5, 0, { min: 0 })       // 0
+sanitizeNumber(999, 0, { max: 100 })    // 100
+```
+
+处理顺序：**非有限判断 → `integer` 取整 → `min` 钳制 → `max` 钳制**。
+
+关键设计：**`min` / `max` 自身也做非有限过滤**。
+
+```ts
+sanitizeNumber(5, 0, { min: NaN, max: Infinity })
+// 5  —— 坏的 min/max 不会把 NaN 带回结果
+```
+
+为什么重要：`min` / `max` 通常来自用户的 props（`<lh-slider :min="NaN">`），如果不过滤，`Math.max(NaN, 5)` 就是 `NaN`，净化了个寂寞。
+
+## clamp
+
+```ts
+clamp(12, 0, 10)    // 10
+clamp(-3, 0, 10)    // 0
+clamp(5, 0, 10)     // 5
+clamp(NaN, 0, 10)   // NaN  —— 透传！
+```
+
+`clamp` 是**朴素的** `Math.min(Math.max(value, min), max)`，不做净化。这是刻意的：
+
+- **调用方已保证有限**的场景不需要重复净化的开销——input-number 的 `clampValue`、slider 的拖拽钳制、popper 的几何夹回都属此类（值来自自己算出来的中间结果）。
+- **保持 NaN 透传语义**：某些场景需要「NaN 就是 NaN」流到边界检查那一步，统一吃掉反而掩盖 bug。
+
+**选型原则**：值来自外部（props、用户输入、网络）→ `sanitizeNumber`；值来自内部计算 → `clamp`。
+
+## safePrecision
+
+```ts
+safePrecision(2)       // 2
+safePrecision(-1)      // 0
+safePrecision(999)     // 100
+safePrecision(NaN)     // 0
+safePrecision(2.7)     // 2（先取整）
+```
+
+等价于 `sanitizeNumber(precision, 0, { min: 0, max: LH_PRECISION_MAX, integer: true })`。
+
+**为什么必须净化**：`(1.234).toFixed(precision)` 在 `precision > 100` 时抛 `RangeError`——一个非法的 precision prop 会直接崩掉 input-number / statistic 的渲染。净化成 0 比崩渲染好得多。
+
+## 谁在用
+
+| 消费者 | 用法 |
+| --- | --- |
+| `pagination` | `sanitizeNumber(currentPage, 1, { min: 1 })` |
+| `input-number` | `sanitizeNumber(props.step, 1, { min: 0 })` + `safePrecision(props.precision)` |
+| `space` | `sanitizeNumber(props.size, 8)`（间距） |
+| `popper` | 入参 rect 的字段级净化 + `clamp` 夹回 |
+| `keyboard` | `clamp` 用于导航边界 |
+| `statistic` | `safePrecision(props.precision)` |
+
+## 使用示例
+
+### props 净化
+
+```ts
+// pagination 组件
+const currentPage = computed(() =>
+  sanitizeNumber(props.currentPage, 1, { min: 1, max: totalPages.value }),
+)
+```
+
+### 防御性工具
+
+```ts
+// 从事件取值后净化
+const value = sanitizeNumber(Number(e.target.value), 0)
+```
+
+### precision 安全
+
+```ts
+const display = modelValue.value.toFixed(safePrecision(props.precision))
+```
+
+## 注意事项
+
+- **`integer` 是向 0 截断**（`Math.trunc`），不是四舍五入：`3.7 → 3`，`-3.7 → -3`。分页、下标这类场景要的就是截断。
+- **`clamp` 不净化**：这是特性不是 bug，别「修复」成净化的（会破坏 NaN 透传的调试价值）。
+- **fallback 是必填的**：没有合理默认值（不同场景的「安全值」不同），强制传让调用方想清楚。
+
+<FnPlayground module="sanitize" fn="sanitizeNumber" params='{"value": null, "fallback": 1, "options": {"min": 0, "max": 10}}' />

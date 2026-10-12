@@ -1,0 +1,158 @@
+---
+title: 主题预设
+description: '青花瓷 / 松花绿 / 朱砂 / 水墨 / 藤黄五个内置预设与 registerTheme 自定义注册'
+---
+
+import { PresetPreview } from '../../components/PresetPreview.astro'
+
+五个内置预设是 lh-ui 的默认审美主张：每个都从中国传统色彩里取一个主色，配上完整的明暗两套配色。
+
+## 预设总览
+
+| 预设 | `name` | 标识符 | labelEn | 描述 | 浅主色 |
+| --- | --- | --- | --- | --- | --- |
+| 青花瓷 | `'cerblue'` | `LhCerblue` | Ceramic Blue | 青花瓷釉下彩，清雅素净 | 否 |
+| 松花绿 | `'songhua'` | `LhSonghua` | Pine Green | 竹林修竹，生机勃勃 | **是** |
+| 朱砂 | `'zhusha'` | `LhZhusha` | Vermilion | 传统印章朱砂红，喜庆庄重 | 否 |
+| 水墨 | `'shuimo'` | `LhShuimo` | Ink Wash | 水墨丹青，素雅极简 | 否 |
+| 藤黄 | `'golden'` | `LhGolden` | Golden Autumn | 深秋枫黄，温暖金黄 | **是** |
+
+<PresetPreview />
+
+## 各预设的 vars
+
+### 基础五键（全部预设都有）
+
+```ts
+{
+  '--lh-primary-color': '...',
+  '--lh-primary-color-hover': '...',
+  '--lh-primary-color-active': '...',
+  '--lh-primary-color-bg': '...',
+  '--lh-primary-color-border': '...',
+}
+```
+
+### 浅主色预设的两键额外键
+
+`songhua`（松花绿）与 `golden`（藤黄）是**浅主色**，白字对比度不足 AA，必须额外给两个键：
+
+| 键 | 作用 |
+| --- | --- |
+| `--lh-color-on-primary` | 主色按钮上的文字色（浅主色改用墨字） |
+| `--lh-selected-color` | 选中态文字色（active 色在悬停底上作选中文字对比度不足，单独加深） |
+
+**为什么必需**：浅主色按钮配白字，对比度只有 3.x:1，达不到 AA 的 4.5:1。`verify:theme` 门禁会拦。
+
+以松花绿为例，源码注释记录了修正理由：
+
+- `--lh-color-on-primary`：松花属浅主色，白字对比度仅 3.93:1，改用墨字 4.73:1
+- `--lh-selected-color`：active 色在悬停底上作选中文字仅 3.48:1，选中态单独加深（按钮 active 底色不受影响）
+- `--lh-primary-color-active`：原 `#4B7A4A` 仅 3.70:1 → `#4F8F4C` 4.75:1
+
+藤黄同理：白字 3.25:1 → 墨字 5.31:1；选中文字 3.41:1 → 加深至 `#82600A`；active `#9A7208` 3.94:1 → `#A87F0A` 4.70:1。
+
+**新增浅主色预设的硬要求**：必须给 `--lh-color-on-primary` 与 `--lh-selected-color`，否则 `verify:theme` 的 AA 4.5:1 门禁失败。
+
+## 使用预设
+
+### 取预设
+
+```ts
+import { LH_THEME_PRESETS, getThemePreset, getThemeVars } from '@lh-ui/share/theme'
+
+LH_THEME_PRESETS                       // 全部五个
+getThemePreset('cerblue')              // LhCerblue 对象
+getThemePreset('not-exists')           // undefined
+getThemeVars('cerblue')?.['--lh-primary-color']
+```
+
+### 注入预设（UI 层）
+
+```ts
+import { buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyPreset(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+
+  const text = buildPresetStyleText(vars)
+  let style = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!style) {
+    style = document.createElement('style')
+    style.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(style)
+  }
+  style.textContent = text     // 替换而非追加，切换主题时旧的自定义样式不残留
+}
+```
+
+**关键点**（见 [主题总览的注入约束](/theme/overview#注入约束只能写-style不能写内联-style)）：只能写 `<style>` 元素，不能写 `documentElement` 的内联 style，否则暗色模式配色失真。
+
+### 各 UI 库的 ConfigProvider
+
+```vue
+<!-- lh-ui-plus / lh-ui-vue2 -->
+<lh-config-provider theme="cerblue">
+  <App />
+</lh-config-provider>
+```
+
+`theme` prop 收 `LhThemePresetName`，组件内部走上面的注入逻辑。docs 站的主题定制页与 ThemeStudio 遍历 `LH_THEME_PRESETS` 自动列出全部预设——**新增预设后各库文档页无需手改**。
+
+## 自定义预设
+
+```ts
+import { registerTheme, getThemePreset } from '@lh-ui/share/theme'
+
+registerTheme({
+  name: 'my-brand',
+  label: '品牌色',
+  labelEn: 'Brand',
+  description: '公司品牌主色',
+  vars: {
+    '--lh-primary-color': '#722ED1',
+    '--lh-primary-color-hover': '#9254DE',
+    '--lh-primary-color-active': '#531DAB',
+    '--lh-primary-color-bg': '#F9F0FF',
+    '--lh-primary-color-border': '#D3ADF7',
+    // 浅主色还要给这两个：
+    // '--lh-color-on-primary': '#101410',
+    // '--lh-selected-color': '#...,
+  },
+})
+
+getThemePreset('my-brand')   // 注册即可用
+```
+
+`registerTheme` 的语义：
+
+- **同名覆盖**：`registerTheme({ name: 'cerblue', ... })` 会**覆盖内置的青花瓷**——这是刻意的，让业务侧能调整默认主题而不必改组件。
+- **新名字 push 到数组末尾**：`LH_THEME_PRESETS` 的顺序是「内置五个 + 注册的」。
+- **注册表是模块级状态**：`import` 即共享，整个应用一份。
+
+## 新增内置预设流程
+
+1. 在 `src/theme/themes/index.ts` 加一份 `LhThemePreset`（至少五个 `--lh-primary-*`；浅主色预设须额外给 `--lh-color-on-primary` 与 `--lh-selected-color`）。
+2. 加入 `LH_THEME_PRESETS` 数组，并在 `src/theme/index.ts` 的 re-export 中补上名字。
+3. `pnpm test`（`theme.spec` 有预设一致性回归）+ `pnpm verify:theme`（AA 4.5:1 门禁）。
+4. 附 changeset；各库 docs 的主题定制页自动列出新预设。
+
+**注意**：vars 只服务 JS 运行时消费；组件 SCSS 用到的主色仍在 `styles/theme/common/variables.scss`——**覆盖内置主题主色时两边要同步改**（theme.spec 有回归）。
+
+## 命名规范
+
+预设的**字符串值**（`name: 'cerblue'`）是用户在 ConfigProvider `theme` 里写的配置值，改了破坏所有下游配置——这是 [命名豁免登记](/guide/naming#豁免登记) 里的一条。对应的 **TS 标识符**仍带前缀（`LhCerblue`）。
+
+## 注意事项
+
+- **未注册名字返回 `undefined`**：`getThemePreset` / `getThemeVars` 不抛错，UI 层记得判空。
+- **`--lh-primary-color-active` 与 `--lh-selected-color` 是两个东西**：前者是按钮按下的底色，后者是列表 / 选中项的**文字**色。浅主色预设里 active 色做选中文字对比度不够，才需要单独的 `--lh-selected-color`。
+- **深主色预设的暗色模式自动提亮**：`buildPresetDarkVars` 会判定主色相对暗色页面底 `#1A1A2E` 的对比度，<3 就提亮（详见 [主题总览](/theme/overview#buildpresetdarkvars-的暗色推导)）。
+
+## 相关文档
+
+- [主题系统总览](/theme/overview)
+- [设计令牌](/theme/tokens)
+- [运行时定制](/theme/customization)
+- [暗色模式](/theme/dark-mode)

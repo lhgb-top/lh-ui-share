@@ -1,0 +1,93 @@
+---
+title: delay —— 显隐延迟归一
+description: 'resolveDelay 把 undefined 回落到组件默认显隐节奏，tooltip / popover / popconfirm 共用'
+---
+
+import { FnPlayground } from '../../components/FnPlayground.astro'
+
+tooltip 要「鼠标移上去立刻显示、移开后稍等片刻再消失」（避免划过时闪烁）；popconfirm 要「点了立刻出现」。每个浮层组件都有自己的显隐节奏，但「用户没传时用什么默认值」这件事是公共的。
+
+## 何时使用
+
+- tooltip / popover / popconfirm 等悬停类浮层，props 暴露 `show-delay` / `hide-delay`。
+- 任何「用户可覆盖、但有合理默认」的时序参数。
+
+**不该用它**：固定时序的场景（message 的 3 秒自动关闭）直接写常量，不必走归一。
+
+## 导入方式
+
+```ts
+import { resolveDelay, type LhDefaultDelay } from '@lh-ui/share/core/shared/delay'
+```
+
+## 类型与函数
+
+```ts
+export interface LhDefaultDelay {
+  show: number
+  hide: number
+}
+```
+
+| 函数 | 签名 | 作用 |
+| --- | --- | --- |
+| `resolveDelay` | `(showDelay: number \| undefined, hideDelay: number \| undefined, defaults: LhDefaultDelay) => LhDefaultDelay` | 显隐延迟归一 |
+
+```ts
+resolveDelay(undefined, undefined, { show: 0, hide: 150 })
+// { show: 0, hide: 150 }   —— 用户没传，用组件默认
+
+resolveDelay(200, undefined, { show: 0, hide: 150 })
+// { show: 200, hide: 150 } —— 只覆盖了 show
+```
+
+实现就是两个 `??`：`showDelay ?? defaults.show`、`hideDelay ?? defaults.hide`。`null` 走同一路径（`??` 同时处理 `null` 和 `undefined`）。
+
+## 为什么单独抽一个函数
+
+三个组件的默认值不同，但归一逻辑相同：
+
+| 组件 | 默认 show | 默认 hide | 理由 |
+| --- | --- | --- | --- |
+| tooltip | 0 | 150 | 立刻出现避免「划过无反应」；延迟消失避免划向目标时闪烁 |
+| popover | 0 | 150 | 同上，但内容可交互，hide 更长（由 UI 层定） |
+| popconfirm | 0 | 0 | 点击触发，无悬停语义 |
+
+抽出来之后，新增浮层组件只要传自己的 `defaults`，不用再写一遍「undefined 回落」。
+
+## 与 debounce 的区别
+
+容易混淆的两个东西：
+
+| | `resolveDelay` | `debounce`（utils） |
+| --- | --- | --- |
+| 语义 | 「这次显 / 隐之前等多久」的**参数归一** | 把高频调用**收敛**成一次执行的节流工具 |
+| 用途 | 算出延迟值 | 拿延迟值去包一个真正的定时器 |
+
+典型链路是串联的：`const { hide } = resolveDelay(props.hideDelay, undefined, DEFAULTS)` → `hideTimer = debounce(actualHide, hide)`。
+
+## 使用示例
+
+```ts
+// popover 组件内部
+const DEFAULT_DELAY: LhDefaultDelay = { show: 0, hide: 150 }
+
+const delay = computed(() =>
+  resolveDelay(props.showDelay, props.hideDelay, DEFAULT_DELAY),
+)
+
+function onShow() {
+  setTimeout(open, delay.value.show)
+}
+function onHide() {
+  setTimeout(close, delay.value.hide)
+}
+```
+
+## 注意事项
+
+- **只做回落，不做钳制**：传负数延迟会原样返回。各 UI 层若需要「延迟必须非负」，在 `setTimeout(fn, Math.max(0, ms))` 处自行处理（`setTimeout` 对负数按 0 处理，实际不会出问题）。
+- **`show` / `hide` 独立**：归一后仍是两个独立数字，组件要分别用在两个定时器上。
+- **返回新对象**：每次调用返回新的 `{ show, hide }`，可以安全地响应式包裹。
+
+<FnPlayground module="delay" fn="resolveDelay" params='{"showDelay": null, "hideDelay": 300, "defaults": {"show": 0, "hide": 150}}' />

@@ -1,0 +1,70 @@
+---
+title: 共享内核总览
+description: 'core/shared 的 12 个子模块、纯函数层的设计哲学与跨模块依赖'
+---
+
+import { FnPlayground } from '../../components/FnPlayground.astro'
+
+## 它是什么
+
+`@lh-ui/share/core/shared` 是整个 lh-ui 家族的**公共算法层**——12 个零依赖的 TypeScript 模块，把各组件都会用到、但每端都容易各写一份（且写出细微差异）的逻辑收敛成唯一实现：
+
+弹出层定位、虚拟滚动、键盘导航、焦点圈、aria 属性构建、日期原语、数值净化、样式透传……这些算法**不属于任何框架**：输入是普通数据，输出是普通数据，不碰响应式、不碰 DOM 全局状态（少数函数读 DOM，但有 SSR 守卫）。
+
+lh-ui-plus、lh-ui-vue2、lh-ui-react、lh-ui-uniapp 四端的同一个组件，用的是**同一份** `computePosition`、同一份 `getNextListIndex`。修一个 bug，四端同时修好；加一个边界，四端同时具备。
+
+## 12 个子模块
+
+| 模块 | 职责 | 核心导出 |
+| --- | --- | --- |
+| [`sx`](/core/sx) | sx 属性 → 内联样式，固定优先级「单边 > 轴组 > 简写」 | `sxToStyle` / `mergeSx` / `LhSxProps` |
+| [`popper`](/core/popper) | 弹出层定位引擎：12 方位、主轴翻转、交叉轴夹回、箭头偏移 | `computePosition` / `parsePlacement` / `LhPlacement` |
+| [`virtual`](/core/virtual) | 定高虚拟滚动区间（virtual-list 与 table 共用同一算法） | `computeRange` / `computeWindow` / `LH_VIRTUAL_OVERSCAN` |
+| [`keyboard`](/core/keyboard) | 键盘交互：按键判定、列表 / 网格 / range 导航、type-ahead | `getNextListIndex` / `getNextGridCell` / `LH_KEYS` |
+| [`focus-trap`](/core/focus-trap) | 焦点管理：可聚焦枚举、Tab 焦点圈、inert 所有权注册表 | `trapTabKey` / `setInertOutside` / `focusFirst` |
+| [`a11y`](/core/a11y) | aria 属性原子构建器（统一「假值省略」语义） | `getPopupTriggerAria` / `ariaExpanded` / `getDecorativeAria` |
+| [`date`](/core/date) | 日期原语：月份天数、比较、禁用判定、定宽 token 格式化 | `formatDate` / `parseDate` / `isDateDisabled` |
+| [`format`](/core/format) | 文案模板插值（`{key}` 占位符） | `formatMessage` |
+| [`delay`](/core/delay) | 显隐延迟归一（tooltip / popover / popconfirm 共用） | `resolveDelay` |
+| [`pt`](/core/pt) | PT 透传属性合并（class / style / attrs 浅合并） | `mergePt` / `LhPtAttrs` |
+| [`sanitize`](/core/sanitize) | 数值净化：NaN / Infinity 在入口统一拦截 | `sanitizeNumber` / `clamp` / `safePrecision` |
+| [`types`](/core/types) | 共享联合类型：尺寸 / 语言 / 类型 / 位置 | `LhComponentSize` / `LhComponentType` |
+
+聚合入口 `@lh-ui/share/core/shared` 把 12 个模块全部 `export *`；也可以按模块精确导入 `@lh-ui/share/core/shared/popper`，让打包器只带走用到的部分。
+
+## 设计哲学
+
+### 纯函数，状态在 UI 层
+
+core 层的函数**不持有组件状态**。以 popper 为例：`computePosition(trigger, popper, viewport, options)` 接收三个 rect 字面量，返回 `{ top, left, placement, arrowOffset }`——「当前触发器在哪、浮层多大、视口多大」全由 UI 层在调用那一刻测出来传进去。这意味着：
+
+- 同一个函数既能跑在 Vue3 的 `watchEffect` 里，也能跑在 React 的 `useLayoutEffect` 里，还能跑在 uniapp 的 `onPageScroll` 里。
+- **单测不需要渲染组件**：`tests/unit/` 里大量用例是「造一组 rect、断言输出」，四端共享同一份测试结果（红线 3：core 单测唯一一份在本仓库）。
+
+### SSR 守卫是默认契约
+
+少数函数必须读 DOM（`getWindowViewport`、`getFocusableElements`、`saveActiveElement`）。它们都在入口做 `typeof document === 'undefined'` / `typeof window === 'undefined'` 判断并返回安全空值（`[]` / `null` / 宽高为 0 的 rect），让 Nuxt / Next / uniapp 的服务端渲染不会炸。文档里每个函数都会标注「SSR 安全」或具体守卫行为。
+
+### 「假值省略」的 aria 约定
+
+`a11y` 模块的所有构建器遵守同一约定：**布尔型 aria 属性为假时输出 `undefined`，让框架不渲染该属性**（`aria-required: false` 这种「显式声明否」多数时候是噪音）。例外是语义上需要显式播报的属性：`aria-expanded: false`、`aria-invalid: false` 会原样输出。详见 [a11y 文档](/core/a11y)。
+
+### 入口净化，下游不防御
+
+`sanitize` 的存在让 core 的其他函数不必处处写 `Number.isFinite` 防御。页码、间距、step、precision 这类来自外部的数值，在进入算法前先过 `sanitizeNumber`，NaN / Infinity 被换成安全缺省值。这是「一处拦截，全局干净」的取舍：调用方要么自己保证有限、直接用 `clamp`，要么显式声明信任入口净化。
+
+### 跨模块依赖很轻
+
+只有三条：
+
+- `keyboard` ← `sanitize.clamp`（导航边界钳制）
+- `popper` ← `sanitize.clamp` + `sanitize.sanitizeNumber`（夹回与入参净化）
+- `shared/types` ← `constants.LH_SIZE_CONST` / `LH_LANGUAGE_CONST` / `LH_TYPES_CONST`（`import type`，联合类型由常量推导）
+
+没有循环依赖，也没有向 `locales` / UI 层的反向依赖。`format` 模块的存在就是这条线的产物：`rate` 的 `'{n} 星'`、`pagination` 的 `'共 {total} 条'` 这类插值原本要反查 locales 单例，下沉成纯字符串函数后，core 组件不再依赖 locales 的模块级副作用。
+
+## 试玩
+
+<FnPlayground module="sanitize" fn="clamp" params='{"value": 12, "min": 0, "max": 10}' />
+
+每个子模块文档页底部都有这样的试玩块：填参数、客户端直接运行、看输出。
