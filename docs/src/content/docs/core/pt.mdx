@@ -3,7 +3,7 @@ title: pt —— 透传属性合并
 description: 'mergePt 把 PT 属性包（class / style / attrs）与基础类名浅合并，供组件内部元素样式透传'
 ---
 
-import { FnPlayground } from '../../components/FnPlayground.astro'
+import FnPlayground from '../../../components/FnPlayground.astro'
 
 组件内部有多个元素（按钮的 `<button>` 和里面的 `<span>`、输入框的 `<input>` 和前置图标 `<i>`），用户想从外部微调其中某一个，怎么办？lh-ui 的答案是 **PT（PassThrough）属性包**：组件暴露 `pt` prop，按内部元素名分别透传 `class` / `style` / `attrs`。`mergePt` 负责把它与组件自己的基础类名合并。
 

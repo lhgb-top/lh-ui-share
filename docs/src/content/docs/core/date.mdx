@@ -3,7 +3,7 @@ title: date —— 日期原语
 description: 'getDaysInMonth / isDateDisabled / formatDate / parseDate，date-picker 与日历区间运算的共同内核'
 ---
 
-import { FnPlayground } from '../../components/FnPlayground.astro'
+import FnPlayground from '../../../components/FnPlayground.astro'
 
 日期计算是 date-picker 的算法主体，也是 calendar 区间选择的公共内核。原生 `Date` 有几个经典陷阱（两位数年份、`new Date(2023, 1, 30)` 滚动溢出），这个模块统一处理掉。
 

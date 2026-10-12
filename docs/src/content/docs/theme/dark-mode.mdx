@@ -3,7 +3,7 @@ title: 暗色模式
 description: 'data-theme=dark 切换机制、编译期烤死陷阱与 verify:styles 第七项暗色可达性门禁'
 ---
 
-import { TokenTable } from '../../components/TokenTable.astro'
+import TokenTable from '../../../components/TokenTable.astro'
 
 lh-ui 的所有组件**默认支持明色与暗色**。这不是事后追加的主题，而是令牌系统的设计前提。
 
@@ -120,7 +120,7 @@ SCSS 变量在**编译期被烤死成字面值**，等价于：
 
 五个内置预设中，深主色的（青花瓷 / 朱砂 / 水墨）在暗色下主色会「沉进」页面底色。`buildPresetDarkVars` 自动处理：
 
-判定规则：`--lh-primary-color` 相对暗色页面底 `#1A1A2E`（`DARK_PAGE_BG`）的对比度 < 3（`DARK_PRIMARY_CONTRAST_THRESHOLD`）即判定深主色，然后：
+判定规则：`--lh-primary-color` 相对暗色页面底 `#1A1A2E`（`DARK_PAGE_BG`）的对比度小于 3（`DARK_PRIMARY_CONTRAST_THRESHOLD`）即判定深主色，然后：
 
 ```css
 [data-theme='dark'],
@@ -146,7 +146,7 @@ SCSS 变量在**编译期被烤死成字面值**，等价于：
 
 ## 暗色令牌表
 
-<TokenTable mode="dark" />
+<TokenTable />
 
 ## 如何验证暗色完备性
 

@@ -30,6 +30,7 @@
       "import": "./es/index.js",
       "require": "./lib/index.js"
     },
+    "./package.json": "./package.json",
     "./core": {
       "types": "./es/core/index.d.ts",
       "import": "./es/core/index.js",
@@ -363,6 +364,7 @@
     "./styles/theme/index.scss": "./styles/theme/index.scss",
     "./styles/theme/common/*.scss": "./styles/theme/common/*.scss",
     "./styles/theme/common/*": "./styles/theme/common/*.scss",
+    "./styles/index.scss": "./styles/index.scss",
     "./styles/*": "./styles/*/index.scss"
   },
   "files": [
@@ -386,6 +388,8 @@
     "sync:exports": "node scripts/sync-exports.mjs",
     "verify:dts": "node scripts/verify-dts.mjs",
     "verify:styles": "node scripts/verify-styles.mjs",
+    "verify:theme": "node scripts/verify-theme-contrast.mjs",
+    "verify:versions": "node scripts/check-version-sync.mjs",
     "extract": "node scripts/extract-from-plus.mjs",
     "lint": "eslint src tests scripts vite.config.ts vitest.config.ts",
     "lint:fix": "eslint src tests scripts vite.config.ts vitest.config.ts --fix",
@@ -393,20 +397,24 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "changeset": "changeset",
-    "changeset:status": "changeset status",
-    "prepublishOnly": "pnpm run build && pnpm run verify:dts && pnpm run verify:styles",
     "docs:dev": "astro dev --root docs --port 5180",
     "docs:build": "astro build --root docs",
     "docs:preview": "astro preview --root docs",
-    "docs:data": "node scripts/gen-docs-data.mjs"
+    "docs:data": "node scripts/gen-docs-data.mjs",
+    "changeset": "changeset",
+    "changeset:status": "changeset status",
+    "changeset:version": "changeset version",
+    "release": "changeset publish",
+    "release:push": "node scripts/push-release.mjs",
+    "prepublishOnly": "pnpm run build && pnpm run verify:dts && pnpm run verify:styles"
   },
   "devDependencies": {
+    "@astrojs/mdx": "^8.0.3",
     "@astrojs/starlight": "^0.42.6",
     "@changesets/cli": "^3.0.3",
     "@eslint/js": "^10.0.1",
-    "astro": "^7.3.8",
     "@types/node": "^26.6.1",
+    "astro": "^7.3.8",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.12.0",

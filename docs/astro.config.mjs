@@ -78,6 +78,30 @@ export default defineConfig({
           ],
         },
         {
+          label: '组件',
+          collapsed: false,
+          items: [
+            {
+              label: '基础',
+              collapsed: true,
+              items: [
+                { label: 'button 按钮', link: '/components/basic/button' },
+                { label: 'icon 图标', link: '/components/basic/icon' },
+                { label: 'tag 标签', link: '/components/basic/tag' },
+                { label: 'badge 徽标', link: '/components/basic/badge' },
+                { label: 'avatar 头像', link: '/components/basic/avatar' },
+                { label: 'divider 分割线', link: '/components/basic/divider' },
+                { label: 'card 卡片', link: '/components/basic/card' },
+                { label: 'empty 空状态', link: '/components/basic/empty' },
+                { label: 'skeleton 骨架屏', link: '/components/basic/skeleton' },
+                { label: 'spinner 旋转图形', link: '/components/basic/spinner' },
+                { label: 'space 间距', link: '/components/basic/space' },
+                { label: 'statistic 统计数值', link: '/components/basic/statistic' },
+              ],
+            },
+          ],
+        },
+        {
           label: '主题系统',
           items: [
             { label: '总览', link: '/theme/overview' },

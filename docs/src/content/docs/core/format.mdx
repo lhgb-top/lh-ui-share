@@ -3,7 +3,7 @@ title: format —— 文案插值
 description: 'formatMessage 把 {key} 占位符替换为参数值，未知占位符原样保留，rate / pagination 共用'
 ---
 
-import { FnPlayground } from '../../components/FnPlayground.astro'
+import FnPlayground from '../../../components/FnPlayground.astro'
 
 `{total} 条`、`{n} 星`、`第 {index} 步`——语言包里的文案模板需要把占位符换成运行时的数字。这个插值能力原本长在 locales 单例里，但它被 core 组件（rate 的星数、pagination 的页数）使用时，会让 core **反向依赖** locales 的模块级单例副作用。下沉成一个纯字符串函数后，core 组件的文案插值不再依赖任何单例。
 

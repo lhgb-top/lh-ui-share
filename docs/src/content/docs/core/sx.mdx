@@ -3,7 +3,7 @@ title: sx —— 样式速写
 description: 'sxToStyle 把 Tailwind 风格的 sx 属性转成内联样式，固定优先级：单边 > 轴组 > 简写'
 ---
 
-import { FnPlayground } from '../../components/FnPlayground.astro'
+import FnPlayground from '../../../components/FnPlayground.astro'
 
 `sx` 是 lh-ui 的**内联样式速写**：用 `mt: 4` 代替 `style="margin-top: 32px"`，用 `p: 2` 代替一次性写四边 padding。它不是 Tailwind（不生成类名、不引 CSS），而是运行时把属性包直接求值为 `Record<string, string>`，交给 UI 层绑到 `:style`。
 

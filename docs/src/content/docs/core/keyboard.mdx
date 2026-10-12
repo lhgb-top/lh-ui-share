@@ -3,7 +3,7 @@ title: keyboard —— 键盘导航算法
 description: 'LH_KEYS 按键常量、列表 / 网格 / range 三套导航算法与 type-ahead，供 select / menu / tree / tabs 共用'
 ---
 
-import { FnPlayground } from '../../components/FnPlayground.astro'
+import FnPlayground from '../../../components/FnPlayground.astro'
 
 无障碍组件的键盘交互有标准答案（APG 的 listbox / menu / grid pattern），但「按上键该跳到哪一项」这个计算在 select / menu / tree / tabs / segmented 里各写一遍就会各错一遍。`shared/keyboard` 把它变成纯函数：输入「列表 + 当前下标 + 方向」，输出「目标下标」。
 

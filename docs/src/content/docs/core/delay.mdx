@@ -3,7 +3,7 @@ title: delay —— 显隐延迟归一
 description: 'resolveDelay 把 undefined 回落到组件默认显隐节奏，tooltip / popover / popconfirm 共用'
 ---
 
-import { FnPlayground } from '../../components/FnPlayground.astro'
+import FnPlayground from '../../../components/FnPlayground.astro'
 
 tooltip 要「鼠标移上去立刻显示、移开后稍等片刻再消失」（避免划过时闪烁）；popconfirm 要「点了立刻出现」。每个浮层组件都有自己的显隐节奏，但「用户没传时用什么默认值」这件事是公共的。
 

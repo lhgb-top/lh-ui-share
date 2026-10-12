@@ -3,7 +3,7 @@ title: a11y —— aria 属性构建器
 description: '统一的 aria 原子构建器与「假值省略」语义，弹出层触发器与装饰件属性包开箱即用'
 ---
 
-import { FnPlayground } from '../../components/FnPlayground.astro'
+import FnPlayground from '../../../components/FnPlayground.astro'
 
 aria 属性的拼写与取值是体力活：`aria-haspopup` 还是 `ariaHaspopup`？`'true'` 还是 `true`？假值要不要渲染？每个组件自己拼一遍，要么拼错，要么忘记在值为空时省略（读屏里出现一堆 `aria-controls="undefined"`）。`shared/a11y` 用一组纯函数把约定固化下来。
 

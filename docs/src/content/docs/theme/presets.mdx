@@ -3,7 +3,7 @@ title: 主题预设
 description: '青花瓷 / 松花绿 / 朱砂 / 水墨 / 藤黄五个内置预设与 registerTheme 自定义注册'
 ---
 
-import { PresetPreview } from '../../components/PresetPreview.astro'
+import PresetPreview from '../../../components/PresetPreview.astro'
 
 五个内置预设是 lh-ui 的默认审美主张：每个都从中国传统色彩里取一个主色，配上完整的明暗两套配色。
 
@@ -148,7 +148,7 @@ getThemePreset('my-brand')   // 注册即可用
 
 - **未注册名字返回 `undefined`**：`getThemePreset` / `getThemeVars` 不抛错，UI 层记得判空。
 - **`--lh-primary-color-active` 与 `--lh-selected-color` 是两个东西**：前者是按钮按下的底色，后者是列表 / 选中项的**文字**色。浅主色预设里 active 色做选中文字对比度不够，才需要单独的 `--lh-selected-color`。
-- **深主色预设的暗色模式自动提亮**：`buildPresetDarkVars` 会判定主色相对暗色页面底 `#1A1A2E` 的对比度，<3 就提亮（详见 [主题总览](/theme/overview#buildpresetdarkvars-的暗色推导)）。
+- **深主色预设的暗色模式自动提亮**：`buildPresetDarkVars` 会判定主色相对暗色页面底 `#1A1A2E` 的对比度低于 3 就提亮（详见 [主题总览](/theme/overview#buildpresetdarkvars-的暗色推导)）。
 
 ## 相关文档
 

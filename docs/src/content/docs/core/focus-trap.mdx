@@ -3,7 +3,7 @@ title: focus-trap —— 焦点管理
 description: '可聚焦元素枚举、Tab 焦点圈、inert 所有权注册表与打开记录 / 关闭归还，Dialog / Drawer / Popover 共用'
 ---
 
-import { FnPlayground } from '../../components/FnPlayground.astro'
+import FnPlayground from '../../../components/FnPlayground.astro'
 
 模态框、抽屉、图片预览这类**覆盖层组件**有三个焦点义务：打开时记住用户原本在哪、打开期间把 Tab 圈在浮层内、关闭时把焦点还回去。这三件事在 dialog / drawer / popover / popconfirm / image-viewer 里各写一遍必然漂移，`shared/focus-trap` 是它们的唯一实现。
 

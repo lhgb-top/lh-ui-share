@@ -3,7 +3,7 @@ title: virtual —— 虚拟滚动
 description: 'computeRange / computeWindow 定高虚拟滚动区间，virtual-list 与 table 共用同一份算法'
 ---
 
-import { FnPlayground } from '../../components/FnPlayground.astro'
+import FnPlayground from '../../../components/FnPlayground.astro'
 
 定高虚拟滚动原本在 `virtual-list` 与 `table` 各有一份实现——连默认过扫描量都不一样（2 与 3），修一个边界漏另一处。`shared/virtual` 把算法抽成唯一一份，两处只做薄封装。
 

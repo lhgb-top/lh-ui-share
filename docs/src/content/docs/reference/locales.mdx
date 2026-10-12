@@ -3,7 +3,7 @@ title: locales —— 国际化
 description: 'lhlocale 单例的 t / tm / use / add / setLocale / subscribe，38 个顶层文案键与六门语言'
 ---
 
-import { LocaleInspector } from '../../components/LocaleInspector.astro'
+import LocaleInspector from '../../../components/LocaleInspector.astro'
 
 lh-ui 家族的国际化是一个**纯事件发射器**：`lhlocale` 不携带任何框架响应式，各 UI 库的适配层把它的 `version` 版本号转成各自框架的重渲染信号。这样一份语言包能同时给 Vue3 / Vue2 / React / uniapp 用，而 core 层不依赖任何框架。
 

@@ -3,7 +3,7 @@ title: 设计令牌
 description: '185 条明色令牌 + 118 条暗色覆盖 + 183 个 SCSS 变量，三层令牌的取值、层级与覆盖关系'
 ---
 
-import { TokenTable } from '../../components/TokenTable.astro'
+import TokenTable from '../../../components/TokenTable.astro'
 
 令牌（token）是设计语言的变量化：颜色、字号、间距、圆角、阴影、动画时长都命名成 `--lh-*` CSS 变量，组件只消费名字、不写死值。换肤就是换令牌。
 

@@ -3,26 +3,66 @@
  * FnPlayground —— 纯函数试玩器。
  *
  * core 层全是纯函数，文档页用它做「填参数 → 看输出」的交互演示，无需任何框架。
- * 用法（markdown 里）：
  *
- *   <FnPlayground
- *     spec="@lh-ui/share/core/steps"
- *     fn="getStepsLineLastIndices"
- *     args={[{ name: 'offsetTops', type: 'json', value: '[10, 10, 44]' }]}
- *   />
+ * 两种写法：
+ *
+ *   1. 简写（推荐，组件页统一用这种）：
+ *
+ *      <FnPlayground module="button" fn="getClassNames"
+ *        params='{"state": {"type": "primary", "size": "large"}}' />
+ *
+ *      module 是 core 下的目录名（`button`）或 shared 子模块名（`sx`）；
+ *      params 是「参数名 → 默认值」的 JSON 对象，类型按值推断
+ *      （布尔→boolean、数字→number、字符串→text、对象/数组→json），
+ *      键的顺序即参数顺序。
+ *
+ *   2. 全写（需要精确控制参数类型时）：
+ *
+ *      <FnPlayground
+ *        spec="@lh-ui/share/core/steps"
+ *        fn="getStepsLineLastIndices"
+ *        args={[{ name: 'offsetTops', type: 'json', value: '[10, 10, 44]' }]}
+ *      />
  *
  * 实现要点：客户端用 import.meta.glob 预加载 src/core 下全部模块（vite 静态分析可过），
- * 运行时按 spec 的最后一段定位模块、取函数、JSON 序列化返回值。
+ * 运行时按 spec 的最后一段定位模块（裸名自动回退 shared/）、取函数、JSON 序列化返回值。
  *
  * 参数类型：text / number / boolean / json。
  */
-const { spec, fn, args = [], label } = Astro.props;
-const config = JSON.stringify({ spec, fn, args });
+type ArgSpec = { name: string; type?: 'text' | 'number' | 'boolean' | 'json'; value?: unknown };
+
+function inferType(value: unknown): ArgSpec['type'] {
+  if (typeof value === 'boolean') return 'boolean';
+  if (typeof value === 'number') return 'number';
+  if (typeof value === 'string') return 'text';
+  return 'json';
+}
+
+const { spec, module, fn, args, params, label } = Astro.props;
+
+// 简写 module → 全写 spec（resolveModule 里再处理 shared 回退）
+const effectiveSpec = spec ?? (module ? `@lh-ui/share/core/${module}` : undefined);
+
+// params（JSON 字符串或对象）→ args，类型按值推断
+let effectiveArgs: ArgSpec[] = [];
+if (args) {
+  effectiveArgs = args as ArgSpec[];
+} else if (params) {
+  const parsed = typeof params === 'string' ? JSON.parse(params) : (params as Record<string, unknown>);
+  effectiveArgs = Object.entries(parsed).map(([name, value]) => ({
+    name,
+    type: inferType(value),
+    value,
+  }));
+}
+
+const config = JSON.stringify({ spec: effectiveSpec, fn, args: effectiveArgs });
+const displaySpec = effectiveSpec ?? '';
 ---
 
 <div class="lh-fnpg" data-config={config}>
   <div class="lh-fnpg-head">
-    <code class="lh-fnpg-sig">{spec} → {fn}( )</code>
+    <code class="lh-fnpg-sig">{displaySpec} → {fn}( )</code>
     {label && <span class="lh-fnpg-label">{label}</span>}
   </div>
   <div class="lh-fnpg-args" data-args></div>
@@ -104,8 +144,11 @@ const config = JSON.stringify({ spec, fn, args });
   async function resolveModule(spec: string) {
     // @lh-ui/share/core/steps → src/core/steps/index.ts
     // @lh-ui/share/core/shared/sx → src/core/shared/sx/index.ts
+    // 裸名（简写 module="sx"）先试 src/core/<name>，再回退 src/core/shared/<name>
     const tail = spec.replace(/^@lh-ui\/share\/core\//, '');
-    const key = Object.keys(modules).find((k) => k.endsWith(`/core/${tail}/index.ts`));
+    const candidates = [`/core/${tail}/index.ts`];
+    if (!tail.startsWith('shared/')) candidates.push(`/core/shared/${tail}/index.ts`);
+    const key = Object.keys(modules).find((k) => candidates.some((c) => k.endsWith(c)));
     if (!key) throw new Error(`找不到模块：${spec}`);
     return (await modules[key]()) as Record<string, (...a: unknown[]) => unknown>;
   }
