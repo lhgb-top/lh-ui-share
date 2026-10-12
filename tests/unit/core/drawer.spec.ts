@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_DRAWER_DIRECTION,
-  DEFAULT_DRAWER_SIZE,
+  LH_DRAWER_DIRECTION_DEFAULT,
+  LH_DRAWER_SIZE_DEFAULT,
   getDrawerClass,
   getDrawerPanelStyle,
   normalizeDrawerSize,
@@ -12,23 +12,23 @@ import {
 
 describe('LhDrawer core', () => {
   it('exposes documented defaults', () => {
-    expect(DEFAULT_DRAWER_DIRECTION).toBe('right')
-    expect(DEFAULT_DRAWER_SIZE).toBe('30%')
+    expect(LH_DRAWER_DIRECTION_DEFAULT).toBe('right')
+    expect(LH_DRAWER_SIZE_DEFAULT).toBe('30%')
   })
 
   it('normalizes sizes: numbers become px, strings pass through', () => {
     expect(normalizeDrawerSize(320)).toBe('320px')
     expect(normalizeDrawerSize('40%')).toBe('40%')
-    expect(normalizeDrawerSize(undefined)).toBe(DEFAULT_DRAWER_SIZE)
-    expect(normalizeDrawerSize('')).toBe(DEFAULT_DRAWER_SIZE)
-    expect(normalizeDrawerSize(null as unknown as undefined)).toBe(DEFAULT_DRAWER_SIZE)
+    expect(normalizeDrawerSize(undefined)).toBe(LH_DRAWER_SIZE_DEFAULT)
+    expect(normalizeDrawerSize('')).toBe(LH_DRAWER_SIZE_DEFAULT)
+    expect(normalizeDrawerSize(null as unknown as undefined)).toBe(LH_DRAWER_SIZE_DEFAULT)
   })
 
   it('applies size to width for left/right and height for top/bottom', () => {
     expect(getDrawerPanelStyle('right', 400)).toEqual({ width: '400px' })
     expect(getDrawerPanelStyle('left', '35%')).toEqual({ width: '35%' })
     expect(getDrawerPanelStyle('top', 200)).toEqual({ height: '200px' })
-    expect(getDrawerPanelStyle('bottom', undefined)).toEqual({ height: DEFAULT_DRAWER_SIZE })
+    expect(getDrawerPanelStyle('bottom', undefined)).toEqual({ height: LH_DRAWER_SIZE_DEFAULT })
   })
 
   it('computes the BEM class names', () => {

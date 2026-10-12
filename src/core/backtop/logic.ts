@@ -29,6 +29,8 @@ export function resolveScrollTarget(target?: string | HTMLElement): HTMLElement 
 /** 当前滚动距离（容器/视口自适应；用 HTMLElement 判定而非 Window 全局，跨 realm 安全） */
 export function getScrollTop(target: HTMLElement | Window): number {
   if (target instanceof HTMLElement) return target.scrollTop
+  // SSR / 非 DOM 环境守卫：无 document 时视为 0（与 shared/popper 的守卫风格一致）
+  if (typeof document === 'undefined') return 0
   return document.scrollingElement?.scrollTop ?? document.documentElement.scrollTop ?? 0
 }
 
@@ -37,13 +39,15 @@ export function getScrollTop(target: HTMLElement | Window): number {
  * 元素无 scrollTo（旧 jsdom 等）时直接写 scrollTop。
  */
 export function backToTop(target: HTMLElement | Window, smooth: boolean): void {
-  // SSR / 非浏览器环境守卫：无 window 时直接降级为 auto（与 shared/popper 的守卫风格一致）
+  // SSR / 非浏览器环境守卫：reducedMotion 探测要读 window.matchMedia，
+  // 无 window 时降级为无平滑；target 为元素时滚动本身不依赖 window，照常执行
   const reducedMotion =
     typeof window !== 'undefined' &&
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const behavior: ScrollBehavior = smooth && !reducedMotion ? 'smooth' : 'auto'
   if (!(target instanceof HTMLElement)) {
+    if (typeof window === 'undefined') return
     window.scrollTo({ top: 0, behavior })
   } else if (typeof target.scrollTo === 'function') {
     target.scrollTo({ top: 0, behavior })

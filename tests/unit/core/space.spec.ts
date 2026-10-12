@@ -29,11 +29,14 @@ describe('Space Core Logic', () => {
 
   describe('resolveSpaceGaps', () => {
     it('maps preset sizes to spacing tokens', () => {
+      // 档位只引用 var.scss 实际注册的令牌（sm=8 / base=16 / xl=24）
       expect(resolveSpaceGaps('small')).toEqual({
-        columnGap: 'var(--lh-spacing-small, 8px)',
-        rowGap: 'var(--lh-spacing-small, 8px)',
+        columnGap: 'var(--lh-spacing-sm, 8px)',
+        rowGap: 'var(--lh-spacing-sm, 8px)',
         usesTokens: true,
       })
+      expect(resolveSpaceGaps('medium').columnGap).toBe('var(--lh-spacing-base, 16px)')
+      expect(resolveSpaceGaps('large').columnGap).toBe('var(--lh-spacing-xl, 24px)')
       expect(resolveSpaceGaps('medium').usesTokens).toBe(true)
       expect(resolveSpaceGaps('large').usesTokens).toBe(true)
     })

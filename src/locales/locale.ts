@@ -6,19 +6,19 @@ import ja_JP from './lang/ja-JP'
 import ko_KR from './lang/ko-KR'
 import de_DE from './lang/de-DE'
 import fr_FR from './lang/fr-FR'
-import type { Leaves, LhLocaleMessages, LhLocaleType } from '../types/locale'
+import type { LhLeaves, LhLocaleMessages, LhLocaleType } from '../types/locale'
 import { LH_LANGUAGE_DEFAULT } from '../constants'
 import { deepMerge } from '../utils'
 import { formatMessage } from '../core/shared/format'
 
-export type { Leaves, LhLocaleMessageValue, LhLocaleMessages, LhLocaleType, LocaleOptions } from '../types/locale'
+export type { LhLeaves, LhLocaleMessageValue, LhLocaleMessages, LhLocaleType, LhLocaleOptions } from '../types/locale'
 
 /**
  * 语言包内所有文案键的字面量路径联合类型（如 `'input.placeholder'`）
  *
  * 由 zh-CN 的 `as const` 结构推导，用于 `lhlocale.t()` 的键自动补全与拼写校验。
  */
-export type LocalePath = Leaves<typeof zh_CN>
+export type LhLocalePath = LhLeaves<typeof zh_CN>
 
 /**
  * `t()` 的调用签名：字面量键走精确重载（自动补全），动态路径走宽松重载
@@ -28,7 +28,7 @@ export type LocalePath = Leaves<typeof zh_CN>
  * - 传对象：按 `{key}` 占位符插值（见 formatMessage），未找到翻译时回退 path 本身。
  */
 export type LhTranslate = {
-  (path: LocalePath, fallbackOrParams?: string | Record<string, unknown>): string
+  (path: LhLocalePath, fallbackOrParams?: string | Record<string, unknown>): string
   (path: string, fallbackOrParams?: string | Record<string, unknown>): string
 }
 

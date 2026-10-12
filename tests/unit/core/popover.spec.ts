@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_POPOVER_PLACEMENT,
-  POPOVER_TRIGGERS,
+  LH_POPOVER_PLACEMENT_DEFAULT,
+  LH_POPOVER_TRIGGERS,
   getDefaultDelay as getPopoverDefaultDelay,
   getPopoverClass,
   getPopoverWidthStyle,
@@ -12,8 +12,8 @@ import {
 
 describe('LhPopover core', () => {
   it('exposes documented defaults', () => {
-    expect(DEFAULT_POPOVER_PLACEMENT).toBe('top')
-    expect(POPOVER_TRIGGERS).toEqual(['click', 'hover', 'focus', 'manual'])
+    expect(LH_POPOVER_PLACEMENT_DEFAULT).toBe('top')
+    expect(LH_POPOVER_TRIGGERS).toEqual(['click', 'hover', 'focus', 'manual'])
   })
 
   it('defaults delays to show 200 / hide 100', () => {

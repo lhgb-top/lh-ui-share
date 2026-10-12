@@ -19,14 +19,14 @@ export interface LhDrawerState {
   closeOnEsc?: boolean
 }
 
-export const DEFAULT_DRAWER_DIRECTION: LhDrawerDirection = 'right'
-export const DEFAULT_DRAWER_SIZE = '30%'
+export const LH_DRAWER_DIRECTION_DEFAULT: LhDrawerDirection = 'right'
+export const LH_DRAWER_SIZE_DEFAULT = '30%'
 
 /**
  * 尺寸归一化：数字 → px，字符串原样返回（支持百分比）
  */
 export function normalizeDrawerSize(size: string | number | undefined): string {
-  if (size === undefined || size === null || size === '') return DEFAULT_DRAWER_SIZE
+  if (size === undefined || size === null || size === '') return LH_DRAWER_SIZE_DEFAULT
   return typeof size === 'number' ? `${size}px` : size
 }
 

@@ -62,6 +62,20 @@ describe('Statistic Core Logic', () => {
     expect(formatStatisticValue('182.50', { precision: 2, separator: ',' })).toBe('182.50')
   })
 
+  it('sanitizes dirty precision instead of throwing RangeError', () => {
+    // 回归：precision 超过 100 位（toFixed 合法域上限）或为负时曾直接抛 RangeError
+    expect(() => formatStatisticValue(1.5, { precision: 150, separator: '' })).not.toThrow()
+    expect(formatStatisticValue(1.5, { precision: 150, separator: '' })).toBe(
+      `1.5${'0'.repeat(99)}`,
+    )
+    expect(() => formatStatisticValue(1.5, { precision: -4, separator: '' })).not.toThrow()
+    expect(formatStatisticValue(1.5, { precision: -4, separator: '' })).toBe('2')
+    // 超大数字符串路径同样净化
+    expect(() =>
+      formatStatisticValue('9007199254740993', { precision: 150, separator: ',' }),
+    ).not.toThrow()
+  })
+
   it('builds base class list', () => {
     expect(getStatisticClassNames()).toEqual(['lh-statistic'])
   })

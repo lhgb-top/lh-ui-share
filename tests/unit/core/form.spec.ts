@@ -24,6 +24,16 @@ describe('form/core/logic', () => {
     expect(validateFormField('', [{ required: true, message: '必填' }], {}, '兜底')).toBe('必填')
   })
 
+  it('prefers a required rule carrying a message over an earlier messageless one', () => {
+    // 回归：组件层在 required 属性为真时会合成一条无 message 的 { required: true }
+    // 规则并排在用户规则之前，旧实现的 find 命中合成规则，用户自定义文案被吞掉
+    expect(
+      validateFormField('', [{ required: true }, { required: true, message: '请输入用户名' }], {}, '必填'),
+    ).toBe('请输入用户名')
+    // 没有带 message 的必填规则时，仍回退首个必填规则的通用文案
+    expect(validateFormField('', [{ required: true }, { required: true }], {}, '必填')).toBe('必填')
+  })
+
   it('uses custom validation messages', () => {
     const message = validateFormField(
       'short',

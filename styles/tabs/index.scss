@@ -18,7 +18,7 @@
     display: flex;
     align-items: flex-end;
     gap: var(--lh-spacing-xs, 4px);
-    border-bottom: 1px solid var(--lh-border-color-light, #E5E0D8);
+    border-bottom: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
   }
 
   &__tab {
@@ -68,7 +68,7 @@
 
     // 卡片外观
     .lh-tabs--card & {
-      border: 1px solid var(--lh-border-color-light, #E5E0D8);
+      border: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
       border-bottom: none;
       border-radius: var(--lh-border-radius-base, 2px) var(--lh-border-radius-base, 2px) 0 0;
 
@@ -111,7 +111,7 @@
     width: 28px;
     height: 28px;
     margin-bottom: 4px;
-    border: 1px dashed var(--lh-border-color-base, #D8D3CC);
+    border: 1px dashed var(--lh-border-color-base, #D8D3CC); /* hairline */
     border-radius: var(--lh-border-radius-small, 2px);
     background: none;
     font-size: var(--lh-font-size-base, 14px);

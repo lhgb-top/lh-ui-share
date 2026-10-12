@@ -15,9 +15,11 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    min-height: 32px;
+    /* control-height 令牌语义为外高，1px 边框须计入高度 */
+    box-sizing: border-box;
+    min-height: var(--lh-control-height-medium, 32px);
     padding: 0 10px 0 12px;
-    border: 1px solid var(--lh-border-color-base, #D8D3CC);
+    border: 1px solid var(--lh-border-color-base, #D8D3CC); /* hairline */
     border-radius: 2px;
     outline: none;
     background: var(--lh-bg-color, #FAF6F0);
@@ -80,7 +82,7 @@
     max-height: 240px;
     overflow: auto;
     padding: 4px 0;
-    border: 1px solid var(--lh-border-color-light, #E5E0D8);
+    border: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
     border-radius: 2px;
     background: var(--lh-bg-color, #FAF6F0);
     box-shadow: 0 6px 16px rgba(44, 44, 44, 0.12);
@@ -136,12 +138,12 @@
   }
 
   &--small &__trigger {
-    min-height: 24px;
+    min-height: var(--lh-control-height-small, 24px);
     font-size: 12px;
   }
 
   &--large &__trigger {
-    min-height: 40px;
+    min-height: var(--lh-control-height-large, 40px);
     font-size: 16px;
   }
 
@@ -156,7 +158,7 @@
 }
 
 /* 下拉开合：淡入 + 轻微下移，与 date-picker/tree-select 的 lh-fade-in 观感一致；
-   类名双写兼容 Vue2（-enter）与 Vue3（-enter-from） */
+   过渡类名双写由 theme/common/transition.scss 的 lh-transition-ends mixin 收编 */
 .lh-select-fade-enter-active,
 .lh-select-fade-leave-active {
   transition:
@@ -164,9 +166,7 @@
     transform 0.2s ease;
 }
 
-.lh-select-fade-enter,
-.lh-select-fade-enter-from,
-.lh-select-fade-leave-to {
+@include lh-transition-ends('.lh-select-fade') {
   opacity: 0;
   transform: translateY(-6px);
 }
@@ -177,9 +177,7 @@
     transition: opacity 0.15s ease;
   }
 
-  .lh-select-fade-enter,
-  .lh-select-fade-enter-from,
-  .lh-select-fade-leave-to {
+  @include lh-transition-ends('.lh-select-fade') {
     transform: none;
   }
 }

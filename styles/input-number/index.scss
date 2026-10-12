@@ -3,7 +3,13 @@
 .lh-input-number {
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--lh-border-color-base, #D8D3CC);
+  /* control-height 令牌语义为外高（border-box）：高度固定在根元素上，
+     内部 input 与按钮按「令牌 - 2px」留出上下 1px 发丝边框。
+     不用 auto 高度派生——边框在亚像素渲染下不恒为 1px，auto 高度会让
+     外高随边框厚度漂移，与其他 border-box 控件错位 */
+  box-sizing: border-box;
+  height: var(--lh-control-height-medium, 32px);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC); /* hairline */
   border-radius: 4px;
   background-color: var(--lh-bg-color, #fff);
   transition: border-color 0.2s;
@@ -14,7 +20,7 @@
 
   &__input {
     width: 48px;
-    height: 32px;
+    height: calc(var(--lh-control-height-medium, 32px) - 2px);
     padding: 0;
     text-align: center;
     border: none;
@@ -22,7 +28,7 @@
     font-size: 14px;
     background-color: transparent;
     color: var(--lh-text-primary, #2C2C2C);
-    line-height: 32px;
+    line-height: calc(var(--lh-control-height-medium, 32px) - 2px);
 
     &::placeholder {
       color: var(--lh-text-placeholder, #B0B0B0);
@@ -37,7 +43,7 @@
   &__decrease,
   &__increase {
     width: 32px;
-    height: 32px;
+    height: calc(var(--lh-control-height-medium, 32px) - 2px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -60,42 +66,46 @@
   }
 
   &__decrease {
-    border-right: 1px solid var(--lh-border-color-light, #e4e7ed);
+    border-right: 1px solid var(--lh-border-color-light, #e4e7ed); /* hairline */
     border-radius: 4px 0 0 4px;
   }
 
   &__increase {
-    border-left: 1px solid var(--lh-border-color-light, #e4e7ed);
+    border-left: 1px solid var(--lh-border-color-light, #e4e7ed); /* hairline */
     border-radius: 0 4px 4px 0;
   }
 
   &--small {
+    height: var(--lh-control-height-small, 24px);
+
     .lh-input-number__input {
       width: 40px;
-      height: 28px;
+      height: calc(var(--lh-control-height-small, 24px) - 2px);
       font-size: 12px;
-      line-height: 28px;
+      line-height: calc(var(--lh-control-height-small, 24px) - 2px);
     }
 
     .lh-input-number__decrease,
     .lh-input-number__increase {
       width: 28px;
-      height: 28px;
+      height: calc(var(--lh-control-height-small, 24px) - 2px);
     }
   }
 
   &--large {
+    height: var(--lh-control-height-large, 40px);
+
     .lh-input-number__input {
       width: 56px;
-      height: 40px;
+      height: calc(var(--lh-control-height-large, 40px) - 2px);
       font-size: 16px;
-      line-height: 40px;
+      line-height: calc(var(--lh-control-height-large, 40px) - 2px);
     }
 
     .lh-input-number__decrease,
     .lh-input-number__increase {
       width: 40px;
-      height: 40px;
+      height: calc(var(--lh-control-height-large, 40px) - 2px);
     }
   }
 

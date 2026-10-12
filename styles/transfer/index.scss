@@ -15,7 +15,7 @@
   flex-direction: column;
   width: var(--lh-transfer-panel-width, 220px);
   height: var(--lh-transfer-panel-height, 280px);
-  border: 1px solid var(--lh-transfer-border, var(--lh-border-color-lighter, #EEE9E2));
+  border: 1px solid var(--lh-transfer-border, var(--lh-border-color-lighter, #EEE9E2)); /* hairline */
   border-radius: var(--lh-border-radius-base, 8px);
   background-color: var(--lh-transfer-bg, var(--lh-bg-color, #fff));
   overflow: hidden;
@@ -54,7 +54,7 @@
 .lh-transfer-panel__search {
   width: 100%;
   padding: 4px 8px;
-  border: 1px solid var(--lh-border-color-base, #D8D3CC);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC); /* hairline */
   border-radius: var(--lh-border-radius-small, 6px);
   font: inherit;
   font-size: var(--lh-font-size-small, 13px);
@@ -109,7 +109,7 @@
 .lh-transfer__button {
   width: 32px;
   height: 32px;
-  border: 1px solid var(--lh-border-color-base, #D8D3CC);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC); /* hairline */
   border-radius: var(--lh-border-radius-small, 6px);
   background-color: var(--lh-bg-color, #fff);
   color: var(--lh-text-regular, #5A5A5A);

@@ -151,7 +151,7 @@ function main() {
   for (const name of componentDirs) classes[name] = extractClasses(name);
 
   // 数量断言：与既有审计口径不符即失败，避免数据静默漂移
-  const expect = { light: 185, dark: 118, scssVars: 183, icons: 37, components: 58 };
+  const expect = { light: 190, dark: 118, scssVars: 188, icons: 37, components: 58 };
   if (light.length !== expect.light) fail(`明色令牌 ${light.length} ≠ ${expect.light}`);
   if (dark.length !== expect.dark) fail(`暗色令牌 ${dark.length} ≠ ${expect.dark}`);
   if (scssVars.length !== expect.scssVars) fail(`SCSS 变量 ${scssVars.length} ≠ ${expect.scssVars}`);
@@ -163,8 +163,8 @@ function main() {
   const scssByName = new Map(scssVars.map((v) => [v.name, v]));
   const darkByName = new Map(dark.map((v) => [v.name, v]));
   const tokens = light.map((v) => {
-    // 值形如 #{$lh-primary} → 编译期烤死的 SCSS 变量
-    const baked = /^\#\{(\$lh-[A-Za-z0-9_-]+)\}$/.exec(v.value);
+    // 值形如 #{$lh-primary} → 编译期烤死的 SCSS 变量（# 在正则里非元字符，无需转义）
+    const baked = /^#\{(\$lh-[A-Za-z0-9_-]+)\}$/.exec(v.value);
     const scssVar = baked ? baked[1] : '';
     const d = darkByName.get(v.name);
     return {

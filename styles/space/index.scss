@@ -15,10 +15,17 @@
     flex-wrap: wrap;
   }
 
-  &--small,
-  &--medium,
-  &--large {
-    // gap 由内联样式写入 spacing token，这里仅作缺省兜底
+  // gap 由内联样式写入 spacing token（small→sm / medium→base / large→xl），
+  // 这里按档位给缺省兜底，兜底值与 variables.scss 令牌默认值一致
+  &--small {
+    gap: var(--lh-spacing-sm, 8px);
+  }
+
+  &--medium {
     gap: var(--lh-spacing-base, 16px);
+  }
+
+  &--large {
+    gap: var(--lh-spacing-xl, 24px);
   }
 }

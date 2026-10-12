@@ -20,7 +20,7 @@ $lh-dialog-border-color: var(--lh-border-color-light, #E5E0D8) !default;
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(26, 26, 26, 0.4);
+  background-color: var(--lh-bg-color-overlay, rgba(26, 26, 26, 0.4));
   z-index: calc(var(--lh-z-index-modal, 1000) - 1);
 }
 
@@ -54,6 +54,11 @@ $lh-dialog-border-color: var(--lh-border-color-light, #E5E0D8) !default;
   position: relative;
   margin: 0 auto 50px;
   background-color: $lh-dialog-bg;
+  // 背景花纹：默认 none，由 ConfigProvider 的 bg-pattern + patternComponents 白名单开启
+  background-image: var(--lh-bg-pattern, none);
+  background-blend-mode: var(--lh-bg-pattern-blend, normal);
+  background-repeat: var(--lh-bg-pattern-repeat, repeat);
+  background-size: var(--lh-bg-pattern-size, auto);
   border-radius: $lh-dialog-radius;
   box-shadow: $lh-dialog-shadow;
   display: flex;
@@ -74,7 +79,7 @@ $lh-dialog-border-color: var(--lh-border-color-light, #E5E0D8) !default;
     justify-content: space-between;
     padding: $lh-dialog-padding;
     padding-bottom: 10px;
-    border-bottom: 1px solid $lh-dialog-border-color;
+    border-bottom: 1px solid $lh-dialog-border-color; /* hairline */
     flex-shrink: 0;
     position: relative;
 
@@ -137,7 +142,7 @@ $lh-dialog-border-color: var(--lh-border-color-light, #E5E0D8) !default;
   &__footer {
     padding: 10px $lh-dialog-padding $lh-dialog-padding;
     text-align: right;
-    border-top: 1px solid $lh-dialog-border-color;
+    border-top: 1px solid $lh-dialog-border-color; /* hairline */
     flex-shrink: 0;
 
     > * + * {
@@ -186,8 +191,8 @@ $lh-dialog-border-color: var(--lh-border-color-light, #E5E0D8) !default;
   }
 }
 
-.lh-dialog-fade-enter,
-.lh-dialog-fade-enter-from {
+/* 进入态类名双写（-enter / -enter-from）由 theme/common/transition.scss 的 lh-enter-both mixin 收编 */
+@include lh-enter-both('.lh-dialog-fade') {
   opacity: 0;
 
   .lh-dialog {

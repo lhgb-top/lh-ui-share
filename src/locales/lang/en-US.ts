@@ -25,6 +25,8 @@ export default {
     yearPanelLabel: 'Select year',
     year: 'Y',
     month: 'M',
+    // 日历面板标题：{month} 已是 'Oct' 这类月名，模板只负责年和月的顺序与连接符
+    panelTitle: '{month} {year}',
     month1: 'Jan',
     month2: 'Feb',
     month3: 'Mar',

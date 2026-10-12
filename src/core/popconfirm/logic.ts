@@ -24,10 +24,10 @@ export interface LhPopconfirmState {
 }
 
 /** 默认语气 */
-export const DEFAULT_POPCONFIRM_TYPE: LhPopconfirmType = 'warning'
+export const LH_POPCONFIRM_TYPE_DEFAULT: LhPopconfirmType = 'warning'
 
 /** 默认方位 */
-export const DEFAULT_POPCONFIRM_PLACEMENT: LhPlacement = 'top'
+export const LH_POPCONFIRM_PLACEMENT_DEFAULT: LhPlacement = 'top'
 
 /** 各语气对应的图标名 */
 const POPCONFIRM_ICONS: Record<LhPopconfirmType, string> = {

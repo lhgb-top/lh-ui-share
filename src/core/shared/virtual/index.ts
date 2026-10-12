@@ -5,7 +5,7 @@
  * 任一处的修复都不会同步到另一处。这里抽出唯一算法，两处薄封装复用。
  */
 
-export interface VirtualRange {
+export interface LhVirtualRange {
   start: number
   end: number
   offsetY: number
@@ -29,7 +29,7 @@ export function computeRange(
   itemHeight: number,
   total: number,
   overscan: number = LH_VIRTUAL_OVERSCAN
-): VirtualRange {
+): LhVirtualRange {
   if (
     !Number.isFinite(itemHeight) ||
     itemHeight <= 0 ||
@@ -64,8 +64,8 @@ export function getItemOffsetAt(
   return item.offset
 }
 
-/** 轴无关区间：offset / totalSize 与 VirtualRange 的 offsetY / totalHeight 同义 */
-export interface AxisRange {
+/** 轴无关区间：offset / totalSize 与 LhVirtualRange 的 offsetY / totalHeight 同义 */
+export interface LhAxisRange {
   start: number
   end: number
   offset: number
@@ -84,7 +84,7 @@ export function computeWindow(
   itemSize: number,
   total: number,
   overscan: number = LH_VIRTUAL_OVERSCAN
-): AxisRange {
+): LhAxisRange {
   const range = computeRange(scrollOffset, viewportSize, itemSize, total, overscan)
   return { start: range.start, end: range.end, offset: range.offsetY, totalSize: range.totalHeight }
 }

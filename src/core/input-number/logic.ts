@@ -2,12 +2,9 @@
  * InputNumber 纯函数逻辑（无框架依赖）
  */
 
-import { clamp, sanitizeNumber } from '../shared/sanitize'
+import { clamp, safePrecision } from '../shared/sanitize'
 import type { LhInputNumberState } from './types'
 import type { LhAriaAttrs } from '../shared/a11y'
-
-/** precision 允许的小数位上限：toFixed 超过 100 位会抛 RangeError */
-const LH_PRECISION_MAX = 100
 
 // Export as clampValue for component compatibility
 export { clamp as clampValue }
@@ -15,11 +12,6 @@ export { clamp as clampValue }
 /** 钳制并兜底：计算结果非有限（NaN 步长、NaN 输入）时回退到 [min, max] 内的确定值 */
 function clampSafe(value: number, min: number, max: number): number {
   return Number.isFinite(value) ? clamp(value, min, max) : clamp(0, min, max)
-}
-
-/** 把 precision 净化为 [0, 100] 整数，非法值回退 0（防 toFixed RangeError） */
-function safePrecision(precision: number): number {
-  return sanitizeNumber(precision, 0, { min: 0, max: LH_PRECISION_MAX, integer: true })
 }
 
 export function incrementValue(value: number | null, step: number, min: number, max: number, precision?: number): number {

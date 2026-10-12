@@ -18,6 +18,9 @@ export function getSpaceClassNames(state: LhSpaceState): string[] {
  *
  * 预设档位映射 spacing token 变量；数字视为 px；数组分别控制水平/垂直。
  * 混合预设与数字（如 ['medium', 8]）不支持——保持类型简单。
+ *
+ * 档位只引用 var.scss 实际注册的令牌（sm=8 / base=16 / xl=24），
+ * 兜底值与 variables.scss 的令牌默认值一致，用户定制 --lh-spacing-* 才能生效。
  */
 export function resolveSpaceGaps(size: LhSpaceSizeInput): {
   columnGap: string
@@ -27,10 +30,10 @@ export function resolveSpaceGaps(size: LhSpaceSizeInput): {
   if (size === 'small' || size === 'medium' || size === 'large') {
     const token =
       size === 'small'
-        ? 'var(--lh-spacing-small, 8px)'
+        ? 'var(--lh-spacing-sm, 8px)'
         : size === 'large'
-          ? 'var(--lh-spacing-large, 24px)'
-          : 'var(--lh-spacing-medium, 16px)'
+          ? 'var(--lh-spacing-xl, 24px)'
+          : 'var(--lh-spacing-base, 16px)'
     return { columnGap: token, rowGap: token, usesTokens: true }
   }
 

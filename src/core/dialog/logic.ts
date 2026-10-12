@@ -7,7 +7,8 @@ import type { LhAriaAttrs } from '../shared/a11y'
 
 export function canClose(state: { closeOnClickModal?: boolean; closeOnPressEscape?: boolean }, reason: 'modalClick' | 'escape'): boolean {
   if (reason === 'modalClick') return state.closeOnClickModal ?? false
-  if (reason === 'escape') return state.closeOnPressEscape ?? false
+  // Esc 默认可关（对齐 drawer 的 closeOnEsc 默认 true 与两库 withDefaults 的显式 true）
+  if (reason === 'escape') return state.closeOnPressEscape ?? true
   return true
 }
 

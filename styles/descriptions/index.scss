@@ -60,7 +60,7 @@
 
   &--border &__label,
   &--border &__content {
-    border: 1px solid var(--lh-border-color-light, #E5E0D8);
+    border: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
     border-radius: 0;
   }
 
@@ -73,7 +73,7 @@
 
     &:last-child,
     & + .lh-descriptions__filler {
-      border-right: 1px solid var(--lh-border-color-light, #E5E0D8);
+      border-right: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
     }
   }
 

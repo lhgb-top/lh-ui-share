@@ -146,7 +146,7 @@
   padding: var(--lh-spacing-xs, 4px) 0;
   list-style: none;
   background-color: var(--lh-menu-bg, var(--lh-bg-color, #fff));
-  border: 1px solid var(--lh-menu-border, var(--lh-border-color-lighter, #EEE9E2));
+  border: 1px solid var(--lh-menu-border, var(--lh-border-color-lighter, #EEE9E2)); /* hairline */
   border-radius: var(--lh-border-radius-base, 8px);
   box-shadow: var(--lh-box-shadow-light, 0 2px 4px rgba(0, 0, 0, 0.12));
   min-width: 180px;
@@ -163,9 +163,7 @@
   transition: opacity var(--lh-transition-duration-fast, 0.25s) ease;
 }
 
-.lh-sub-menu-fade-enter,
-.lh-sub-menu-fade-enter-from,
-.lh-sub-menu-fade-leave-to {
+@include lh-transition-ends('.lh-sub-menu-fade') {
   opacity: 0;
 }
 

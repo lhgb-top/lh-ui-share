@@ -21,7 +21,12 @@
   line-height: var(--lh-font-line-height-primary, 1.8);
   color: var(--lh-text-regular, #5A5A5A);
   background-color: var(--lh-popover-bg-color, #FAF6F0);
-  border: 1px solid var(--lh-popover-border-color, #E5E0D8);
+  // 背景花纹：默认 none，由 ConfigProvider 的 bg-pattern + patternComponents 白名单开启
+  background-image: var(--lh-bg-pattern, none);
+  background-blend-mode: var(--lh-bg-pattern-blend, normal);
+  background-repeat: var(--lh-bg-pattern-repeat, repeat);
+  background-size: var(--lh-bg-pattern-size, auto);
+  border: 1px solid var(--lh-popover-border-color, #E5E0D8); /* hairline */
   border-radius: var(--lh-popover-border-radius, 2px);
   box-shadow: var(--lh-box-shadow-base, 0 2px 12px 0 rgba(26, 26, 26, 0.08));
 }
@@ -89,17 +94,13 @@
     transform var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
 }
 
-.lh-popconfirm-fade-enter,
-.lh-popconfirm-fade-enter-from,
-.lh-popconfirm-fade-leave-to {
+@include lh-transition-ends('.lh-popconfirm-fade') {
   opacity: 0;
   transform: scale(0.96);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lh-popconfirm-fade-enter,
-.lh-popconfirm-fade-enter-from,
-  .lh-popconfirm-fade-leave-to {
+  @include lh-transition-ends('.lh-popconfirm-fade') {
     transform: none;
   }
 }

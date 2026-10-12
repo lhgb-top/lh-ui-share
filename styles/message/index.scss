@@ -28,7 +28,7 @@
   background-color: var(--lh-message-bg, var(--lh-bg-color, #fff));
   color: var(--lh-message-color, var(--lh-text-regular, #5A5A5A));
   box-shadow: var(--lh-message-shadow, 0 4px 16px rgba(0, 0, 0, 12%));
-  border: 1px solid var(--lh-message-border, var(--lh-border-color-lighter, #EEE9E2));
+  border: 1px solid var(--lh-message-border, var(--lh-border-color-lighter, #EEE9E2)); /* hairline */
   font-size: 14px;
   line-height: 1.6;
   pointer-events: auto;
@@ -90,9 +90,7 @@
     transform 0.25s ease;
 }
 
-.lh-message-zoom-enter,
-.lh-message-zoom-enter-from,
-.lh-message-zoom-leave-to {
+@include lh-transition-ends('.lh-message-zoom') {
   opacity: 0;
   transform: translateY(-12px) scale(0.96);
 }
@@ -103,9 +101,7 @@
     transition: opacity 0.2s ease;
   }
 
-  .lh-message-zoom-enter,
-.lh-message-zoom-enter-from,
-  .lh-message-zoom-leave-to {
+  @include lh-transition-ends('.lh-message-zoom') {
     transform: none;
   }
 }

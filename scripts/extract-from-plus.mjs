@@ -1,7 +1,7 @@
 /**
  * 一次性提取脚本：从 ../lh-ui-plus 只读提取框架无关资产到本仓库。
  *
- * 映射关系（详见 ai/share包计划.md）：
+ * 映射关系（详见 docs/share/share包计划.md，家族规划文档已迁至根级 docs/）：
  *   packages/core/**                -> src/core/**（shared/*.ts 规范化为 shared/<name>/index.ts；跳过其 package.json）
  *   packages/theme/src/common/*.scss -> styles/theme/common/**（令牌 scss 唯一源，随 styles/ 发布）
  *   packages/theme/src/index.scss    -> styles/theme/index.scss

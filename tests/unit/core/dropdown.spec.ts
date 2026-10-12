@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_DROPDOWN_PLACEMENT,
-  DROPDOWN_TRIGGERS,
+  LH_DROPDOWN_PLACEMENT_DEFAULT,
+  LH_DROPDOWN_TRIGGERS,
   getDropdownClass,
   getDropdownItemClass,
   getDropdownMenuStyle,
@@ -12,8 +12,8 @@ import {
 
 describe('LhDropdown core', () => {
   it('exposes documented defaults', () => {
-    expect(DEFAULT_DROPDOWN_PLACEMENT).toBe('bottom-start')
-    expect(DROPDOWN_TRIGGERS).toEqual(['hover', 'click', 'contextmenu'])
+    expect(LH_DROPDOWN_PLACEMENT_DEFAULT).toBe('bottom-start')
+    expect(LH_DROPDOWN_TRIGGERS).toEqual(['hover', 'click', 'contextmenu'])
   })
 
   it('computes menu class names with placement and custom class', () => {

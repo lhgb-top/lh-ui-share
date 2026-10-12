@@ -2,9 +2,9 @@
  * ConfigProvider 纯函数逻辑
  */
 import type { LhComponentSize } from '../shared/types'
-import type { ThemePresetName } from '../../theme/types'
+import type { LhThemePresetName } from '../../theme/types'
 import type { LhConfigState } from './types'
-import { createDefaultConfig, DEFAULT_THEME } from './types'
+import { createDefaultConfig, LH_THEME_DEFAULT } from './types'
 
 /**
  * 合并配置（局部 > 全局 > 默认）
@@ -46,8 +46,8 @@ export function getEffectiveZIndex(localZIndex: number | undefined, globalZIndex
  * getThemeVars(name) + buildPresetStyleText(vars) 完成，core 不碰 DOM。
  */
 export function getEffectiveTheme(
-  localTheme: ThemePresetName | undefined,
-  globalTheme: ThemePresetName | undefined,
-): ThemePresetName {
-  return localTheme || globalTheme || DEFAULT_THEME
+  localTheme: LhThemePresetName | undefined,
+  globalTheme: LhThemePresetName | undefined,
+): LhThemePresetName {
+  return localTheme || globalTheme || LH_THEME_DEFAULT
 }

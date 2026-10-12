@@ -12,11 +12,14 @@ export function getAvatarClassNames(state: LhAvatarState): string[] {
 
 /**
  * 从任意文本中提取头像展示字（取第一个字符）
- * 中英文均取首字，如「水墨」→「水」、「Alice」→「A」
+ * 中英文均取首字，如「水墨」→「水」、「Alice」→「A」；
+ * emoji 等增补平面字符按码点提取（charAt 只能取到半个代理对）
  */
 export function getAvatarText(source: string): string {
   const trimmed = source.trim()
-  return trimmed ? trimmed.charAt(0) : ''
+  if (!trimmed) return ''
+  const codePoint = trimmed.codePointAt(0)
+  return codePoint === undefined ? '' : String.fromCodePoint(codePoint)
 }
 
 /**

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_POPCONFIRM_PLACEMENT,
-  DEFAULT_POPCONFIRM_TYPE,
+  LH_POPCONFIRM_PLACEMENT_DEFAULT,
+  LH_POPCONFIRM_TYPE_DEFAULT,
   getPopconfirmClass,
   getPopconfirmIconName,
   getDefaultDelay as getPopconfirmDefaultDelay,
@@ -12,8 +12,8 @@ import {
 
 describe('LhPopconfirm core', () => {
   it('exposes documented defaults', () => {
-    expect(DEFAULT_POPCONFIRM_TYPE).toBe('warning')
-    expect(DEFAULT_POPCONFIRM_PLACEMENT).toBe('top')
+    expect(LH_POPCONFIRM_TYPE_DEFAULT).toBe('warning')
+    expect(LH_POPCONFIRM_PLACEMENT_DEFAULT).toBe('top')
   })
 
   it('maps types to icon names with a warning fallback', () => {

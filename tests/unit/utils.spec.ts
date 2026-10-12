@@ -82,6 +82,43 @@ describe('utils / debounce & throttle', () => {
     throttled()
     expect(fn).toHaveBeenCalledTimes(1)
   })
+
+  it('debounce 支持 cancel 与 flush 手动控制', () => {
+    vi.useFakeTimers()
+    const fn = vi.fn()
+    const debounced = debounce(fn, 100)
+    debounced('a')
+    debounced.cancel()
+    vi.advanceTimersByTime(200)
+    expect(fn).not.toHaveBeenCalled()
+    debounced('b')
+    debounced.flush()
+    expect(fn).toHaveBeenCalledTimes(1)
+    expect(fn).toHaveBeenCalledWith('b')
+    // flush 后无挂起调用，重复 flush 为空操作
+    debounced.flush()
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
+  it('throttle 尾沿补执行窗口内最后一次调用', () => {
+    vi.useFakeTimers()
+    const fn = vi.fn()
+    const throttled = throttle(fn, 100)
+    throttled('first')
+    expect(fn).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(50)
+    throttled('last')
+    expect(fn).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(50)
+    // 尾沿在窗口结束时补执行，携带最后一次参数
+    expect(fn).toHaveBeenCalledTimes(2)
+    expect(fn).toHaveBeenLastCalledWith('last')
+    // cancel 可终止尚未执行的尾沿
+    throttled('pending')
+    throttled.cancel()
+    vi.advanceTimersByTime(200)
+    expect(fn).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('utils / deepMerge', () => {

@@ -104,7 +104,14 @@ export function getColStyle(size: LhColSize | undefined): Record<string, string>
 
   if (offsetValue > 0 || pushValue > 0 || pullValue > 0) {
     // 带 offset/push/pull 时显式定位起点（会打断 auto-placement，属定位用法的预期行为）
-    const start = Math.max(offsetValue + 1 + pushValue - pullValue, 1)
+    let start = Math.max(offsetValue + 1 + pushValue - pullValue, 1)
+    // 起点随跨度一起钳制在 24 列坐标系内：越界组合（如 offset 21 + span 8）若直接
+    // 输出 `22 / span 8` 会越过末列边界，迫使 grid 生成隐式轨道把容器撑破
+    if (spanValue > 0) {
+      start = Math.min(start, LH_GRID_COLUMNS + 1 - spanValue)
+    } else {
+      start = Math.min(start, LH_GRID_COLUMNS)
+    }
     style.gridColumn =
       spanValue > 0
         ? `${start} / span ${spanValue}`

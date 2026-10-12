@@ -7,8 +7,10 @@
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "declarationMap": false,
-    "sourceMap": false,
+    // 开启 sourcemap 映射：各 UI 库编辑器从 es/*.d.ts 可跳回 share 的 src/ 源码
+    // （本地联动时尤为关键：alias 到源码后类型仍来自构建产物，映射保证跳转落点一致）
+    "declarationMap": true,
+    "sourceMap": true,
     "outDir": "es",
     "rootDir": "src"
   },

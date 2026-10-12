@@ -26,6 +26,12 @@ describe('Avatar Core Logic', () => {
     expect(getAvatarText('  青花  ')).toBe('青')
   })
 
+  it('should extract astral-plane characters by code point', () => {
+    // 回归：charAt 遇 emoji 等代理对只取半个码元，fromCodePoint 才是完整字符
+    expect(getAvatarText('🀄国画')).toBe('🀄')
+    expect(getAvatarText('👍赞')).toBe('👍')
+  })
+
   it('should return empty string for empty source', () => {
     expect(getAvatarText('')).toBe('')
     expect(getAvatarText('   ')).toBe('')

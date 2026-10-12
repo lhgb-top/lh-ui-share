@@ -8,11 +8,11 @@ import {
   computePosition,
   getWindowViewport,
   isOutsideViewport,
-  type DOMRectLike,
+  type LhDOMRectLike,
   type LhPlacement,
 } from '../../../../src/core/shared/popper'
 
-function rect(top: number, left: number, width: number, height: number): DOMRectLike {
+function rect(top: number, left: number, width: number, height: number): LhDOMRectLike {
   return { top, left, width, height, right: left + width, bottom: top + height }
 }
 
@@ -280,6 +280,20 @@ describe('popper / clamping edge cases', () => {
     expect(pos.left).toBeGreaterThanOrEqual(0)
     expect(pos.left + POPPER.width).toBeLessThanOrEqual(VIEWPORT.right)
   })
+
+  it('clamps the high side so the popper never sticks out of the viewport edge', () => {
+    // 回归：flip/shift 关闭时调用方接受溢出，但安全网此前只钳低侧，
+    // 贴右缘的触发器 + 超宽弹出层会整体伸出视口右侧
+    const trigger = rect(100, 850, 120, 40) // 贴右缘
+    const wide = rect(0, 0, 700, 100)
+    const pos = computePosition(trigger, wide, VIEWPORT, {
+      placement: 'bottom-start',
+      flip: false,
+      shift: false,
+    })
+    expect(pos.left + wide.width).toBeLessThanOrEqual(VIEWPORT.right)
+    expect(pos.left).toBeGreaterThanOrEqual(0)
+  })
 })
 
 describe('popper / getWindowViewport', () => {
@@ -296,7 +310,7 @@ describe('popper round 2: NaN 净化 / 非法 placement / flip 关闭语义', ()
   it('sanitizes NaN rect fields to 0 instead of leaking NaN into the result', () => {
     // 回归：rect 字段 NaN 曾直接产出 top: NaNpx
     const dirtyTrigger = { top: NaN, left: 400, width: 100, height: 40, right: 500, bottom: NaN }
-    const pos = computePosition(dirtyTrigger as unknown as DOMRectLike, POPPER, VIEWPORT, {
+    const pos = computePosition(dirtyTrigger as unknown as LhDOMRectLike, POPPER, VIEWPORT, {
       placement: 'bottom',
     })
     expect(Number.isFinite(pos.top)).toBe(true)
@@ -304,7 +318,7 @@ describe('popper round 2: NaN 净化 / 非法 placement / flip 关闭语义', ()
     expect(Number.isFinite(pos.arrowOffset)).toBe(true)
 
     const dirtyPopper = { top: 0, left: NaN, width: NaN, height: 100, right: NaN, bottom: 100 }
-    const pos2 = computePosition(TRIGGER, dirtyPopper as unknown as DOMRectLike, VIEWPORT)
+    const pos2 = computePosition(TRIGGER, dirtyPopper as unknown as LhDOMRectLike, VIEWPORT)
     expect(Number.isFinite(pos2.top)).toBe(true)
     expect(Number.isFinite(pos2.left)).toBe(true)
   })

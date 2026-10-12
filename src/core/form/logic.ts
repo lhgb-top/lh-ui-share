@@ -163,10 +163,17 @@ export function validateFormField(
 ): string | undefined | Promise<string | undefined> {
   const empty = isEmptyValue(value)
 
-  // 空值只关心 required（首个必填规则的文案生效）
+  // 空值只关心 required：优先取「显式提供了 message 的必填规则」，
+  // 否则回退首个必填规则。组件层（form item）在 required 属性为真时会合成
+  // 一条无 message 的 { required: true } 规则，若它排在用户带 message 的
+  // 规则之前，find 会命中合成规则并回退到通用文案，吞掉用户自定义文案。
   if (empty) {
-    const requiredRule = rules.find((rule) => rule.required)
-    return requiredRule ? requiredRule.message || requiredMessage : undefined
+    const requiredRule =
+      rules.find((rule) => rule.required && rule.message !== undefined) ??
+      rules.find((rule) => rule.required)
+    if (!requiredRule) return undefined
+    // 与内置规则同口径：message 显式提供（含空串）即原样使用，仅 undefined 回退通用文案
+    return requiredRule.message !== undefined ? requiredRule.message : requiredMessage
   }
 
   const checks: RuleCheck[] = rules.map((rule) => () => {

@@ -24,6 +24,11 @@ describe('dialog/core/logic', () => {
 		it('prevents close on escape when disabled', () => {
 			expect(canClose({ closeOnPressEscape: false }, 'escape')).toBe(false)
 		})
+
+		it('allows close on escape by default', () => {
+			// Esc 默认可关：对齐 drawer 的 closeOnEsc 默认 true 与两库 withDefaults 的显式 true
+			expect(canClose({}, 'escape')).toBe(true)
+		})
 	})
 
 	describe('getDialogStyle', () => {

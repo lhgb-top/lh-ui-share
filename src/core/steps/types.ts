@@ -25,6 +25,7 @@ export interface LhStepStatusState {
  */
 export interface LhStepClassState {
   status: LhStepStatus
-  isLast: boolean
   clickable: boolean
+  /** 是否为当前行的最后一项（横向折行时由 UI 层测量，用于隐藏行末连接线） */
+  lineLast?: boolean
 }

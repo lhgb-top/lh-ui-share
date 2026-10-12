@@ -28,6 +28,11 @@ $lh-tooltip-arrow-size: 6px !default;
     word-break: break-word;
     box-shadow: 0 2px 12px 0 rgba(26, 26, 26, 0.08);
     max-width: 200px;
+    // 背景花纹：默认 none，由 ConfigProvider 的 bg-pattern + patternComponents 白名单开启
+    background-image: var(--lh-bg-pattern, none);
+    background-blend-mode: var(--lh-bg-pattern-blend, normal);
+    background-repeat: var(--lh-bg-pattern-repeat, repeat);
+    background-size: var(--lh-bg-pattern-size, auto);
 
     &--dark {
       background-color: var(--lh-tooltip-bg, $lh-tooltip-bg-dark);
@@ -37,7 +42,7 @@ $lh-tooltip-arrow-size: 6px !default;
     &--light {
       background-color: var(--lh-tooltip-bg, $lh-tooltip-bg-light);
       color: var(--lh-tooltip-text, $lh-tooltip-text-light);
-      border: 1px solid $lh-tooltip-border-light;
+      border: 1px solid $lh-tooltip-border-light; /* hairline */
     }
   }
 
@@ -113,9 +118,7 @@ $lh-tooltip-arrow-size: 6px !default;
   transition: opacity 0.2s ease;
 }
 
-.lh-tooltip-fade-enter,
-.lh-tooltip-fade-enter-from,
-.lh-tooltip-fade-leave-to {
+@include lh-transition-ends('.lh-tooltip-fade') {
   opacity: 0;
 }
 

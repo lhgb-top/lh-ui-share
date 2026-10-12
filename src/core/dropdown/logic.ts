@@ -25,9 +25,9 @@ export interface LhDropdownItemState {
   divided?: boolean
 }
 
-export const DEFAULT_DROPDOWN_PLACEMENT: LhPlacement = 'bottom-start'
+export const LH_DROPDOWN_PLACEMENT_DEFAULT: LhPlacement = 'bottom-start'
 
-export const DROPDOWN_TRIGGERS: readonly LhDropdownTrigger[] = [
+export const LH_DROPDOWN_TRIGGERS: readonly LhDropdownTrigger[] = [
   'hover',
   'click',
   'contextmenu',

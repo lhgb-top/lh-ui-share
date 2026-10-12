@@ -158,17 +158,6 @@ export function getTableCellClassNames(state: {
 // 多级表头
 // ============================================================================
 
-/** 该列的叶子后代数（无 children 时为 1）。祖先链判重保护循环引用 */
-function getLeafCount(column: LhTableColumn, seen: Set<LhTableColumn> = new Set()): number {
-  if (!column.children?.length) return 1
-  return column.children.reduce((sum, child) => {
-    if (seen.has(child)) return sum
-    const nextSeen = new Set(seen)
-    nextSeen.add(child)
-    return sum + getLeafCount(child, nextSeen)
-  }, 0)
-}
-
 /** 该列树的最大深度（无 children 时为 1）。祖先链判重保护循环引用 */
 function getDepth(column: LhTableColumn, seen: Set<LhTableColumn> = new Set()): number {
   if (!column.children?.length) return 1
@@ -185,19 +174,24 @@ function getDepth(column: LhTableColumn, seen: Set<LhTableColumn> = new Set()): 
   )
 }
 
-/** 递归取全部叶子列（表体按此渲染，保证列数与表头叶子数一致）。祖先链判重保护循环引用 */
+/**
+ * 递归取全部叶子列（表体按此渲染，保证列数与表头叶子数一致）。
+ *
+ * 用全局 seen 而非祖先链 seen：同一 column 对象被 DAG 式共享引用时只发射一次，
+ * 表体列数才与表头叶子格数一致；全局 seen 同样保护循环引用。
+ */
 export function flattenLeafColumns(columns: LhTableColumn[]): LhTableColumn[] {
   const result: LhTableColumn[] = []
-  const walk = (list: LhTableColumn[], seen: Set<LhTableColumn>): void => {
+  const seen = new Set<LhTableColumn>()
+  const walk = (list: LhTableColumn[]): void => {
     for (const column of list) {
       if (seen.has(column)) continue
-      const nextSeen = new Set(seen)
-      nextSeen.add(column)
-      if (column.children?.length) walk(column.children, nextSeen)
+      seen.add(column)
+      if (column.children?.length) walk(column.children)
       else result.push(column)
     }
   }
-  walk(columns, new Set())
+  walk(columns)
   return result
 }
 
@@ -206,49 +200,62 @@ export function flattenLeafColumns(columns: LhTableColumn[]): LhTableColumn[] {
  *
  * 每个单元格携带它在叶子列序中的起点与跨度；叶子列的 rowspan 补齐到最大深度，
  * 使任意不平衡的列树也不会留下悬空格。平铺配置输出一行、rowspan 全为 1。
+ *
+ * 组列的 leafSpan 用「递归实际发射的叶子数」而非先验计数：同一 column 对象被
+ * DAG 式共享引用时，全局 seen 只会发射一次（与 flattenLeafColumns 同口径），
+ * 先验计数会把共享子树算两遍，导致表头列数与表体叶子列数错位。
  */
 export function buildHeaderCells(columns: LhTableColumn[]): LhTableHeaderCell[] {
   const maxDepth = columns.length ? Math.max(...columns.map((c) => getDepth(c))) : 1
   const cells: LhTableHeaderCell[] = []
   let leafCursor = 0
 
-  const walk = (list: LhTableColumn[], level: number, seen: Set<LhTableColumn>): void => {
+  // 返回值 = 本层实际发射的叶子数（供父组列回填 leafSpan/colspan）
+  const seen = new Set<LhTableColumn>()
+  const walk = (list: LhTableColumn[], level: number): number => {
+    let emitted = 0
     for (const column of list) {
-      // 祖先链判重保护循环引用（与 getDepth/getLeafCount 同模式）
+      // 全局判重：DAG 共享引用只发射一次（与 flattenLeafColumns 同口径），
+      // 同时保护循环引用
       if (seen.has(column)) continue
-      const nextSeen = new Set(seen)
-      nextSeen.add(column)
-      const leafSpan = getLeafCount(column)
+      seen.add(column)
       if (column.children?.length) {
-        cells.push({
+        // 先按占位跨度入列（保持「组头先于子列」的 cells 序），递归后回填真实跨度；
+        // cursor 的推进由子列递归完成（每个叶子 +1），组列不再叠加 leafSpan，
+        // 否则下一个组列的起点会被重复累加（估值组会从 2 跳到 4）
+        const cell: LhTableHeaderCell = {
           column,
           level,
           leafStart: leafCursor,
-          leafSpan,
+          leafSpan: 0,
           rowspan: 1,
-          colspan: leafSpan,
+          colspan: 0,
           isLeaf: false,
-        })
-        // cursor 的推进由子列递归完成（每个叶子 +1），组列不再叠加 leafSpan，
-        // 否则下一个组列的起点会被重复累加（估值组会从 2 跳到 4）
-        walk(column.children, level + 1, nextSeen)
+        }
+        cells.push(cell)
+        const span = walk(column.children, level + 1)
+        cell.leafSpan = span
+        cell.colspan = span
+        emitted += span
       } else {
         cells.push({
           column,
           level,
           leafStart: leafCursor,
-          leafSpan,
+          leafSpan: 1,
           // 叶子列向下补齐到最大深度，填满同层更高的组表头留下的空行
           rowspan: maxDepth - level,
           colspan: 1,
           isLeaf: true,
         })
-        leafCursor += leafSpan
+        leafCursor += 1
+        emitted += 1
       }
     }
+    return emitted
   }
 
-  walk(columns, 0, new Set())
+  walk(columns, 0)
   return cells
 }
 

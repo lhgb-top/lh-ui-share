@@ -9,9 +9,17 @@
 
 .lh-table__header {
   display: grid;
+  // 横向滚动跟随表体（固定列的 sticky 定位以本容器为滚动视口）；
+  // 滚动条隐藏，横向滚动只由表体那一根承担，避免出现两根滚动条
+  overflow-x: auto;
+  scrollbar-width: none;
   background-color: var(--lh-table-header-bg, var(--lh-bg-color-page, #F5F0EB));
   font-weight: 600;
   color: var(--lh-table-header-color, var(--lh-text-primary, #2C2C2C));
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .lh-table__body {
@@ -60,7 +68,7 @@
 }
 
 .lh-table--border {
-  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2));
+  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2)); /* hairline */
 
   .lh-table__cell {
     border-inline-end: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2));
@@ -168,7 +176,7 @@
   inset-inline-start: 0;
   min-inline-size: 180px;
   padding: 8px;
-  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2));
+  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2)); /* hairline */
   border-radius: 6px;
   background-color: var(--lh-bg-color, #fff);
   box-shadow: 0 6px 16px -4px rgba(0, 0, 0, 18%);
@@ -210,7 +218,7 @@
 
 .lh-table__filter-btn {
   padding: 4px 12px;
-  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2));
+  border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2)); /* hairline */
   border-radius: 4px;
   background-color: transparent;
   color: var(--lh-text-regular, #5A5A5A);
@@ -242,9 +250,7 @@
     transform 0.15s ease;
 }
 
-.lh-table__filter-fade-enter,
-.lh-table__filter-fade-enter-from,
-.lh-table__filter-fade-leave-to {
+@include lh-transition-ends('.lh-table__filter-fade') {
   opacity: 0;
   transform: scale(0.96);
 }

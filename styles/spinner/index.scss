@@ -3,6 +3,9 @@
 .lh-spinner {
   display: inline-flex;
   flex-shrink: 0;
+  /* 行内语境下跟随基线而非垂直居中，与 LhIcon 的 vertical-align 对齐，
+     便于在文本/按钮内与图标混排 */
+  vertical-align: middle;
 
   &__circle {
     width: 100%;

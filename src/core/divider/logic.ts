@@ -16,7 +16,10 @@ export function getDividerClassNames(state: LhDividerState): string[] {
   }
   if (state.hasContent) {
     classes.push('lh-divider--with-text')
-    classes.push(`lh-divider--label-${state.labelPosition}`)
+    // labelPosition 是横向语义（左/右），竖向文案恒居中，不产出修饰类
+    if (state.direction === 'horizontal') {
+      classes.push(`lh-divider--label-${state.labelPosition}`)
+    }
   }
   return classes
 }

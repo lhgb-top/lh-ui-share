@@ -1,3 +1,4 @@
+import { safePrecision } from '../shared/sanitize'
 import type { LhStatisticState } from './types'
 
 /** 纯数字（可带符号与一位小数点）字符串，用于识别可按字符串处理的数值 */
@@ -28,24 +29,26 @@ function isUnsafeIntegerString(raw: string): boolean {
 }
 
 /**
- * 超大数字符串格式化：固定精度（字符串四舍五入）+ 千位分隔，全程不经 Number 转换
+ * 超大数字符串格式化：固定精度（字符串四舍五入）+ 千位分隔，全程不经 Number 转换。
+ * precision 必须已净化（[0, 100] 整数）。
  */
 function formatBigString(
   raw: string,
-  state: Pick<LhStatisticState, 'precision' | 'separator'>
+  precision: number,
+  separator?: string
 ): string {
   const m = NUMERIC_STRING_RE.exec(raw.trim())!
   const sign = m[1]
   let intPart = m[2]
   let decPart = m[3] ?? ''
 
-  if (state.precision === 0) {
+  if (precision === 0) {
     // 整数精度：小数首位 >= 5 则整数进位
     if (decPart && decPart[0] >= '5') intPart = incrementDigits(intPart)
     decPart = ''
-  } else if (decPart.length > state.precision) {
-    const keep = decPart.slice(0, state.precision)
-    if (decPart[state.precision] >= '5') {
+  } else if (decPart.length > precision) {
+    const keep = decPart.slice(0, precision)
+    if (decPart[precision] >= '5') {
       const bumped = incrementDigits(keep)
       if (bumped.length > keep.length) {
         // 小数部分进位溢出（如 .99 → 1.00），整数 +1
@@ -58,18 +61,19 @@ function formatBigString(
       decPart = keep
     }
   } else {
-    decPart = decPart.padEnd(state.precision, '0')
+    decPart = decPart.padEnd(precision, '0')
   }
 
-  const grouped = state.separator
-    ? intPart.replace(/\B(?=(\d{3})+(?!\d))/g, state.separator)
+  const grouped = separator
+    ? intPart.replace(/\B(?=(\d{3})+(?!\d))/g, separator)
     : intPart
   return decPart ? `${sign}${grouped}.${decPart}` : `${sign}${grouped}`
 }
 
 /**
  * 格式化统计数值：固定精度 + 千位分隔（分隔符仅用于整数分组，小数点固定为 `.`）
- * 非有限数值原样返回 String；超大数字符串走字符串路径，不丢精度
+ * 非有限数值原样返回 String；超大数字符串走字符串路径，不丢精度。
+ * precision 先经 safePrecision 净化（[0, 100]），脏 props 不再触发 toFixed RangeError。
  */
 export function formatStatisticValue(
   value: number | string,
@@ -77,15 +81,17 @@ export function formatStatisticValue(
 ): string {
   if (typeof value === 'number' && !Number.isFinite(value)) return String(value)
 
+  const precision = safePrecision(state.precision)
+
   // 字符串可承载超大数：超出安全整数范围时走字符串格式化，避免 Number 精度丢失
   if (typeof value === 'string' && isUnsafeIntegerString(value)) {
-    return formatBigString(value, state)
+    return formatBigString(value, precision, state.separator)
   }
 
   const num = typeof value === 'number' ? value : Number(value)
   if (Number.isNaN(num)) return String(value)
 
-  const fixed = num.toFixed(state.precision)
+  const fixed = num.toFixed(precision)
   if (!state.separator) return fixed
 
   const [int, dec] = fixed.split('.')

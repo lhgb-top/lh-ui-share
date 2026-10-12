@@ -11,8 +11,12 @@
   position: relative;
   display: flex;
   align-items: center;
-  padding: 8px 12px;
-  border: 1px solid var(--lh-border-color-base, #D8D3CC);
+  /* 与 lh-date-picker__input 同：control-height 令牌语义为外高（border-box），
+     垂直 padding 压到 6px，由 min-height 兜底到 32px */
+  box-sizing: border-box;
+  min-height: var(--lh-control-height-medium, 32px);
+  padding: 6px 12px;
+  border: 1px solid var(--lh-border-color-base, #D8D3CC); /* hairline */
   border-radius: 4px;
   background: var(--lh-bg-color, #FAF6F0);
   cursor: pointer;
@@ -30,6 +34,9 @@
 }
 
 .lh-time-picker__input-inner {
+  /* flex 子项 min-width 默认取 min-content，长占位符会把右侧清空/时间图标顶出触发器 */
+  flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
   background: none;
@@ -55,13 +62,14 @@
 }
 
 .lh-time-picker__icon {
+  flex-shrink: 0;
   color: var(--lh-text-secondary, #8A8A8A);
 }
 
 /* 面板 */
 .lh-time-picker__panel {
   background: var(--lh-bg-color, #FAF6F0);
-  border: 1px solid var(--lh-border-color-base, #D8D3CC);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC); /* hairline */
   border-radius: 4px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
 }
@@ -79,7 +87,7 @@
 
 .lh-time-picker-panel__column {
   flex: 1;
-  border: 1px solid var(--lh-border-color-light, #E5E0D8);
+  border: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
   border-radius: 4px;
   overflow: hidden;
   cursor: pointer;
@@ -95,7 +103,7 @@
   justify-content: space-between;
   padding: 4px 8px;
   background: var(--lh-bg-color-page, #F5F0EB);
-  border-bottom: 1px solid var(--lh-border-color-light, #E5E0D8);
+  border-bottom: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
 }
 
 .lh-time-picker-panel__column-title {
@@ -157,7 +165,7 @@
   justify-content: space-between;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid var(--lh-border-color-light, #E5E0D8);
+  border-top: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
 }
 
 .lh-fade-in-enter-active,
@@ -165,9 +173,7 @@
   transition: opacity 0.15s;
 }
 
-.lh-fade-in-enter,
-.lh-fade-in-enter-from,
-.lh-fade-in-leave-to {
+@include lh-transition-ends('.lh-fade-in') {
   opacity: 0;
 }
 

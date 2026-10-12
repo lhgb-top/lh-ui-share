@@ -22,6 +22,8 @@ export function resolveLoadingTarget(target: string | HTMLElement | undefined): 
 
 /** 是否全屏遮罩（目标是 body 即视为全屏） */
 export function isLoadingFullscreen(target: HTMLElement): boolean {
+  // SSR / 非 DOM 环境守卫：无 document 时无从比较 body，按非全屏处理
+  if (typeof document === 'undefined') return false
   return target === document.body
 }
 
@@ -30,6 +32,8 @@ export function isLoadingFullscreen(target: HTMLElement): boolean {
  * static 定位的元素补 position: relative，并记录原值供卸载时还原
  */
 export function ensurePositioned(target: HTMLElement): { restore: () => void } {
+  // SSR / 非浏览器环境守卫：getComputedStyle 依赖 window，无 window 时跳过定位修补
+  if (typeof window === 'undefined') return { restore: () => {} }
   const original = target.style.position
   const computed = getComputedStyle(target).position
   if (computed === 'static' || computed === '') {

@@ -17,7 +17,7 @@
     font-family: var(--lh-font-family, 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif);
     font-size: 12px;
     line-height: 1;
-    color: #fff;
+    color: var(--lh-color-on-primary, #fff);
     padding: 0 6px;
     min-width: 18px;
     height: 18px;

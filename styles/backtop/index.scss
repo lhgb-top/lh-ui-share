@@ -30,9 +30,7 @@
   transition: opacity var(--lh-transition-duration-fast, 0.25s) ease;
 }
 
-.lh-backtop-fade-enter,
-.lh-backtop-fade-enter-from,
-.lh-backtop-fade-leave-to {
+@include lh-transition-ends('.lh-backtop-fade') {
   opacity: 0;
 }
 

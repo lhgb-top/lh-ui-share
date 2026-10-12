@@ -50,13 +50,18 @@ export function moveTransferKeys(
   const byKey = new Map(data.map((item) => [item.key, item]))
   // 幽灵键（不在 data 中的勾选键）无法移动，也不能参与搬运
   const movable = checked.filter((key) => byKey.has(key) && !byKey.get(key)?.disabled)
+  const movableSet = new Set(movable)
   if (direction === 'left-to-right') {
     // 源区同样清掉幽灵键：它们既不能搬走，也不该留在源区污染下一帧
-    return sourceKeys.filter((key) => byKey.has(key) && !movable.includes(key))
+    return sourceKeys.filter((key) => byKey.has(key) && !movableSet.has(key))
   }
   const next = [...sourceKeys]
+  const existing = new Set(next)
   for (const key of movable) {
-    if (!next.includes(key)) next.push(key)
+    if (!existing.has(key)) {
+      next.push(key)
+      existing.add(key)
+    }
   }
   return next
 }

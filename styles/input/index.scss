@@ -4,11 +4,6 @@
 // 输入框样式 — 素笺留白
 // ==============================
 
-$lh-input-height: 32px !default;
-$lh-input-height-large: 40px !default;
-$lh-input-height-small: 24px !default;
-$lh-input-height-mini: 20px !default;
-
 $lh-input-text-color: var(--lh-text-primary, #2C2C2C) !default;
 $lh-input-placeholder-color: var(--lh-text-placeholder, #B0B0B0) !default;
 $lh-input-border-color: var(--lh-border-color-base, #D8D3CC) !default;
@@ -37,7 +32,10 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
     border-color: var(--lh-primary-color, #2B4C7C) !important;
   }
 
-  &--has-label {
+  /* 仅 textarea 保留 label 的顶部留白：textarea 无固定高度，label 靠 16px 留白停靠。
+     单行输入框改固定高度后 label 用 calc(令牌 / 2) 定位（见 .lh-input__label），
+     若再保留这 16px，带 label 的输入框会比令牌高 16px，破坏控件高度对齐 */
+  &--has-label:has(.lh-input--textarea) {
     .lh-input {
       padding-top: 16px;
     }
@@ -48,7 +46,10 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
 .lh-input__label {
   position: absolute;
   left: 12px;
-  top: 50%;
+  /* wrapper 的第一个在流内子元素就是 .lh-input（label 绝对定位不占流），故相对
+     wrapper 顶边的「控件高度 / 2」即输入框的垂直中心。不能用 top: 50%——
+     同渲染 .lh-input__count 时 wrapper 被撑高，50% 会高于输入框中心 */
+  top: calc(var(--lh-control-height-medium, 32px) / 2);
   transform: translateY(-50%);
   font-size: 14px;
   color: $lh-input-placeholder-color;
@@ -61,6 +62,20 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
     transform: translateY(-50%) scale(0.85);
     color: var(--lh-primary-color, #2B4C7C);
   }
+}
+
+/* label 的垂直基准随 size 档位变化：size 类挂在 .lh-input 上、label 挂在 wrapper 上，
+   只能跨元素用 :has 匹配（与下方 textarea 分支同套路） */
+.lh-input__wrapper:has(.lh-input--mini) .lh-input__label {
+  top: calc(var(--lh-control-height-mini, 20px) / 2);
+}
+
+.lh-input__wrapper:has(.lh-input--small) .lh-input__label {
+  top: calc(var(--lh-control-height-small, 24px) / 2);
+}
+
+.lh-input__wrapper:has(.lh-input--large) .lh-input__label {
+  top: calc(var(--lh-control-height-large, 40px) / 2);
 }
 
 // Textarea 下的 label 位置调整（放在 wrapper 层级使用 :has）
@@ -79,9 +94,16 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
   display: inline-flex;
   align-items: center;
   width: 100%;
-  border: 1px solid $lh-input-border-color;
+  /* control-height 令牌语义为外高（border-box），1px 边框计入高度 */
+  box-sizing: border-box;
+  border: 1px solid $lh-input-border-color; /* hairline */
   border-radius: 2px;
   background-color: $lh-input-bg-color;
+  // 背景花纹：默认 none，由 ConfigProvider 的 bg-pattern + patternComponents 白名单开启
+  background-image: var(--lh-bg-pattern, none);
+  background-blend-mode: var(--lh-bg-pattern-blend, normal);
+  background-repeat: var(--lh-bg-pattern-repeat, repeat);
+  background-size: var(--lh-bg-pattern-size, auto);
   transition: border-color 0.2s ease;
 
   &:hover {
@@ -117,24 +139,42 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
     }
   }
 
-  &--mini .lh-input__inner {
-    padding: 4px 8px;
-    font-size: 12px;
+  /* 高度由 control-height 令牌固定在容器上（border-box），垂直 padding 清零——
+     文本靠容器已有的 align-items: center 居中，垂直 padding 会让内容高出内容盒 */
+  &--mini {
+    height: var(--lh-control-height-mini, 20px);
+
+    .lh-input__inner {
+      padding: 0 8px;
+      font-size: 12px;
+    }
   }
 
-  &--small .lh-input__inner {
-    padding: 6px 10px;
-    font-size: 12px;
+  &--small {
+    height: var(--lh-control-height-small, 24px);
+
+    .lh-input__inner {
+      padding: 0 10px;
+      font-size: 12px;
+    }
   }
 
-  &--medium .lh-input__inner {
-    padding: 8px 12px;
-    font-size: 14px;
+  &--medium {
+    height: var(--lh-control-height-medium, 32px);
+
+    .lh-input__inner {
+      padding: 0 12px;
+      font-size: 14px;
+    }
   }
 
-  &--large .lh-input__inner {
-    padding: 12px 16px;
-    font-size: 16px;
+  &--large {
+    height: var(--lh-control-height-large, 40px);
+
+    .lh-input__inner {
+      padding: 0 16px;
+      font-size: 16px;
+    }
   }
 
   &--prefix .lh-input__inner {
@@ -194,6 +234,12 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
     &:hover {
       color: var(--lh-text-regular, #5A5A5A);
     }
+  }
+
+  &--textarea {
+    /* textarea 无固定高度：上方 size 档的 height 只作用于单行输入框，
+       textarea 容器同样带 .lh-input--{size} 类，须显式排除 */
+    height: auto;
   }
 
   &--textarea .lh-input__inner {

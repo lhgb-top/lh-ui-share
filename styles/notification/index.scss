@@ -43,7 +43,7 @@
   background-color: var(--lh-notification-bg, var(--lh-bg-color, #fff));
   color: var(--lh-notification-content-color, var(--lh-text-regular, #5A5A5A));
   box-shadow: var(--lh-notification-shadow, 0 4px 16px rgba(0, 0, 0, 12%));
-  border: 1px solid var(--lh-notification-border, var(--lh-border-color-lighter, #EEE9E2));
+  border: 1px solid var(--lh-notification-border, var(--lh-border-color-lighter, #EEE9E2)); /* hairline */
   font-size: 14px;
   line-height: 1.6;
   pointer-events: auto;
@@ -117,8 +117,7 @@
 // 右侧贴边（top-right / bottom-right）：从右滑入
 .lh-notification--top-right,
 .lh-notification--bottom-right {
-  .lh-notification-slide-enter,
-  .lh-notification-slide-enter-from {
+  @include lh-enter-both('.lh-notification-slide') {
     opacity: 0;
     transform: translateX(24px);
   }
@@ -127,8 +126,7 @@
 // 左侧贴边（top-left / bottom-left）：从左滑入
 .lh-notification--top-left,
 .lh-notification--bottom-left {
-  .lh-notification-slide-enter,
-  .lh-notification-slide-enter-from {
+  @include lh-enter-both('.lh-notification-slide') {
     opacity: 0;
     transform: translateX(-24px);
   }
@@ -144,8 +142,7 @@
     transition: opacity 0.2s ease;
   }
 
-  .lh-notification-slide-enter,
-  .lh-notification-slide-enter-from {
+  @include lh-enter-both('.lh-notification-slide') {
     transform: none;
   }
 }

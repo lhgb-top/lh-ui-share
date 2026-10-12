@@ -1,5 +1,5 @@
 /**
- * lh-ui-plus 通用工具函数
+ * lh-ui 家族通用工具函数
  */
 
 /**
@@ -45,38 +45,105 @@ export function isPlainObject(val: unknown): val is Record<string, unknown> {
   return Object.prototype.toString.call(val) === '[object Object]'
 }
 
+/** 防抖函数（带 cancel / flush 手动控制） */
+export interface LhDebounced<T extends (...args: any[]) => any> {
+  (...args: Parameters<T>): void
+  /** 取消尚未执行的挂起调用 */
+  cancel(): void
+  /** 立即执行尚未触发的挂起调用（无挂起时为空操作） */
+  flush(): void
+}
+
 /**
- * 防抖动函数
+ * 防抖动函数：静默期内的多次调用只执行最后一次。
+ * 定时器闭包不再黑盒——需要提前终止（组件卸载）用 cancel，需要立即取结果用 flush。
  */
 export function debounce<T extends (...args: any[]) => any>(
   fn: T,
   delay = 300
-): (...args: Parameters<T>) => void {
+): LhDebounced<T> {
   let timer: ReturnType<typeof setTimeout> | null = null
-  return function (this: any, ...args: Parameters<T>) {
+  // 箭头闭包词法捕获 this，跨 setTimeout 边界保留调用方 this（直接别名 this 会触发
+  // @typescript-eslint/no-this-alias，见仓内 lint 规则集）
+  let pendingCall: (() => void) | null = null
+
+  const debounced = function (this: unknown, ...args: Parameters<T>) {
+    pendingCall = () => fn.apply(this, args)
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => {
-      fn.apply(this, args)
       timer = null
+      const call = pendingCall
+      pendingCall = null
+      call?.()
     }, delay)
+  } as LhDebounced<T>
+
+  debounced.cancel = () => {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    pendingCall = null
   }
+
+  debounced.flush = () => {
+    if (!timer) return
+    clearTimeout(timer)
+    timer = null
+    const call = pendingCall
+    pendingCall = null
+    call?.()
+  }
+
+  return debounced
+}
+
+/** 节流函数（头沿立即执行 + 尾沿补执行，带 cancel） */
+export interface LhThrottled<T extends (...args: any[]) => any> {
+  (...args: Parameters<T>): void
+  /** 取消尚未执行的尾沿调用 */
+  cancel(): void
 }
 
 /**
- * 节流函数
+ * 节流函数：时间窗内只执行一次——窗口起点立即执行（头沿），
+ * 窗口内的最后一次调用在窗口结束时补执行（尾沿），滚动/拖拽等高频事件不再丢结尾帧。
  */
 export function throttle<T extends (...args: any[]) => any>(
   fn: T,
   delay = 300
-): (...args: Parameters<T>) => void {
+): LhThrottled<T> {
   let lastTime = 0
-  return function (this: any, ...args: Parameters<T>) {
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  const throttled = function (this: unknown, ...args: Parameters<T>) {
     const now = Date.now()
-    if (now - lastTime >= delay) {
-      fn.apply(this, args)
+    const remaining = delay - (now - lastTime)
+    if (remaining <= 0) {
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
       lastTime = now
+      fn.apply(this, args)
+    } else if (!timer) {
+      timer = setTimeout(() => {
+        timer = null
+        lastTime = Date.now()
+        fn.apply(this, args)
+      }, remaining)
     }
+  } as LhThrottled<T>
+
+  throttled.cancel = () => {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    lastTime = 0
   }
+
+  return throttled
 }
 
 /**

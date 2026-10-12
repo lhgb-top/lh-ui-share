@@ -44,6 +44,20 @@ describe('lhlocale', () => {
     expect(lhlocale.t('cascader.placeholder')).toBe('请选择')
   })
 
+  it('formats the calendar panel title per locale', () => {
+    // 月名由调用方从 month1~12 取好再代入，模板只决定顺序与连接符
+    expect(lhlocale.t('datepicker.panelTitle')).toBe('{year}年{month}')
+    expect(
+      lhlocale.t('datepicker.panelTitle', { year: 2026, month: lhlocale.t('datepicker.month10') }),
+    ).toBe('2026年10月')
+    lhlocale.setLocale('en-US')
+    expect(lhlocale.t('datepicker.panelTitle')).toBe('{month} {year}')
+    expect(
+      lhlocale.t('datepicker.panelTitle', { year: 2026, month: lhlocale.t('datepicker.month10') }),
+    ).toBe('Oct 2026')
+    lhlocale.setLocale('zh-CN')
+  })
+
   // share 版为纯事件发射器：version 为数字，变更时通知订阅者（各框架适配层负责转响应式）
   it('exposes version counter and notifies subscribers on change', () => {
     const before = lhlocale.version

@@ -107,6 +107,13 @@
   --lh-font-weight-bold: #{$lh-font-weight-bold};
   --lh-font-line-height-primary: #{$lh-font-line-height-primary};
 
+  // ——— Control heights（表单控件统一外高，语义 border-box，见 variables.scss） ———
+  --lh-control-height-mini: #{$lh-control-height-mini};
+  --lh-control-height-small: #{$lh-control-height-small};
+  --lh-control-height-medium: #{$lh-control-height-medium};
+  --lh-control-height-large: #{$lh-control-height-large};
+  --lh-control-height-x-large: #{$lh-control-height-x-large};
+
   // ——— Spacing ———
   --lh-spacing-xs: #{$lh-spacing-xs};
   --lh-spacing-sm: #{$lh-spacing-sm};
@@ -250,6 +257,9 @@
 
   // ——— Wave F：Anchor 锚点 ———
   --lh-anchor-color: #{$lh-anchor-color};
+
+  // ——— Image viewer（全屏图片预览器遮罩）———
+  --lh-image-viewer-mask: rgba(0, 0, 0, 72%);
 
   // ——— 无障碍：键盘焦点环（组件 scss 经 @include focus-ring 消费）———
   // 焦点环色默认跟随主色；深色主题可在 var-dark 中单独覆盖

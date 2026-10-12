@@ -3,7 +3,7 @@
  * 将 Tailwind CSS 风格的 sx 属性转换为内联样式
  */
 
-export interface SxProps {
+export interface LhSxProps {
   w?: string | number
   h?: string | number
   mt?: string | number
@@ -45,7 +45,7 @@ function spacingToPx(value: string | number): string {
  * 实现上按 简写 → 轴组 → 单边 的顺序写入，后写的键覆盖先写的。
  * 所有键统一按 !== undefined 判定（传空串视为显式清空）。
  */
-export function sxToStyle(sx: SxProps): Record<string, string> {
+export function sxToStyle(sx: LhSxProps): Record<string, string> {
   if (!sx) return {}
   const style: Record<string, string> = {}
 
@@ -101,8 +101,8 @@ export function sxToStyle(sx: SxProps): Record<string, string> {
  * 合并多个 sx（后者覆盖前者，浅合并），供 UI 层组合「默认 sx + 调用方 sx」；
  * 结果交给 sxToStyle 一次性求值，保证优先级规则只结算一次。
  */
-export function mergeSx(...list: (SxProps | undefined | null)[]): SxProps {
-  const merged: SxProps = {}
+export function mergeSx(...list: (LhSxProps | undefined | null)[]): LhSxProps {
+  const merged: LhSxProps = {}
   for (const sx of list) {
     if (!sx) continue
     Object.assign(merged, sx)

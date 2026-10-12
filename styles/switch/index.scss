@@ -14,6 +14,9 @@
 
   &__core {
     position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 40px;
     height: 22px;
     background-color: var(--lh-border-color-base, #D8D3CC);
@@ -33,11 +36,10 @@
     }
   }
 
+  /* loading 指示器由 __core 的 flex 布局居中，不再用绝对定位 + translate：
+     原先 translate(-50%,-50%) 在 base 与 keyframes 里重复硬编码，
+     改自转后 keyframes 只需 rotate */
   &__loading {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
     width: 14px;
     height: 14px;
     border: 2px solid var(--lh-switch-knob-color, #fff);
@@ -57,6 +59,11 @@
     &::after {
       transform: translateX(18px);
     }
+  }
+
+  /* loading 指示器由轨道 flex 居中，checked 时滑块右移会与之重叠，loading 期间隐藏滑块 */
+  &--loading &__core::after {
+    opacity: 0;
   }
 
   &--disabled {
@@ -99,7 +106,7 @@
 
 @keyframes lh-switch-loading-spin {
   to {
-    transform: translate(-50%, -50%) rotate(360deg);
+    transform: rotate(360deg);
   }
 }
 

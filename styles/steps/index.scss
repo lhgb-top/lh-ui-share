@@ -26,18 +26,33 @@ ol[role='list'].lh-steps {
   font-family: var(--lh-font-family, 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif);
   font-size: var(--lh-font-size-base, 14px);
   list-style: none;
+  // 背景花纹：默认 none，由 ConfigProvider 的 bg-pattern + patternComponents 白名单开启
+  background-image: var(--lh-bg-pattern, none);
+  background-blend-mode: var(--lh-bg-pattern-blend, normal);
+  background-repeat: var(--lh-bg-pattern-repeat, repeat);
+  background-size: var(--lh-bg-pattern-size, auto);
+
+  /* 组件级变量：横向定宽折行的基准宽度，可通过 ConfigProvider themeVars
+     或组件 themeVars 定向覆盖（值参考单步「圆圈+标题+一段连接线」的最小可读宽度） */
+  --lh-steps-item-basis: 160px;
 
   // —— 水平方向 ——
   &--horizontal {
+    flex-wrap: wrap;
+    // 折行行间距：与纵向步骤的步距同源
+    row-gap: var(--lh-spacing-lg, 16px);
+
     .lh-steps__item {
       display: flex;
-      flex: 1;
+      // 定宽基准 + 弹性增长：宽容器下仍是等分一行，装不下基准宽度才折到下一行
+      flex: 1 1 var(--lh-steps-item-basis);
       align-items: flex-start;
       list-style: none;
     }
 
-    // 连接线：非末项之后
-    .lh-steps__item:not(.lh-steps__item--last)::after {
+    // 连接线：非末项之后（末项用结构性 :last-child 判定，不依赖 JS 类，
+    // 避免子项分批注册时首屏全部被误判为末项而漏画连接线）
+    .lh-steps__item:not(:last-child)::after {
       content: '';
       flex: 1;
       height: 1px;
@@ -45,9 +60,15 @@ ol[role='list'].lh-steps {
       background-color: var(--lh-border-color-base, #D8D3CC);
     }
 
-    .lh-steps__item--finish:not(.lh-steps__item--last)::after,
-    .lh-steps__item--process:not(.lh-steps__item--last)::after {
+    .lh-steps__item--finish:not(:last-child)::after,
+    .lh-steps__item--process:not(:last-child)::after {
       background-color: var(--lh-primary-color, #2B4C7C);
+    }
+
+    /* 折行后行末项的连接线会指向行尾空白，隐藏它（--line-last 由 Vue 层
+       测量 offsetTop 打标记，全局末项本就无连接线） */
+    .lh-steps__item--line-last:not(:last-child)::after {
+      display: none;
     }
   }
 
@@ -63,7 +84,7 @@ ol[role='list'].lh-steps {
       list-style: none;
     }
 
-    .lh-steps__item:not(.lh-steps__item--last)::before {
+    .lh-steps__item:not(:last-child)::before {
       content: '';
       position: absolute;
       top: 28px;
@@ -73,8 +94,8 @@ ol[role='list'].lh-steps {
       background-color: var(--lh-border-color-base, #D8D3CC);
     }
 
-    .lh-steps__item--finish:not(.lh-steps__item--last)::before,
-    .lh-steps__item--process:not(.lh-steps__item--last)::before {
+    .lh-steps__item--finish:not(:last-child)::before,
+    .lh-steps__item--process:not(:last-child)::before {
       background-color: var(--lh-primary-color, #2B4C7C);
     }
   }
@@ -99,7 +120,7 @@ ol[role='list'].lh-steps {
     justify-content: center;
     width: 28px;
     height: 28px;
-    border: 1px solid var(--lh-border-color-base, #D8D3CC);
+    border: 1px solid var(--lh-border-color-base, #D8D3CC); /* hairline */
     border-radius: var(--lh-border-radius-circle, 50%);
     font-size: var(--lh-font-size-small, 13px);
     color: var(--lh-text-secondary, #8A8A8A);
@@ -108,7 +129,7 @@ ol[role='list'].lh-steps {
   }
 
   &__item--process .lh-steps__icon {
-    color: #fff;
+    color: var(--lh-color-on-primary, #fff);
     background-color: var(--lh-primary-color, #2B4C7C);
     border-color: var(--lh-primary-color, #2B4C7C);
   }
@@ -152,6 +173,10 @@ ol[role='list'].lh-steps {
     font-weight: var(--lh-font-weight-primary, 400);
     color: var(--lh-text-primary, #3A3A3A);
     line-height: var(--lh-font-line-height-primary, 1.5);
+    /* 一行显示：宽度不足时省略号截断，绝不换行挤压——折行由步骤项整体承担 */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   &__item--wait .lh-steps__title {

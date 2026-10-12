@@ -35,22 +35,22 @@
   &--plain {
     &.lh-alert--info {
       background-color: transparent;
-      border: 1px solid color-mix(in srgb, var(--lh-info-color, #7A7A7A) 40%, transparent);
+      border: 1px solid color-mix(in srgb, var(--lh-info-color, #7A7A7A) 40%, transparent); /* hairline */
     }
 
     &.lh-alert--success {
       background-color: transparent;
-      border: 1px solid color-mix(in srgb, var(--lh-success-color, #5B8C5A) 40%, transparent);
+      border: 1px solid color-mix(in srgb, var(--lh-success-color, #5B8C5A) 40%, transparent); /* hairline */
     }
 
     &.lh-alert--warning {
       background-color: transparent;
-      border: 1px solid color-mix(in srgb, var(--lh-warning-color, #C4A35A) 40%, transparent);
+      border: 1px solid color-mix(in srgb, var(--lh-warning-color, #C4A35A) 40%, transparent); /* hairline */
     }
 
     &.lh-alert--danger {
       background-color: transparent;
-      border: 1px solid color-mix(in srgb, var(--lh-danger-color, #B23A3A) 40%, transparent);
+      border: 1px solid color-mix(in srgb, var(--lh-danger-color, #B23A3A) 40%, transparent); /* hairline */
     }
   }
 

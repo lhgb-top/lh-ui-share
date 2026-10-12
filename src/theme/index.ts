@@ -4,14 +4,17 @@ export {
   getThemeVars,
   registerTheme,
   buildPresetStyleText,
-  PRESET_THEME_STYLE_ID,
-  THEME_PRESETS,
-  cerblue,
-  songhua,
-  zhusha,
-  shuimo,
-  golden,
+  buildPresetDarkVars,
+  getContrastRatio,
+  getRelativeLuminance,
+  LH_PRESET_THEME_STYLE_ID,
+  LH_THEME_PRESETS,
+  LhCerblue,
+  LhSonghua,
+  LhZhusha,
+  LhShuimo,
+  LhGolden,
 } from './themes'
 
 // 主题类型
-export type { ThemePreset, ThemePresetName, ThemeVars } from './types'
+export type { LhThemePreset, LhThemePresetName, LhThemeVars } from './types'

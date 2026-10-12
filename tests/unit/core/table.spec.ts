@@ -197,6 +197,36 @@ describe('LhTable core', () => {
     ])
   })
 
+  it('keeps header leaves aligned with flattenLeafColumns for shared column references', () => {
+    // 回归：同一 column 对象被 DAG 式共享时，flattenLeafColumns 只发射一次，
+    // 表头的组跨度此前按先验计数双算共享子树，导致表头与表体列数错位
+    const shared = { prop: 'shared', label: 'S' }
+    const extra = { prop: 'extra', label: 'E' }
+    const leaf = { prop: 'leaf', label: 'L' }
+    const cells = buildHeaderCells([
+      { prop: 'g1', label: 'G1', children: [shared, leaf] },
+      { prop: 'g2', label: 'G2', children: [shared, extra] },
+    ])
+    const leafColumns = flattenLeafColumns([
+      { prop: 'g1', label: 'G1', children: [shared, leaf] },
+      { prop: 'g2', label: 'G2', children: [shared, extra] },
+    ])
+    // 共享列只发射一次：叶子 = shared / leaf / extra
+    expect(leafColumns.map((c) => c.prop)).toEqual(['shared', 'leaf', 'extra'])
+    // 组跨度与实际发射叶子一致（g2 只含 extra），表头叶子格数 = 表体列数
+    expect(cells.map((c) => [c.column.prop, c.leafStart, c.colspan])).toEqual([
+      ['g1', 0, 2],
+      ['shared', 0, 1],
+      ['leaf', 1, 1],
+      ['g2', 2, 1],
+      ['extra', 2, 1],
+    ])
+    const headerLeafTotal = cells
+      .filter((c) => c.level === 0)
+      .reduce((sum, c) => sum + c.colspan, 0)
+    expect(headerLeafTotal).toBe(leafColumns.length)
+  })
+
   it('computes header sticky offsets inheriting from fully-fixed leaf spans', () => {
     const leaf = [
       { prop: 'a', label: 'A', width: 100, fixed: 'left' as const },

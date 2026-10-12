@@ -14,6 +14,11 @@ $lh-icon-color: var(--lh-text-regular, #5A5A5A) !default;
   line-height: 1;
   vertical-align: middle;
   transition: color 0.2s ease;
+  // 背景花纹：默认 none，由 ConfigProvider 的 bg-pattern + patternComponents 白名单开启
+  background-image: var(--lh-bg-pattern, none);
+  background-blend-mode: var(--lh-bg-pattern-blend, normal);
+  background-repeat: var(--lh-bg-pattern-repeat, repeat);
+  background-size: var(--lh-bg-pattern-size, auto);
 
   svg {
     display: block;

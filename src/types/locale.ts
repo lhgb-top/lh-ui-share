@@ -16,10 +16,10 @@ export type LhLocaleMessages = Record<string, LhLocaleMessageValue>
  * 数组键（如 `datepicker.months`）返回 `never` —— 数组不按键寻址，
  * `t()` 的点号路径无法命中它们。
  *
- * 用法：`type LocalePath = Leaves<typeof zhCN>`，给 `lhlocale.t()` 提供字面量键
+ * 用法：`type LhLocalePath = LhLeaves<typeof zhCN>`，给 `lhlocale.t()` 提供字面量键
  * 自动补全。动态拼路径的场景走 `t()` 的宽松重载，不被此类型约束。
  */
-export type Leaves<T, Prefix extends string = ''> = T extends readonly unknown[]
+export type LhLeaves<T, Prefix extends string = ''> = T extends readonly unknown[]
   ? never
   : T extends string
     ? Prefix extends ''
@@ -27,14 +27,14 @@ export type Leaves<T, Prefix extends string = ''> = T extends readonly unknown[]
       : Prefix
     : T extends object
       ? {
-          [K in keyof T]: Leaves<
+          [K in keyof T]: LhLeaves<
             T[K],
             Prefix extends '' ? K & string : `${Prefix}.${K & string}`
           >
         }[keyof T]
       : never
 
-export interface LocaleOptions {
+export interface LhLocaleOptions {
   locale: LhLocaleType
   messages: LhLocaleMessages
 }

@@ -8,10 +8,14 @@ describe('LhAffix core', () => {
   })
 
   it('detects the fixed state against offsets', () => {
-    expect(isAffixFixed({ top: -10, bottom: 50 }, 0, 0)).toBe(true)
-    expect(isAffixFixed({ top: 10, bottom: 80 }, 0, 0)).toBe(false)
-    expect(isAffixFixed({ top: 10, bottom: 80 }, 20, 0)).toBe(true)
-    expect(isAffixFixed({ top: 30, bottom: 90 }, 0, 20)).toBe(true)
+    const viewportHeight = 600
+    // 顶部模式：占位元素顶边越过 offsetTop 即固定
+    expect(isAffixFixed({ top: -10, bottom: 50 }, 0, 0, viewportHeight)).toBe(true)
+    expect(isAffixFixed({ top: 10, bottom: 80 }, 0, 0, viewportHeight)).toBe(false)
+    expect(isAffixFixed({ top: 10, bottom: 80 }, 20, 0, viewportHeight)).toBe(true)
+    // 底部模式：占位元素底边越过「视口底 - offsetBottom」才固定
+    expect(isAffixFixed({ top: 30, bottom: 620 }, 0, 20, viewportHeight)).toBe(true)
+    expect(isAffixFixed({ top: 30, bottom: 560 }, 0, 20, viewportHeight)).toBe(false)
   })
 
   it('builds fixed styles for top and bottom modes', () => {

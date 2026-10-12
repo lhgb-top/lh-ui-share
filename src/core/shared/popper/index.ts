@@ -27,7 +27,7 @@ export type LhPlacementDir = 'top' | 'bottom' | 'left' | 'right'
 export type LhPlacementAlign = 'start' | 'center' | 'end'
 
 /** 与 DOMRect 同构的最小结构，便于传值与测试 */
-export interface DOMRectLike {
+export interface LhDOMRectLike {
   top: number
   left: number
   width: number
@@ -36,7 +36,7 @@ export interface DOMRectLike {
   bottom: number
 }
 
-export interface ComputePositionOptions {
+export interface LhComputePositionOptions {
   /** 期望方位（默认 'bottom'） */
   placement?: LhPlacement
   /** 弹出层与触发器之间的间距（默认 8） */
@@ -49,7 +49,7 @@ export interface ComputePositionOptions {
   shift?: boolean
 }
 
-export interface PopperPosition {
+export interface LhPopperPosition {
   top: number
   left: number
   /** 翻转后实际生效的方位，组件据此切换箭头类名 */
@@ -112,8 +112,8 @@ export function flipDir(dir: LhPlacementDir): LhPlacementDir {
 export function basePosition(
   dir: LhPlacementDir,
   align: LhPlacementAlign,
-  trigger: DOMRectLike,
-  popper: DOMRectLike,
+  trigger: LhDOMRectLike,
+  popper: LhDOMRectLike,
   gap: number
 ): { top: number; left: number } {
   let top: number
@@ -151,9 +151,9 @@ export function basePosition(
  */
 export function fitsInViewport(
   dir: LhPlacementDir,
-  trigger: DOMRectLike,
-  popper: DOMRectLike,
-  viewport: DOMRectLike,
+  trigger: LhDOMRectLike,
+  popper: LhDOMRectLike,
+  viewport: LhDOMRectLike,
   gap: number,
   padding: number
 ): boolean {
@@ -170,7 +170,7 @@ export function fitsInViewport(
 }
 
 /** rect 字段净化：非有限字段归 0，NaN rect 不再流入定位结果（`top: NaNpx`） */
-function safeRect(rect: DOMRectLike): DOMRectLike {
+function safeRect(rect: LhDOMRectLike): LhDOMRectLike {
   const n = (v: number): number => (Number.isFinite(v) ? v : 0)
   return {
     top: n(rect.top),
@@ -198,11 +198,11 @@ function safeRect(rect: DOMRectLike): DOMRectLike {
  * @param viewport 视口 rect（一般 { top: 0, left: 0, width: innerWidth, height: innerHeight }）
  */
 export function computePosition(
-  trigger: DOMRectLike,
-  popper: DOMRectLike,
-  viewport: DOMRectLike,
-  options: ComputePositionOptions = {}
-): PopperPosition {
+  trigger: LhDOMRectLike,
+  popper: LhDOMRectLike,
+  viewport: LhDOMRectLike,
+  options: LhComputePositionOptions = {}
+): LhPopperPosition {
   const gap = sanitizeNumber(options.gap, 8)
   const padding = sanitizeNumber(options.padding, 8, { min: 0 })
   const safeTrigger = safeRect(trigger)
@@ -263,9 +263,21 @@ export function computePosition(
     }
   }
 
-  // 最后一道安全网：任何路径都不允许弹出层完全离开视口低侧
-  const posTop = Math.max(safeViewport.top + padding, finalTop)
-  const posLeft = Math.max(safeViewport.left + padding, finalLeft)
+  // 最后一道安全网：低侧始终钳到视口起点 + padding（不许从视口上方/左侧整块探出）；
+  // 高侧钳到「视口末 - 弹出层尺寸」——弹出层比视口还大时上界取低侧（贴齐视口起点），
+  // 而不是从另一侧整块溢出。flip:false 的调用方明确接受主轴溢出，主轴只保留低侧钳制，
+  // 不代为搬到视口内（与上面 bothOverflow 的夹回同口径）
+  const topLow = safeViewport.top + padding
+  const topHigh = Math.max(topLow, safeViewport.bottom - safePopper.height - padding)
+  const leftLow = safeViewport.left + padding
+  const leftHigh = Math.max(leftLow, safeViewport.right - safePopper.width - padding)
+  const primaryY = PRIMARY_AXIS[dir] === 'y'
+  const posTop =
+    primaryY && options.flip === false ? Math.max(topLow, finalTop) : clamp(finalTop, topLow, topHigh)
+  const posLeft =
+    !primaryY && options.flip === false
+      ? Math.max(leftLow, finalLeft)
+      : clamp(finalLeft, leftLow, leftHigh)
 
   // 交叉轴箭头钳制的安全边界：padding 不应超过弹出层一半，否则上下界反转
   const arrowPadY = Math.min(padding, safePopper.width / 2)
@@ -295,7 +307,7 @@ export function computePosition(
 /**
  * 由浏览器窗口构造视口 rect
  */
-export function getWindowViewport(): DOMRectLike {
+export function getWindowViewport(): LhDOMRectLike {
   const width = typeof window === 'undefined' ? 0 : window.innerWidth
   const height = typeof window === 'undefined' ? 0 : window.innerHeight
   return { top: 0, left: 0, width, height, right: width, bottom: height }
@@ -304,7 +316,7 @@ export function getWindowViewport(): DOMRectLike {
 /**
  * rect 是否已完全离开视口（滚动时弹出层的触发器不可见即应关闭）
  */
-export function isOutsideViewport(rect: DOMRectLike, viewport: DOMRectLike): boolean {
+export function isOutsideViewport(rect: LhDOMRectLike, viewport: LhDOMRectLike): boolean {
   return (
     rect.bottom <= viewport.top ||
     rect.top >= viewport.bottom ||

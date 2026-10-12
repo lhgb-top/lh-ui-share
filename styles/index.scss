@@ -1,0 +1,69 @@
+/**
+ * 全量样式聚合（源码版，自动生成）
+ *
+ * 由 scripts/build-styles.mjs 按组件目录生成，请勿手改；新增组件后跑 pnpm build:styles 自动同步。
+ * 与编译产物 dist/styles/index.css 一一对应（主题变量 + 全部组件样式）。
+ *
+ * 用途：
+ *   - 各端 dev 沙箱一行引入全量样式（如 dev/main.ts）；
+ *   - 主题定制导出的 scss 通过本文件引入全量组件，令牌覆盖见 theme/common/variables.scss。
+ */
+@use 'theme/index' as theme;
+@use 'affix/index' as affix;
+@use 'alert/index' as alert;
+@use 'anchor/index' as anchor;
+@use 'avatar/index' as avatar;
+@use 'backtop/index' as backtop;
+@use 'badge/index' as badge;
+@use 'breadcrumb/index' as breadcrumb;
+@use 'button/index' as button;
+@use 'calendar/index' as calendar;
+@use 'card/index' as card;
+@use 'cascader/index' as cascader;
+@use 'checkbox/index' as checkbox;
+@use 'collapse/index' as collapse;
+@use 'config-provider/index' as config-provider;
+@use 'date-picker/index' as date-picker;
+@use 'descriptions/index' as descriptions;
+@use 'dialog/index' as dialog;
+@use 'divider/index' as divider;
+@use 'drawer/index' as drawer;
+@use 'dropdown/index' as dropdown;
+@use 'empty/index' as empty;
+@use 'form/index' as form;
+@use 'grid/index' as grid;
+@use 'icon/index' as icon;
+@use 'image/index' as image;
+@use 'input/index' as input;
+@use 'input-number/index' as input-number;
+@use 'layout/index' as layout;
+@use 'loading/index' as loading;
+@use 'menu/index' as menu;
+@use 'message/index' as message;
+@use 'notification/index' as notification;
+@use 'pagination/index' as pagination;
+@use 'popconfirm/index' as popconfirm;
+@use 'popover/index' as popover;
+@use 'progress/index' as progress;
+@use 'radio/index' as radio;
+@use 'rate/index' as rate;
+@use 'segmented/index' as segmented;
+@use 'select/index' as select;
+@use 'skeleton/index' as skeleton;
+@use 'slider/index' as slider;
+@use 'space/index' as space;
+@use 'spinner/index' as spinner;
+@use 'statistic/index' as statistic;
+@use 'steps/index' as steps;
+@use 'switch/index' as switch;
+@use 'table/index' as table;
+@use 'tabs/index' as tabs;
+@use 'tag/index' as tag;
+@use 'time-picker/index' as time-picker;
+@use 'timeline/index' as timeline;
+@use 'tooltip/index' as tooltip;
+@use 'transfer/index' as transfer;
+@use 'tree/index' as tree;
+@use 'tree-select/index' as tree-select;
+@use 'upload/index' as upload;
+@use 'virtual-list/index' as virtual-list;

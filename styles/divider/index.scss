@@ -73,6 +73,42 @@
     }
   }
 
+  /* 竖向 + 文案：纵向 flex，线段在文案上下（横向是行内左右排布，几何整体反转） */
+  &--vertical.lh-divider--with-text {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: auto; /* 覆盖 --vertical 的 1em：高度改由父级行的 align-self: stretch 提供 */
+    margin: 0 8px;
+
+    &::before,
+    &::after {
+      content: '';
+      flex: 1 1 auto;
+      width: 1px;
+      height: auto;
+      min-height: 12px; /* 父级无 stretch 时也保住可见线段长度 */
+      background-color: var(--lh-border-color-light, var(--lh-border-color-base, #D8D3CC));
+    }
+  }
+
+  /* 虚线 + 竖向文案：渐变方向改纵向 */
+  &--vertical.lh-divider--with-text.lh-divider--dashed {
+    &::before,
+    &::after {
+      background-color: transparent;
+      background-image: linear-gradient(
+        to bottom,
+        var(--lh-border-color-light, var(--lh-border-color-base, #D8D3CC)) 50%,
+        transparent 50%
+      );
+      background-size: 1px 8px;
+      background-repeat: repeat-y;
+    }
+  }
+
   &__label {
     padding: 0 12px;
     font-size: 14px;

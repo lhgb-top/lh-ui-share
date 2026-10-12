@@ -43,8 +43,8 @@ export * from './pagination'
 // popconfirm / popover 还各自实现 canCloseOnEscape（语义相同：disabled 时阻止 Esc 关闭），
 // 同名二义按同一方式别名处理；子路径导出（@lh-ui/share/core/popconfirm）保持原名
 export {
-  DEFAULT_POPCONFIRM_TYPE,
-  DEFAULT_POPCONFIRM_PLACEMENT,
+  LH_POPCONFIRM_TYPE_DEFAULT,
+  LH_POPCONFIRM_PLACEMENT_DEFAULT,
   getPopconfirmIconName,
   getPopconfirmClass,
   getDefaultDelay as getPopconfirmDefaultDelay,
@@ -54,8 +54,8 @@ export {
 } from './popconfirm'
 export * from './popconfirm/types'
 export {
-  POPOVER_TRIGGERS,
-  DEFAULT_POPOVER_PLACEMENT,
+  LH_POPOVER_TRIGGERS,
+  LH_POPOVER_PLACEMENT_DEFAULT,
   getPopoverClass,
   getPopoverWidthStyle,
   getDefaultDelay as getPopoverDefaultDelay,
@@ -92,3 +92,8 @@ export * from './virtual-list'
 // clampValue 是 vue2 等下游在用的兼容名，务必保留
 export { clampValue } from './slider'
 export { computeWindow, LH_VIRTUAL_OVERSCAN } from './shared/virtual'
+
+// LhVirtualRange 在 shared/virtual（算法内核）与 virtual-list/types（组件层）
+// 各有一份同构声明；显式指明聚合入口取 shared 内核那份，解除 star 二义。
+// 两份字段完全一致（start/end/offsetY/totalHeight），下游只消费函数不直接引类型名
+export { type LhVirtualRange } from './shared/virtual'

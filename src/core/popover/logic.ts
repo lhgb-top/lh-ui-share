@@ -24,7 +24,7 @@ export interface LhPopoverState {
 }
 
 /** 合法的触发方式，用于 props 校验 */
-export const POPOVER_TRIGGERS: readonly LhPopoverTrigger[] = [
+export const LH_POPOVER_TRIGGERS: readonly LhPopoverTrigger[] = [
   'click',
   'hover',
   'focus',
@@ -32,7 +32,7 @@ export const POPOVER_TRIGGERS: readonly LhPopoverTrigger[] = [
 ] as const
 
 /** 默认方位 */
-export const DEFAULT_POPOVER_PLACEMENT: LhPlacement = 'top'
+export const LH_POPOVER_PLACEMENT_DEFAULT: LhPlacement = 'top'
 
 /**
  * 默认显隐延迟：显示沿用 200ms 防误触，隐藏留 100ms

@@ -4,10 +4,11 @@
 // 按钮样式 — 水墨之韵
 // ==============================
 
-$lh-button-height: 32px !default;
-$lh-button-height-large: 40px !default;
-$lh-button-height-small: 24px !default;
-$lh-button-height-mini: 20px !default;
+// 高度统一引用 control-height 令牌（语义外高 border-box，见 theme/common/variables.scss）
+$lh-button-height: $lh-control-height-medium !default;
+$lh-button-height-large: $lh-control-height-large !default;
+$lh-button-height-small: $lh-control-height-small !default;
+$lh-button-height-mini: $lh-control-height-mini !default;
 
 $lh-button-font-size: 14px !default;
 $lh-button-font-size-large: 14px !default;
@@ -29,6 +30,8 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	/* control-height 令牌语义为外高，1px 边框须计入高度 */
+	box-sizing: border-box;
 	white-space: nowrap;
 	cursor: pointer;
 	-webkit-user-select: none;
@@ -36,7 +39,7 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 	vertical-align: middle;
 	text-decoration: none;
 	line-height: 1;
-	border: 1px solid $lh-button-border-color;
+	border: 1px solid $lh-button-border-color; /* hairline */
 	border-radius: 2px;
 	font-family: inherit;
 	font-weight: 400;
@@ -60,7 +63,8 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 	&__loading {
 		display: inline-flex;
 		align-items: center;
-		margin-right: 4px;
+		/* 与文字的间距统一由 &__loading + &__text 控制，此处不再加 margin-right：
+		   圆形 loading-only 按钮无文字时，margin 会让 flex 居中失效、spinner 偏左 */
 	}
 
 	&__spinner {
@@ -76,8 +80,8 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 		animation: lh-button-dash 1.5s ease-in-out infinite;
 	}
 
-	&__icon + &__text,
-	&__loading + &__text {
+	&__icon+&__text,
+	&__loading+&__text {
 		margin-left: 4px;
 	}
 
@@ -111,9 +115,9 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 
 	&--default,
 	&--blank {
-			color: $lh-button-text-color;
-			background-color: var(--lh-bg-color, #FAF6F0);
-			border-color: $lh-button-border-color;
+		color: $lh-button-text-color;
+		background-color: var(--lh-bg-color, #FAF6F0);
+		border-color: $lh-button-border-color;
 
 		&:hover,
 		&:focus {
@@ -125,7 +129,7 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 	}
 
 	&--primary {
-		color: #fff;
+		color: var(--lh-color-on-primary, #fff);
 		background-color: var(--lh-primary-color, #2B4C7C);
 		border-color: var(--lh-primary-color, #2B4C7C);
 
@@ -137,7 +141,7 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 	}
 
 	&--success {
-		color: #fff;
+		color: var(--lh-color-on-primary, #fff);
 		background-color: var(--lh-success-color, #5B8C5A);
 		border-color: var(--lh-success-color, #5B8C5A);
 
@@ -149,7 +153,7 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 	}
 
 	&--warning {
-		color: #fff;
+		color: var(--lh-color-on-primary, #fff);
 		background-color: var(--lh-warning-color, #C4A35A);
 		border-color: var(--lh-warning-color, #C4A35A);
 
@@ -162,7 +166,7 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 
 	&--danger,
 	&--error {
-		color: #fff;
+		color: var(--lh-color-on-primary, #fff);
 		background-color: var(--lh-danger-color, #B23A3A);
 		border-color: var(--lh-danger-color, #B23A3A);
 
@@ -174,7 +178,7 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 	}
 
 	&--info {
-		color: #fff;
+		color: var(--lh-color-on-primary, #fff);
 		background-color: var(--lh-info-color, #7A7A7A);
 		border-color: var(--lh-info-color, #7A7A7A);
 
@@ -190,12 +194,13 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 	&--plain {
 		&.lh-button--primary {
 			color: var(--lh-primary-color, #2B4C7C);
-			background-color: rgba(43, 76, 124, 0.08);
+			// 浅底从当前主色派生：预设主题与暗色才能跟随（同 alert 的 color-mix 写法）
+			background-color: color-mix(in srgb, var(--lh-primary-color, #2B4C7C) 8%, transparent);
 			border-color: var(--lh-primary-color, #2B4C7C);
 
 			&:hover,
 			&:focus {
-				color: #fff;
+				color: var(--lh-color-on-primary, #fff);
 				background-color: var(--lh-primary-color-active, #1F3A5F);
 				border-color: var(--lh-primary-color-active, #1F3A5F);
 			}
@@ -203,12 +208,12 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 
 		&.lh-button--success {
 			color: var(--lh-success-color, #5B8C5A);
-			background-color: rgba(91, 140, 90, 0.08);
+			background-color: color-mix(in srgb, var(--lh-success-color, #5B8C5A) 8%, transparent);
 			border-color: var(--lh-success-color, #5B8C5A);
 
 			&:hover,
 			&:focus {
-				color: #fff;
+				color: var(--lh-color-on-primary, #fff);
 				background-color: var(--lh-success-color-active, #4B7A4A);
 				border-color: var(--lh-success-color-active, #4B7A4A);
 			}
@@ -216,12 +221,12 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 
 		&.lh-button--warning {
 			color: var(--lh-warning-color, #C4A35A);
-			background-color: rgba(196, 163, 90, 0.08);
+			background-color: color-mix(in srgb, var(--lh-warning-color, #C4A35A) 8%, transparent);
 			border-color: var(--lh-warning-color, #C4A35A);
 
 			&:hover,
 			&:focus {
-				color: #fff;
+				color: var(--lh-color-on-primary, #fff);
 				background-color: var(--lh-warning-color-active, #B3924A);
 				border-color: var(--lh-warning-color-active, #B3924A);
 			}
@@ -230,12 +235,12 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 		&.lh-button--danger,
 		&.lh-button--error {
 			color: var(--lh-danger-color, #B23A3A);
-			background-color: rgba(178, 58, 58, 0.08);
+			background-color: color-mix(in srgb, var(--lh-danger-color, #B23A3A) 8%, transparent);
 			border-color: var(--lh-danger-color, #B23A3A);
 
 			&:hover,
 			&:focus {
-				color: #fff;
+				color: var(--lh-color-on-primary, #fff);
 				background-color: var(--lh-danger-color-active, #9A3030);
 				border-color: var(--lh-danger-color-active, #9A3030);
 			}
@@ -243,12 +248,12 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 
 		&.lh-button--info {
 			color: var(--lh-info-color, #7A7A7A);
-			background-color: rgba(122, 122, 122, 0.08);
+			background-color: color-mix(in srgb, var(--lh-info-color, #7A7A7A) 8%, transparent);
 			border-color: var(--lh-info-color, #7A7A7A);
 
 			&:hover,
 			&:focus {
-				color: #fff;
+				color: var(--lh-color-on-primary, #fff);
 				background-color: var(--lh-info-color-active, #6A6A6A);
 				border-color: var(--lh-info-color-active, #6A6A6A);
 			}
@@ -256,12 +261,12 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 
 		&.lh-button--default {
 			color: var(--lh-text-regular, #5A5A5A);
-			background-color: rgba(43, 76, 124, 0.04);
+			background-color: color-mix(in srgb, var(--lh-primary-color, #2B4C7C) 4%, transparent);
 			border-color: $lh-button-border-color;
 
 			&:hover,
 			&:focus {
-				color: #fff;
+				color: var(--lh-color-on-primary, #fff);
 				background-color: var(--lh-primary-color-active, #1F3A5F);
 				border-color: var(--lh-primary-color-active, #1F3A5F);
 			}
@@ -322,6 +327,7 @@ $lh-button-disabled-border: var(--lh-border-color-light, #E5E0D8) !default;
 // ——— Reduced motion：系统减弱动态效果时停用加载动画 ———
 
 @media (prefers-reduced-motion: reduce) {
+
 	.lh-button__spinner,
 	.lh-button__path {
 		animation: none;

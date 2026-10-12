@@ -1,4 +1,4 @@
-import type { SxProps } from '../shared'
+import type { LhSxProps } from '../shared'
 import { LH_TYPES_CONST } from '../../constants'
 
 /** 通知语义类型（四语义，无 loading） */
@@ -30,7 +30,7 @@ export interface LhNotificationRecord {
   duration: number
   position: LhNotificationPosition
   showClose: boolean
-  sx?: SxProps
+  sx?: LhSxProps
   onClick?: () => void
   onClose?: () => void
 }

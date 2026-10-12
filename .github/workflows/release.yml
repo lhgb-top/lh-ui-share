@@ -1,0 +1,104 @@
+name: Release
+
+# 触发条件：推送 @lh-ui/share@x.y.z 格式的 tag（由 pnpm release:push 完成）。
+# 注意：GitHub Actions 的 tag 过滤里 * 不匹配 /，带作用域的 tag 必须用 **。
+#
+# 留档的安装包直接取 npm 上已发布的原版 tarball（npm pack @lh-ui/share@<版本>），
+# 与用户 npm i 装到的内容逐字节一致；不检出旧提交、不重新构建——这样补建任意历史
+# 版本都不会因早期提交缺 pnpm-lock.yaml / 脚本而失败。构建与双 verify 已在本地
+# prepublishOnly（发 npm 前）与 ci.yml（每次推 master）里跑过。
+# workflow_dispatch 用于重跑某个已有 tag 的发行版创建（例如上次 Gitee 侧失败）。
+on:
+  push:
+    tags:
+      - '@lh-ui/share@**'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要重建发行版的已有 tag，如 @lh-ui/share@0.2.0'
+        required: true
+
+permissions:
+  contents: write # gh release create 需要
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 解析 tag 并做格式守卫
+        id: meta
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          if [[ ! "$TAG" =~ ^@lh-ui/share@[0-9]+\.[0-9]+\.[0-9]+([-+].+)?$ ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "tag [$TAG] 不是 @lh-ui/share@x.y.z 格式，跳过"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#@lh-ui/share@}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        if: steps.meta.outputs.skip != 'true'
+        with:
+          node-version: 20
+
+      # CHANGELOG 只增不减，master 上含全部历史版本段落，两条路径都能提取
+      - name: 生成 release notes
+        if: steps.meta.outputs.skip != 'true'
+        run: node scripts/release-notes.mjs "${{ steps.meta.outputs.version }}" > release-notes.md
+
+      # 新版本刚发布后 npm 注册表可能还没传播开，重试等一会儿
+      - name: 拉取已发布的安装包（npm pack）
+        if: steps.meta.outputs.skip != 'true'
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          for i in 1 2 3 4 5 6; do
+            if npm pack "@lh-ui/share@${VERSION}"; then exit 0; fi
+            echo "npm 上尚未出现 @lh-ui/share@${VERSION}，${i}/6，30s 后重试"
+            sleep 30
+          done
+          echo "❌ npm 上拉取 @lh-ui/share@${VERSION} 失败，请确认已执行 pnpm release"
+          exit 1
+
+      - name: 创建 GitHub Release 并挂载 .tgz
+        if: steps.meta.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          TGZ="lh-ui-share-${{ steps.meta.outputs.version }}.tgz"
+          # 已存在（重跑场景，例如上次 Gitee 侧失败）只重传资产，不重复创建
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$TGZ" --clobber
+          else
+            gh release create "$TAG" "$TGZ" --title "$TAG" --notes-file release-notes.md --verify-tag
+          fi
+
+      # Gitee 的 tag 与发行版由本流程统一接管，本地只推 GitHub，避免双写冲突
+      - name: 推送 tag 到 Gitee
+        if: steps.meta.outputs.skip != 'true'
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          # 本仓库默认只检出当前分支，补建/重跑场景下本地可能没有该 tag，先单独拉取
+          git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}" || true
+          git remote add gitee "https://oauth2:${{ secrets.GITEE_TOKEN }}@gitee.com/lh-ui/lh-ui-share.git" || true
+          git push gitee "${TAG}" 2>/dev/null \
+            || echo "⚠️ Gitee 上已存在该 tag，跳过推送"
+
+      # Gitee 发行版正文带 GitHub Release 的 tgz 下载链接（Gitee 附件 API 不稳定，不依赖）
+      - name: 创建 Gitee 发行版
+        if: steps.meta.outputs.skip != 'true'
+        continue-on-error: true # GitHub Release 已成功，Gitee 侧失败不阻塞主流程
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          printf '\n\n> 📦 安装包（.tgz）：https://github.com/lhgb-top/lh-ui-share/releases/download/%s/lh-ui-share-%s.tgz\n' \
+            "$TAG" "${{ steps.meta.outputs.version }}" >> release-notes.md
+          jq -n --arg token "$GITEE_TOKEN" --arg tag "$TAG" --rawfile notes release-notes.md \
+            '{access_token:$token, tag_name:$tag, name:$tag, body:$notes, target_commitish:"master"}' \
+            | curl -sS -f -X POST "https://gitee.com/api/v5/repos/lh-ui/lh-ui-share/releases" \
+                -H "Content-Type: application/json" -d @-

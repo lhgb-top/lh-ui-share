@@ -10,14 +10,17 @@ export function getAffixClassNames(state: LhAffixState): string[] {
 /**
  * 固定态判定（IntersectionObserver 回调 / getBoundingClientRect 兜底共用）：
  * 占位元素的 boundingClientRect 相对视口的越界判定。
+ *
+ * 底部模式必须拿视口高度算阈值：占位元素的底边越过「视口底 - offsetBottom」才判固定。
  */
 export function isAffixFixed(
   rect: { top: number; bottom: number },
   offsetTop: number,
   offsetBottom: number,
+  viewportHeight: number,
 ): boolean {
   if (offsetBottom > 0) {
-    return rect.top > offsetBottom
+    return rect.bottom > viewportHeight - offsetBottom
   }
   return rect.top < offsetTop
 }

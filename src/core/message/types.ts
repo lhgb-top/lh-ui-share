@@ -1,4 +1,4 @@
-import type { SxProps } from '../shared'
+import type { LhSxProps } from '../shared'
 import { LH_TYPES_CONST } from '../../constants'
 
 /** 消息语义类型（四语义 + loading） */
@@ -22,7 +22,7 @@ export interface LhMessageRecord {
   showClose: boolean
   /** 距视口顶部的偏移 px */
   offset: number
-  sx?: SxProps
+  sx?: LhSxProps
   onClose?: () => void
 }
 

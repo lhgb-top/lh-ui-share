@@ -134,6 +134,8 @@
 
   // Wave E
   --lh-timeline-line: #302B28;
+  --lh-timeline-dot: var(--lh-info-color); /* no-fallback */
+  --lh-timeline-timestamp: var(--lh-text-secondary); /* no-fallback */
   --lh-collapse-border: #302B28;
   --lh-segmented-bg: #242018;
 
@@ -145,12 +147,18 @@
   // 必须在此重新指向暗色值（同元素内 var() 引用会取到上方暗色 --lh-selected-color 等）
   --lh-menu-item-active-color: var(--lh-selected-color); /* no-fallback */
   --lh-menu-item-active-bg: var(--lh-primary-color-bg); /* no-fallback */
+  // 明色值是 #{$lh-*} 编译期烤死，暗色下必须重新指向暗色语义令牌，否则沿用明色值
+  --lh-menu-item-color: var(--lh-text-primary); /* no-fallback */
+  --lh-menu-arrow-color: var(--lh-text-secondary); /* no-fallback */
 
   // Wave F：Table
   --lh-table-bg: #242018;
   --lh-table-header-bg: #2A2420;
   --lh-table-border: #302B28;
   --lh-table-row-hover-bg: #2A2420;
+  --lh-table-color: var(--lh-text-regular); /* no-fallback */
+  --lh-table-header-color: var(--lh-text-primary); /* no-fallback */
+  --lh-table-stripe-bg: color-mix(in srgb, var(--lh-bg-color-page) 60%, transparent); /* no-fallback */
 
   // Wave F：Layout
   --lh-layout-header-bg: #242018;
@@ -161,6 +169,7 @@
   // Wave F：Tree
   --lh-tree-node-hover-bg: #2A2420;
   --lh-tree-color: #D8D0C8;
+  --lh-tree-arrow-color: var(--lh-text-secondary); /* no-fallback */
   --lh-tree-node-selected-color: var(--lh-selected-color); /* no-fallback */
   --lh-tree-node-selected-bg: var(--lh-primary-color-bg); /* no-fallback */
 
@@ -168,6 +177,15 @@
   --lh-transfer-bg: #242018;
   --lh-transfer-border: #302B28;
   --lh-upload-bg: #242018;
+  --lh-upload-border: var(--lh-border-color-base); /* no-fallback */
+
+  // Wave F：Rate / Anchor / Calendar（明色值为 #{$lh-*} 编译期烤死，暗色重新指向语义令牌）
+  --lh-rate-active: var(--lh-warning-color); /* no-fallback */
+  --lh-anchor-color: var(--lh-text-regular); /* no-fallback */
+  --lh-calendar-border: var(--lh-border-color-lighter); /* no-fallback */
+
+  // Image viewer：遮罩本就是深黑，暗色下保持深黑并允许单独定制
+  --lh-image-viewer-mask: rgba(0, 0, 0, 80%);
 
   // 无障碍：深色主题焦点环提亮，保证对比度
   --lh-focus-color: #7FA6D9;

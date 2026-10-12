@@ -256,3 +256,14 @@ $lh-upload-trigger-padding: 24px !default;
 
 // ——— Wave F：Anchor 锚点 ———
 $lh-anchor-color: $lh-text-regular !default;
+
+// ——— Control heights（表单控件统一高度令牌） ———
+// 语义为控件**外高**（border-box）：消费方须同时在控件根声明
+// box-sizing: border-box，否则 1px 边框会让实际外高多出 2px。
+// 刻度沿用 button 现有高度——button / select / input-number 的 medium 与
+// large 已偶然对齐此值；input 各档由 padding 派生高度偏高，专项内改为引用本令牌。
+$lh-control-height-mini: 20px !default;
+$lh-control-height-small: 24px !default;
+$lh-control-height-medium: 32px !default;
+$lh-control-height-large: 40px !default;
+$lh-control-height-x-large: 48px !default;

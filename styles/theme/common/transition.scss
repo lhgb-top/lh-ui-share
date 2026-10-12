@@ -1,0 +1,65 @@
+/**
+ * 过渡类名双写 mixin（跨端适配，收编到一处）
+ *
+ * Vue2 用 `-enter` / `-leave`，Vue3 / React 用 `-enter-from` / `-leave-from`，
+ * 二者是同一「进入起始态」/「离开起始态」。以前各组件逐文件手写双份选择器
+ * （16 个组件），现统一收编到本 mixin：改适配规则只需改这一处。
+ *
+ * `-enter-to` / `-leave-to` 在两端同名，无需双写；本文件只处理需要双写的成对类名。
+ *
+ * @example
+ *   // 常规：进入起始态与离开结束态同体
+ *   @include lh-transition-ends('.lh-backtop-fade') { opacity: 0; }
+ *
+ *   // 仅进入起始态（离开结束态另行声明时）
+ *   @include lh-enter-both('.lh-dialog-fade') { opacity: 0; }
+ *
+ *   // 只作用于内部节点（如面板按方向滑动）
+ *   @include lh-enter-both('.lh-drawer-fade', '.lh-drawer__panel--right') {
+ *     transform: translateX(100%);
+ *   }
+ */
+
+/// 进入起始态双写（Vue2 `-enter` + Vue3/React `-enter-from`）。
+///
+/// @param $selector 类名前缀，如 '.lh-fade-in'
+/// @param $child    可选后代选择器，只作用于面板等内部节点，如 '.lh-drawer__panel--right'
+@mixin lh-enter-both($selector, $child: null) {
+  $suffix: '';
+  @if $child { $suffix: ' #{$child}'; }
+
+  #{$selector}-enter#{$suffix},
+  #{$selector}-enter-from#{$suffix} {
+    @content;
+  }
+}
+
+/// 离开起始态双写（Vue2 `-leave` + Vue3/React `-leave-from`）。
+///
+/// @param $selector 类名前缀
+/// @param $child    可选后代选择器
+@mixin lh-leave-both($selector, $child: null) {
+  $suffix: '';
+  @if $child { $suffix: ' #{$child}'; }
+
+  #{$selector}-leave#{$suffix},
+  #{$selector}-leave-from#{$suffix} {
+    @content;
+  }
+}
+
+/// 过渡起止态：进入起始态双写 + 两端同名的离开结束态（`-leave-to`）。
+/// 适用于「进入起点与离开终点同体」的常见淡入淡出场景。
+///
+/// @param $selector 类名前缀，如 '.lh-backtop-fade'
+/// @param $child    可选后代选择器
+@mixin lh-transition-ends($selector, $child: null) {
+  $suffix: '';
+  @if $child { $suffix: ' #{$child}'; }
+
+  #{$selector}-enter#{$suffix},
+  #{$selector}-enter-from#{$suffix},
+  #{$selector}-leave-to#{$suffix} {
+    @content;
+  }
+}

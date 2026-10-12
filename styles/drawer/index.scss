@@ -23,6 +23,11 @@
   display: flex;
   flex-direction: column;
   background-color: var(--lh-drawer-bg-color, #FAF6F0);
+  // 背景花纹：默认 none，由 ConfigProvider 的 bg-pattern + patternComponents 白名单开启
+  background-image: var(--lh-bg-pattern, none);
+  background-blend-mode: var(--lh-bg-pattern-blend, normal);
+  background-repeat: var(--lh-bg-pattern-repeat, repeat);
+  background-size: var(--lh-bg-pattern-size, auto);
   box-shadow: var(--lh-box-shadow-base, 0 2px 12px 0 rgba(26, 26, 26, 0.08));
 }
 
@@ -32,28 +37,28 @@
   top: 0;
   right: 0;
   bottom: 0;
-  border-left: 1px solid var(--lh-drawer-border-color, #E5E0D8);
+  border-left: 1px solid var(--lh-drawer-border-color, #E5E0D8); /* hairline */
 }
 
 .lh-drawer__panel--left {
   top: 0;
   left: 0;
   bottom: 0;
-  border-right: 1px solid var(--lh-drawer-border-color, #E5E0D8);
+  border-right: 1px solid var(--lh-drawer-border-color, #E5E0D8); /* hairline */
 }
 
 .lh-drawer__panel--top {
   top: 0;
   left: 0;
   right: 0;
-  border-bottom: 1px solid var(--lh-drawer-border-color, #E5E0D8);
+  border-bottom: 1px solid var(--lh-drawer-border-color, #E5E0D8); /* hairline */
 }
 
 .lh-drawer__panel--bottom {
   bottom: 0;
   left: 0;
   right: 0;
-  border-top: 1px solid var(--lh-drawer-border-color, #E5E0D8);
+  border-top: 1px solid var(--lh-drawer-border-color, #E5E0D8); /* hairline */
 }
 
 // —— 头部 / 主体 / 底部 ——
@@ -64,7 +69,7 @@
   justify-content: space-between;
   gap: var(--lh-spacing-sm, 8px);
   padding: var(--lh-drawer-header-padding, 16px);
-  border-bottom: 1px solid var(--lh-drawer-border-color, #E5E0D8);
+  border-bottom: 1px solid var(--lh-drawer-border-color, #E5E0D8); /* hairline */
 }
 
 .lh-drawer__title {
@@ -111,7 +116,7 @@
   justify-content: flex-end;
   gap: var(--lh-spacing-sm, 8px);
   padding: var(--lh-drawer-footer-padding, 16px);
-  border-top: 1px solid var(--lh-drawer-border-color, #E5E0D8);
+  border-top: 1px solid var(--lh-drawer-border-color, #E5E0D8); /* hairline */
 }
 
 // —— 进出过渡：遮罩淡入、面板按方向滑动 ——
@@ -125,33 +130,25 @@
   }
 }
 
-.lh-drawer-fade-enter,
-.lh-drawer-fade-enter-from,
-.lh-drawer-fade-leave-to {
+/* 过渡起始/结束态类名双写由 theme/common/transition.scss 的 lh-transition-ends mixin 收编；
+   位移挂在面板后代上（而非遮罩根节点），使 Vue2（-enter）与 Vue3（-enter-from）观感一致 */
+@include lh-transition-ends('.lh-drawer-fade') {
   opacity: 0;
 }
 
-.lh-drawer-fade-enter,
-.lh-drawer-fade-enter-from .lh-drawer__panel--right,
-.lh-drawer-fade-leave-to .lh-drawer__panel--right {
+@include lh-transition-ends('.lh-drawer-fade', '.lh-drawer__panel--right') {
   transform: translateX(100%);
 }
 
-.lh-drawer-fade-enter,
-.lh-drawer-fade-enter-from .lh-drawer__panel--left,
-.lh-drawer-fade-leave-to .lh-drawer__panel--left {
+@include lh-transition-ends('.lh-drawer-fade', '.lh-drawer__panel--left') {
   transform: translateX(-100%);
 }
 
-.lh-drawer-fade-enter,
-.lh-drawer-fade-enter-from .lh-drawer__panel--top,
-.lh-drawer-fade-leave-to .lh-drawer__panel--top {
+@include lh-transition-ends('.lh-drawer-fade', '.lh-drawer__panel--top') {
   transform: translateY(-100%);
 }
 
-.lh-drawer-fade-enter,
-.lh-drawer-fade-enter-from .lh-drawer__panel--bottom,
-.lh-drawer-fade-leave-to .lh-drawer__panel--bottom {
+@include lh-transition-ends('.lh-drawer-fade', '.lh-drawer__panel--bottom') {
   transform: translateY(100%);
 }
 

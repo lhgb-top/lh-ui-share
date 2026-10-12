@@ -35,6 +35,50 @@ describe('Divider Core Logic', () => {
       expect(classes).toContain('lh-divider--dashed')
     })
 
+    it('adds dashed class from borderStyle even when dashed is false', () => {
+      const classes = getDividerClassNames({
+        direction: 'horizontal',
+        dashed: false,
+        borderStyle: 'dashed',
+        hasContent: false,
+        labelPosition: 'center',
+      })
+      expect(classes).toContain('lh-divider--dashed')
+    })
+
+    it('adds dotted class from borderStyle', () => {
+      const classes = getDividerClassNames({
+        direction: 'horizontal',
+        dashed: false,
+        borderStyle: 'dotted',
+        hasContent: false,
+        labelPosition: 'center',
+      })
+      expect(classes).toContain('lh-divider--dotted')
+    })
+
+    it('prefers borderStyle over the dashed prop', () => {
+      // solid 为默认样式，应压过 dashed 修饰类
+      const solid = getDividerClassNames({
+        direction: 'horizontal',
+        dashed: true,
+        borderStyle: 'solid',
+        hasContent: false,
+        labelPosition: 'center',
+      })
+      expect(solid).not.toContain('lh-divider--dashed')
+
+      const dotted = getDividerClassNames({
+        direction: 'horizontal',
+        dashed: true,
+        borderStyle: 'dotted',
+        hasContent: false,
+        labelPosition: 'center',
+      })
+      expect(dotted).toContain('lh-divider--dotted')
+      expect(dotted).not.toContain('lh-divider--dashed')
+    })
+
     it('adds label position classes only when content exists', () => {
       const withText = getDividerClassNames({
         direction: 'horizontal',
@@ -53,6 +97,19 @@ describe('Divider Core Logic', () => {
       })
       expect(withoutText).not.toContain('lh-divider--with-text')
       expect(withoutText).not.toContain('lh-divider--label-left')
+    })
+
+    it('keeps vertical text centred without label position classes', () => {
+      // labelPosition 是横向语义，竖向文案恒居中，不产出 --label-* 修饰类
+      const classes = getDividerClassNames({
+        direction: 'vertical',
+        dashed: false,
+        hasContent: true,
+        labelPosition: 'left',
+      })
+      expect(classes).toContain('lh-divider--with-text')
+      expect(classes).not.toContain('lh-divider--label-left')
+      expect(classes).not.toContain('lh-divider--label-center')
     })
   })
 

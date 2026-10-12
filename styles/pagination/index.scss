@@ -130,7 +130,7 @@ nav ul.lh-pagination__pages {
   &__size-select {
     height: 30px;
     padding: 0 var(--lh-spacing-xs, 4px);
-    border: 1px solid var(--lh-border-color-base, #D8D3CC);
+    border: 1px solid var(--lh-border-color-base, #D8D3CC); /* hairline */
     border-radius: var(--lh-border-radius-small, 2px);
     background-color: var(--lh-bg-color, #FAF6F0);
     font-family: inherit;
@@ -158,8 +158,10 @@ nav ul.lh-pagination__pages {
   &__jumper-input {
     width: 56px;
     height: 30px;
+    /* 显式行高对齐高度，否则数字垂直位置交由 UA 默认行为、与同行文案基线不齐 */
+    line-height: 30px;
     padding: 0 var(--lh-spacing-xs, 4px);
-    border: 1px solid var(--lh-border-color-base, #D8D3CC);
+    border: 1px solid var(--lh-border-color-base, #D8D3CC); /* hairline */
     border-radius: var(--lh-border-radius-small, 2px);
     background-color: var(--lh-bg-color, #FAF6F0);
     font-family: inherit;

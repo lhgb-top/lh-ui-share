@@ -22,7 +22,12 @@
   font-size: var(--lh-font-size-base, 14px);
   color: var(--lh-dropdown-item-color, #5A5A5A);
   background-color: var(--lh-dropdown-bg-color, #FAF6F0);
-  border: 1px solid var(--lh-dropdown-border-color, #E5E0D8);
+  // 背景花纹：默认 none，由 ConfigProvider 的 bg-pattern + patternComponents 白名单开启
+  background-image: var(--lh-bg-pattern, none);
+  background-blend-mode: var(--lh-bg-pattern-blend, normal);
+  background-repeat: var(--lh-bg-pattern-repeat, repeat);
+  background-size: var(--lh-bg-pattern-size, auto);
+  border: 1px solid var(--lh-dropdown-border-color, #E5E0D8); /* hairline */
   border-radius: var(--lh-dropdown-border-radius, 2px);
   box-shadow: var(--lh-box-shadow-base, 0 2px 12px 0 rgba(26, 26, 26, 0.08));
 }
@@ -59,7 +64,7 @@
 }
 
 .lh-dropdown__item--divided {
-  border-top: 1px solid var(--lh-dropdown-divider-color, #EEE9E2);
+  border-top: 1px solid var(--lh-dropdown-divider-color, #EEE9E2); /* hairline */
 }
 
 // —— 进出过渡 ——
@@ -71,18 +76,14 @@
     transform var(--lh-transition-duration-fast, 0.25s) var(--lh-transition-function-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
 }
 
-.lh-dropdown-fade-enter,
-.lh-dropdown-fade-enter-from,
-.lh-dropdown-fade-leave-to {
+@include lh-transition-ends('.lh-dropdown-fade') {
   opacity: 0;
   transform: scaleY(0.96);
   transform-origin: top center;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lh-dropdown-fade-enter,
-.lh-dropdown-fade-enter-from,
-  .lh-dropdown-fade-leave-to {
+  @include lh-transition-ends('.lh-dropdown-fade') {
     transform: none;
   }
 }

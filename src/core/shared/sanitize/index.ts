@@ -6,7 +6,7 @@
  * 统一在入口净化为安全缺省值。
  */
 
-export interface SanitizeNumberOptions {
+export interface LhSanitizeNumberOptions {
   /** 允许的最小值（结果不小于它）；非有限的 min 自身会被忽略 */
   min?: number
   /** 允许的最大值（结果不大于它）；非有限的 max 自身会被忽略 */
@@ -23,7 +23,7 @@ export interface SanitizeNumberOptions {
 export function sanitizeNumber(
   value: number | undefined | null,
   fallback: number,
-  options: SanitizeNumberOptions = {}
+  options: LhSanitizeNumberOptions = {}
 ): number {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return fallback
@@ -49,4 +49,16 @@ export function sanitizeNumber(
  */
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
+}
+
+/** precision 允许的小数位上限：toFixed 超过 100 位会抛 RangeError */
+export const LH_PRECISION_MAX = 100
+
+/**
+ * 把 precision 净化为 [0, 100] 整数，非法值回退 0（防 toFixed RangeError 崩渲染）。
+ *
+ * input-number 与 statistic 共用同一防线；新增消费 toFixed 的组件一律走这里。
+ */
+export function safePrecision(precision: number): number {
+  return sanitizeNumber(precision, 0, { min: 0, max: LH_PRECISION_MAX, integer: true })
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mergeConfig, getEffectiveSize, getEffectiveZIndex, getEffectiveTheme } from '../../../src/core/config/logic'
-import { createDefaultConfig, DEFAULT_THEME } from '../../../src/core/config/types'
-import { THEME_PRESETS } from '../../../src/theme/themes'
+import { createDefaultConfig, LH_THEME_DEFAULT } from '../../../src/core/config/types'
+import { LH_THEME_PRESETS } from '../../../src/theme/themes'
 
 describe('config/core/logic', () => {
 	describe('createDefaultConfig', () => {
@@ -15,9 +15,9 @@ describe('config/core/logic', () => {
 		})
 	})
 
-	describe('DEFAULT_THEME', () => {
+	describe('LH_THEME_DEFAULT', () => {
 		it('points at the first built-in preset (the SCSS default primary)', () => {
-			expect(DEFAULT_THEME).toBe(THEME_PRESETS[0].name)
+			expect(LH_THEME_DEFAULT).toBe(LH_THEME_PRESETS[0].name)
 		})
 	})
 
@@ -47,7 +47,7 @@ describe('config/core/logic', () => {
 			const result = mergeConfig({}, {}, {})
 			expect(result.locale).toBe('zh-CN')
 			expect(result.zIndex).toBe(2000)
-			expect(result.theme).toBe(DEFAULT_THEME)
+			expect(result.theme).toBe(LH_THEME_DEFAULT)
 		})
 
 		it('lets local theme override global', () => {
@@ -90,7 +90,7 @@ describe('config/core/logic', () => {
 		})
 
 		it('falls back to the default theme when both are undefined', () => {
-			expect(getEffectiveTheme(undefined, undefined)).toBe(DEFAULT_THEME)
+			expect(getEffectiveTheme(undefined, undefined)).toBe(LH_THEME_DEFAULT)
 		})
 	})
 })

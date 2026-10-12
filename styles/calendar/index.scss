@@ -3,7 +3,7 @@
 .lh-calendar {
   display: inline-block;
   padding: var(--lh-spacing-base, 12px);
-  border: 1px solid var(--lh-calendar-border, var(--lh-border-color-lighter, #EEE9E2));
+  border: 1px solid var(--lh-calendar-border, var(--lh-border-color-lighter, #EEE9E2)); /* hairline */
   border-radius: var(--lh-border-radius-base, 8px);
   background-color: var(--lh-calendar-bg, var(--lh-bg-color, #fff));
 }
@@ -111,7 +111,7 @@
 .lh-calendar__input {
   width: 100%;
   padding: 7px 12px;
-  border: 1px solid var(--lh-calendar-border, var(--lh-border-color-lighter, #EEE9E2));
+  border: 1px solid var(--lh-calendar-border, var(--lh-border-color-lighter, #EEE9E2)); /* hairline */
   border-radius: var(--lh-border-radius-base, 8px);
   background-color: var(--lh-calendar-bg, var(--lh-bg-color, #fff));
   color: var(--lh-calendar-cell, var(--lh-text-regular, #5A5A5A));

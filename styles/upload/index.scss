@@ -23,7 +23,7 @@
   align-items: center;
   justify-content: center;
   padding: var(--lh-upload-trigger-padding, 24px);
-  border: 1px dashed var(--lh-upload-border, var(--lh-border-color-base, #D8D3CC));
+  border: 1px dashed var(--lh-upload-border, var(--lh-border-color-base, #D8D3CC)); /* hairline */
   border-radius: var(--lh-border-radius-base, 8px);
   background-color: var(--lh-upload-bg, var(--lh-bg-color, #fff));
   color: var(--lh-text-regular, #5A5A5A);

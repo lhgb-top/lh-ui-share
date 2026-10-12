@@ -4,6 +4,7 @@ import {
   getStepStatus,
   getStepsClassNames,
   getStepAria,
+  getStepsLineLastIndices,
 } from '../../../src/core/steps'
 
 describe('core/steps', () => {
@@ -24,16 +25,45 @@ describe('core/steps', () => {
   })
 
   it('computes step item class names by status and flags', () => {
-    expect(getStepClassNames({ status: 'process', isLast: false, clickable: false })).toEqual([
+    expect(getStepClassNames({ status: 'process', clickable: false })).toEqual([
       'lh-steps__item',
       'lh-steps__item--process',
     ])
-    expect(getStepClassNames({ status: 'error', isLast: true, clickable: true })).toEqual([
+    expect(getStepClassNames({ status: 'error', clickable: true })).toEqual([
       'lh-steps__item',
       'lh-steps__item--error',
-      'lh-steps__item--last',
       'lh-steps__item--clickable',
     ])
+  })
+
+  it('marks the line-last item when the horizontal steps wrap', () => {
+    expect(getStepClassNames({ status: 'finish', clickable: false, lineLast: true })).toContain(
+      'lh-steps__item--line-last',
+    )
+    expect(getStepClassNames({ status: 'finish', clickable: false, lineLast: false })).not.toContain(
+      'lh-steps__item--line-last',
+    )
+  })
+})
+
+describe('core/steps line breaking', () => {
+  it('treats the sole item as line-last', () => {
+    expect(getStepsLineLastIndices([0])).toEqual([0])
+  })
+
+  it('keeps every item on one line', () => {
+    expect(getStepsLineLastIndices([0, 0, 0])).toEqual([2])
+  })
+
+  it('detects the last item of each wrapped line', () => {
+    // 三行：[0,1] / [2,3] / [4]
+    expect(getStepsLineLastIndices([0, 0, 20, 20, 40])).toEqual([1, 3, 4])
+    // 两行：[0] / [1,2]
+    expect(getStepsLineLastIndices([0, 30, 30])).toEqual([0, 2])
+  })
+
+  it('handles an empty list', () => {
+    expect(getStepsLineLastIndices([])).toEqual([])
   })
 })
 

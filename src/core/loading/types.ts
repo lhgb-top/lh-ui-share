@@ -1,4 +1,4 @@
-import type { SxProps } from '../shared'
+import type { LhSxProps } from '../shared'
 
 /** 加载遮罩选项（服务与指令共用） */
 export interface LhLoadingOptions {
@@ -12,7 +12,7 @@ export interface LhLoadingOptions {
   lock?: boolean
   /** 是否显示旋转图标 */
   spinner?: boolean
-  sx?: SxProps
+  sx?: LhSxProps
 }
 
 /** 服务句柄 */

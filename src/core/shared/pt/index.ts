@@ -3,7 +3,7 @@
  * 用于组件内部元素的样式透传
  */
 
-export interface PtAttrs {
+export interface LhPtAttrs {
   class?: string | string[] | Record<string, boolean>
   style?: Record<string, string>
   attrs?: Record<string, any>
@@ -12,7 +12,7 @@ export interface PtAttrs {
 /**
  * 合并 PT 属性（浅层合并，不做 deepMerge）
  */
-export function mergePt(pt: PtAttrs | undefined, baseClass: string): {
+export function mergePt(pt: LhPtAttrs | undefined, baseClass: string): {
   class: string[]
   style: Record<string, string>
   attrs: Record<string, any>
