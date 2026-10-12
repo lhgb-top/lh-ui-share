@@ -67,14 +67,14 @@ docs 主题定制页导出的 `:root { --lh-*: ... }` 文本与 `themeVars` 是*
 <lh-config-provider
   :component-theme="{
     button: { 'border-radius': '20px' },
-    input: { 'control-height': '40px' },
+    input: { 'control-height-medium': '40px' },
   }"
 >
   <App />
 </lh-config-provider>
 ```
 
-key 是组件名（`styles/` 下的目录名），value 是该组件作用域内的 `themeVars`。注入时变量带组件前缀作用域，只影响指定组件。
+key 是组件名（`styles/` 下的目录名），value 是该组件作用域内的 `themeVars`。注入时变量带组件前缀作用域，只影响指定组件。键名必须与令牌名一致（`control-height-medium` → `--lh-control-height-medium`）——`input` 的默认档是 medium，不写档位后缀的 `control-height` 没有组件消费。
 
 **注意**：组件级令牌依赖该组件 SCSS 里用 `var(--lh-<name>-*)` 消费了对应令牌——不是所有组件都把全部样式点令牌化，能改什么以 [设计令牌](/theme/tokens) 表里该组件的行为准。
 

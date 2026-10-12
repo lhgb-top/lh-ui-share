@@ -70,7 +70,7 @@ SCSS 变量的用途是**参与编译期计算**：颜色混合（`mix()` / `sha
 
 // 3. 组件令牌（个别组件的特化值）
 --lh-button-radius: var(--lh-radius-base);
---lh-input-height: 37px;
+--lh-switch-knob-color: #fff;
 ```
 
 **组件只消费第 2、3 层**。改调色板（第 1 层）会级联影响所有语义令牌——这是换肤的杠杆点。
@@ -97,7 +97,7 @@ SCSS 变量的用途是**参与编译期计算**：颜色混合（`mix()` / `sha
 
 <TokenTable />
 
-（数据由 `scripts/gen-docs-data.mjs` 解析三个令牌文件生成，带数量断言：明色 185、暗色 118、SCSS 183，不匹配即报错。）
+（数据由 `scripts/gen-docs-data.mjs` 解析三个令牌文件生成，带数量断言：明色 190、暗色 118、SCSS 188，不匹配即报错。）
 
 ## 覆盖令牌
 
@@ -133,13 +133,14 @@ $lh-primary-color: #1677ff;
 
 ## 已知的令牌缺口
 
-「高度令牌专项」记录为后续 changeset，本次未动：
+「高度令牌专项」已落地（新增 `--lh-control-height-mini/small/medium/large/x-large`，
+button / select / input-number / cascader / tree-select / date-picker / time-picker /
+input 全部改引令牌，input 由 padding 派生改为固定高度，has-label 的非对称
+`padding-top: 16px`、checkbox 对勾固定偏移、switch 的 `translate(-50%,-50%)` 重复
+硬编码一并修复）。仍待处理的：
 
-1. 各控件高度不统一（input 37 / select 32 / cascader 27→32 / date-time 33 / input-number 32），根因是 `var.scss` 无 `--lh-control-height-*` 令牌。
-2. input `--has-label` 的非对称 `padding-top: 16px`。
-3. spinner 与 icon 同名尺寸档位不一致（small 16 vs 14）。
-4. checkbox 对勾固定 `top:2/left:5` 非 50% 居中（16px 盒下正确，改尺寸即偏）。
-5. switch 的 `translate(-50%,-50%)` 在 base 与 keyframes 重复硬编码。
+1. spinner 与 icon 同名尺寸档位不一致（small 16 vs 14、medium 24 vs 16 等）。改任一侧都波及全库（message / notification / loading / 全部图标），触发条件：同一槽位混用 LhIcon / LhSpinner 的视觉投诉，届时单独立项。
+2. size 档位不齐：select / switch 仅 3 档，date / time-picker 的 validator 收窄，tree-select / rate / segmented / pagination 无 size，mini 与 x-large 在 CSS 层几乎未画（全库仅 avatar 有 x-large）。属 API 层改动，与高度令牌解耦。
 
 ## 注意事项
 

@@ -490,6 +490,7 @@
     ".lh-drawer-fade",
     ".lh-drawer__panel--right",
     ".lh-input",
+    ".lh-input--",
     ".lh-input--disabled",
     ".lh-input--large",
     ".lh-input--medium",
