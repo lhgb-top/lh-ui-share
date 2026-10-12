@@ -1,0 +1,209 @@
+---
+title: image —— 图片
+description: 'stepZoom/stepRotate 缩放旋转、normalizePreviewList 预览列表退化、stepViewerIndex 循环切图、dialog 语义'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+图片组件的核心不是显示（`<img>` 就够了），而是**预览**：点击放大、滚轮缩放、旋转、多图切换。`core/image` 管的是预览器的状态换算——缩放步进与钳制、旋转归一化、图片列表的循环切换。
+
+## 何时使用
+
+- 各端实现 `LhImage`：商品图、头像预览、证件照、图库相册。
+- 需要点击放大查看（缩放/旋转/多图切换）的场景。
+- **不该用它**：纯装饰性图片（直接 `<img>` 或背景图，不需要组件开销）；需要复杂裁剪/编辑（那是 image-cropper 的职责）。
+
+## 导入方式
+
+```ts
+import {
+  getImageClassNames,
+  normalizePreviewList,
+  stepZoom,
+  stepRotate,
+  stepViewerIndex,
+  getViewerImageStyle,
+  getImageViewerAria,
+} from '@lh-ui/share/core/image'
+import {
+  LH_IMAGE_ZOOM_MIN,
+  LH_IMAGE_ZOOM_MAX,
+  LH_IMAGE_ZOOM_STEP,
+} from '@lh-ui/share/core/image'
+import type { LhImageFit, LhImageState, LhImageViewerState } from '@lh-ui/share/core/image'
+```
+
+## 设计意图
+
+**缩放的浮点钳制**：`stepZoom` 每次按 `LH_IMAGE_ZOOM_STEP`（0.25）累加，`Math.round(next * 100) / 100` 后再钳到 `[0.25, 4]`。取整保证 `zoom` 永远是干净的小数（0.25 / 0.5 / 0.75 …），而不是 `1.0000000000000002`——后者会让 `scale()` 产生肉眼可见的锯齿。
+
+**旋转的负数取模修正**：`(((rotate + 90) % 360) + 360) % 360`——JS 的 `%` 对负数返回负值（`-90 % 360 === -90`），外层 `+360) % 360` 把它归一到 `[0, 360)`。虽然本函数只会 +90 不会变负，这个修正是防御性的（若调用方传入负角度的初始值）。
+
+**`stepViewerIndex` 的循环切图**：`(index + delta + total) % total`——第一张按上一张跳到最后一张。`total <= 0` 时返回 0（空列表的防御）。
+
+**`normalizePreviewList` 的退化**：未传 `previewSrcList` 时退化为 `[src]`——单图预览与多图预览用同一套逻辑，只是 `total` 为 1，切图按钮自动隐藏。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getImageClassNames` | `(state: LhImageState) => string[]` | 类名 | error / previewable |
+| `normalizePreviewList` | `(src, previewSrcList?) => string[]` | 列表 | 未传退化为 [src] |
+| `stepZoom` | `(zoom, direction: 1 \| -1) => number` | 新缩放 | 步进 + 钳制 |
+| `stepRotate` | `(rotate: number) => number` | 新角度 | +90°，归一到 [0,360) |
+| `stepViewerIndex` | `(index, total, delta) => number` | 新下标 | 循环 |
+| `getViewerImageStyle` | `(state: LhImageViewerState) => Record<string, string>` | 样式 | transform |
+| `getImageViewerAria` | `(options?: { id?, label? }) => LhAriaAttrs` | aria 属性包 | dialog 语义 |
+
+常量：`LH_IMAGE_ZOOM_MIN = 0.25`、`LH_IMAGE_ZOOM_MAX = 4`、`LH_IMAGE_ZOOM_STEP = 0.25`。
+
+## 类型定义
+
+```ts
+export type LhImageFit = 'contain' | 'cover' | 'fill' | 'none' | 'scale-down'  // 原生 object-fit
+
+export interface LhImageState {
+  fit: LhImageFit
+  error: boolean
+  loaded: boolean
+  preview: boolean    // 是否可预览（决定是否响应点击 + 显示遮罩提示）
+}
+
+export interface LhImageViewerState {
+  zoom: number
+  rotate: number
+  index: number
+  total: number
+}
+
+export const LH_IMAGE_ZOOM_MIN = 0.25
+export const LH_IMAGE_ZOOM_MAX = 4
+export const LH_IMAGE_ZOOM_STEP = 0.25
+```
+
+## 无障碍
+
+预览器以 **dialog** 呈现，且声明 `aria-modal`：
+
+```ts
+getImageViewerAria({ id: 'lh-viewer', label: '第 2 张，共 5 张' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-viewer', 'aria-label': '第 2 张，共 5 张' }
+
+getImageViewerAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true` 告知读屏软件背景不可达——配合 `core/shared/focus-trap` 做焦点圈定，Esc 关闭。
+- **`label` 带序号很有价值**：多图预览时读屏软件播报「第 2 张，共 5 张」，用户知道还有多少张可看；单图时给「图片预览」即可。
+- 缩略图本身要有 `alt`（或 `role="img" aria-label`）——图片不可见时这是唯一的文本信息。装饰性图片用 `alt=""`。
+- 工具栏按钮（放大/旋转/上一张/下一张）是图标按钮，必须 `aria-label`。
+- **加载失败的无障碍提示**：`error` 态的占位图要有 `role="img"` + `aria-label="图片加载失败"`，否则读屏用户不知道这里原本有图。
+
+## 使用示例
+
+```ts
+import { stepZoom, stepRotate, stepViewerIndex, normalizePreviewList } from '@lh-ui/share/core/image'
+
+stepZoom(1, 1)      // 1.25
+stepZoom(4, 1)      // 4（到顶不再增）
+stepZoom(0.25, -1)  // 0.25（到底不再减）
+stepRotate(0)       // 90
+stepRotate(270)     // 0（归一到 [0, 360)）
+stepRotate(-90)     // 0（负数取模修正）
+stepViewerIndex(0, 5, -1)   // 4（循环到末张）
+stepViewerIndex(4, 5, 1)    // 0（循环到首张）
+stepViewerIndex(0, 0, 1)    // 0（空列表）
+normalizePreviewList('a.jpg', ['b.jpg', 'c.jpg'])  // ['b.jpg', 'c.jpg']
+normalizePreviewList('a.jpg', undefined)          // ['a.jpg']
+normalizePreviewList('a.jpg', [])                 // ['a.jpg']（空数组也退化）
+getViewerImageStyle({ zoom: 1.5, rotate: 90, index: 0, total: 1 })
+// { transform: 'scale(1.5) rotate(90deg)' }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getImageClassNames({ fit, error, loaded, preview })">
+  <img
+    v-if="!error"
+    class="lh-image__img"
+    :src="src"
+    :alt="alt"
+    :style="{ objectFit: fit }"
+    @load="loaded = true"
+    @error="error = true"
+    @click="preview && openViewer()"
+  />
+  <div v-else class="lh-image__error" role="img" aria-label="图片加载失败">
+    <LhIcon name="image" />
+  </div>
+  <div v-if="preview && loaded" class="lh-image__mask">
+    <LhIcon name="zoom-in" /> <span>点击预览</span>
+  </div>
+</div>
+
+<Teleport to="body">
+  <div v-if="visible" class="lh-image-viewer" v-bind="getImageViewerAria({ id: viewerId, label: viewerLabel })">
+    <div class="lh-image-viewer__mask" @click="close" />
+    <img
+      class="lh-image-viewer__img"
+      :src="list[index]"
+      :style="getViewerImageStyle({ zoom, rotate, index, total: list.length })"
+    />
+    <div class="lh-image-viewer__toolbar">
+      <button type="button" aria-label="缩小" @click="zoom = stepZoom(zoom, -1)">−</button>
+      <span class="lh-image-viewer__zoom">{{ Math.round(zoom * 100) }}%</span>
+      <button type="button" aria-label="放大" @click="zoom = stepZoom(zoom, 1)">+</button>
+      <button type="button" aria-label="旋转" @click="rotate = stepRotate(rotate)">⟳</button>
+      <template v-if="list.length > 1">
+        <button type="button" aria-label="上一张" @click="index = stepViewerIndex(index, list.length, -1)">‹</button>
+        <button type="button" aria-label="下一张" @click="index = stepViewerIndex(index, list.length, 1)">›</button>
+      </template>
+    </div>
+  </div>
+</Teleport>
+```
+
+```ts
+const list = computed(() => normalizePreviewList(props.src, props.previewSrcList))
+const viewerLabel = computed(() => `第 ${index.value + 1} 张，共 ${list.value.length} 张`)
+```
+
+```tsx
+// React：滚轮缩放（在 viewer 上挂 onWheel）
+// const next = stepZoom(zoom, e.deltaY < 0 ? 1 : -1); setZoom(next)
+```
+
+```ts
+// uniapp：<image> 是内置组件（mode 属性对应 object-fit：widthFix / aspectFill 等）；
+// 预览器用 <view> + <image>，或调 uni.previewImage（系统级，无旋转功能）
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-image` | 基础类 |
+| `.lh-image--error` | 加载失败 |
+| `.lh-image--previewable` | 可预览（hover 显示遮罩） |
+| `.lh-image__img` | 图片本身 |
+| `.lh-image__error` | 失败占位 |
+| `.lh-image__mask` | hover 遮罩 |
+| `.lh-image-viewer` | 全屏预览器（fixed 定位） |
+| `.lh-image-viewer__mask` | 黑色遮罩 |
+| `.lh-image-viewer__img` | 大图（transform 动画） |
+| `.lh-image-viewer__toolbar` / `__zoom` | 工具栏 / 缩放百分比 |
+
+遮罩色 `rgba(0, 0, 0, 0.5)`；工具栏按钮半透明深底；图片 transition 在 `transform` 上（缩放旋转丝滑）。
+
+## 注意事项
+
+- **`previewSrcList` 与 `src` 的关系**：`previewSrcList` 是预览时用的大图列表，可以与页面上的缩略图 `src` 不同（缩略图用小图省流量，预览用原图）。不传时退化为 `[src]`——此时预览的就是缩略图，放大可能模糊。
+- **`zoom` 到边界不再变化**：`stepZoom` 钳到 [0.25, 4]，按钮可以据此 disable 或给视觉反馈，避免点了没反应。
+- **旋转与缩放的顺序**：`transform: scale(zoom) rotate(rotate)`——先缩放后旋转。顺序反了，旋转会带缩放的偏移（围绕中心时差别不大，但位移组合时明显）。
+- **焦点管理**：预览器打开时焦点应进工具栏，关闭时回到缩略图——用 `core/shared/focus-trap` 处理，否则 Tab 会跑到页面背后。
+- **`error` 态的重试**：core 不提供重试函数；UI 层可以改 `src` 加查询参数（`?t=Date.now()`）强制重新加载，但要先清掉 `error` 态。
+- **`loaded` 的用途**：加载完成前可以显示骨架屏（`skeleton`）或低模糊的占位图（LQIP）。
+- **内存敏感**：大图列表预览时，`previewSrcList` 里的图只有 `index` 附近的会真正加载（浏览器按需），但不要一次渲染几十个 `<img>`——core 不管渲染数量，UI 层自行限制。
+- **uniapp 的 `fit` 映射**：`object-fit` 的五个值在小程序端对应 `<image mode>` 的不同值（`scale-down` 无直接对应，通常用 `aspectFit` 近似），UI 层做映射。
+
+<FnPlayground module="image" fn="stepZoom" params='{"zoom": 1, "direction": 1}' />

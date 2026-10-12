@@ -1,0 +1,161 @@
+---
+title: timeline —— 时间线
+description: 'getTimelineSide 左右交替、四种语义节点类型、alternate 双栏布局'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+时间线把「按时间排序的事件」可视化：一条竖线串起若干节点，每个节点带时间、标题、内容。它常见于物流轨迹、操作日志、版本更新记录。`core/timeline` 很轻——主要工作是布局侧的左右交替计算与类名拼装。
+
+## 何时使用
+
+- 各端实现 `LhTimeline`：物流轨迹、审批记录、版本更新日志、操作审计流。
+- 事件**按时间有序**、且需要突出时间轴感的场景。
+- **不该用它**：无时间维度的步骤（用 `steps`，它强调进度而非时间）；事件需要筛选/搜索（用列表 + 过滤）。
+
+## 导入方式
+
+```ts
+import {
+  getTimelineItemClassNames,
+  getTimelineClassNames,
+  getTimelineSide,
+} from '@lh-ui/share/core/timeline'
+import type { LhTimelineMode, LhTimelineType, LhTimelineItemState } from '@lh-ui/share/core/timeline'
+```
+
+## 设计意图
+
+**两种布局模式**：
+
+- `left`（默认）：竖线在最左，所有内容在右侧单栏排列。简单、信息密度高。
+- `alternate`：竖线居中，内容**左右交替**——`getTimelineSide(index)` 用 `index % 2` 决定侧别（偶数左、奇数右）。这种模式视觉更对称，适合内容块较大、时间轴作为页面主体时。
+
+**`getTimelineSide` 为什么在 core 而不在样式里**：侧别不只决定 CSS 类名，还决定**内容子组件的排列顺序**（时间戳在左栏时要在内容前、在右栏时要在内容后）。纯函数算出来，两端渲染逻辑一致，不会出现「Vue 这边左右交替、React 那边全在左」的分歧。
+
+**四种语义类型**：`primary` / `success` / `warning` / `danger`，对应节点圆点的颜色。语义由调用方按事件性质给（成功操作 success、告警 warning），core 只做类名映射，不解释业务含义。
+
+**`isLast` 的用途**：最后一个节点的**竖线不画**（`--last` 类名去掉 `::before` 线段），否则轴线会超出最后一个节点一截。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getTimelineItemClassNames` | `(state: LhTimelineItemState) => string[]` | 类名 | 类型/空心/侧别/末项 |
+| `getTimelineClassNames` | `(mode: LhTimelineMode) => string[]` | 类名 | alternate 修饰 |
+| `getTimelineSide` | `(index: number) => 'left' \| 'right'` | 侧别 | 偶数左、奇数右 |
+
+## 类型定义
+
+```ts
+export type LhTimelineMode = 'left' | 'alternate'
+export type LhTimelineType = 'primary' | 'success' | 'warning' | 'danger'
+
+export interface LhTimelineItemState {
+  type: LhTimelineType | undefined
+  hollow: boolean       // 空心节点（只有边框，用于「未到达」事件）
+  side: 'left' | 'right'  // alternate 模式下的侧别
+  isLast: boolean
+}
+```
+
+## 无障碍
+
+timeline 是**纯展示性组件**，没有 APG 交互角色。内容本身是有序列表语义，推荐用 `<ol>` 包裹：
+
+```html
+<ol class="lh-timeline">
+  <li class="lh-timeline__item">
+    <time datetime="2026-10-12T10:00">10:00</time> 订单已签收
+  </li>
+</ol>
+```
+
+- `<time>` 元素让读屏软件和搜索引擎识别时间；`datetime` 属性用 ISO 8601 格式。
+- 节点圆点是纯装饰，`aria-hidden="true"` 或用伪元素实现（伪元素天然不在无障碍树里）。
+- 若 timeline 表达的是**进度**（如「当前进行到第 3 步」），考虑改用 `steps` 并带 `aria-current`。
+
+## 使用示例
+
+```ts
+import { getTimelineSide, getTimelineClassNames } from '@lh-ui/share/core/timeline'
+
+getTimelineSide(0)  // 'left'
+getTimelineSide(1)  // 'right'
+getTimelineSide(2)  // 'left'
+getTimelineClassNames('alternate')  // ['lh-timeline', 'lh-timeline--alternate']
+getTimelineClassNames('left')       // ['lh-timeline']
+```
+
+```vue
+<!-- Vue3：alternate 模式 -->
+<ol :class="getTimelineClassNames(mode)">
+  <li
+    v-for="(item, index) in items"
+    :key="item.id"
+    :class="getTimelineItemClassNames({
+      type: item.type,
+      hollow: item.hollow,
+      side: getTimelineSide(index),
+      isLast: index === items.length - 1,
+    })"
+  >
+    <template v-if="mode === 'alternate'">
+      <!-- 左栏 -->
+      <div v-if="getTimelineSide(index) === 'left'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+        <p class="lh-timeline__desc">{{ item.desc }}</p>
+      </div>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <!-- 右栏 -->
+      <div v-if="getTimelineSide(index) === 'right'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+    <template v-else>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <div class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+  </li>
+</ol>
+```
+
+```tsx
+// React：alternate 模式下侧别决定渲染顺序，用 getTimelineSide(index) 分支
+```
+
+```ts
+// uniapp：<view> 遍历；alternate 双栏用绝对定位 + 左右 50% 布局
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-timeline` | 基础类（`<ol>` 重置） |
+| `.lh-timeline--alternate` | 交替模式（轴线居中） |
+| `.lh-timeline__item` | 单个节点项 |
+| `.lh-timeline__item--{primary\|success\|warning\|danger}` | 语义类型（圆点色） |
+| `.lh-timeline__item--hollow` | 空心圆点（未到达） |
+| `.lh-timeline__item--right` | alternate 右栏 |
+| `.lh-timeline__item--last` | 末项（不画下段轴线） |
+| `.lh-timeline__dot` | 圆点（`::before` 画轴线） |
+| `.lh-timeline__content` / `__time` / `__title` / `__desc` | 内容区 |
+
+轴线色 `--lh-border-color`；圆点四色分别 `--lh-primary-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`；空心节点用边框 + 透明背景。
+
+## 注意事项
+
+- **`isLast` 必须传**：不传的话轴线会超出最后一个节点，视觉上像被截断的进度条。
+- **`alternate` 模式的数据顺序**：左右交替是**按 index** 的，与数据的时间顺序一致——不要在 UI 层排序后再算 side，否则 side 会错位。
+- **空心节点 `hollow` 的语义**：表示「该事件尚未到达」（如物流的「待收货」）。它与 `type` 正交：空心 + warning 表示「未到达且有风险」。
+- **内容溢出**：alternate 模式每栏只有一半宽度，长文本会换行很多次；内容多时用 `left` 模式或给内容区设 `max-height` + 展开。
+- **时间格式化**：core 不格式化时间，UI 层用 `core/shared/date.formatDate` 或自行处理；`<time datetime>` 要 ISO 格式才能被机器解析。
+- **反向时间线**：某些场景需要最新事件在顶部——数据层 reverse 即可，core 不感知方向。
+
+<FnPlayground module="timeline" fn="getTimelineSide" params='{"index": 3}' />

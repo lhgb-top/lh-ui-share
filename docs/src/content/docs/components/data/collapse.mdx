@@ -1,0 +1,163 @@
+---
+title: collapse —— 折叠面板
+description: 'normalizeActiveKeys 归一化、toggleCollapseKey 手风琴模式、不可变更新'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+折叠面板是「内容太多、默认收起、按需展开」的标准方案：常见于 FAQ、设置项分组、长表单分区。它的状态模型极简——「哪些面板开着」的数组——难点只在**手风琴模式**（同时只开一个）与**受控值归一化**。
+
+## 何时使用
+
+- 各端实现 `LhCollapse`：FAQ 问答、设置分组、复杂表单的分区折叠、侧栏菜单组。
+- 内容块可独立折叠 / 展开，且需要节省纵向空间的场景。
+- **不该用它**：只有两三个固定项（直接展示更省事）；需要严格线性步骤（用 `steps`）。
+
+## 导入方式
+
+```ts
+import {
+  normalizeActiveKeys,
+  toggleCollapseKey,
+  getCollapseItemClassNames,
+} from '@lh-ui/share/core/collapse'
+import type { LhCollapseKey } from '@lh-ui/share/core/collapse'
+```
+
+## 设计意图
+
+**`normalizeActiveKeys` 的三态归一**：受控 `v-model` 可能传单值（`'1'`）、数组（`['1','2']`）、或 undefined（全部收起）。统一归一为数组后，下游的 `includes` 判定只需面对一种形态——这是「输入宽容、内部严格」的又一例。
+
+**手风琴的「允许零开」**：`toggleCollapseKey(keys, key, true)` 在 `keys.includes(key)` 时返回 `[]` 而非保留其它项——手风琴下再次点击已开面板会**全部收起**，这是符合直觉的行为（不是切换到另一个）。手风琴传单值时，UI 层的 `v-model` 会收到数组，需要自行处理类型（或 UI 层对手风琴模式额外提供单值 API）。
+
+**不可变更新**：两个函数都返回新数组，直接喂给响应式状态，不修改入参。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `normalizeActiveKeys` | `(value: LhCollapseKey \| LhCollapseKey[] \| undefined) => LhCollapseKey[]` | 键数组 | 三态归一 |
+| `toggleCollapseKey` | `(keys, key, accordion: boolean) => LhCollapseKey[]` | 新键数组 | 手风琴 / 常规 |
+| `getCollapseItemClassNames` | `(state: { active, disabled }) => string[]` | 类名 | 展开 / 禁用 |
+
+## 类型定义
+
+```ts
+export type LhCollapseKey = string | number
+```
+
+## 无障碍
+
+collapse 是 APG **accordion / disclosure** 模式的典型实现，语义约定由 UI 层组装（core 不提供属性包函数，因为模式简单且各端 DOM 差异大）：
+
+```html
+<!-- 每个 item 是一个 disclosure -->
+<div class="lh-collapse__item">
+  <h3>
+    <button type="button" aria-expanded="true" aria-controls="panel-1" id="trigger-1">
+      标题
+    </button>
+  </h3>
+  <div id="panel-1" role="region" aria-labelledby="trigger-1">内容</div>
+</div>
+```
+
+- `aria-expanded` 挂在触发按钮上，与 `active` 同源——这是无障碍折叠面板的**核心属性**。
+- 面板容器 `role="region"` + `aria-labelledby` 反向引用触发器，形成双向关联。
+- **禁用项**：触发按钮加 `disabled`（真正的 disabled 属性，不只是类名），键盘与读屏都识别。
+- 键盘：Tab 在触发器间移动，Enter/Space 切换展开。
+- 手风琴模式**不要**用 `aria-hidden="true"` 隐藏收起的面板——内容仍在 DOM 里（动画期间可见），用 CSS 高度动画即可；若真的移除 DOM，`aria-expanded` 的状态要管理好。
+
+## 使用示例
+
+```ts
+import { normalizeActiveKeys, toggleCollapseKey } from '@lh-ui/share/core/collapse'
+
+normalizeActiveKeys('1')          // ['1']
+normalizeActiveKeys(['1', '2'])   // ['1', '2']
+normalizeActiveKeys(undefined)    // []
+
+toggleCollapseKey([], '1', false)       // ['1']
+toggleCollapseKey(['1'], '1', false)    // []（再点收起）
+toggleCollapseKey(['1'], '2', false)    // ['1', '2']（常规模式可多开）
+toggleCollapseKey(['1'], '1', true)     // []（手风琴：再点全收）
+toggleCollapseKey(['1'], '2', true)     // ['2']（手风琴：只保留新开的）
+```
+
+```vue
+<!-- Vue3 -->
+<div class="lh-collapse">
+  <div
+    v-for="item in items"
+    :key="item.key"
+    :class="getCollapseItemClassNames({ active: activeKeys.includes(item.key), disabled: item.disabled })"
+  >
+    <h4 class="lh-collapse__header">
+      <button
+        type="button"
+        class="lh-collapse__trigger"
+        :disabled="item.disabled"
+        :aria-expanded="activeKeys.includes(item.key)"
+        :aria-controls="`lh-panel-${item.key}`"
+        :id="`lh-trigger-${item.key}`"
+        @click="onToggle(item)"
+      >
+        <span class="lh-collapse__arrow">{{ activeKeys.includes(item.key) ? '▾' : '▸' }}</span>
+        {{ item.title }}
+      </button>
+    </h4>
+    <div
+      v-show="activeKeys.includes(item.key)"
+      class="lh-collapse__panel"
+      :id="`lh-panel-${item.key}`"
+      role="region"
+      :aria-labelledby="`lh-trigger-${item.key}`"
+    >
+      <slot :name="item.key" :item="item" />
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// 受控 + 手风琴
+const activeKeys = computed(() => normalizeActiveKeys(props.modelValue))
+function onToggle(item) {
+  if (item.disabled) return
+  emit('update:modelValue', toggleCollapseKey(activeKeys.value, item.key, props.accordion))
+}
+```
+
+```tsx
+// React：手风琴模式下 v-model 是单值还是数组由 UI 层 API 决定；
+// core 始终操作数组，UI 层在 emit 时按需转换（accordion 且只要单值时取 [0]）
+```
+
+```ts
+// uniapp：<view> + v-show；展开动画用 CSS max-height transition（<view> 支持）
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-collapse` | 基础类 |
+| `.lh-collapse__item` | 单个面板项 |
+| `.lh-collapse__item--active` | 展开态 |
+| `.lh-collapse__item--disabled` | 禁用 |
+| `.lh-collapse__header` / `__trigger` | 头部 / 触发按钮 |
+| `.lh-collapse__arrow` | 展开箭头（旋转动画） |
+| `.lh-collapse__panel` | 面板内容区 |
+
+头部底色 `--lh-fill-color`，箭头 `--lh-text-color-secondary`，禁用项 `--lh-text-disabled`，面板边框 `--lh-border-color`。
+
+## 注意事项
+
+- **`v-show` vs `v-if`**：展开动画需要 DOM 常驻（`v-show` + 高度/max-height transition）。用 `v-if` 会在销毁时无法播收起动画，体验生硬。
+- **受控值类型与手风琴**：手风琴逻辑上只该有一个展开项，但 `toggleCollapseKey` 返回的是数组（可能为 `[]` 或 `[key]`）。UI 层若对手风琴暴露单值 API，emit 时取 `[0] ?? undefined`；保持数组 API 也可以，只是调用方要约束自己。
+- **`normalizeActiveKeys` 的调用时机**：每次渲染都归一一次成本极低（一次 `Array.isArray` 判断）；若担心，用 `computed` 缓存。
+- **嵌套折叠面板**：内层的 `activeKeys` 与外层独立，DOM 嵌套时内层面板的 `role="region"` 会嵌在另一个 region 里——这是允许的，但 `aria-labelledby` 的 id 要全局唯一（用 key 拼前缀）。
+- **动画期间的高度**：`max-height` 方案要给一个足够大的上限（如 `1000px`），否则内容超高时动画速度失真；更精确的方案是 JS 量取 `scrollHeight` 再设置，core 不参与，UI 层自行实现。
+- **id 唯一性**：`aria-controls` / `aria-labelledby` 依赖 id，多个 collapse 实例共存的页面要给 key 加组件级前缀（UI 层用 `useId` 或实例 uid）。
+
+<FnPlayground module="collapse" fn="toggleCollapseKey" params='{"keys": ["1", "2"], "key": "3", "accordion": false}' />

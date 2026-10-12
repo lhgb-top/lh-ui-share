@@ -121,6 +121,20 @@ export default defineConfig({
                 { label: 'form 表单', link: '/components/form/form' },
               ],
             },
+            {
+              label: '数据',
+              collapsed: true,
+              items: [
+                { label: 'table 表格', link: '/components/data/table' },
+                { label: 'pagination 分页', link: '/components/data/pagination' },
+                { label: 'tree 树', link: '/components/data/tree' },
+                { label: 'descriptions 描述列表', link: '/components/data/descriptions' },
+                { label: 'timeline 时间线', link: '/components/data/timeline' },
+                { label: 'progress 进度条', link: '/components/data/progress' },
+                { label: 'image 图片', link: '/components/data/image' },
+                { label: 'collapse 折叠面板', link: '/components/data/collapse' },
+              ],
+            },
           ],
         },
         {
