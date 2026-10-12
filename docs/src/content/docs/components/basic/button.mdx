@@ -1,0 +1,124 @@
+---
+title: button —— 按钮
+description: 'isClickable 判定可点击性，getSize 解析有效尺寸，getClassNames 计算类型/尺寸/形状修饰类'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+按钮是组件库里被改写次数最多的组件之一：类型、尺寸、形状、加载态、禁用态、块级宽度排列组合出大量变体。`core/button` 把这些变体的**计算**抽成纯函数——UI 层只管把 props 喂进来，把类名数组绑到根元素上。
+
+## 何时使用
+
+- 各端实现 `LhButton` 时：类名完全由 `getClassNames` 产出，UI 层不自己拼字符串。
+- 需要在按钮外（如 `LhDropdown` 的触发器、`LhBackTop`）复用同一套「类型 + 尺寸」语义时，直接调 core 函数而不是抄类名。
+- **不该用它**：表单提交逻辑、节流。core 只算「现在该长什么样」，不算「点了之后干嘛」。
+
+## 导入方式
+
+```ts
+import { isClickable, getSize, getClassNames } from '@lh-ui/share/core/button'
+import type { LhButtonState } from '@lh-ui/share/core/button'
+```
+
+## 设计意图
+
+按钮的状态模型刻意做得很窄：`LhButtonState` 只含**影响类名**的字段。`loading` 与 `disabled` 都参与类名计算（`--disabled`），但「是否响应点击」是交互语义、不是视觉语义，所以单拆出 `isClickable`——加载中的按钮看起来正常但点不得，这个判定必须与类名计算独立，否则容易出现「类名加了 disabled 但事件没拦」的漏网。
+
+尺寸走两级回退（组件 props → `LH_SIZE_DEFAULT`），但注意 `getClassNames` 内部对尺寸**只吃 local size**（第二参数传死 `undefined`）：类名里的尺寸档不继承 ConfigProvider 全局尺寸，全局尺寸只作用于内联样式或下游自行决定。这是有意为之——类名是视觉契约，全局配置改的是「默认值」而非「覆盖」。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `isClickable` | `(state: { loading?: boolean; disabled?: boolean }) => boolean` | 布尔 | loading 或 disabled 任一为真即 false，全缺省为 true |
+| `getSize` | `(localSize: string \| undefined, globalSize: string \| undefined) => string` | 尺寸标识 | 两级回退，最终兜底 `'medium'` |
+| `getClassNames` | `(state: LhButtonState) => string[]` | 类名数组 | 计算 `lh-button` 及全部修饰类 |
+| `getStyle` | `() => Record<string, string>` | `{}` | 主题变量占位，恒空（见下） |
+
+`getStyle` 恒返回空对象值得说明：按钮的颜色完全由 `:root` 令牌（`--lh-primary-*` 等）驱动，ConfigProvider 的 themeVars 通过父级 CSS 变量级联到按钮，**不需要**在按钮元素上重复声明一遍。保留这个函数是为了与其它「可能有内联主题变量」的组件对称，调用方可以无脑 `v-bind`。
+
+## 类型定义
+
+```ts
+export interface LhButtonState {
+  type: LhComponentType       // 'primary' | 'success' | ... | 'default'
+  size: LhComponentSize       // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  loading: boolean
+  disabled: boolean
+  plain: boolean              // 朴素：描边而非填充
+  block: boolean              // 块级：占满父容器宽度
+  round: boolean              // 圆角
+  circle: boolean             // 正圆（通常配图标）
+}
+```
+
+## 无障碍
+
+`core/button` 不输出 aria 属性包：按钮语义由 UI 层用原生 `<button>` 元素承载，`disabled` 直接走原生属性，读屏软件自然识别。这是「能用原生语义就不造轮子」原则的体现——只有原生表达不了的东西（spinbutton、treeitem、progressbar 这类）core 才提供 `getXxxAria`。
+
+唯一需要 UI 层注意的：`loading` 态下按钮仍可被聚焦，但 `isClickable` 返回 false。此时应给按钮加 `aria-busy="true"`，让读屏软件知道「操作在进行中」而不是「按钮坏了」。
+
+## 使用示例
+
+```ts
+import { getClassNames, isClickable } from '@lh-ui/share/core/button'
+
+getClassNames({ type: 'primary', size: 'large', loading: false, disabled: false, plain: false, block: false, round: true, circle: false })
+// ['lh-button', 'lh-button--primary', 'lh-button--large', 'lh-button--round']
+
+isClickable({ loading: true, disabled: false })  // false
+isClickable({})                                   // true
+```
+
+各端接线都是「props → state → 绑定」一个套路：
+
+```vue
+<!-- Vue3 -->
+<button
+  :class="getClassNames({ type, size, loading, disabled, plain, block, round, circle })"
+  :disabled="disabled"
+  :aria-busy="loading"
+  @click="isClickable({ loading, disabled }) && emit('click', $event)"
+>
+  <LhSpinner v-if="loading" :size="14" />
+  <slot />
+</button>
+```
+
+```tsx
+// React
+const cls = getClassNames({ type, size, loading, disabled, plain, block, round, circle })
+return <button className={cls.join(' ')} disabled={disabled} aria-busy={loading} onClick={onClick} />
+```
+
+```ts
+// uniapp：类名同样进 class 绑定；loading 图标用 LhSpinner（uniapp 端 svg 用图片兜底）
+```
+
+## 样式与令牌
+
+`styles/button/index.scss` 的 BEM 结构：
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-button` | 基础类：布局、字号、过渡 |
+| `.lh-button--{primary\|success\|warning\|danger\|error\|info\|default}` | 语义类型 |
+| `.lh-button--{mini\|small\|medium\|large\|x-large}` | 尺寸档（高度、padding、字号） |
+| `.lh-button--plain` | 朴素风格：透明底 + 描边 |
+| `.lh-button--block` | 块级宽度 |
+| `.lh-button--round` / `.lh-button--circle` | 圆角 / 正圆 |
+| `.lh-button--disabled` | 禁用态（指针、透明度） |
+| `.lh-button--blank` | 空白按钮（无边无底，hover 才显形） |
+| `.lh-button__icon` / `.lh-button__text` | 图标插槽与文字 |
+| `.lh-button__loading` / `.lh-button__spinner` / `.lh-button__path` | 加载图形 |
+
+颜色全部走 `var(--lh-primary-*)` / `var(--lh-success-*)` 等令牌，暗色下由 `var-dark.scss` 自动翻转。
+
+## 注意事项
+
+- `getClassNames` 的尺寸**不继承全局配置**（见「设计意图」），若你的端要求全局尺寸影响按钮，需在 UI 层先 `getSize(local, global)` 再传入。
+- `loading` 与 `disabled` 在类名上等价（都产出 `--disabled` 视觉），但交互判定走 `isClickable`——不要用类名是否存在来推断可点击性。
+- `circle` 在样式中会强制正方形 + 正圆，给文字按钮加 `circle` 会得到奇怪的挤压。
+- `plain` 与 `type: 'default'` 组合接近不可见，这是朴素风格的预期表现。
+
+<FnPlayground module="button" fn="getClassNames" params='{"state": {"type": "primary", "size": "large", "loading": false, "disabled": false, "plain": false, "block": true, "round": false, "circle": false}}' />

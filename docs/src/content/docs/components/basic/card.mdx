@@ -1,0 +1,140 @@
+---
+title: card —— 卡片
+description: 'getCardInteractivity 区分 interactive/static 语义，isCardInteractive 判定可交互，shadow 三档修饰类'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+卡片是「内容容器」，但现代组件库的卡片常常**整张可点击**。这时它就不再是一个普通 `<div>`——它需要 button 语义、键盘可聚焦、Enter/Space 触发。`core/card` 用 `getCardInteractivity` 把这个「是不是按钮」的决策显式化，让 UI 层据此挂 tabindex 和 role。
+
+## 何时使用
+
+- 各端实现 `LhCard`：类名与交互语义由 core 计算。
+- 信息聚合展示：封面 + 标题 + 描述 + 操作区。
+- **不该用它**：需要表单控件、需要复杂嵌套交互的场景。卡片里再放按钮是允许的（操作区），但**整卡可点击 + 卡内又有按钮**会造成嵌套交互的无障碍问题，应避免。
+
+## 导入方式
+
+```ts
+import { getCardClassNames, isCardInteractive, getCardInteractivity } from '@lh-ui/share/core/card'
+import type { LhCardState, LhCardShadow, LhCardInteractivity } from '@lh-ui/share/core/card'
+```
+
+## 设计意图
+
+`isCardInteractive` 的判定是 `clickable && !loading`：加载中的卡片不可交互。这个 `&&` 看起来理所当然，但它解决了一个真实问题——卡片加载时通常显示骨架，此时点击应当被吞掉而不是触发还没准备好的操作。
+
+`getCardInteractivity` 返回 `'interactive'` / `'static'` 而不是布尔，是为了让 UI 层的代码读起来像在处理两种不同的**元素**：
+
+- `interactive`：渲染时挂 `role="button"`、`tabindex="0"`、监听键盘 Enter/Space、挂 `@click`。
+- `static`：什么语义都不挂，就是一个容器。
+
+这个分层是有必要的：直接让 UI 层写 `v-if="clickable"` 会让 role/tabindex/键盘事件三处分支各自演化，容易漏。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getCardClassNames` | `(state: LhCardState) => string[]` | 类名数组 | shadow 档位、可点击、加载修饰类 |
+| `isCardInteractive` | `(state: LhCardState) => boolean` | 布尔 | `clickable && !loading` |
+| `getCardInteractivity` | `(state: LhCardState) => LhCardInteractivity` | `'interactive'` / `'static'` | 语义角色决策 |
+
+输出示例：
+
+```ts
+getCardClassNames({ shadow: 'hover', clickable: true, loading: false })
+// ['lh-card', 'lh-card--shadow-hover', 'lh-card--clickable']
+
+getCardInteractivity({ shadow: 'hover', clickable: true, loading: false })  // 'interactive'
+getCardInteractivity({ shadow: 'always', clickable: false, loading: false }) // 'static'
+```
+
+## 类型定义
+
+```ts
+export type LhCardShadow = 'always' | 'hover' | 'never'
+export type LhCardInteractivity = 'interactive' | 'static'
+
+export interface LhCardState {
+  shadow: LhCardShadow
+  clickable: boolean
+  loading: boolean
+}
+```
+
+## 无障碍
+
+这是本组件的核心。整卡可点击时必须按 APG button pattern 实现，UI 层的三件事缺一不可：
+
+```vue
+<div
+  :class="getCardClassNames({ shadow, clickable, loading })"
+  :role="interactivity === 'interactive' ? 'button' : undefined"
+  :tabindex="interactivity === 'interactive' ? 0 : undefined"
+  @click="interactivity === 'interactive' && emit('click')"
+  @keydown.enter="interactivity === 'interactive' && emit('click')"
+  @keydown.space.prevent="interactivity === 'interactive' && emit('click')"
+>
+```
+
+注意 Space 键的 `.prevent`：原生 button 会阻止 Space 的默认滚动行为，用 div 模拟时必须手动阻止，否则卡片会一边滚动一边触发。
+
+**不要**为了省事把可点击卡片渲染成 `<button>`：button 的默认样式（inline、文字居中）与卡片布局冲突，且 button 内部放块级内容在旧浏览器有问题。div + role 是 APG 认可的等价实现。
+
+## 使用示例
+
+```ts
+import { getCardClassNames, getCardInteractivity } from '@lh-ui/share/core/card'
+
+getCardClassNames({ shadow: 'never', clickable: false, loading: true })
+// ['lh-card', 'lh-card--shadow-never', 'lh-card--loading']
+```
+
+```tsx
+// React
+const interactivity = getCardInteractivity({ shadow, clickable, loading })
+const interactive = interactivity === 'interactive'
+return (
+  <div
+    className={getCardClassNames({ shadow, clickable, loading }).join(' ')}
+    role={interactive ? 'button' : undefined}
+    tabIndex={interactive ? 0 : undefined}
+    onClick={interactive ? onClick : undefined}
+    onKeyDown={interactive ? (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() }
+    } : undefined}
+  >
+    {loading ? <Skeleton /> : children}
+  </div>
+)
+```
+
+```ts
+// uniapp：view 支持 hover-class，可用 :hover-class 模拟 hover 阴影；
+// 键盘事件仅 h5 端有效，非 h5 端只响应 tap
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-card` | 基础类：圆角、边框、背景、过渡 |
+| `.lh-card--shadow-{always\|hover\|never}` | 阴影三档：常显 / 悬停显 / 从不显 |
+| `.lh-card--clickable` | 可点击：hover 抬升 + 指针光标 + active 下压 |
+| `.lh-card--loading` | 加载态：内容区被骨架覆盖 |
+| `.lh-card__header` / `.lh-card__title` / `.lh-card__extra` | 头部：标题 + 右侧操作位 |
+| `.lh-card__cover` | 封面图区（通栏圆角衔接） |
+| `.lh-card__body` | 主体内容区 |
+| `.lh-card__footer` | 底部操作区 |
+| `.lh-card__loading-line` / `--narrow` / `--wide` | 骨架占位行 |
+
+阴影与圆角走 `--lh-shadow-*` / `--lh-radius-*` 令牌，可被 ConfigProvider 覆盖。
+
+## 注意事项
+
+- **嵌套交互陷阱**：整卡 `role="button"` 时，卡内的按钮/链接会成为 button 的后代，读屏软件会跳过它们（button 内不允许交互内容）。若必须同时存在，放弃整卡可点击，把点击区收窄到某个明确的元素。
+- `shadow` 无默认值兜底：类型要求必传，UI 层的 props 默认值通常给 `'hover'`。
+- 加载态的骨架由 `.lh-card__loading-line` 在样式层实现，core 只输出 `--loading` 类。
+- `clickable` 为 true 但没有绑 click 事件是合法的（只是视觉像可点），这是调用方的问题不是 core 的问题。
+
+<FnPlayground module="card" fn="getCardClassNames" params='{"state": {"shadow": "hover", "clickable": true, "loading": false}}' />

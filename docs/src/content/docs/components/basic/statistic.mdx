@@ -1,0 +1,131 @@
+---
+title: statistic —— 统计数值
+description: 'formatStatisticValue 固定精度 + 千位分隔，超大整数走字符串路径不丢精度，precision 经 safePrecision 净化'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+统计数值组件展示「关键数字」：日活、营收、完成率。它的核心风险不是布局而是**精度**：`Number(12345678901234567890).toFixed(2)` 在 JS 里会得到错误结果（超出安全整数），`(0.1).toFixed` 类的四舍五入也有浮点陷阱。`core/statistic` 的 `formatStatisticValue` 把这些坑在共享层一次性填掉，三端共用。
+
+## 何时使用
+
+- 各端实现 `LhStatistic`：仪表盘数字、报表摘要、完成度展示。
+- 需要把任意数值按「固定小数位 + 千位分隔」格式化的场景，即使不用组件也可以直接调 `formatStatisticValue`。
+- **不该用它**：货币符号、单位换算、时区格式化——这些是业务层的事；日期格式化用 `core/shared/date`。
+
+## 导入方式
+
+```ts
+import { formatStatisticValue, getStatisticClassNames } from '@lh-ui/share/core/statistic'
+import type { LhStatisticState } from '@lh-ui/share/core/statistic'
+```
+
+## 设计意图
+
+`formatStatisticValue` 的三条精度防线：
+
+1. **非法输入不抛错**：NaN / Infinity 原样返回 `String(value)`，不试图格式化「不是数的东西」。
+2. **precision 净化**：`toFixed(101)` 会抛 RangeError，这里先经 `shared/sanitize` 的 `safePrecision` 净化到 `[0, 100]` 整数。这条防线与 `input-number` 共用（见 [input-number](/components/form/input-number)）。
+3. **超大整数走字符串路径**：整数部分超过 `Number.MAX_SAFE_INTEGER` 时，全程不经过 Number 转换——四舍五入用字符串十进制进位（内部 `incrementDigits`），分组用字符串切片（`formatBigString`）。这是唯一能保证 `99999999999999999999` 格式化正确的方式。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `formatStatisticValue` | `(value: number \| string, state: Pick<LhStatisticState, 'precision' \| 'separator'>) => string` | 格式化字符串 | 精度 + 千位分隔 |
+| `getStatisticClassNames` | `(prefixCls?: string) => string[]` | 类名数组 | 容器类，可换前缀 |
+
+行为细节：
+
+| 输入 | 输出 | 路径 |
+| --- | --- | --- |
+| `1234567.891`, `{ precision: 2, separator: ',' }` | `'1,234,567.89'` | toFixed + 分组 |
+| `1234567.8`, `{ precision: 0, separator: '' }` | `'1234568'` | 无分隔 |
+| `'99999999999999999999'`, `{ precision: 0, separator: ',' }` | `'99,999,999,999,999,999,999'` | 字符串路径 |
+| `NaN`, 任意 | `'NaN'` | 原样返回 |
+| `'abc'`, 任意 | `'abc'` | `Number('abc')` 为 NaN |
+
+分隔符只用于**整数分组**，小数点固定为 `.`（各端展示时如需本地化小数点，在 UI 层替换）。
+
+## 类型定义
+
+```ts
+export interface LhStatisticState {
+  precision: number      // 小数位数（经 safePrecision 净化到 [0, 100]）
+  separator: string      // 千位分隔符，空串表示不分组
+}
+```
+
+## 无障碍
+
+`core/statistic` 不输出 aria 属性包。统计数值的无障碍要点在 UI 层：
+
+- 数字本身用普通文本即可被读屏，但**千位分隔逗号会被读成「逗号」**（如「1,234,567」读成「一逗号二三四...」）。应当给整个数值块提供 `aria-label`，用语言化的表述（「一百二十三万四千五百六十七」或「1 2 3 4 5 6 7 」逐位）。
+- 数值变化时的动画（滚动到目标值）是纯视觉，不承载信息；若动画中数值不可读，期间应保持旧值的 aria-label 直到落定。
+
+## 使用示例
+
+```ts
+import { formatStatisticValue } from '@lh-ui/share/core/statistic'
+
+formatStatisticValue(9876543.21, { precision: 1, separator: ' ' })
+// '9 876 543.2'
+
+formatStatisticValue(0.1 + 0.2, { precision: 2, separator: '' })
+// '0.30'  （而不是 0.30000000000000004 的一部分）
+
+formatStatisticValue('12345678901234567890', { precision: 0, separator: ',' })
+// '12,345,678,901,234,567,890'
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getStatisticClassNames()">
+  <span v-if="prefix" class="lh-statistic__prefix">{{ prefix }}</span>
+  <span class="lh-statistic__content">
+    <span class="lh-statistic__title">{{ title }}</span>
+    <span class="lh-statistic__value" :aria-label="ariaLabel">
+      {{ formatStatisticValue(value, { precision, separator }) }}
+    </span>
+  </span>
+  <span v-if="suffix" class="lh-statistic__suffix">{{ suffix }}</span>
+</div>
+```
+
+```tsx
+// React
+const text = formatStatisticValue(value, { precision, separator })
+return (
+  <div className="lh-statistic">
+    <span className="lh-statistic__content">
+      <span className="lh-statistic__title">{title}</span>
+      <span className="lh-statistic__value" aria-label={spoken}>{text}</span>
+    </span>
+  </div>
+)
+```
+
+```ts
+// uniapp：纯字符串输出，无端差异；动画各端用自带的滚动方案
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-statistic` | 基础类：布局 |
+| `.lh-statistic__title` | 标题（次级文字色、小字号） |
+| `.lh-statistic__content` | 内容区（标题 + 数值纵向排列） |
+| `.lh-statistic__value` | 数值（主文字色、大字号、等宽数字 `font-variant-numeric: tabular-nums`） |
+| `.lh-statistic__prefix` / `.lh-statistic__suffix` | 前后缀（如 ¥、%） |
+
+数值字体走 `--lh-font-family-numeric` 令牌（若有），保证数字宽度对齐。
+
+## 注意事项
+
+- **precision 上限 100**：超出会被 `safePrecision` 截断而非抛错；负数 precision 归 0。
+- **字符串输入的语义**：`formatStatisticValue('123', ...)` 会先尝试 `Number('123')`，成功则走数字路径；`'abc'` 才原样返回。超大整数字符串**必须以字符串传入**——传数字字面量 `99999999999999999999` 在 JS 源码层就已经丢精度了，core 无法救回。
+- **不要**在 UI 层自己写千位分隔的 `toLocaleString`：它受运行时 locale 影响，三端可能不一致；统一用 `formatStatisticValue`。
+- `getStatisticClassNames` 的 `prefixCls` 参数允许换前缀（默认 `lh-statistic`），用于某些端需要与既有类名共存的场景。
+
+<FnPlayground module="statistic" fn="formatStatisticValue" params='{"value": 1234567.891, "state": {"precision": 2, "separator": ","}}' />

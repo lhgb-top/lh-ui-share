@@ -1,0 +1,127 @@
+---
+title: badge —— 徽标
+description: 'getBadgeClassNames 计算隐藏/圆点/零值三种状态修饰，count 由 UI 层算好后传入'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+徽标是「通知数」的视觉载体：角落上的小红点、数字、或被隐藏的占位。`core/badge` 的状态模型把**数值语义**已经折叠成三个布尔——UI 层负责算「数字是不是 0、要不要显示」，core 只负责把这三个布尔映射成类名。
+
+## 何时使用
+
+- 各端实现 `LhBadge`：类名由 `getBadgeClassNames` 产出。
+- 需要在自定义元素上复用徽标视觉时（如 `LhAvatar` 角标、`LhMenu` 项角标），直接引 core 函数。
+- **不该用它**：需要「99+」截断、动画等逻辑——这些是 UI 层 props 的职责，core 不做数值处理。
+
+## 导入方式
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+import type { LhBadgeState, LhBadgeType } from '@lh-ui/share/core/badge'
+```
+
+## 设计意图
+
+徽标的状态里最值得注意的是 `isHidden` / `isDot` / `isZero` 三个互斥的视觉态：
+
+- `isDot`：不显示数字，只显示一个圆点（强提醒，数字未知或不必知）。
+- `isZero`：值为 0。许多设计选择「0 也不隐藏」（让用户明确看到「没有」而非「没加载」），样式上做弱化处理。
+- `isHidden`：完全隐藏（`display: none`），用于「没有新消息」。
+
+这三者的判定逻辑（`value === 0`、`hidden` prop 等）由 UI 层完成，core 只接收结论。这样跨端可以有不同的「何时隐藏」策略，而视觉表现保持一致。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getBadgeClassNames` | `(state: LhBadgeState) => string[]` | 类名数组 | 计算徽标全部类名 |
+
+输出示例：
+
+```ts
+getBadgeClassNames({ type: 'danger', size: 'small', isHidden: false, isDot: true, isZero: false })
+// ['lh-badge', 'lh-badge--danger', 'lh-badge--small', 'lh-badge--dot']
+```
+
+## 类型定义
+
+```ts
+export type LhBadgeType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhBadgeState {
+  type: LhBadgeType
+  size: LhComponentSize
+  isHidden: boolean
+  isDot: boolean
+  isZero: boolean
+}
+```
+
+## 无障碍
+
+`core/badge` 不输出 aria 属性包，但徽标的**无障碍处理在 UI 层非常重要**且常被做错：
+
+- 徽标是**装饰性的视觉强调**，内容本身（如「3 条未读」）应当由语义化文字承载。给徽标加 `aria-hidden="true"` 是安全的默认。
+- 若徽标是唯一的信息来源（如纯角标无文字），必须提供 `aria-label` 或在父元素上声明，否则读屏用户完全感知不到「有新消息」。
+- 数字徽标不要让读屏软件逐个播报（「9」「9」会读成「九九」），应格式化为「99 加」或交给 UI 层的 `aria-label`。
+
+## 使用示例
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+
+getBadgeClassNames({ type: 'primary', size: 'medium', isHidden: false, isDot: false, isZero: false })
+// ['lh-badge', 'lh-badge--primary', 'lh-badge--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span class="lh-badge-wrapper">
+  <slot />
+  <sup
+    v-if="!hidden"
+    :class="getBadgeClassNames({ type, size, isHidden: hidden, isDot, isZero: value === 0 })"
+    aria-hidden="true"
+  >
+    {{ isDot ? '' : displayValue }}
+  </sup>
+</span>
+```
+
+```tsx
+// React
+const cls = getBadgeClassNames({ type, size, isHidden, isDot, isZero })
+return (
+  <span className="lh-badge-wrapper">
+    {children}
+    {!isHidden && <sup className={cls.join(' ')} aria-hidden="true">{isDot ? '' : value}</sup>}
+  </span>
+)
+```
+
+```ts
+// uniapp：徽标在非 h5 端常用 view 绝对定位；数字截断（99+）由 UI 层 props 处理
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-badge` | 基础类：绝对定位角标、圆角、字号、字色 |
+| `.lh-badge--{primary\|success\|warning\|danger\|info\|default}` | 语义类型（底色） |
+| `.lh-badge--{small\|medium\|large}` | 尺寸档（含 `.lh-badge--mini` / `--x-large`） |
+| `.lh-badge--dot` | 圆点形态（固定小正圆，不渲染内容） |
+| `.lh-badge--zero` | 零值弱化（透明度、更小的视觉权重） |
+| `.lh-badge--hidden` | 完全隐藏 |
+| `.lh-badge__content` | 内容节点 |
+| `.lh-badge-zoom-enter-active` / `.lh-badge-zoom-leave-active` | 出现/消失的缩放过渡 |
+
+徽标位置依赖外层 `.lh-badge-wrapper` 提供 `position: relative`（各端 UI 层保证）。
+
+## 注意事项
+
+- `isDot` 与 `isZero` 同时为真时，样式中 `--dot` 优先（圆点形态不渲染内容，零值修饰无意义）——UI 层应避免这种组合。
+- 类型表里 `LhBadgeType` 有 `'default'`，但徽标最常见的还是 `'danger'`（红点），`'default'` 是中性灰。
+- 过渡类 `lh-badge-zoom-*` 是 Vue3 风格的 `-enter-active` / `-leave-active`，Vue2 端用 `lh-enter-both` mixin 对齐（见 [过渡 mixin](/reference/transition-mixins)）。
+
+<FnPlayground module="badge" fn="getBadgeClassNames" params='{"state": {"type": "danger", "size": "small", "isHidden": false, "isDot": true, "isZero": false}}' />
