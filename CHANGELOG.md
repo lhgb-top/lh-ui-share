@@ -1,5 +1,309 @@
 # @lh-ui/share
 
+## 0.4.0
+
+### Minor Changes
+
+- c873c82: # 高度令牌专项：统一控件高度 + 居中体系收尾
+
+  新增 `--lh-control-height-{mini,small,medium,large,x-large}` 令牌（`theme/common/variables.scss` + `var.scss`，
+  语义为控件**外高 border-box**），全部表单控件改引令牌，同表单混排时垂直中心与基线对齐。
+
+  ## 破坏性变化（视觉）
+
+  此前多数控件未声明 `box-sizing: border-box`，`min-height`/子元素高度并不等于外高；本次统一按外高对齐，下列控件实际渲染高度**降低**：
+
+  - **input**：由 padding 派生改为固定高度，各档 mini 28→20、small 32→24、medium 39→32、large 50→40
+  - **cascader**：42→32（原 `min-height: 32px` 被 padding 4px×2 + 边框 2px 顶到 42px，"与 select 同高"此前未兑现）
+  - **tree-select**：44→32（同上，padding 5px×2 + 边框 2px）
+  - **input-number**：small 30→24（边框在根元素，子元素高度改 `令牌 - 2px`，外高才等于令牌）
+  - **date-picker / time-picker**：约 35→32（垂直 padding 8px→6px，由 `min-height` 兜底到令牌）
+  - **input has-label**：单行输入框移除 `--has-label` 的 `padding-top: 16px`（改固定高度后不再需要，否则带 label 的输入框会比令牌高 16px）；textarea 分支保留
+
+  ## 非破坏性变化
+  - button / select medium 已在本次前置改动中改引令牌，select 的 small / large 补齐
+  - checkbox 对勾与 indeterminate 横杠由固定 `top/left` 改为 `50%` 居中（与盒子尺寸解耦）
+  - switch 的 loading 指示器由绝对定位 + `translate(-50%,-50%)` 改为 `__core` 的 flex 居中，keyframes 只留 `rotate(360deg)`，消除 base 与 keyframes 的重复硬编码
+  - input 的四个零引用死变量 `$lh-input-height*` 删除
+
+  ## 配套
+  - docs 令牌页更新：组件令牌示例改用真实存在的 `--lh-switch-knob-color`；"已知令牌缺口"清掉本次已修项
+  - customization 页的 componentTheme 示例改为有效键 `control-height-medium`（原 `control-height` 无组件消费）
+
+  ## 仍不在本次范围
+  - spinner 与 icon 同名尺寸档位不一致（small 16 vs 14 等）：改任一侧波及全库，触发条件为同槽位混用的视觉投诉，届时单独立项
+  - size 档位不齐（select/switch 仅 3 档、date/time validator 收窄、tree-select/rate/segmented/pagination 无 size）：属 API 层改动，与高度令牌解耦
+
+- c873c82: # divider 竖向支持文案
+
+  `hasContent` 在四端胶水层此前被锁死为 `direction === 'horizontal' && 有子节点`，导致
+  `needsAriaOrientation(direction, hasContent)` 要求的「有文案且竖向」恒不可达，
+  `aria-orientation="vertical"` 从未被输出。本次让竖向分割线与横向对齐，支持默认插槽文案：
+
+  - `getDividerClassNames`：`--label-left/center/right` 是横向语义，竖向文案恒居中，
+    只在横向产出该修饰类（竖向 `hasContent: true` 仍产出 `--with-text`）。
+  - `styles/divider/index.scss`：新增 `.lh-divider--vertical.lh-divider--with-text` 纵向
+    flex 布局（线段在文案上下，几何相对横向整体反转），含虚线变体的纵向渐变。
+  - `needsAriaOrientation` 不变——现在可达，且与 APG 语义一致（separator 默认横向，竖向需声明）。
+
+  各 UI 库（plus / vue2 / react / uniapp）同步放开 `hasContent` 的横向门控，竖向带文案时
+  输出 `role="separator"` + `aria-orientation="vertical"`。
+
+- 5374698: # 文档站（Astro Starlight，中英双语）
+
+  新增独立文档站，作为本包的「开发者电子说明书」：部署在 <https://www.lhgb.top/lhui/share/>。
+
+  ## 覆盖范围
+  - **指南**：项目介绍、快速开始、包入口与子路径（77 个 exports 键全表）、包结构、
+    命名约定、各端样式注入策略、各端如何消费（Vue3 / Vue2 / React / uniapp 四端接线样例）、
+    0.4.0 迁移指南。
+  - **组件 API（56 页）**：每个 core 组件一页，含定位、何时使用、导入方式、设计意图、
+    函数表（签名 + 入参 + 返回值 + 边界）、类型定义、无障碍、使用示例、样式与令牌、注意事项。
+  - **共享内核（12 页）**：sx / pt / popper / virtual / keyboard / focus-trap / a11y /
+    date / format / delay / sanitize / types。
+  - **主题系统（6 页）**：总览、预设、令牌、运行时定制、暗色模式、花纹。
+  - **参考（6 页）**与**开发（5 页）**：locales / utils / constants / types / styles /
+    transition mixin；命令、验证、脚本、发版、贡献指南。
+
+  ## 可交互试运行
+
+  每个组件页末尾的 `<FnPlayground>` 直接调用真实 core 纯函数（构建时把模块打成
+  可执行签名源码），改入参即时看返回值——文档里的每个示例值都在构建期对照源码核对过。
+
+  ## 双语
+
+  中文为主源，`src/content/docs/en/` 镜像全部页面；Starlight `locales` 配 `en` 子路径，
+  未翻译页面自动回退到中文内容 + 英文外壳。
+
+  ## 其他
+  - `pnpm docs:build` 加入 `.github/workflows/ci.yml` 门禁。
+  - README 中英双版本补文档站链接，英文版顺带修正滞后事实（组件数 55 → 56、
+    共享内核 10 → 12、`THEME_PRESETS` → `LH_THEME_PRESETS`、补 56 / 58 计数口径说明）。
+
+- c873c82: 命名规范收敛：非第三方公共符号补齐 `LH` 前缀（breaking rename）
+
+  与 plus 仓 `docs/project/development-guide.md` 的家族命名规范对齐：反域名根 `top.lhgb`，
+  JS / npm 端包名维持 `@lh-ui/*`（npm 不允许点号），非第三方符号必须带 `LH` 前缀。
+  share 仓此前未跟进，本次补齐自己这一侧。规范已写入本仓 `AGENTS.md`「命名规范」小节。
+
+  **类型 / 接口（`LhXxx`）**
+
+  - `ThemePreset` → `LhThemePreset`、`ThemePresetName` → `LhThemePresetName`、
+    `ThemeVars` → `LhThemeVars`（`src/theme/types.ts`）
+  - `SxProps` → `LhSxProps`（`core/shared/sx`，下游 plus / vue2 / uniapp 大量引用）
+  - `DOMRectLike` → `LhDOMRectLike`、`ComputePositionOptions` → `LhComputePositionOptions`、
+    `PopperPosition` → `LhPopperPosition`（`core/shared/popper`）
+  - `PtAttrs` → `LhPtAttrs`、`SanitizeNumberOptions` → `LhSanitizeNumberOptions`、
+    `VirtualRange` → `LhVirtualRange`、`AxisRange` → `LhAxisRange`（`core/shared`）
+  - `LocalePath` → `LhLocalePath`（`locales`）、`Leaves` → `LhLeaves`、
+    `LocaleOptions` → `LhLocaleOptions`（`types/locale`）
+
+  **常量（`LH_<模块>_<概念>`，默认值以 `DEFAULT` 作后缀）**
+
+  - `DEFAULT_THEME` → `LH_THEME_DEFAULT`（`core/config`）
+  - `DEFAULT_DRAWER_DIRECTION` → `LH_DRAWER_DIRECTION_DEFAULT`、
+    `DEFAULT_DRAWER_SIZE` → `LH_DRAWER_SIZE_DEFAULT`（`core/drawer`）
+  - `DEFAULT_DROPDOWN_PLACEMENT` → `LH_DROPDOWN_PLACEMENT_DEFAULT`、
+    `DROPDOWN_TRIGGERS` → `LH_DROPDOWN_TRIGGERS`（`core/dropdown`）
+  - `DEFAULT_POPCONFIRM_TYPE` → `LH_POPCONFIRM_TYPE_DEFAULT`、
+    `DEFAULT_POPCONFIRM_PLACEMENT` → `LH_POPCONFIRM_PLACEMENT_DEFAULT`（`core/popconfirm`）
+  - `POPOVER_TRIGGERS` → `LH_POPOVER_TRIGGERS`、
+    `DEFAULT_POPOVER_PLACEMENT` → `LH_POPOVER_PLACEMENT_DEFAULT`（`core/popover`）
+  - `THEME_PRESETS` → `LH_THEME_PRESETS`、
+    `PRESET_THEME_STYLE_ID` → `LH_PRESET_THEME_STYLE_ID`、
+    预设对象 `cerblue` / `songhua` / `zhusha` / `shuimo` / `golden` →
+    `LhCerblue` / `LhSonghua` / `LhZhusha` / `LhShuimo` / `LhGolden`（`theme`）
+
+  **不改（豁免，理由见 AGENTS.md「命名规范 · 豁免登记」）**
+
+  - 语言包导出 `zhCN` / `enUS`——标准 locale 命名，且是三个 UI 库的公开 API。
+  - 主题预设名的**字符串值**（`name: 'cerblue'` 等）——用户在 ConfigProvider `theme`
+    里写的配置值，改了破坏全部下游用户配置；只有 TS 标识符加前缀。
+  - 函数名（`getThemeVars` / `sxToStyle` 等）——本次只收敛常量 / 类型 / 接口 / 类。
+
+  **迁移**：全是标识符级机械替换。各 UI 库（plus / vue2 / uniapp）已同步改名，本地联动
+  即时生效；独立用户请按上方映射改 import。
+
+- c873c82: # 本地联动 + 样式治理 + 主题审计
+
+  ## 新增（样式源）
+  - **`styles/index.scss` 全量聚合**：`@use 'theme/index.scss'` + 全部组件样式，
+    由 `scripts/build-styles.mjs` 按组件清单生成。供各端 docs / dev 沙箱一行引入全量样式，
+    也作为主题定制台的导出基础。`package.json` exports 同步新增 `"./styles/index.scss"`
+    （置于 `./styles/*` 通配之前，精确优先），`files` 已含 `styles`——这是各端单仓 clone
+    回退 npm 包时解析 `@lh-ui/share/styles/index.scss` 的必要条件，随本次发版进入 npm。
+    `verify:styles` 新增「聚合与组件目录一致」检查。
+  - **过渡类名 mixin**（`styles/theme/common/transition.scss`）：
+    `lh-enter-both` / `lh-leave-both` / `lh-transition-ends`，内部双写 `-enter` 与
+    `-enter-from`（及 leave 对），收编此前散在 16 个组件里逐文件手写的过渡双份
+    （dialog / drawer / select / cascader / tree-select / date-picker / time-picker /
+    notification / menu / dropdown / table / popover / popconfirm / tooltip / message / backtop）。
+    编译产物等价，SCSS 源码消费方改用 `@include`，`verify:styles` 禁止组件再手写
+    `-enter-from` / `-leave-from`。mixin 内的 `if()` 内置函数已改为 `@if` 赋值，
+    消除 Dart Sass `[if-function]` 弃用警告。
+  - **`styles/index.scss` 聚合命名空间**：每条 `@use` 改为 `as <组件名>` 显式命名空间，
+    否则 59 条 `@use '<name>/index'` 的默认命名空间都叫 `index`，Sass modern API 下
+    直接 `There's already a module with namespace "index"` 编译失败。生成器同步修改。
+  - **暗色令牌缺口补齐**：审计全部组件引用的 `--lh-*` 令牌，补上 `var-dark.scss` 缺失的
+    暗色覆盖（共 12 处），「所有组件默认支持暗色与亮色」从约定变成可验证——
+    `verify:styles` 新增「组件引用的令牌在明/暗都有定义」检查。
+  - **`/* hairline */` 标记审计**：全部 1px 边框规则补上行级标记（65 处），
+    为未来 uniapp 的 px→rpx 注入留 sanctioned seam；`verify:styles` 新增「细边框有标记」检查。
+
+  ## 开发体验（不发版，scripts 不在 files 内）
+  - **`tsconfig.build.json` 开 `declarationMap`**：各 UI 库编辑器可从 d.ts 跳回 share 源码。
+  - **`verify:theme`**：对比度自查脚本（按真实消费配对复算每个预设的 AA 对比度），新预设门禁。
+  - **`verify:versions`**（`scripts/check-version-sync.mjs`）：家族布局下检查各 UI 库的
+    `@lh-ui/share` 依赖范围是否覆盖 share 当前版本，并拦截已废止的 `link:` / `file:` 联调形态。
+
+  ## 约定更新（AGENTS.md）
+
+  新增「本地联动」章节（带存在性守卫的 vite alias 机制、CI 不受影响、npm 包定位调整为
+  服务终端用户独立引入）与「注入契约」章节（两端 dev 注入方式、产物落位、`./style/*`
+  子路径形态差异表，明确「注入分散、内容单源」）。
+
+  > 发版顺序：share 先发，各 UI 库随后 `pnpm up @lh-ui/share` 回归（本次为 `^0.4.0`）。
+
+- c873c82: 三库审计修复批次（2026-10 审计报告 S-02 ~ S-15 / D-07 收尾）：
+
+  **修复**
+
+  - **affix**：`isAffixFixed` 底部吸附判定引入视口高度（新增第 4 参数），修复 offsetBottom 模式几乎恒固定的功能错误；同步修正测试断言与两库调用点
+  - **statistic**：`safePrecision` 下沉至 `core/shared/sanitize` 并与 input-number 共用，precision 超界/负数不再抛 RangeError
+  - **space**：预设档位改引用实际注册的令牌（small→`--lh-spacing-sm` / medium→`--lh-spacing-base` / large→`--lh-spacing-xl`），JS 与 SCSS 兜底值对齐，用户定制 `--lh-spacing-*` 不再静默失效
+  - **dialog**：遮罩硬编码 rgba 换 `var(--lh-bg-color-overlay, …)`，暗色正常翻转；Esc 关闭默认值对齐 drawer（默认 true）
+  - **image**：注册 `--lh-image-viewer-mask` 语义令牌（明/暗两套），verify:styles 门禁由红转绿（D-07 收尾）
+  - **on-primary 迁移收尾**：badge / button / steps / date-picker 约 15 处写死 `#fff` 换 `var(--lh-color-on-primary, #fff)`，浅主色预设对比度达标
+  - **button**：plain 变体烤死主色 rgba 换 `color-mix()` 派生；`@use` 语句丢空格笔误还原
+  - **table**：`buildHeaderCells` 组列跨度改为递归实际发射叶子数，DAG 共享列不再与 `flattenLeafColumns` 错位
+  - **grid**：col 定位起点随跨度钳制在 24 列坐标系内，越界组合不再生成隐式轨道撑破容器
+  - **popper**：安全网双向钳制，flip/shift 关闭时超宽弹出层不再从视口高侧整体溢出
+  - **transfer**：移动键集合运算由 O(n²) 降为 Set
+  - **form**：required 规则的显式空串 message 按内置规则同口径原样使用
+  - **utils**：throttle 补尾沿执行与 cancel；debounce 补 cancel / flush
+  - **backtop / loading**：补 SSR 环境守卫（与 popper / focus-trap 风格一致）
+  - **avatar**：头像字按码点提取，emoji 等增补平面字符不再截半
+  - **导出面**：新增 `./package.json` 导出；移除空文件 `src/types/components/utils.ts`；`grid-demo-cell` 文档演示样式迁出组件样式源（改由 plus 文档站自定义样式承载）
+
+### Patch Changes
+
+- c873c82: hairline 规范随 uniapp v3 px 直出废止（bugfix-log D-01 / D-02 / D-05）：
+
+  - `scripts/verify-styles.mjs` 移除第 6 项「1px 细边框必须带 `/* hairline */` 行级标记」校验（七项→六项），头部注释与尾部通过信息同步
+  - `AGENTS.md` 红线第 4 条废止：hairline 标记原供 uniapp 的 px→rpx 转译跳过 1px 声明，v3 不再转译即失去用途；`styles/` 内既有的 65 处标记保留为普通注释，新增 1px 边框无需再标记
+  - `README.md` 组件计数「55 个」改为「56 个」并新增计数口径说明：`src/core/config/` 与 `styles/config-provider/` 是同一组件（目录名不一致），`styles/layout` / `styles/tree-select` 两个组件无 core 纯函数层（逻辑仍在各 UI 库），故 core 计 56、styles 计 58
+
+  纯治理性改动（脚本门禁 + 文档），不改变运行时产物；`pnpm verify:styles` 实跑通过（六项、67 个 scss 文件）。
+
+- c873c82: # 补齐 divider borderStyle 单测
+
+  迁移核对 plus 的 `tests/unit/core/` 与本仓库的 `tests/unit/core/` 时发现：`getDividerClassNames`
+  的 `borderStyle` 优先级逻辑（显式 `borderStyle` 压过 `dashed` prop、`dotted` 修饰类）在 plus 侧有
+  3 个用例，本仓库此前缺测。逻辑本身已随迁移完整保留，本次只补用例，无运行时改动：
+
+  - `adds dashed class from borderStyle even when dashed is false`
+  - `adds dotted class from borderStyle`
+  - `prefers borderStyle over the dashed prop`
+
+  背景：plus 迁移到消费 `@lh-ui/share` 后会删除自身的 `tests/unit/core/`（core 单测唯一一份在本仓库），
+  补齐后 coverage 不回退。
+
+- 9e21865: # 拆除 date-picker 循环依赖，修正 notification 的类型值导入
+
+  - `core/date-picker`：`formatDate` / `parseDate` 下沉到共享内核 `core/shared/date`，
+    `adapter.ts` 改为直接依赖内核，不再反向 import `logic.ts`。此前
+    `logic ↔ adapter` 的二元值环会在下游（如 lh-ui-plus 的 UMD 全量打包）触发
+    Rollup 循环依赖告警；拆环后只剩 `logic → adapter` 单向。
+    `@lh-ui/share/core/date-picker` 的导出面一字不变（formatDate / parseDate 由
+    logic.ts 按原路径转发）。
+  - `core/notification`：`LhIconName` 只用于类型位置，原值导入会把 `icon/svgs.ts`
+    的大对象打进 notification 产物 chunk，改为 `import type`。
+
+- c873c82: GUI 回归测试发现的缺陷修复（share 侧逻辑/样式/语言包，随 share 发版对 @lh-ui/vue3 生效）。
+
+  - **Form 必填文案优先级**（BUG-02）：`validateFormField` 在空值分支用
+    `rules.find((rule) => rule.required)` 取首个必填规则。组件层在 `required` 为真时会合成一条
+    无 `message` 的 `{ required: true }` 规则并排在用户规则之前，`find` 命中合成规则后回退通用文案，
+    吞掉用户自定义 `message`。现改为先取「显式提供了 message 的必填规则」，取不到再回退首个必填规则；
+    `message` 显式提供（含空串）仍原样使用，仅 `undefined` 回退通用文案。
+  - **深主色预设暗色提亮**（BUG-07）：水墨（`#2C2C2C`）等深主色预设切暗色后，主色对暗色页面底
+    （`#1A1A2E`，与 `var-dark.scss` 同源）对比度不足 3:1，主要按钮近乎不可见。新增
+    `buildPresetDarkVars(vars)`：在既有 `primary-color-bg` / `selected-color` 两条暗色覆盖之外，
+    按 WCAG 相对亮度判定，主色对暗底对比度低于 3:1 时追加
+    `--lh-primary-color: color-mix(in srgb, <主色字面值> 55%, #fff)`（字面值代入，避免 CSS 自引用）
+    及配套 hover/active，并改用墨字 `#101410` 保证按钮文字对比度。浅主色预设（松花绿/藤黄）不动。
+    `buildPresetStyleText` 与 docs 主题台的预览区都调用同一函数，导出文件与预览一致。
+  - **Calendar 面板标题 locale 化**（F-03）：新增 `datepicker.panelTitle` 模板，
+    中文 `'{year}年{month}'`（→「2026年10月」）、英文 `'{month} {year}'`（→「Oct 2026」），
+    月份名复用既有 `month1~12`，组件层不再硬编码中文标题格式。
+  - **花纹背景消费面**（F-12）：`bg-pattern` 令牌原本只有 button 消费，card / dialog / drawer /
+    dropdown / icon / input / popconfirm / popover / steps / tooltip 十个组件的根容器补上
+    `background-image: var(--lh-bg-pattern, none)` 及 blend-mode / repeat / size 四件套，
+    默认仍为 `none`，仅在用户显式配 `bg-pattern` 且组件在 `patternComponents` 白名单内时生效。
+  - **Table 表头横向滚动**（BUG-04 配套）：`.lh-table__header` 加 `overflow-x: auto`，
+    滚动条隐藏（`scrollbar-width: none` + `::-webkit-scrollbar { display: none }`），
+    横向滚动只由表体那一根承担，配合组件层的 scrollLeft 双向同步。
+
+- c873c82: verify:theme 在 Windows 上无法运行：动态 `import()` 传的是 Windows 绝对路径
+  （如 `D:\...\es\theme\index.js`），Node 的 ESM 加载器只接受 `file://` URL，
+  直接抛 `ERR_UNSUPPORTED_ESM_URL_SCHEME`（CI 跑 ubuntu 不触发，本地发版必踩）。
+  改用 `pathToFileURL(entry).href` 再 import。纯脚本修复，不改变运行时产物。
+- c873c82: # 表单控件居中与间距修复（cascader/button/switch/date/time-picker/pagination/spinner）
+
+  全面排查各组件「图标在输入框中垂直居中」与「旋转动画居中」时定位出一批 scss 层缺陷，本次统一修复。
+
+  > 与「高度令牌专项」（见 `control-height-tokens.md`）同批落地、相互配套：本文件记录**居中与间距**侧的修复，
+  > 控件**外高统一**由令牌专项承载。两项 changeset 同时消费、同期发版，changelog 会合并展示。
+
+  ## 修复内容
+  - **cascader**：`.lh-cascader__input` / `.lh-cascader__tags` 此前零样式，`__input-inner` 的 `flex:1; min-width:0` 是死代码——补中间层 flex 容器规则后输入框才能随容器收缩，窄容器下不再把右侧清空/箭头图标顶出
+  - **button**：`.lh-button__loading` 的 `margin-right: 4px` 与 `&__loading + &__text` 的 `margin-left: 4px` 双写，导致圆形 loading-only 按钮的 spinner 向左偏心约 2px、loading 态与文字间距 8px（非 loading 态只有 4px）。去掉 `margin-right`，间距统一由相邻选择器控制
+  - **switch**：loading 指示器居中于轨道，checked 时滑块右移与之重叠，新增 `&--loading &__core::after { opacity: 0 }` 在 loading 期间隐藏滑块
+  - **date-picker / time-picker**：`__input-inner` 补 `flex:1; min-width:0`，长占位符不再顶出右侧图标；`__icon` 补 `flex-shrink: 0`
+  - **pagination**：跳页框 `height: 30px` 缺 `line-height`，垂直位置原交 UA 默认处理，补 `line-height: 30px`
+  - **spinner**：补 `vertical-align: middle`，行内语境下与 LhIcon 对齐、不再落基线
+
+  ## 已并入高度令牌专项、不在本文件范围
+
+  下列缺陷在排查时一并定位，但属控件外高体系问题，由 `control-height-tokens.md` 承载（此处不重复记录，避免 changelog 双开）：
+
+  - 各表单控件外高不统一（input 39 / cascader 42 / tree-select 44 / date-time 35 / input-number 34），根因是缺 `--lh-control-height-*` 令牌且多数控件未声明 `box-sizing: border-box`
+  - input `--has-label` 的非对称 `padding-top: 16px`、checkbox 对勾固定 `top:2/left:5`、switch 的 `translate(-50%,-50%)` 在 base 与 keyframes 重复硬编码
+
+  仍未处理的体系问题（单列后续专项）：spinner 与 icon 同名尺寸档位不一致（small 16 vs 14、medium 24 vs 16 等）。
+
+- c873c82: # Steps 标题换行修复 + 横向定宽折行
+
+  `title` 在容器宽度不足时被挤压换行（步骤项 `flex:1` 且 `__main` 为 `min-width:0`，标题无
+  `white-space` 规则），连接线与圆圈错位、整行高度被撑乱。本次从「换行」这一本质入手，让标题
+  保持一行、由步骤项整体承担折行，横向纵向两种方向都不再换标题。
+
+  ## 修复内容
+  - **标题一行**：`.lh-steps__title` 补 `white-space: nowrap; overflow: hidden;
+text-overflow: ellipsis`，宽度不足时省略号截断，绝不换行（横向纵向均适用）
+  - **横向定宽折行**：`--horizontal` 开 `flex-wrap: wrap`（行间距取 `--lh-spacing-lg`），
+    步骤项改为 `flex: 1 1 var(--lh-steps-item-basis)`。宽容器下仍是等分一行、视觉不变；
+    装不下基准宽度时整步折到下一行，而不是逼标题换行
+  - **新增组件级变量** `--lh-steps-item-basis`（默认 `160px`，定义在 `.lh-steps` 上），
+    可通过各端 UI 库的 `themeVars` 机制覆盖，调节折行节奏
+  - **行末连接线**：横向新增 `lh-steps__item--line-last` 类，行末项的 `::after` 连接线
+    `display: none`，不再指向行尾空白。是否为行末项由 UI 层测量 `offsetTop` 后经
+    `getStepsLineLastIndices` 计算，纯函数 + 单测随附
+  - **顺带修复「末项连接线首屏全漏画」**：连接线的「非末项」判定原本依赖 JS 类
+    `lh-steps__item--last`，而该类基于子项注册总数计算——子项在各自 setup 阶段渲染，
+    此时后续兄弟尚未注册，导致**每一个步骤在首屏（含 SSR/SSG 快照）都被判为末项**，
+    连接线全部被隐藏，一个 tick 后才自纠正。现改为结构性 `:last-child`，纯 CSS、
+    任意渲染时机都正确；`LhStepClassState` 的 `isLast` 字段与 `lh-steps__item--last`
+    类随之移除（vue2 仓无 steps 组件，无下游影响）
+
+  ## core 变更
+  - `getStepsLineLastIndices(offsetTops)`：按各步骤项纵向偏移判定每行最后一项索引
+  - `LhStepClassState` 新增可选 `lineLast`，移除 `isLast`；`getStepClassNames` 据此输出
+    `lh-steps__item--line-last`，不再输出 `lh-steps__item--last`
+
+  > 行末连接线的测量由各端 UI 库（如 lh-ui-plus）在 Vue/React 层完成，本仓只提供判定函数
+  > 与样式钩子，不引入框架 API（红线 1）。
+
 ## 0.3.0
 
 ### Minor Changes
