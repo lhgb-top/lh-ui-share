@@ -4,7 +4,7 @@
 
 [English](./README.en.md) | 中文
 
-📚 **文档站**：<https://www.lhgb.top/lhui/share/> —— 每个纯函数的签名、返回值、边界与示例都可交互试运行（中英双语）。
+🌐 **官网 / 官方文档**：<https://www.lhgb.top/lhui/share/> · 生态门户 <https://lhui.lhgb.top> —— 每个纯函数的签名、返回值、边界与示例都可交互试运行（中英双语）。
 
 各框架 UI 层（lh-ui-vue2 / lh-ui-react / lh-ui-uniapp）以 npm 依赖消费本包。**本包不依赖任何 UI 库、任何框架**——`vite` 构建配置 `external: []`，且 `verify:dts` 会扫描产物 `.d.ts`，一旦出现 `vue` / `react` / `@dcloudio/*` 或旧别名导入即失败。
 

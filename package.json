@@ -5,19 +5,22 @@
   "description": "lh-ui 家族唯一的框架无关共享层：core 纯函数 / theme / constants / locales / types / utils / 组件样式源",
   "keywords": [
     "lh-ui",
+    "lh ui",
     "ui",
     "components",
     "design-system",
     "theme",
     "framework-agnostic",
-    "headless"
+    "headless",
+    "东方美学组件库",
+    "国风UI"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/lhgb-top/lh-ui-share.git"
   },
-  "homepage": "https://github.com/lhgb-top/lh-ui-share#readme",
+  "homepage": "https://www.lhgb.top/lhui/share/",
   "bugs": {
     "url": "https://github.com/lhgb-top/lh-ui-share/issues"
   },

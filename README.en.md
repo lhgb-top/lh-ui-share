@@ -4,7 +4,7 @@
 
 English | [中文](./README.md)
 
-📚 **Docs site**: <https://www.lhgb.top/lhui/share/> — every pure function's signature, return value, edge cases, and runnable examples (bilingual Chinese / English).
+🌐 **Official site / Docs**: <https://www.lhgb.top/lhui/share/> · Ecosystem portal <https://lhui.lhgb.top> — every pure function's signature, return value, edge cases, and runnable examples (bilingual Chinese / English).
 
 Each framework UI layer (lh-ui-vue2 / lh-ui-react / lh-ui-uniapp) consumes this package as an npm dependency. **This package depends on no UI library and no framework** — the `vite` build sets `external: []`, and `verify:dts` scans the emitted `.d.ts`, failing on any `vue` / `react` / `@dcloudio/*` or stale-alias import.
 
