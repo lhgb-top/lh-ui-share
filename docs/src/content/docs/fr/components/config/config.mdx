@@ -1,0 +1,167 @@
+---
+title: 'config configuration globale —— Configuration'
+description: 'mergeConfig fusion à trois niveaux, LH_THEME_DEFAULT=cerblue, chaîne de résolution getEffectiveXxx (core ne renvoie que le nom du préréglage, l’injection DOM se fait dans la couche UI)'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ConfigProvider est « l'entrée unique des commutateurs globaux » : l'application enveloppe `<LhConfigProvider :size="..." :theme="..." :locale="...">`, et la taille, le thème, la langue et la baseline z-index par défaut de tous les composants internes changent uniformément. Il ne rend aucun contenu, il fournit uniquement un **contexte de configuration**. `core/config` gère la fusion des configurations et la chaîne de résolution des valeurs — la manière dont elles prennent effet concrètement (injection des variables CSS, instance locale) se trouve dans la couche UI.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `<LhConfigProvider>` : enveloppe de la racine de l'application, bascule de thème, bascule d'internationalisation, ajustement global de la taille.
+- Scénarios nécessitant d'**unifier les valeurs par défaut entre les composants**, avec une **bascule possible à l'exécution**.
+- **À ne pas utiliser pour** : la taille ou le thème d'un composant seul (transmettez directement les props au composant ; ConfigProvider est la couche des « valeurs par défaut »).
+
+## Importation
+
+```ts
+import {
+  mergeConfig,
+  getEffectiveSize,
+  getEffectiveZIndex,
+  getEffectiveTheme,
+} from '@lh-ui/share/core/config'
+import {
+  LH_THEME_DEFAULT,
+  createDefaultConfig,
+} from '@lh-ui/share/core/config'
+import type { LhConfigState } from '@lh-ui/share/core/config'
+```
+
+## Intentions de conception
+
+**Priorité de la fusion à trois niveaux** : `mergeConfig(defaults, global, local)` fusionne en aplatissant, les valeurs ultérieures couvrant les précédentes — `valeur par défaut < global (ConfigProvider) < local (props du composant)`. `createDefaultConfig()` fournit la base, afin que tous les champs aient une valeur (la configuration par défaut ne sera jamais undefined, ce qui casserait le déstructurage en aval).
+
+**La valeur par défaut de `size` est undefined et non 'medium'** : c'est délibéré — undefined signifie « non configuré, on utilise la valeur par défaut des jetons SCSS ». Si core fournissait un 'medium', il se désolidariserait du palier par défaut de `--lh-control-height-medium` dans `styles/`, et changer le palier par défaut des jetons n'aurait plus d'effet. **undefined est le signal « repli vers la couche styles »**.
+
+**`getEffectiveTheme` ne renvoie que le nom du préréglage** : il renvoie une chaîne comme `'cerblue'`, **jamais l'objet vars, et ne touche pas au DOM**. La couche UI récupère le nom, appelle `getThemeVars(name)` pour obtenir les vars, puis `buildPresetStyleText(vars)` pour générer le texte du `<style>` à injecter. Cette séparation maintient core à zéro DOM (ligne rouge 1) et laisse à la couche UI le contrôle du moment et de l'emplacement de l'injection.
+
+**Double source pour `LH_THEME_DEFAULT = 'cerblue'`** : le nom du préréglage par défaut et la couleur primaire par défaut de `styles/theme/common/variables.scss` (`$lh-primary`) doivent rester synchronisées — `theme.spec.ts` en est le gardien de régression. Modifier le thème par défaut exige de toucher des deux côtés, sinon le préréglage injecté côté JS et la couleur par défaut compilée par SCSS divergent.
+
+**La baseline z-index est 2000** : les composants de couche flottante (dialog/drawer/popover/dropdown…) incrémentent à partir de cette baseline. Rehausser globalement la baseline sert aux scénarios de conflit « la page métier contient des éléments à z-index plus élevé » — c'est l'une des justifications classiques de l'existence de ConfigProvider.
+
+## Table des fonctions
+
+| Fonction / constante | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `createDefaultConfig` | `() => LhConfigState` | Configuration par défaut | Valeurs de base |
+| `mergeConfig` | `(defaults, global, local) => LhConfigState` | Configuration fusionnée | défaut < global < local |
+| `getEffectiveSize` | `(localSize?, globalSize?) => LhComponentSize \| undefined` | Taille effective | undefined = repli sur la couche styles |
+| `getEffectiveZIndex` | `(localZIndex?, globalZIndex) => number` | z-index effectif | local ?? global |
+| `getEffectiveTheme` | `(localTheme?, globalTheme?) => LhThemePresetName` | Nom de préréglage effectif | Ne renvoie que le nom, ne touche pas au DOM |
+
+Constante : `LH_THEME_DEFAULT = 'cerblue'`.
+
+## Définitions de types
+
+```ts
+export interface LhConfigState {
+  size: LhComponentSize | undefined    // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  zIndex: number                       // Baseline des couches flottantes
+  locale: LhComponentLanguage          // 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR' | 'de-DE' | 'fr-FR'
+  theme: LhThemePresetName             // Nom de préréglage (un nom personnalisé enregistré via registerTheme est également légal)
+}
+```
+
+Les cinq paliers de `size` proviennent de `LH_SIZE_CONST` (`src/constants`), où `old: 'x-large'` est un alias sémantique du **palier dédié aux personnes âgées** (grands caractères, grands contrôles), de valeur identique à `x-large` — pour offrir aux scénarios d'accessibilité liée à l'âge une entrée de configuration dotée de sens.
+
+Les six langues de `locale` proviennent de `LH_LANGUAGE_CONST`, avec `LH_LANGUAGE_DEFAULT = 'zh-CN'` par défaut.
+
+## Accessibilité
+
+Le lien direct entre ConfigProvider et l'accessibilité est unique : **la bascule de locale change la langue des textes intégrés aux composants** (par exemple « 该字段为必填项 » / « This field is required » pour la validation de formulaire). Cela descend via une instance `lhlocale` de `locales` — voir `core/locales` et la page `reference/locales`.
+
+- **Périmètre d'effet de la bascule de langue** : la locale est transmise via le context par ConfigProvider, et **les composants déjà rendus y répondent immédiatement** (mise à jour réactive). En SSG, la langue du premier écran est déterminée à la compilation, puis basculée selon les réglages utilisateur après l'activation côté client.
+- **La bascule de thème ne nécessite pas de re-rendu** : le thème prend effet via l'injection de variables CSS, et les styles des composants consomment `var(--lh-*)` — basculer de thème ne change que le contenu de l'élément style, le DOM des composants reste immobile. C'est un découpage de conception essentiel.
+
+## Exemples d'utilisation
+
+```ts
+import {
+  mergeConfig, getEffectiveSize, getEffectiveZIndex, getEffectiveTheme, createDefaultConfig,
+} from '@lh-ui/share/core/config'
+
+createDefaultConfig()  // { size: undefined, zIndex: 2000, locale: 'zh-CN', theme: 'cerblue' }
+
+mergeConfig(
+  {},                       // Niveau composant (généralement vide)
+  { size: 'small', theme: 'ink' },  // ConfigProvider global
+  { size: 'large' },        // Props locales
+)
+// { size: 'large', zIndex: 2000, locale: 'zh-CN', theme: 'ink' }
+
+getEffectiveSize('large', 'small')   // 'large'
+getEffectiveSize(undefined, 'small') // 'small'
+getEffectiveSize(undefined, undefined)  // undefined (repli sur le palier SCSS par défaut)
+
+getEffectiveZIndex(3000, 2000)  // 3000
+getEffectiveZIndex(undefined, 2500)  // 2500
+
+getEffectiveTheme('ink', 'cerblue')   // 'ink'
+getEffectiveTheme(undefined, 'cerblue')  // 'cerblue'
+getEffectiveTheme(undefined, undefined)  // 'cerblue' (repli LH_THEME_DEFAULT)
+```
+
+```ts
+// Couche UI : injection du thème (uniquement dans un élément <style>, jamais en style
+// inline sur documentElement — le style inline a une spécificité supérieure à tout le bloc
+// de variables sombres de var-dark.scss, ce qui fausserait la palette en mode sombre)
+import { getThemeVars, buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyTheme(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+  const styleText = buildPresetStyleText(vars)
+  let el = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!el) {
+    el = document.createElement('style')
+    el.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(el)
+  }
+  el.textContent = styleText
+}
+```
+
+```vue
+<!-- Vue3 : enveloppe racine -->
+<template>
+  <LhConfigProvider :size="size" :theme="theme" :locale="locale">
+    <App />
+  </LhConfigProvider>
+</template>
+```
+
+```tsx
+// React : distribution via createContext + useContext ; la bascule de thème
+// appelle applyTheme dans un effect
+```
+
+```ts
+// uniapp : la configuration globale est stockée dans globalData ou un store ;
+// l'injection du thème suit le même modèle (cible h5 : écriture d'un <style>,
+// côté mini-programme : transmission des variables CSS une par une via la propriété
+// style de la page — les mini-programmes ne gèrent pas l'injection de <style>)
+```
+
+## Styles et jetons
+
+ConfigProvider n'a pas de styles propres. Les jetons qu'il influence :
+
+| Configuration | Jetons affectés |
+| --- | --- |
+| `size` | `--lh-control-height-mini/small/medium/large/x-large` (sélection via la classe de size du composant) |
+| `theme` | Tout le jeu de jetons `--lh-*` (`buildPresetStyleText` génère un bloc `:root`) |
+| `zIndex` | La baseline des `--lh-z-index-{dialog/drawer/popover/...}` |
+
+## Remarques
+
+- **`size: undefined` est une fonctionnalité, pas un oubli** : cela signifie « repli sur le palier par défaut de la couche styles ». `getEffectiveSize` remonte en chaîne jusqu'à undefined au lieu de coder en dur 'medium' — modifier le palier SCSS par défaut suffit à changer la taille globale par défaut.
+- **Le thème ne s'écrit que dans un élément `<style>`** : les commentaires de `buildPresetStyleText` en avertissent explicitement — écrire un style inline sur `documentElement` aurait une spécificité supérieure au bloc de couverture sombre intégral de `var-dark.scss`, ce qui dégraderait la palette du mode sombre.
+- **`theme` accepte un nom personnalisé enregistré via registerTheme** : après `registerTheme(preset)`, la prop theme du ConfigProvider peut recevoir ce nom personnalisé — `getThemeVars` le trouvera. Les préréglages ne se limitent pas aux 5 intégrés.
+- **ConfigProvider imbriqués** : le local couvre le global, l'interne couvre l'externe. Usage typique : une zone nécessitant des tailles plus grandes (une console à écran tactile, par exemple) que l'on enveloppe séparément.
+- **locale et theme n'agissent pas de la même manière** : la locale passe par le context (flux de données réactif), le thème par l'injection de variables CSS (manipulation du DOM). La bascule de locale est effectuée par la couche UI via `lhlocale.setLocale()` ; la bascule de thème par la couche UI via `applyTheme` — ne mélangez pas les deux dans un seul effect.
+- **Scintillement du thème en SSR** : le serveur ne connaît pas le thème de l'utilisateur (stocké dans cookie/localStorage) ; le premier écran est rendu avec le thème par défaut, puis la bascule après activation côté client provoque un clignotement. La solution courante consiste à injecter un script synchrone dans `<head>` qui lit localStorage à l'avance pour poser `data-theme` — cela relève de la couche déploiement, core n'intervient pas.
+- **Le sens de la baseline z-index** : la valeur 2000 laisse à la couche métier l'espace 0~1999 (barres de navigation, couches flottantes personnalisées). Si votre métier comporte un élément à z-index 9999 qui masque les couches flottantes, remontez la baseline globale plutôt que de modifier les composants un par un.
+
+<FnPlayground module="config" fn="mergeConfig" params='{"defaults": {}, "global": {"size": "small", "theme": "ink"}, "local": {"size": "large"}}' />

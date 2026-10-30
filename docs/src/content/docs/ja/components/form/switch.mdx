@@ -1,0 +1,141 @@
+---
+title: switch —— スイッチ
+description: 'getSwitchLabel はアクティブ / 非アクティブのメッセージを取得、getSwitchAria は role=switch セマンティクスの属性パックを出力'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+スイッチは「2 状態コントロール」です：オンかオフで、3 つ目の状態はありません。見た目はチェックボックス（2 状態）に似ていますがセマンティクスが異なります——チェックボックスは「あるオプションを選択しているか」を表し、スイッチは「ある機能が有効かどうか」を表します。APG はこのために専用の `role="switch"` を定義しています。
+
+## いつ使うか
+
+- 各端の `LhSwitch` 実装：設定項目の有効化 / 無効化、権限スイッチ、購読状態。
+- 2 状態で「即時反映」のセマンティクスを持つ操作（チェックしたらすぐに反映され、送信を待たない）。
+- **使うべきでない**：フォーム内の複数選択（checkbox を使う）；複数のバリエーションからの選択（segmented か radio を使う）。
+
+## インポート方法
+
+```ts
+import { getSwitchClassNames, getSwitchLabel, getSwitchAria } from '@lh-ui/share/core/switch'
+import type { LhSwitchState } from '@lh-ui/share/core/switch'
+```
+
+## 設計意図
+
+`getSwitchAria` が `disabled || loading` をマージするのは意図的なものです：ロード中のスイッチと無効化されたスイッチはアクセシビリティの観点で**挙動が同じ**です——どちらも操作不可能であり、スクリーンリーダーは「使用不可」と読み上げるべきで、「使用できるが押しても反応しない」とは読み上げるべきではありません。
+
+`getSwitchLabel` は `activeText` / `inactiveText` を返します：スイッチのメッセージはつまみの両側に配置され、これが checkbox に対するスイッチの視覚的な優位点です——状態が一目で読め、位置の記憶だけに頼りません。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getSwitchClassNames` | `(state: LhSwitchState) => string[]` | クラス名配列 | checked / disabled / loading / size 修飾 |
+| `getSwitchLabel` | `(state: LhSwitchState) => string` | メッセージ | 選択中なら activeText、さもなくば inactiveText |
+| `getSwitchAria` | `(state: Pick<LhSwitchState, 'checked' \| 'disabled' \| 'loading'>) => LhAriaAttrs` | aria 属性パック | `role="switch"` セマンティクス |
+
+出力例：
+
+```ts
+getSwitchClassNames({ checked: true, disabled: false, loading: false, name: '', size: 'medium', activeText: '', inactiveText: '' })
+// ['lh-switch', 'lh-switch--checked']
+
+getSwitchLabel({ checked: true, activeText: 'オン', inactiveText: 'オフ' })  // 'オン'
+
+getSwitchAria({ checked: true, disabled: false, loading: false })
+// { role: 'switch', 'aria-checked': true }
+
+getSwitchAria({ checked: false, disabled: false, loading: true })
+// { role: 'switch', 'aria-checked': false, 'aria-disabled': true }
+```
+
+## 型定義
+
+```ts
+export interface LhSwitchState {
+  checked: boolean
+  disabled: boolean
+  loading: boolean
+  name: string            // フォーム送信時のキー名
+  size: LhComponentSize
+  activeText: string      // オンの時のメッセージ
+  inactiveText: string    // オフの時のメッセージ
+}
+```
+
+## アクセシビリティ
+
+`getSwitchAria` は APG の switch パターンの属性パックです。**鍵となるのはネイティブの input を使うかカスタムコントロールを使うかです**：
+
+```ts
+// 方案 A（推奨）：ネイティブ <input type="checkbox"> + role="switch" でセマンティクスを上書き
+// ブラウザ組み込みの checkbox セマンティクスが role="switch" で強化され、aria-checked は :checked と自動的に同期、
+// キーボードの Space による切り替え、フォーム送信がすべて無料で手に入る
+<input type="checkbox" role="switch" :aria-checked="checked" />
+
+// 方案 B：純粋なカスタムコントロール（div で模倣）は、すべてのセマンティクスを手動で掛けなければならない
+// getSwitchAria はこのためにある——role + aria-checked + aria-disabled
+```
+
+uniapp などの非 h5 端では往々にして方案 B しか選べず（ネイティブ checkbox のスタイルをカスタマイズしにくい）、その場合 `getSwitchAria` は必需品です。
+
+## 使用例
+
+```ts
+import { getSwitchClassNames, getSwitchAria } from '@lh-ui/share/core/switch'
+
+getSwitchAria({ checked: true, disabled: false, loading: false })
+// { role: 'switch', 'aria-checked': true }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSwitchClassNames({ checked, disabled, loading, name, size, activeText, inactiveText })">
+  <span class="lh-switch__label lh-switch__label--left">{{ inactiveText }}</span>
+  <div class="lh-switch__core" v-bind="getSwitchAria({ checked, disabled, loading })" @click="toggle">
+    <LhSpinner v-if="loading" class="lh-switch__loading" :size="12" />
+  </div>
+  <span class="lh-switch__label lh-switch__label--right">{{ activeText }}</span>
+</div>
+```
+
+```tsx
+// React
+const aria = getSwitchAria({ checked, disabled, loading })
+return (
+  <div className="lh-switch">
+    <div className="lh-switch__core" {...aria} onClick={() => !disabled && !loading && onChange(!checked)} />
+  </div>
+)
+```
+
+```ts
+// uniapp：view でスライダーを模倣；非 h5 端では role / aria のサポートが限られるが、getSwitchAria の成果物は安全に退化できる
+// （undefined の値を持つ属性はフレームワークに無視され、無効なマークアップは生まれない）
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-switch` | 基底クラス |
+| `.lh-switch--checked` | オン状態（つまみが右に移動し、底色が主色に） |
+| `.lh-switch--checked__core` | オン状態のつまみ（`--checked` との衝突を避けるネスト記法） |
+| `.lh-switch--{small\|large}` | サイズのバリエーション |
+| `.lh-switch--disabled` / `--loading` | 無効 / ロード中 |
+| `.lh-switch__core` | スライドレール |
+| `.lh-switch__label` | 両側のメッセージ |
+| `.lh-switch__loading` | ロード中の spinner |
+
+オン色は `var(--lh-primary-color)`、オフ色は `--lh-fill-color`（ニュートラルグレー）です。
+
+既知の問題（「高度トークン専用」に記録）：スイッチのつまみの `translate(-50%,-50%)` が base と keyframes の**両方で重複してハードコード**されており、サイズを変えるときは 2 箇所を同時に直す必要があります。
+
+## 注意事項
+
+- **`aria-checked` と視覚の一貫性**：カスタムコントロールの `checked` 状態は `getSwitchAria` の出力と同源でなければなりません。さもなくば「aria はオン、見ためはオフ」という状態に陥ります。
+- **loading 状態はクリックを飲み込む**：ロード中のクリックで値を切り替えてはならず、UI 層の click ハンドラは `disabled || loading` を判定します。
+- **メッセージの方向**：`activeText` はオン側（通常は右）に、`inactiveText` はオフ側に貼られます；メッセージが空のときはスタイルが自動的に両側のスペースを畳みます。
+- switch と checkbox の選択基準：**即時反映するかどうか**。スイッチは切り替えるとすぐに反映され、チェックボックスは通常フォームの送信に伴います。
+
+<FnPlayground module="switch" fn="getSwitchAria" params='{"state": {"checked": true, "disabled": false, "loading": false}}' />

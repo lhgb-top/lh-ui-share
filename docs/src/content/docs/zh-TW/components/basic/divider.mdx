@@ -1,0 +1,153 @@
+---
+title: divider —— 分割線
+description: 'getDividerRole 區分 separator/presentation 語義，needsAriaOrientation 決定垂直方向宣告，borderStyle 優先於 dashed'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+分割線是最「薄」的元件，但它的無障礙語義恰恰最值得講究：一條分隔區域的線，對讀屏軟體是**有用的結構**還是**噪音**？`core/divider` 用 `getDividerRole` 把這個決策顯式化——帶文案的分割線是真正的 `separator`，純裝飾線是 `presentation`（移出無障礙樹）。
+
+## 何時使用
+
+- 各端實作 `LhDivider`：類別名、語義角色、方向宣告全部由 core 計算。
+- 表單分區、卡片內容分組、文章段落分隔。
+- **不該用它**：用它做版面配置間距。間距是 `LhSpace` 或 padding 的職責，分割線是**語義**元素。
+
+## 匯入方式
+
+```ts
+import {
+  getDividerClassNames,
+  getDividerRole,
+  needsAriaOrientation,
+} from '@lh-ui/share/core/divider'
+import type {
+  LhDividerState,
+  LhDividerDirection,
+  LhDividerLabelPosition,
+  LhDividerRole,
+} from '@lh-ui/share/core/divider'
+```
+
+## 設計意圖
+
+分割線有兩套「虛線」表達：老的 `dashed` 布林 prop 與新的 `borderStyle` 字串。`getDividerClassNames` 的優先級是 **`borderStyle` 顯式非空 > `dashed`**，且只有 `'dashed'` / `'dotted'` 有對應樣式類——傳 `'solid'` 或任意非法值不會產出髒類，按預設實線渲染。這是一個漸進遷移的設計：老程式碼傳 `dashed` 仍然工作，新程式碼可以用 `borderStyle` 表達更豐富的邊框風格。
+
+`needsAriaOrientation` 的條件是 `hasContent && direction === 'vertical'`，兩個條件都必要：
+
+- 水平是 APG 中 separator 的**預設方向**，宣告 `aria-orientation="horizontal"` 是冗餘資訊。
+- 無文案時角色是 `presentation`，元素已移出無障礙樹，宣告方向沒有接收方。
+
+豎向與橫向一樣支援文案（豎向文案線上段上下排布），故「有文案且豎向」是可達狀態；`labelPosition` 是
+橫向語義，豎向文案恆置中，`getDividerClassNames` 不會為豎向產出 `--label-*` 修飾類。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getDividerClassNames` | `(state: LhDividerState) => string[]` | 類別名陣列 | 方向、虛線、文案修飾類 |
+| `getDividerRole` | `(hasContent: boolean) => LhDividerRole` | `'separator'` / `'presentation'` | 語義角色 |
+| `needsAriaOrientation` | `(direction: 'horizontal' \| 'vertical', hasContent: boolean) => boolean` | 布林 | 是否需要宣告 aria-orientation |
+
+輸出範例：
+
+```ts
+getDividerClassNames({ direction: 'horizontal', dashed: false, hasContent: true, labelPosition: 'center', borderStyle: null })
+// ['lh-divider', 'lh-divider--horizontal', 'lh-divider--with-text', 'lh-divider--label-center']
+
+getDividerRole(true)   // 'separator'
+getDividerRole(false)  // 'presentation'
+needsAriaOrientation('vertical', true)   // true
+needsAriaOrientation('vertical', false)  // false
+```
+
+## 類型定義
+
+```ts
+export type LhDividerDirection = 'horizontal' | 'vertical'
+export type LhDividerLabelPosition = 'left' | 'center' | 'right'
+export type LhDividerRole = 'separator' | 'presentation'
+
+export interface LhDividerState {
+  direction: LhDividerDirection
+  dashed: boolean
+  hasContent: boolean
+  labelPosition: LhDividerLabelPosition
+  borderStyle?: string        // 顯式指定時優先於 dashed
+}
+```
+
+## 無障礙
+
+分割線的無障礙由三部分拼裝，UI 層應當原樣使用：
+
+```ts
+const role = getDividerRole(hasContent)              // 'separator' | 'presentation'
+const orientation = needsAriaOrientation(direction, hasContent)
+const aria = { role, ...(orientation ? { 'aria-orientation': 'vertical' } : {}) }
+```
+
+- **帶文案的分割線**：`role="separator"`，讀屏軟體會播報「分隔符」並感知它把內容分成兩段。
+- **純裝飾線**：`role="presentation"`，從無障礙樹移除。
+- **垂直 + 帶文案**：額外 `aria-orientation="vertical"`，因為垂直不是預設方向。
+
+## 使用範例
+
+```ts
+import { getDividerClassNames, getDividerRole } from '@lh-ui/share/core/divider'
+
+getDividerClassNames({ direction: 'vertical', dashed: true, hasContent: false, labelPosition: 'left', borderStyle: null })
+// ['lh-divider', 'lh-divider--vertical', 'lh-divider--dashed']
+```
+
+```vue
+<!-- Vue3 -->
+<div
+  :class="getDividerClassNames({ direction, dashed, hasContent: !!slots.default, labelPosition, borderStyle })"
+  :role="getDividerRole(!!slots.default)"
+  :aria-orientation="needsAriaOrientation(direction, !!slots.default) ? 'vertical' : undefined"
+>
+  <span v-if="slots.default" class="lh-divider__label"><slot /></span>
+</div>
+```
+
+```tsx
+// React
+const hasContent = !!children
+const cls = getDividerClassNames({ direction, dashed, hasContent, labelPosition, borderStyle })
+return (
+  <div
+    className={cls.join(' ')}
+    role={getDividerRole(hasContent)}
+    aria-orientation={needsAriaOrientation(direction, hasContent) ? 'vertical' : undefined}
+  >
+    {hasContent && <span className="lh-divider__label">{children}</span>}
+  </div>
+)
+```
+
+```ts
+// uniapp：role/aria 在非 h5 端支援有限，可降級只渲染類別名（視覺一致優先）
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-divider` | 基礎類：定位、邊框顏色 |
+| `.lh-divider--horizontal` / `.lh-divider--vertical` | 方向（決定邊框在哪一側） |
+| `.lh-divider--dashed` | 虛線（相容老 dashed prop） |
+| `.lh-divider--with-text` | 帶文案：邊框讓出中間位置 |
+| `.lh-divider--label-{left\|center\|right}` | 文案對齊位置 |
+| `.lh-divider__label` | 文字節點（帶兩側間距與背景遮蓋邊框） |
+
+邊框顏色用 `var(--lh-border-color)`，暗色自動翻轉。
+
+## 注意事項
+
+- `borderStyle` 優先於 `dashed`，且只 `'dashed'` / `'dotted'` 有效——這是有意的克制，避免把任意 CSS border-style 都暴露成 prop。
+- 垂直分割線需要父容器有明確高度（通常是 flex 行），否則高度塌縮到 0。
+- `role="presentation"` 與 `role="none"` 在 APG 中等價，本元件用 `presentation`（歷史相容性更好）。
+- 判定 `hasContent` 時注意「只渲染了空白插槽」的情形，Vue 用 `!!slots.default?.()` 更穩妥。
+
+<FnPlayground module="divider" fn="getDividerClassNames" params='{"state": {"direction": "horizontal", "dashed": false, "hasContent": true, "labelPosition": "center", "borderStyle": null}}' />

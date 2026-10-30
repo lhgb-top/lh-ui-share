@@ -1,0 +1,157 @@
+---
+title: popper —— motor de posicionamiento de capas flotantes
+description: 'computePosition implementa la colocación en 12 posiciones, el volteo del eje principal y el clamp en el eje transversal, con entradas puras de rect y pruebas unitarias directas'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+El dropdown de tooltip, popover, popconfirm, dropdown y select, el panel del cascader, el calendario de date-picker: en lh-ui, todo lo que «flota junto al disparador» calcula su posición con esta única función.
+
+## Por qué no usar floating-ui / popper.js
+
+Los cuatro extremos de la familia (Vue3 / Vue2 / React / uniapp) importan este paquete: el tamaño y el ritmo de actualización de una biblioteca de posicionamiento de terceros se convertirían en una carga cuádruple. El motor de posicionamiento de share solo cubre el subconjunto que la familia realmente usa: 12 posiciones, volteo del eje principal, clamp en el eje transversal, desplazamiento de la flecha; unas 300 líneas, cero dependencias, funciones puras de entrada y salida: **no crea DOM, no escucha eventos, no ejecuta requestAnimationFrame**. La planificación y el renderizado los decide cada capa UI por su cuenta (Vue3 usa `watchEffect`, React `useLayoutEffect`, uniapp el evento de desplazamiento de la página).
+
+## Importación
+
+```ts
+import {
+  computePosition,
+  parsePlacement,
+  getWindowViewport,
+  type LhPlacement,
+  type LhComputePositionOptions,
+} from '@lh-ui/share/core/shared/popper'
+```
+
+## Tipos y constantes
+
+```ts
+// 12 posiciones = 4 direcciones × 3 alineaciones (center puede omitir el sufijo)
+export type LhPlacement =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhPlacementDir = 'top' | 'bottom' | 'left' | 'right'
+export type LhPlacementAlign = 'start' | 'center' | 'end'
+
+// Estructura mínima isomorfa con DOMRect: en los tests se construyen literales directamente
+export interface LhDOMRectLike {
+  top: number
+  left: number
+  width: number
+  height: number
+  right: number
+  bottom: number
+}
+
+export interface LhComputePositionOptions {
+  placement?: LhPlacement       // Por defecto 'bottom'
+  gap?: number                  // Separación respecto al disparador, por defecto 8
+  padding?: number              // Margen de seguridad del viewport, por defecto 8
+  flip?: boolean                // Volteo del eje principal al desbordar, por defecto true
+  shift?: boolean               // Clamp en el eje transversal, por defecto true
+}
+
+export interface LhPopperPosition {
+  top: number
+  left: number
+  placement: LhPlacement        // La posición que realmente surte efecto tras el volteo
+  arrowOffset: number           // Desplazamiento de la flecha en el eje transversal (px,
+                                // contado desde el inicio del eje transversal de la capa flotante)
+}
+```
+
+## Tabla de funciones
+
+| Función | Firma | Acción |
+| --- | --- | --- |
+| `parsePlacement` | `(placement: LhPlacement) => { dir, align }` | Descompone la posición en «dirección + alineación»; ante una posición ilegal, el respaldo es `bottom` y, ante una alineación ilegal, `center` |
+| `buildPlacement` | `(dir: LhPlacementDir, align: LhPlacementAlign) => LhPlacement` | Reconstruye la posición a partir de dirección y alineación (con `center` omite el sufijo) |
+| `flipDir` | `(dir: LhPlacementDir) => LhPlacementDir` | Volteo del eje principal: top↔bottom, left↔right |
+| `basePosition` | `(dir, align, trigger, popper, gap) => { top, left }` | Colocación básica según la posición (**sin tener en cuenta las restricciones del viewport**) |
+| `fitsInViewport` | `(dir, trigger, popper, viewport, gap, padding) => boolean` | Si la capa flotante cae íntegramente dentro del viewport en la dirección dada (juicio del eje principal) |
+| `computePosition` | `(trigger, popper, viewport, options?) => LhPopperPosition` | **Entrada principal**: el cálculo completo del posicionamiento |
+| `getWindowViewport` | `() => LhDOMRectLike` | Construye el rect del viewport a partir de la ventana del navegador; con guardia SSR, si no hay `window`, la anchura y la altura son 0 |
+| `isOutsideViewport` | `(rect, viewport) => boolean` | Si el rect ha salido por completo del viewport (al desplazar, si el disparador no es visible, la capa flotante debería cerrarse) |
+
+## El flujo de cálculo de computePosition
+
+```
+flip (volteo del eje principal)
+  → solo se voltea si cabe en la dirección volteada (evita que quede peor al voltear)
+  → colocación según la posición (basePosition)
+  → clamp en el eje transversal (shift, a lo largo del margen de seguridad padding)
+  → clamp en el eje principal (solo cuando flip está activo y no cabe en ningún lado:
+    se pega al lado al que pueda pegarse)
+  → red de seguridad con clamp del lado inferior (respaldo, garantiza que no aparezcan
+    coordenadas negativas)
+```
+
+Decisiones clave del diseño:
+
+- **El volteo es condicional**. Una implementación errónea habitual es «si desborda, se voltea», con el resultado de que, cuando el disparador está en el centro exacto del viewport y la capa flotante es muy alta, al voltearla cabe aún peor. `computePosition` pregunta primero con `fitsInViewport` «¿cabe si se voltea?»: si no cabe, no se voltea y se aplica el clamp del eje principal.
+- **Devuelve el `placement` que realmente surte efecto**. Tras el volteo, el campo `placement` se convierte en la nueva posición y la capa UI la usa para conmutar las clases de la flecha (`is-top` / `is-bottom`): la dirección de la flecha debe coincidir con la posición real o, visualmente, la flecha se separará de la capa flotante.
+- **La flecha apunta siempre al centro del disparador**; `arrowOffset` es el desplazamiento en el eje transversal, clampeado dentro de los bordes de la capa flotante; el límite superior del `padding` es la mitad de la capa flotante, para evitar la inversión de los límites superior e inferior (que la flecha acabe fuera de la capa flotante).
+
+## Ejemplos de uso
+
+### Función pura (con pruebas unitarias directas)
+
+```ts
+const trigger = { top: 100, left: 50, width: 80, height: 32, right: 130, bottom: 132 }
+const popper = { top: 0, left: 0, width: 200, height: 120, right: 200, bottom: 120 }
+const viewport = { top: 0, left: 0, width: 375, height: 667, right: 375, bottom: 667 }
+
+computePosition(trigger, popper, viewport, { placement: 'top' })
+// Encima del disparador cabe:
+// { top: 132 - 8 - 120, left: ..., placement: 'top', arrowOffset: ... }
+```
+
+### Cableado en Vue3
+
+```ts
+// Interior del componente de capa flotante
+function update() {
+  if (!triggerEl.value || !popperEl.value) return
+  const pos = computePosition(
+    triggerEl.value.getBoundingClientRect(),
+    popperEl.value.getBoundingClientRect(),
+    getWindowViewport(),
+    { placement: placementRef.value, gap: 8 },
+  )
+  popperEl.value.style.top = `${pos.top}px`
+  popperEl.value.style.left = `${pos.left}px`
+  actualPlacement.value = pos.placement
+}
+
+onMounted(() => {
+  watchEffect(update)          // Recalculo cuando cambian las dependencias reactivas
+  window.addEventListener('scroll', update, true)
+})
+```
+
+### Cableado en React
+
+```tsx
+useLayoutEffect(() => {
+  if (!triggerRef.current || !popperRef.current) return
+  const pos = computePosition(/* ... */)
+  setPos(pos)
+}, [open, placement])
+```
+
+### Cableado en uniapp
+
+El `getBoundingClientRect` de uniapp tiene implementaciones distintas en cada extremo (en el miniprograma hace falta `uni.createSelectorQuery`); la capa UI mide el rect y luego llama al mismo `computePosition`: el algoritmo en sí es exactamente el mismo.
+
+## Advertencias
+
+- **Los parámetros de entrada pasan primero por una sanitización a nivel de campo**: los campos no finitos (NaN / Infinity) se reducen a 0, de modo que ningún rect defectuoso entra en el cálculo geométrico.
+- **Seguro para SSR**: `getWindowViewport()` devuelve un rect de anchura y altura 0 en entornos sin `window`; el propio `computePosition` no toca el DOM y puede precalcular una posición en el servidor.
+- **La semántica de `flip: false`**: quien llama asume por su cuenta el desbordamiento del eje principal; en ese caso, el eje principal solo conserva el clamp del lado inferior (no empuja la capa flotante a coordenadas negativas). Escenarios con «dirección fija» como `select` / `cascader` lo usan.
+- **No gestiona la escucha de Resize / Scroll**: la planificación es cosa de la capa UI; share solo garantiza «dada una entrada, una salida determinada».
+- Es **un modelo distinto** del de `LhPosition` (el juego `'top-left'` / `'bottom-right'`, véase [types](/es/core/types)): `LhPosition` sirve para semánticas de «pegar al borde» como affix / backtop y no tiene sufijos de alineación `-start` / `-end`; no los mezcles.
+
+<FnPlayground module="popper" fn="computePosition" params='{"trigger": {"top": 100, "left": 50, "width": 80, "height": 32, "right": 130, "bottom": 132}, "popper": {"top": 0, "left": 0, "width": 200, "height": 120, "right": 200, "bottom": 120}, "viewport": {"top": 0, "left": 0, "width": 375, "height": 667, "right": 375, "bottom": 667}, "options": {"placement": "top"}}' />

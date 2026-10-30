@@ -1,0 +1,152 @@
+---
+title: breadcrumb ruta de navegación —— Navegación
+description: 'getEllipsisBeforeIndex con la estrategia primero + elipsis + últimas, getCollapsedHiddenIndexes con el conjunto de ocultos tras el colapso, aria-current="page" en el último elemento'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La ruta de navegación (breadcrumb) es el indicador de ruta de «dónde estoy y por dónde he venido»: `Inicio / Ajustes / Seguridad / Verificación en dos pasos`. Es más ligera que un menú: solo expresa la ruta jerárquica, sin asumir la navegación principal; y más débil que una barra de pasos: no expresa un flujo secuencial, solo relaciones de contención. Cuando la jerarquía es profunda la ruta se hace larga y el colapso es su algoritmo central.
+
+## Cuándo usarlo
+
+- Implementar `<LhBreadcrumb>` / `<LhBreadcrumbItem>` en cada extremo: rutas jerárquicas de paneles de administración, rutas de categorías de sitios de documentación, rutas de categorías de productos.
+- Escenarios que necesitan **identificar la posición actual** y ofrecer una entrada para **volver nivel a nivel**.
+- **Cuándo no usarlo**: navegación principal (usar `menu`); flujos de pasos (usar `steps`); cambio entre contenidos del mismo nivel (usar `tabs`); rutas de un solo nivel (eso no es una ruta de navegación, es el título de la página).
+
+## Importación
+
+```ts
+import {
+  getBreadcrumbItemClassNames,
+  getEllipsisBeforeIndex,
+  getCollapsedHiddenIndexes,
+  getBreadcrumbItemAria,
+} from '@lh-ui/share/core/breadcrumb'
+import type { LhBreadcrumbItemState, LhBreadcrumbCollapseState } from '@lh-ui/share/core/breadcrumb'
+```
+
+## Intención de diseño
+
+**El colapso conserva el primer elemento**: la regla de `getEllipsisBeforeIndex` es «primer elemento + elipsis + últimos maxItems-1 elementos». **El primer elemento se conserva siempre**: es el ancla para «volver al nivel más alto» (normalmente «Inicio»); omitirlo dejaría al usuario sin la capacidad de volver a la raíz. Esta compensación es tan importante como «conservar el último elemento» (la posición actual).
+
+**Delante de qué elemento se inserta la elipsis**: lo que se devuelve es **el índice del primer elemento visible tras la elipsis** (`total - (maxItems - 1)`); la capa UI inserta el elemento de elipsis en esa posición. Cuando no hay colapso se devuelve -1: cuidado, -1 es el valor centinela de «no colapsar», no un índice válido.
+
+**`maxItems < 2` no colapsa**: como mínimo deben mostrarse el primer elemento y un elemento posterior para que el colapso tenga sentido. Con `maxItems: 1` o menos se devuelve -1: es un diseño defensivo para evitar que, con un valor mal configurado, la ruta de navegación colapse quedando solo una elipsis.
+
+**La relación entre `getCollapsedHiddenIndexes` y el índice de la elipsis**: lo que se oculta son «los elementos entre el primero y la elipsis», es decir, el intervalo abierto `[1, ellipsisIndex)`: se conservan tanto el primer elemento (índice 0) como los elementos posteriores a la elipsis. Ambas funciones se usan en conjunto: primero se obtiene la posición de la elipsis y luego el conjunto de ocultos.
+
+**`aria-current="page"` en el último elemento**: el último elemento es «la página actual» y `aria-current="page"` es la semántica estándar de WAI-ARIA: el lector de pantalla anuncia «página actual», más preciso que una pista de texto. Los elementos que no son el último no reciben ningún atributo aria (la semántica de enlace la aporta el `<a>` nativo).
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Acción |
+| --- | --- | --- | --- |
+| `getBreadcrumbItemClassNames` | `(state: LhBreadcrumbItemState) => string[]` | Nombres de clase | Estado de enlace + último elemento |
+| `getEllipsisBeforeIndex` | `(state: LhBreadcrumbCollapseState) => number` | Índice / -1 | Posición de la elipsis |
+| `getCollapsedHiddenIndexes` | `(state: LhBreadcrumbCollapseState) => number[]` | Conjunto de índices ocultos | Elementos ocultos por el colapso |
+| `getBreadcrumbItemAria` | `(isLast: boolean) => LhAriaAttrs` | Paquete aria | aria-current en el último elemento |
+
+## Definiciones de tipos
+
+```ts
+export interface LhBreadcrumbItemState {
+  isLast: boolean    // Si es el último elemento (la página actual)
+  isLink: boolean    // Si se renderiza como enlace (se pasa to y no es el último)
+}
+
+export interface LhBreadcrumbCollapseState {
+  total: number      // Número total de elementos
+  maxItems: number   // Número máximo de elementos visibles (elipsis incluida); menor que 2 significa no colapsar
+}
+```
+
+## Accesibilidad
+
+```ts
+getBreadcrumbItemAria(true)   // { 'aria-current': 'page' }
+getBreadcrumbItemAria(false)  // {}
+```
+
+- **`aria-current="page"` únicamente en el último elemento**: los elementos intermedios son enlaces pulsables y no necesitan marca de actualidad. Al entrar en la página, el lector de pantalla anuncia «Inicio, enlace / Ajustes, enlace / Seguridad, enlace / Verificación en dos pasos, página actual»: la ruta y la posición se transmiten completas de una sola vez.
+- **Usar `<a>` nativo en vez de salto por JS**: cuando los elementos intermedios son enlaces reales, usar `<a href="...">`: permite abrir en una pestaña nueva con el botón central, copiar el enlace con el menú contextual y funcionar sin JS. El enrutado del lado del cliente lo implementa la capa UI interceptando el clic (`@click.prevent`), conservando el href. El comentario de `getBreadcrumbItemAria` lo aclara: cuando hay enlace, la semántica de role la aporta el elemento a nativo y la función no necesita emitir nada.
+- **Accesibilidad del botón de elipsis**: la elipsis tras el colapso normalmente es pulsable para expandir toda la ruta. Es un control y necesita `aria-label="Expandir toda la ruta"` (o bien `aria-expanded` para expresar el estado de expansión); de lo contrario es un botón sin nombre.
+- **Envoltorio `nav` + aria-label**: se recomienda `<nav aria-label="Ruta de navegación">` para toda la ruta de navegación: puede haber varios nav en la página (navegación principal, paginación) y aria-label los distingue.
+- **El separador como decoración**: los separadores `/` o `»` son puramente decorativos: marcarse con `aria-hidden` o implementarse con pseudoelementos CSS, para evitar que el lector de pantalla anuncie cada barra.
+
+## Ejemplos de uso
+
+```ts
+import {
+  getEllipsisBeforeIndex, getCollapsedHiddenIndexes, getBreadcrumbItemAria,
+} from '@lh-ui/share/core/breadcrumb'
+
+getEllipsisBeforeIndex({ total: 6, maxItems: 4 })   // 3 (la elipsis se inserta delante del índice 3)
+getEllipsisBeforeIndex({ total: 4, maxItems: 4 })   // -1 (total <= maxItems, no colapsa)
+getEllipsisBeforeIndex({ total: 6, maxItems: 1 })   // -1 (maxItems < 2, no colapsa)
+getEllipsisBeforeIndex({ total: 6, maxItems: 2 })   // 5 (se conservan el primero y el último)
+
+getCollapsedHiddenIndexes({ total: 6, maxItems: 4 })  // [1, 2] (entre el primero y la elipsis)
+getCollapsedHiddenIndexes({ total: 4, maxItems: 4 })  // [] (no colapsa)
+```
+
+```ts
+// Capa UI: renderizado del colapso (el estado de expansión lo controla un state local)
+const expanded = ref(false)
+const items = ['Inicio', 'Sistema', 'Ajustes', 'Seguridad', 'Cuenta', 'Verificación en dos pasos']
+const ellipsisIndex = computed(() =>
+  getEllipsisBeforeIndex({ total: items.value.length, maxItems: props.maxItems ?? 4 }),
+)
+const hidden = computed(() =>
+  expanded.value ? [] : getCollapsedHiddenIndexes({ total: items.value.length, maxItems: props.maxItems ?? 4 }),
+)
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <nav aria-label="Ruta de navegación">
+    <LhBreadcrumb :max-items="4">
+      <LhBreadcrumbItem to="/">Inicio</LhBreadcrumbItem>
+      <LhBreadcrumbItem to="/system">Sistema</LhBreadcrumbItem>
+      <LhBreadcrumbItem to="/system/security">Seguridad</LhBreadcrumbItem>
+      <LhBreadcrumbItem>Verificación en dos pasos</LhBreadcrumbItem>
+    </LhBreadcrumb>
+  </nav>
+</template>
+```
+
+```tsx
+// React: los datos de la ruta normalmente derivan de la tabla de rutas (useMatches / route meta personalizado),
+// en vez de declararse elemento a elemento; el mapeo ruta de navegación <-> enrutado es un acuerdo de negocio
+```
+
+```ts
+// uniapp: <navigator> es el componente nativo de salto; en el lado del miniprograma no hay semántica
+// <nav>, usar view + aria-label no sirve de nada (el ecosistema de lectura en pantalla del miniprograma
+// es distinto); es aceptable, basta con mantener la estructura del DOM consistente
+```
+
+## Estilos y tokens
+
+| Nombre de clase | Semántica |
+| --- | --- | --- |
+| `.lh-breadcrumb` | Contenedor (inline-flex) |
+| `.lh-breadcrumb__item` | Elemento individual |
+| `.lh-breadcrumb__item--link` | Estado de enlace (cambia de color al pasar el cursor) |
+| `.lh-breadcrumb__item--last` | Último elemento (página actual, negrita o color principal) |
+| `.lh-breadcrumb__separator` | Separador (normalmente un pseudoelemento CSS) |
+| `.lh-breadcrumb__ellipsis` | Elipsis (pulsable para expandir) |
+
+Color de texto `--lh-text-regular`, color del enlace al pasar el cursor `--lh-primary-color`, último elemento `--lh-text-primary`; tamaño de fuente `--lh-font-size-base`.
+
+## Advertencias
+
+- **`maxItems` incluye la elipsis**: `maxItems: 4` muestra en realidad «primer elemento + elipsis + últimos 3 elementos» = 5 elementos, de los cuales los **elementos de texto** visibles son 4. Al configurar el valor, cuéntalo por elementos de texto visibles.
+- **El carácter dinámico del colapso**: la longitud de la ruta cambia con la profundidad de la navegación (el `total` de `getEllipsisBeforeIndex` es dinámico), mientras que `maxItems` puede ser fijo: no hace falta juzgar manualmente cuándo colapsar, la función lo gestiona.
+- **Interacción de la elipsis al expandir**: dos enfoques habituales: ① pulsar la elipsis para expandir todo in situ (conmutación del estado `expanded`); ② pulsar para abrir un popover con los elementos ocultos. El primero es más simple y el segundo ahorra espacio; elige según la profundidad de la ruta.
+- **El origen de los datos de la ruta**: la ruta de navegación normalmente se deriva de la tabla de rutas en vez de escribirse a mano: se configura `title` en el meta de cada ruta y la capa del componente agrega los meta de los ancestros de la ruta actual. core solo gestiona el algoritmo de renderizado; la integración con el enrutado es cosa de la capa UI.
+- **El último elemento no se renderiza como enlace**: la página actual apuntando a sí misma no tiene sentido (y `isLink: false`). Ojo: la clase `--link` de `getBreadcrumbItemClassNames` la controla `isLink`, de modo que el último elemento naturalmente no la lleva.
+- **La omisión de títulos demasiado largos**: cuando el título de un único nivel es excesivamente largo se usa `text-overflow: ellipsis` de CSS (estilo de la capa UI); es una «omisión» distinta de la de la ruta: el colapso ahorra niveles y CSS ahorra anchura de un solo nivel.
+- **No uses la ruta de navegación como navegación principal**: es una ayuda de orientación; la entrada principal sigue siendo el menú. En móvil, con espacio limitado, es habitual omitir la ruta o conservar solo el botón de «volver».
+
+<FnPlayground module="breadcrumb" fn="getEllipsisBeforeIndex" params='{"total": 6, "maxItems": 4}' />

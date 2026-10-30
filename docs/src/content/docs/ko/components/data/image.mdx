@@ -1,0 +1,209 @@
+---
+title: image —— 이미지
+description: 'stepZoom/stepRotate 확대 회전, normalizePreviewList 미리보기 목록 축소, stepViewerIndex 순환 이미지 전환, dialog 의미'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+이미지 컴포넌트의 핵심은 표시가 아니라(`<img>`면 충분합니다) **미리보기**입니다: 클릭하여 확대, 휠 확대, 회전, 여러 이미지 전환. `core/image`가 관리하는 것은 미리보기 창의 상태 환산입니다. 확대 단계와 클램프, 회전 정규화, 이미지 목록의 순환 전환입니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhImage`를 구현할 때: 상품 이미지, 아바타 미리보기, 증명사진, 갤러리 앨범.
+- 클릭으로 확대하여 보아야 하는(확대/회전/여러 이미지 전환) 장면.
+- **사용하면 안 되는 곳**: 순수 장식 이미지(그냥 `<img>`나 배경 이미지를 쓰고, 컴포넌트 오버헤드를 만들지 마세요); 복잡한 자르기/편집(그것은 image-cropper의 책임).
+
+## 가져오기
+
+```ts
+import {
+  getImageClassNames,
+  normalizePreviewList,
+  stepZoom,
+  stepRotate,
+  stepViewerIndex,
+  getViewerImageStyle,
+  getImageViewerAria,
+} from '@lh-ui/share/core/image'
+import {
+  LH_IMAGE_ZOOM_MIN,
+  LH_IMAGE_ZOOM_MAX,
+  LH_IMAGE_ZOOM_STEP,
+} from '@lh-ui/share/core/image'
+import type { LhImageFit, LhImageState, LhImageViewerState } from '@lh-ui/share/core/image'
+```
+
+## 설계 의도
+
+**확대의 부동소수점 클램프**: `stepZoom`는 매번 `LH_IMAGE_ZOOM_STEP`(0.25)씩 더하고, `Math.round(next * 100) / 100`한 뒤 `[0.25, 4]`로 클램프합니다. 반올림은 `zoom`이 항상 깔끔한 소수(0.25 / 0.5 / 0.75 ...)가 되게 보장하고, `1.0000000000000002` 같은 값을 만들지 않습니다. 후자는 `scale()`에서 눈에 보이는 계단 현상을 일으킵니다.
+
+**회전의 음수 모듈러 수정**: `(((rotate + 90) % 360) + 360) % 360`. JS의 `%`는 음수에 음수를 반환하고(`-90 % 360 === -90`), 바깥의 `+360) % 360`이 이것을 `[0, 360)`으로 정규화합니다. 이 함수는 +90만 해서 음수가 되지 않지만, 이 수정은 방어적입니다(호출 쪽이 음수 각도의 초기값을 넘길 경우).
+
+**`stepViewerIndex`의 순환 전환**: `(index + delta + total) % total`. 첫 번째에서 '이전'을 누르면 마지막으로 넘어갑니다. `total <= 0`일 때는 0을 반환합니다(빈 목록에 대한 방어).
+
+**`normalizePreviewList`의 축소**: `previewSrcList`를 넘기지 않았을 때 `[src]`로 축소합니다. 단일 이미지 미리보기와 여러 이미지 미리보기가 같은 로직을 쓰고, 단지 `total`이 1일 뿐이며 전환 버튼이 자동으로 숨겨집니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getImageClassNames` | `(state: LhImageState) => string[]` | 클래스명 | error / previewable |
+| `normalizePreviewList` | `(src, previewSrcList?) => string[]` | 목록 | 넘기지 않으면 [src]로 축소 |
+| `stepZoom` | `(zoom, direction: 1 \| -1) => number` | 새 확대 | 단계 + 클램프 |
+| `stepRotate` | `(rotate: number) => number` | 새 각도 | +90°, [0,360)으로 정규화 |
+| `stepViewerIndex` | `(index, total, delta) => number` | 새 인덱스 | 순환 |
+| `getViewerImageStyle` | `(state: LhImageViewerState) => Record<string, string>` | 스타일 | transform |
+| `getImageViewerAria` | `(options?: { id?, label? }) => LhAriaAttrs` | aria 속성 묶음 | dialog 의미 |
+
+상수: `LH_IMAGE_ZOOM_MIN = 0.25`, `LH_IMAGE_ZOOM_MAX = 4`, `LH_IMAGE_ZOOM_STEP = 0.25`.
+
+## 타입 정의
+
+```ts
+export type LhImageFit = 'contain' | 'cover' | 'fill' | 'none' | 'scale-down'  // 네이티브 object-fit
+
+export interface LhImageState {
+  fit: LhImageFit
+  error: boolean
+  loaded: boolean
+  preview: boolean    // 미리보기 가능 여부(클릭 응답 + 덮개 알림 표시 결정)
+}
+
+export interface LhImageViewerState {
+  zoom: number
+  rotate: number
+  index: number
+  total: number
+}
+
+export const LH_IMAGE_ZOOM_MIN = 0.25
+export const LH_IMAGE_ZOOM_MAX = 4
+export const LH_IMAGE_ZOOM_STEP = 0.25
+```
+
+## 접근성
+
+미리보기 창은 **dialog**로 나타나고 `aria-modal`을 선언합니다:
+
+```ts
+getImageViewerAria({ id: 'lh-viewer', label: '2 / 5' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-viewer', 'aria-label': '2 / 5' }
+
+getImageViewerAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true`는 스크린 리더에게 배경에 닿을 수 없음을 알립니다. `core/shared/focus-trap`과 함께 사용해 포커스를 가두고, Esc로 닫습니다.
+- **`label`에 순서를 넣는 것은 가치가 있습니다**: 여러 이미지 미리보기일 때 스크린 리더가 '2 / 5'를 읽어주면 사용자가 앞으로 볼 것이 얼마나 남았는지 알 수 있습니다; 단일 이미지일 때는 '이미지 미리보기'만 주면 충분합니다.
+- 섬네일 자체에 `alt`(또는 `role="img" aria-label`)이 있어야 합니다. 이미지가 보이지 않을 때 이것이 유일한 텍스트 정보입니다. 장식 이미지는 `alt=""`.
+- 도구 모음 버튼(확대/회전/이전/다음)은 아이콘 버튼이므로 반드시 `aria-label`이 필요합니다.
+- **로드 실패의 접근성 알림**: `error` 상태의 자리표시자 이미지에는 `role="img"` + `aria-label="이미지 로드 실패"`가 있어야 합니다. 그렇지 않으면 스크린 리더 사용자가 여기에 원래 이미지가 있었다는 것을 모릅니다.
+
+## 사용 예
+
+```ts
+import { stepZoom, stepRotate, stepViewerIndex, normalizePreviewList } from '@lh-ui/share/core/image'
+
+stepZoom(1, 1)      // 1.25
+stepZoom(4, 1)      // 4 (한도에 닿아 더 커지지 않음)
+stepZoom(0.25, -1)  // 0.25 (바닥에 닿아 더 작아지지 않음)
+stepRotate(0)       // 90
+stepRotate(270)     // 0 ([0, 360)으로 정규화)
+stepRotate(-90)     // 0 (음수 모듈러 수정)
+stepViewerIndex(0, 5, -1)   // 4 (마지막으로 순환)
+stepViewerIndex(4, 5, 1)    // 0 (첫 번째로 순환)
+stepViewerIndex(0, 0, 1)    // 0 (빈 목록)
+normalizePreviewList('a.jpg', ['b.jpg', 'c.jpg'])  // ['b.jpg', 'c.jpg']
+normalizePreviewList('a.jpg', undefined)          // ['a.jpg']
+normalizePreviewList('a.jpg', [])                 // ['a.jpg'] (빈 배열도 축소)
+getViewerImageStyle({ zoom: 1.5, rotate: 90, index: 0, total: 1 })
+// { transform: 'scale(1.5) rotate(90deg)' }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getImageClassNames({ fit, error, loaded, preview })">
+  <img
+    v-if="!error"
+    class="lh-image__img"
+    :src="src"
+    :alt="alt"
+    :style="{ objectFit: fit }"
+    @load="loaded = true"
+    @error="error = true"
+    @click="preview && openViewer()"
+  />
+  <div v-else class="lh-image__error" role="img" aria-label="이미지 로드 실패">
+    <LhIcon name="image" />
+  </div>
+  <div v-if="preview && loaded" class="lh-image__mask">
+    <LhIcon name="zoom-in" /> <span>클릭하여 미리보기</span>
+  </div>
+</div>
+
+<Teleport to="body">
+  <div v-if="visible" class="lh-image-viewer" v-bind="getImageViewerAria({ id: viewerId, label: viewerLabel })">
+    <div class="lh-image-viewer__mask" @click="close" />
+    <img
+      class="lh-image-viewer__img"
+      :src="list[index]"
+      :style="getViewerImageStyle({ zoom, rotate, index, total: list.length })"
+    />
+    <div class="lh-image-viewer__toolbar">
+      <button type="button" aria-label="축소" @click="zoom = stepZoom(zoom, -1)">−</button>
+      <span class="lh-image-viewer__zoom">{{ Math.round(zoom * 100) }}%</span>
+      <button type="button" aria-label="확대" @click="zoom = stepZoom(zoom, 1)">+</button>
+      <button type="button" aria-label="회전" @click="rotate = stepRotate(rotate)">⟳</button>
+      <template v-if="list.length > 1">
+        <button type="button" aria-label="이전" @click="index = stepViewerIndex(index, list.length, -1)">‹</button>
+        <button type="button" aria-label="다음" @click="index = stepViewerIndex(index, list.length, 1)">›</button>
+      </template>
+    </div>
+  </div>
+</Teleport>
+```
+
+```ts
+const list = computed(() => normalizePreviewList(props.src, props.previewSrcList))
+const viewerLabel = computed(() => `${index.value + 1} / ${list.value.length}`)
+```
+
+```tsx
+// React: 휠 확대(viewer에 onWheel 부착)
+// const next = stepZoom(zoom, e.deltaY < 0 ? 1 : -1); setZoom(next)
+```
+
+```ts
+// uniapp: <image>는 내장 컴포넌트(mode 속성이 object-fit에 대응: widthFix / aspectFill 등);
+// 미리보기 창은 <view> + <image>를 쓰거나 uni.previewImage 호출(시스템 수준, 회전 기능 없음)
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-image` | 기본 클래스 |
+| `.lh-image--error` | 로드 실패 |
+| `.lh-image--previewable` | 미리보기 가능(hover에서 덮개 표시) |
+| `.lh-image__img` | 이미지 자체 |
+| `.lh-image__error` | 실패 자리표시자 |
+| `.lh-image__mask` | hover 덮개 |
+| `.lh-image-viewer` | 전체 화면 미리보기 창(fixed 위치) |
+| `.lh-image-viewer__mask` | 검은 덮개 |
+| `.lh-image-viewer__img` | 큰 이미지(transform 애니메이션) |
+| `.lh-image-viewer__toolbar` / `__zoom` | 도구 모음 / 확대 백분율 |
+
+덮개 색 `rgba(0, 0, 0, 0.5)`; 도구 모음 버튼은 반투명한 어두운 바탕; 이미지 전환은 `transform`에 있습니다(확대/회전이 매끄러움).
+
+## 주의사항
+
+- **`previewSrcList`와 `src`의 관계**: `previewSrcList`는 미리볼 때 쓰는 큰 이미지 목록으로, 페이지의 섬네일 `src`와 달라도 됩니다(섬네일은 작은 이미지로 트래픽을 아끼고, 미리보기는 원본 사용). 넘기지 않으면 `[src]`로 축소되며, 이때 미리보는 것이 섬네일이라 확대하면 흐려질 수 있습니다.
+- **`zoom`이 경계에 닿으면 더 변하지 않음**: `stepZoom`는 [0.25, 4]로 클램프합니다. 버튼은 이에 따라 비활성화하거나 시각적 피드백을 주어, 눌러도 반응이 없는 상황을 피하세요.
+- **회전과 확대의 순서**: `transform: scale(zoom) rotate(rotate)`. 먼저 확대하고 나서 회전합니다. 순서가 반대면 회전이 확대의 어긋남을 동반합니다(중심을 기준으로 할 때는 차이가 작지만, 이동이 조합될 때는 뚜렷함).
+- **포커스 관리**: 미리보기 창이 열리면 포커스가 도구 모음으로 들어가고, 닫히면 섬네일로 돌아가야 합니다. `core/shared/focus-trap`으로 처리하세요. 그렇지 않으면 Tab이 페이지 뒤로 빠져나갑니다.
+- **`error` 상태의 재시도**: core는 재시도 함수를 제공하지 않습니다; UI 계층은 `src`에 조회 매개변수(`?t=Date.now()`)를 붙여 강제로 다시 로드할 수 있지만, 먼저 `error` 상태를 지워야 합니다.
+- **`loaded`의 용도**: 로드가 완료되기 전에 스켈레톤(`skeleton`)이나 흐릿한 자리표시자 이미지(LQIP)를 보여줄 수 있습니다.
+- **메모리 민감**: 큰 이미지 목록을 미리볼 때, `previewSrcList` 안의 이미지 중 `index` 주변만 실제로 로드됩니다(브라우저가 필요할 때). 하지만 수십 개의 `<img>`를 한 번에 렌더링하지 마세요. core는 렌더링 수량을 관리하지 않으며, UI 계층이 스스로 제한합니다.
+- **uniapp의 `fit` 매핑**: `object-fit`의 5개 값은 미니 프로그램 단말에서 `<image mode>`의 다른 값에 대응합니다(`scale-down`은 직접 대응이 없어 보통 `aspectFit`으로 근사). UI 계층이 매핑합니다.
+
+<FnPlayground module="image" fn="stepZoom" params='{"zoom": 1, "direction": 1}' />

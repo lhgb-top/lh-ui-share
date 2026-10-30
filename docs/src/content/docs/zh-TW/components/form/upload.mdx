@@ -1,0 +1,231 @@
+---
+title: upload —— 上傳
+description: 'createUploadUid 唯一識別、isFileRejected accept 三類規則驗證、LhUploadRequest 外置請求函式、狀態機四態'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+上傳是 UI 庫裡**唯一必須把副作用交給呼叫方**的控制項：檔案傳輸依賴 HTTP 用戶端，而 core 層不能依賴 axios 或 fetch 的具體封裝。`core/upload` 的設計因此很純粹——它管驗證、狀態機、檔案清單的不可變更新，**把「怎麼傳」留成一個介面**（`LhUploadRequest`），由各端或各專案自己實作。
+
+## 何時使用
+
+- 各端實作 `LhUpload`：頭像上傳、附件上傳、圖片批次上傳、拖曳上傳。
+- 需要展示進度、成功/失敗態、可重試的場景。
+- **不該用它**：只是讓使用者選個檔案路徑（用原生 input）；需要分片上傳/斷點續傳等複雜邏輯時，core 的狀態機仍可用，但請求函式要自己寫。
+
+## 匯入方式
+
+```ts
+import {
+  LH_UPLOAD_MAX_SIZE,
+  createUploadUid,
+  formatFileSize,
+  createUploadFile,
+  exceedsMaxSize,
+  exceedsMaxCount,
+  normalizeUploadAccept,
+  isFileRejected,
+  patchUploadFile,
+  removeUploadFile,
+  getUploadClassNames,
+  getUploadFileClassNames,
+  getUploadFileAria,
+  getUploadDropzoneAria,
+} from '@lh-ui/share/core/upload'
+import type {
+  LhUploadFile,
+  LhUploadFileStatus,
+  LhUploadRequest,
+} from '@lh-ui/share/core/upload'
+```
+
+## 設計意圖
+
+**`createUploadUid` 為什麼不用自增種子**：早期實作用模組級自增計數器 + `Date.now()`，但 share 被三個 UI 庫各自打包，**同毫秒內不同庫的實例會產出同號 uid**（時間戳相同 + 種子各自從 0 起）。改用 `crypto.randomUUID()`，無該 API 的環境（部分 uniapp 執行時）回退到時間戳 + 隨機數。這是一個真實的並發衝突 bug 的修復。
+
+**`isFileRejected` 的三類 accept 規則**：`.png` 副檔名比對**檔名**、`image/*` 萬用字元比對**真實 MIME**（`file.type`）、`image/png` 具體 MIME 比對 `file.type`。註解裡寫明一條關鍵約束：**原生 `<input accept>` 只是建議性過濾**（使用者可以在檔案選擇器裡切到「所有檔案」），所以 core 層的驗證是最後一道防線，不能對萬用規則恆真放行——否則使用者繞過選擇器塞進來的 `.exe` 會被當成圖片。
+
+**`exceedsMaxSize` 的 `Number.isFinite` 守衛**：`maxSize` 非有限數時視為無限制，傳回 false。這讓「不限制大小」可以用 `Infinity` 表達，而不必用 0 或 -1 這種容易和「合法值」混淆的哨兵值。
+
+**不可變更新**：`patchUploadFile` / `removeUploadFile` 傳回新陣列，直接餵給響應式狀態，避免手動 splice 帶來的可變性問題。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `createUploadUid` | `(prefix?) => string` | uid | crypto.randomUUID 優先 |
+| `formatFileSize` | `(bytes: number) => string` | `'1.5 MB'` | 人類可讀大小 |
+| `createUploadFile` | `(file: File, uid?) => LhUploadFile` | 上傳項 | status ready / percent 0 |
+| `exceedsMaxSize` | `(file: File, maxSize: number) => boolean` | 是否超限 | 非有限數視為無限制 |
+| `exceedsMaxCount` | `(current: number, limit: number) => boolean` | 是否超量 | limit ≤ 0 不限制 |
+| `normalizeUploadAccept` | `(accept?: string \| string[] \| null) => string[]` | 規則陣列 | 字串按逗號切分 |
+| `isFileRejected` | `(file: { name, type }, accept: string[]) => boolean` | 是否被拒 | 三類規則 |
+| `patchUploadFile` | `(files, uid, patch) => LhUploadFile[]` | 新陣列 | 不可變更新 |
+| `removeUploadFile` | `(files, uid) => LhUploadFile[]` | 新陣列 | 不可變移除 |
+| `getUploadClassNames` | `(state: { dragOver, disabled }) => string[]` | 類別名 | 拖曳懸停/停用 |
+| `getUploadFileClassNames` | `(status) => string[]` | 類別名 | 四態修飾 |
+| `getUploadFileAria` | `(statusId?) => LhAriaAttrs` | aria 屬性包 | aria-describedby |
+| `getUploadDropzoneAria` | `(disabled?) => LhAriaAttrs` | aria 屬性包 | role=button |
+
+## 類型定義
+
+```ts
+export type LhUploadFileStatus = 'ready' | 'uploading' | 'success' | 'fail'
+
+export interface LhUploadFile {
+  uid: string
+  name: string
+  size: number
+  status: LhUploadFileStatus
+  percent: number        // 0-100
+  url?: string           // 成功時伺服器端傳回
+  error?: string         // 失敗原因
+  raw?: File             // 原始 File 對象
+}
+
+export const LH_UPLOAD_MAX_SIZE = 5 * 1024 * 1024  // 預設 5MB
+
+/** 上傳請求函數簽名（由使用方提供，庫不內置 HTTP 用戶端） */
+export type LhUploadRequest = (options: {
+  file: File
+  onProgress: (percent: number) => void
+}) => Promise<{ url?: string }>
+```
+
+## 無障礙
+
+```ts
+getUploadFileAria('lh-upload-status-1')
+// { 'aria-describedby': 'lh-upload-status-1' }
+
+getUploadDropzoneAria(false)
+// { role: 'button' }
+
+getUploadDropzoneAria(true)
+// { role: 'button', 'aria-disabled': true }
+```
+
+- 檔案項透過 `aria-describedby` 關聯狀態描述元素（「上傳中 45%」「上傳失敗：網路逾時」），讓螢幕閱讀器播報非同步狀態——這是非同步控制項無障礙的核心手段。
+- 拖曳區是 `role="button"`（可點選開啟檔案選擇器，也可拖入），鍵盤 Enter/Space 觸發選擇。
+- **進度播報**：純視覺的進度條對螢幕閱讀器不可見，`aria-describedby` 指向的文字元素要在 percent 變化時更新文案（UI 層節流，避免每 1% 播一次）。
+- 失敗項的重試/刪除按鈕要有 `aria-label`（圖示按鈕無文字）。
+
+## 使用範例
+
+```ts
+import {
+  createUploadFile, exceedsMaxSize, isFileRejected, normalizeUploadAccept, patchUploadFile,
+} from '@lh-ui/share/core/upload'
+
+normalizeUploadAccept('image/png, .jpg , image/gif')
+// ['image/png', '.jpg', 'image/gif']
+normalizeUploadAccept(['.pdf'])      // ['.pdf']
+normalizeUploadAccept(null)          // []
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['.png'])          // false
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['image/*'])       // false
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['image/gif'])     // true
+isFileRejected({ name: 'a.exe', type: '' }, ['image/*'])                // true（無 MIME 不放行）
+isFileRejected({ name: 'a.png', type: 'image/png' }, [])                // false（空規則不限制）
+exceedsMaxSize(new File([], 'a.png'), 1024)       // true（空文件 size 0 不超 1024，此例看具體 size）
+exceedsMaxSize(file, Infinity)                    // false
+formatFileSize(512)       // '512 B'
+formatFileSize(1536)      // '1.5 KB'
+formatFileSize(5 * 1024 * 1024)  // '5.0 MB'
+```
+
+```ts
+// 驗證鏈（UI 層在 onBeforeUpload 裡順序執行）
+function validate(file: File, accept: string, maxSize: number): string | undefined {
+  const rules = normalizeUploadAccept(accept)
+  if (isFileRejected(file, rules)) return '文件类型不允许'
+  if (exceedsMaxSize(file, maxSize)) return `文件不能超过 ${formatFileSize(maxSize)}`
+}
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getUploadClassNames({ dragOver, disabled })">
+  <div
+    class="lh-upload__dropzone"
+    v-bind="getUploadDropzoneAria(disabled)"
+    tabindex="0"
+    @click="openPicker"
+    @dragover.prevent="dragOver = true"
+    @dragleave.prevent="dragOver = false"
+    @drop.prevent="onDrop"
+  >
+    <input ref="inputRef" type="file" :accept="accept" multiple hidden @change="onChange" />
+    <span class="lh-upload__hint">点击或拖拽文件到此处上传</span>
+  </div>
+  <ul class="lh-upload__file-list">
+    <li
+      v-for="f in files"
+      :key="f.uid"
+      :class="getUploadFileClassNames(f.status)"
+      v-bind="getUploadFileAria(`lh-upload-status-${f.uid}`)"
+    >
+      <span class="lh-upload__file-name">{{ f.name }}</span>
+      <span class="lh-upload__file-size">{{ formatFileSize(f.size) }}</span>
+      <div class="lh-upload__progress"><div :style="{ width: f.percent + '%' }" /></div>
+      <span :id="`lh-upload-status-${f.uid}`" class="lh-upload__status">
+        {{ statusText(f) }}
+      </span>
+      <button v-if="f.status === 'fail'" type="button" aria-label="重试" @click="retry(f)">↻</button>
+      <button type="button" aria-label="删除" @click="files = removeUploadFile(files, f.uid)">✕</button>
+    </li>
+  </ul>
+</div>
+```
+
+```ts
+// 執行上傳（請求函數由項目提供）
+async function run(file: LhUploadFile) {
+  files = patchUploadFile(files, file.uid, { status: 'uploading', percent: 0 })
+  try {
+    const { url } = await httpRequest({
+      file: file.raw!,
+      onProgress: (percent) => { files = patchUploadFile(files, file.uid, { percent }) },
+    })
+    files = patchUploadFile(files, file.uid, { status: 'success', percent: 100, url })
+  } catch (error) {
+    files = patchUploadFile(files, file.uid, { status: 'fail', error: String(error) })
+  }
+}
+```
+
+```tsx
+// React：files 用 useState，patchUploadFile 的傳回值直接 setFiles
+```
+
+```ts
+// uniapp：<button open-type="chooseFile"> 或 uni.chooseImage；
+// core 的驗證與狀態機照用，HTTP 用 uni.uploadFile（帶 onProgressUpdate）
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-upload` | 基礎類 |
+| `.lh-upload--dragover` | 拖曳懸停（高亮邊框） |
+| `.lh-upload--disabled` | 停用 |
+| `.lh-upload__dropzone` | 拖曳/點選區 |
+| `.lh-upload__hint` | 引導文案 |
+| `.lh-upload__file-list` / `__file` | 檔案清單 / 檔案項 |
+| `.lh-upload__file--{ready\|uploading\|success\|fail}` | 四態修飾 |
+| `.lh-upload__file-name` / `__file-size` / `__status` | 檔案資訊 |
+| `.lh-upload__progress` | 進度條軌道（內部 div 是填充） |
+
+成功色 `--lh-success-color`，失敗 `--lh-danger-color`，進度填充 `--lh-primary-color`。
+
+## 注意事項
+
+- **accept 萬用規則依賴真實 MIME**：`file.type` 由瀏覽器按副檔名推斷，**某些環境下可能為空字串**（如非標準副檔名）。`isFileRejected` 對空 MIME 的檔案在萬用規則下**會拒絕**（不放行），這是有意的安全取捨——寧可誤拒也不誤放。若你的業務只認副檔名，自行改用 `.png` 類規則。
+- **`exceedsMaxCount` 的邊界**：`current >= limit` 判定，limit ≤ 0 不限制——注意傳入的是「目前的已有數量」，不是「還能傳幾個」。
+- **並發上傳的 uid**：同一檔案不能同時發起兩次上傳，用 `status === 'uploading'` 攔截重試按鈕；uid 用 `createUploadUid()` 保證跨庫唯一。
+- **重傳 raw 的保留**：`createUploadFile` 存了 `raw`，失敗重試直接用 `raw` 再調一次請求函式；若業務不需要保留 File 物件（記憶體敏感），可以不存。
+- **`LhUploadRequest` 的傳回值**：只約定 `{ url? }`，伺服器端若傳回別的結構（如 `{ data: { url } }`），在請求函式裡轉換好再 resolve，別讓 core 適配各種後端格式。
+- **進度文案的節流**：`onProgress` 觸發頻率可能很高（大檔案每個 chunk 一次），`aria-describedby` 指向的文字更新要節流（如每 10% 一次），否則螢幕閱讀器會被洗屏。
+- **清除 input 的 value**：連續兩次選同一個檔案，`change` 事件第二次不觸發——選完把 `input.value = ''` 重設。
+
+<FnPlayground module="upload" fn="isFileRejected" params='{"file": {"name": "photo.png", "type": "image/png"}, "accept": ["image/*", ".pdf"]}' />

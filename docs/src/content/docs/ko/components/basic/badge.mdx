@@ -1,0 +1,127 @@
+---
+title: badge —— 배지
+description: 'getBadgeClassNames가 숨김/점/영값 세 가지 상태 수정자를 계산, count는 UI 계층이 계산하여 전달'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+배지는 '알림 수'의 시각적 담체입니다: 모서리의 작은 빨간 점, 숫자, 또는 숨겨진 자리표시자. `core/badge`의 상태 모델은 **수치 의미**를 이미 세 개의 불리언으로 접어두었습니다. UI 계층이 '숫자가 0인지, 표시할지'를 계산하고, core는 이 세 불리언을 클래스명으로 매핑하기만 합니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhBadge`를 구현할 때: 클래스명은 `getBadgeClassNames`가 산출합니다.
+- 커스텀 요소에 배지 시각을 재사용해야 할 때(`LhAvatar` 뱃지, `LhMenu` 항목 뱃지 등) core 함수를 직접 가져옵니다.
+- **사용하면 안 되는 곳**: '99+' 자르기, 애니메이션 등의 로직. 이것들은 UI 계층 props의 책임이며 core는 수치 처리를 하지 않습니다.
+
+## 가져오기
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+import type { LhBadgeState, LhBadgeType } from '@lh-ui/share/core/badge'
+```
+
+## 설계 의도
+
+배지 상태에서 가장 주목할 만한 것은 `isHidden` / `isDot` / `isZero` 세 개의 상호 배타적인 시각 상태입니다:
+
+- `isDot`: 숫자를 표시하지 않고 점만 표시합니다(강한 알림, 숫자를 모르거나 알 필요가 없음).
+- `isZero`: 값이 0입니다. 많은 디자인이 '0도 숨기지 않음'을 선택합니다(사용자가 '없음'을 '로드 안 됨'과 구분해 명확히 보게), 스타일은 약화 처리합니다.
+- `isHidden`: 완전히 숨김(`display: none`), '새 메시지 없음'에 씁니다.
+
+이 셋의 판정 로직(`value === 0`, `hidden` prop 등)은 UI 계층이 완수하고, core는 결론만 받습니다. 이렇게 하면 단말별로 '언제 숨길지' 전략을 다르게 가져가면서도 시각 표현은 일관되게 유지할 수 있습니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getBadgeClassNames` | `(state: LhBadgeState) => string[]` | 클래스명 배열 | 배지의 모든 클래스명 계산 |
+
+출력 예:
+
+```ts
+getBadgeClassNames({ type: 'danger', size: 'small', isHidden: false, isDot: true, isZero: false })
+// ['lh-badge', 'lh-badge--danger', 'lh-badge--small', 'lh-badge--dot']
+```
+
+## 타입 정의
+
+```ts
+export type LhBadgeType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhBadgeState {
+  type: LhBadgeType
+  size: LhComponentSize
+  isHidden: boolean
+  isDot: boolean
+  isZero: boolean
+}
+```
+
+## 접근성
+
+`core/badge`는 aria 속성 묶음을 출력하지 않지만, 배지의 **접근성 처리는 UI 계층에서 매우 중요**하며 자주 잘못 구현됩니다:
+
+- 배지는 **장식적인 시각 강조**이며, 콘텐츠 자체('읽지 않은 3건' 등)는 의미를 가진 텍스트가 담아야 합니다. 배지에 `aria-hidden="true"`를 주는 것이 안전한 기본값입니다.
+- 배지가 유일한 정보 출처라면(글자 없는 뱃지만 있는 경우 등) 반드시 `aria-label`을 제공하거나 부모 요소에 선언해야 합니다. 그렇지 않으면 스크린 리더 사용자가 '새 메시지가 있음'을 전혀 인지하지 못합니다.
+- 숫자 배지는 스크린 리더가 자릿수별로 읽게 하지 마세요('9''9'가 '구구'로 읽힙니다). '99 더하기'로 형식화하거나 UI 계층의 `aria-label`에 맡기세요.
+
+## 사용 예
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+
+getBadgeClassNames({ type: 'primary', size: 'medium', isHidden: false, isDot: false, isZero: false })
+// ['lh-badge', 'lh-badge--primary', 'lh-badge--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span class="lh-badge-wrapper">
+  <slot />
+  <sup
+    v-if="!hidden"
+    :class="getBadgeClassNames({ type, size, isHidden: hidden, isDot, isZero: value === 0 })"
+    aria-hidden="true"
+  >
+    {{ isDot ? '' : displayValue }}
+  </sup>
+</span>
+```
+
+```tsx
+// React
+const cls = getBadgeClassNames({ type, size, isHidden, isDot, isZero })
+return (
+  <span className="lh-badge-wrapper">
+    {children}
+    {!isHidden && <sup className={cls.join(' ')} aria-hidden="true">{isDot ? '' : value}</sup>}
+  </span>
+)
+```
+
+```ts
+// uniapp: h5가 아닌 단말에서 배지는 보통 view 절대 위치를 사용; 숫자 자르기(99+)는 UI 계층 props가 처리
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-badge` | 기본 클래스: 절대 위치 뱃지, 둥근 모서리, 글자 크기, 글자색 |
+| `.lh-badge--{primary\|success\|warning\|danger\|info\|default}` | 의미 유형(배경색) |
+| `.lh-badge--{small\|medium\|large}` | 크기 단계(`.lh-badge--mini` / `--x-large` 포함) |
+| `.lh-badge--dot` | 점 형태(고정 작은 원, 콘텐츠 렌더링 안 함) |
+| `.lh-badge--zero` | 영값 약화(투명도, 더 작은 시각적 무게) |
+| `.lh-badge--hidden` | 완전히 숨김 |
+| `.lh-badge__content` | 콘텐츠 노드 |
+| `.lh-badge-zoom-enter-active` / `.lh-badge-zoom-leave-active` | 나타남/사라짐의 확대 전환 |
+
+배지 위치는 바깥 쪽 `.lh-badge-wrapper`가 `position: relative`를 제공하는 것에 의존합니다(각 단말의 UI 계층이 보장).
+
+## 주의사항
+
+- `isDot`과 `isZero`가 동시에 참이면 스타일에서 `--dot`이 우선합니다(점 형태는 콘텐츠를 렌더링하지 않으므로 영값 수정자가 의미 없음). UI 계층은 이 조합을 피해야 합니다.
+- 타입 표에 `LhBadgeType`의 `'default'`가 있지만, 배지에서 가장 흔한 것은 `'danger'`(빨간 점)이고 `'default'`는 중성 회색입니다.
+- 전환 클래스 `lh-badge-zoom-*`는 Vue3 스타일의 `-enter-active` / `-leave-active`이며, Vue2 단말에서는 `lh-enter-both` mixin으로 맞춥니다([전환 mixin](/ko/reference/transition-mixins) 참고).
+
+<FnPlayground module="badge" fn="getBadgeClassNames" params='{"state": {"type": "danger", "size": "small", "isHidden": false, "isDot": true, "isZero": false}}' />

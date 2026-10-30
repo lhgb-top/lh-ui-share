@@ -1,0 +1,167 @@
+---
+title: locales —— 国際化
+description: 'lhlocale シングルトンの t / tm / use / add / setLocale / subscribe、38 個のトップレベル文案キーと 10 言語'
+---
+
+import LocaleInspector from '../../../../components/LocaleInspector.astro'
+
+lh-ui ファミリーの国際化は**純粋なイベントエミッター**です：`lhlocale` はフレームワークのリアクティビティを一切持たず、各 UI ライブラリの適応層がその `version` バージョン番号をそれぞれのフレームワークの再レンダリング信号に変換します。これにより 1 つの言語パックで Vue3 / Vue2 / React / uniapp に同時に対応しつつ、core 層はどのフレームワークにも依存しません。
+
+## シングルトンとインポート
+
+```ts
+import { lhlocale, zhCN, enUS, formatMessage } from '@lh-ui/share/locales'
+import type { LhLocalePath, LhLocaleType, LhLocaleMessages } from '@lh-ui/share/locales'
+```
+
+## メンバー表
+
+| メンバー | シグネチャ | 役割 |
+| --- | --- | --- |
+| `version` | `get version(): number` | バージョン番号：言語の変更があるたびにインクリメントされる（UI 適応層がこれを購読して再レンダリングを発火） |
+| `subscribe` | `(listener: LhLocaleListener) => () => void` | 言語変更を購読；購読解除関数を返す |
+| `use` | `(options: { locale: LhLocaleType; messages: LhLocaleMessages }) => void` | 言語を登録して切り替える |
+| `t` | `(path: LhLocalePath, fallbackOrParams?) => string` | パスから翻訳文案を取得する |
+| `tm` | `(path: string, fallback?: string[]) => string[]` | 配列の文案を取得する（月名 / 曜日名） |
+| `getLocale` | `() => LhLocaleType` | 現在の言語を取得する |
+| `setLocale` | `(locale: LhLocaleType) => void` | 現在の言語を切り替える |
+| `add` | `(locale: string, messages: LhLocaleMessages) => void` | カスタム言語パックを追加する（ディープマージ） |
+
+## 各メソッドの挙動詳細
+
+### t —— リテラルキーの自動補完
+
+```ts
+const t = lhlocale.t   // アロー関数プロパティ、分割代入しても this を失わない
+
+t('pagination.total')                       // '共 {total} 条'
+t('pagination.total', { total: 42 })        // '共 42 条'
+t('not.exists', 'フォールバック文案')         // 'フォールバック文案'
+t('not.exists')                             // 'not.exists'（パス自体にフォールバック）
+```
+
+`path` の型は `LhLocalePath` です——`zh-CN` 言語パックの `as const` 構造から導出される**すべての文字列リーフパスのユニオン型**（例：`'input.placeholder'`）。キー名を書き間違えるとエディタがエラーを出します。動的にパスを組み立てる場合（`t(\`pagination.\${key}\`)`）は緩いオーバーロードに回り、型は `string` に緩和されます。
+
+第 2 引数は 2 つの形をとります：**文字列**はフォールバック値；**オブジェクト**は `{key}` 補間パラメータです（内部は [formatMessage](/ja/core/format) に委ねられます）。
+
+### tm —— 配列の文案
+
+```ts
+lhlocale.tm('datepicker.months')
+// ['1月', '2月', …, '12月']
+
+lhlocale.tm('datepicker.weeks')   // ← 誤り：weeks は配列ではなくオブジェクト
+lhlocale.tm('datepicker.weeks.sun', ['日'])   // ← これも誤り：オブジェクトの文字列リーフには t() でしか届かない
+```
+
+`t()` は文字列しか返しません；配列のリーフ（`months`）には `tm()` でアクセスします。未到達または非配列の場合は `fallback` を返します（省略時は `[]`）。
+
+### use vs add —— 混同しやすい 2 つ
+
+| | `use` | `add` |
+| --- | --- | --- |
+| 動作 | 登録**して切り替える** | 登録のみ（現在の言語のときだけブロードキャスト） |
+| messages の格納 | ユーザー登録表 `userLocales` に登録、**内蔵注册表は上書きしない** | 同左 |
+| マージ方式 | パック全体をセット | 「現在有効なパック」に**ディープマージ** |
+
+`add` がディープマージである理由：利用側はたいてい一部のキーだけを変えたい（「確認」を「送信」にするなど）もので、残りのキーは内蔵パックのまま使いたいからです。旧実装はパック全体を差し替えていたため、渡し忘れたキーがすべて消えていました。
+
+`use` が内蔵注册表を上書きしない理由：旧実装の `locales[locale] = messages` は**内蔵言語パックを永久に破壊**していました（後から `setLocale` で戻れない）。現在は内蔵パックが読み取り専用で、ユーザーパックが優先されます。
+
+### setLocale の「乖離しない」セマンティクス
+
+```ts
+lhlocale.setLocale('en-US')   // 言語パックが登録されていない
+lhlocale.getLocale()          // 'en-US'  ← リクエストされた言語を報告する
+lhlocale.t('pagination.total')// 内蔵デフォルトパックの文案で、en-US のものではない
+```
+
+矛盾しているように見えますが、意図的なものです：解決順序は `userLocales ?? 内蔵 locales ?? デフォルトパック` です。未登録のとき `getLocale()` はリクエストされた言語を報告し、`t()` はデフォルトパックの内容を使います——**両者が乖離することはありません**（「英語を報告しているのに文案は中国語」といった奇妙な組み合わせにはならない）ので、利用側は自分が `add` か `use` すべきだと判断できます。
+
+### version と subscribe
+
+```ts
+const unsubscribe = lhlocale.subscribe((version: number) => {
+  // 言語が変わった、再レンダリングを発火
+})
+unsubscribe()   // コンポーネントのアンマウント時に呼ぶ
+```
+
+`subscribe` は購読解除関数を返します（RxJS スタイル）。`bump()` は内部で try/catch によって悪い購読者を隔離し `[lhlocale] listener error:` を出力するので、あるコンポーネントのリスナーが例外を投げても別のコンポーネントに影響しません。
+
+## 各端で version を購読する方法
+
+```ts
+// Vue3 / Vue2 / uniapp
+const version = ref(lhlocale.version)
+lhlocale.subscribe(() => (version.value = lhlocale.version))
+// テンプレートで version に依存させる、変化すれば再レンダリング
+
+// React
+useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)
+```
+
+## 言語ファイル
+
+| ファイル | 状態 |
+| --- | --- |
+| `zh-CN.ts` | ✅ デフォルト言語（`as const`、`LhLocalePath` の導出元）、真源 |
+| `zh-TW.ts` / `en-US.ts` / `ja-JP.ts` / `ko-KR.ts` / `es.ts` / `ar.ts`（RTL）/ `fr-FR.ts` / `ru.ts` | ✅ 完全（九言語、各ドキュメントサイトと一致、用語は家族 `docs/i18n/glossary.md` に準拠） |
+| `de-DE.ts` | ✅ 完全（**ランタイム拡張**言語パック：コンポーネントライブラリのランタイムのみが提供、ドキュメントサイトにドイツ語コンテンツはなし） |
+
+サブパスインポート：`@lh-ui/share/locales/lang/zh-CN`。各言語パックのキー構造は
+`zh-CN.ts` と完全に一致（`tests/unit/locales.spec.ts` のミラーテストが強制検証）、
+どれでも直接 `setLocale` で切り替え可能。
+
+### 38 個のトップレベルキー
+
+`common` / `input` / `datepicker` / `timepicker` / `cascader` / `tag` / `badge` / `select` / `form` / `switch` / `slider` / `progress` / `avatar` / `descriptions` / `empty` / `alert` / `dialog` / `message` / `breadcrumb` / `pagination` / `tabs` / `steps` / `popconfirm` / `drawer` / `notification` / `loading` / `collapse` / `rate` / `backtop` / `image` / `menu` / `table` / `tree` / `treeSelect` / `transfer` / `upload` / `anchor` / `ariaLabels`
+
+10 個の言語ファイルはトップレベルキー数が一致しており（各 38 個）、構造が揃っています。うち `ariaLabels` はアクセシビリティ文案のキー（約 40 件）で、各コンポーネントがこれを読んで aria-label を生成します。
+
+典型的な補間文案：
+
+```ts
+pagination.total: '共 {total} 条'
+pagination.sizeChanger: '{size} 条/页'
+pagination.page: '第 {page} 页'
+steps.step: '第 {index} 步'
+rate.stars: '{n} 星'
+cascader.columnLabel: '第 {n} 级'
+collapse.toggle: '展开或折叠 {title}'
+datepicker.panelTitle: '{year}年{month}'
+menu.submenuLabel: '子菜单 {title}'
+```
+
+## 新しい言語の追加
+
+3 ステップ（`src/locales/lang/README.md` に同一の説明があります）：
+
+1. `src/locales/lang/<lang>.ts` を作り、`LhLocaleMessages` 構造をエクスポートする（トップレベルキーは 38 個に揃える、`satisfies` で検証可能）。
+2. `src/constants/index.ts` の `LH_LANGUAGE_CONST` に定数を追加する。
+3. `src/locales/locale.ts` の内蔵注册表 `locales` にマウントする。
+
+その後 `pnpm test` を実行します（`theme.spec` と locale 関連のケースに構造一致性の回帰テストがあります）。
+
+## 関連型
+
+| 型 | 定義 | 用途 |
+| --- | --- | --- |
+| `LhLocaleType` | `LH_LANGUAGE_CONST` から導出 | サポートされる言語コードのユニオン |
+| `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | 言語パック全体の型 |
+| `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | 言語パックのリーフノード（再帰的に読み取り専用） |
+| `LhLeaves<T>` | 再帰マップ型 | 言語パックの構造からすべての文字列リーフのドットパスのユニオンを導出する |
+| `LhLocalePath` | `LhLeaves<typeof zhCN>` | `t()` のリテラルキー型 |
+| `LhTranslate` | オーバーロード型 | `t()` の呼び出しシグネチャ |
+| `LhTranslateArray` | `(path: string, fallback?: string[]) => string[]` | `tm()` の呼び出しシグネチャ |
+| `LhLocaleListener` | `(version: number) => void` | 言語変更リスナー |
+| `LhLocaleOptions` | `{ locale: LhLocaleType; messages: LhLocaleMessages }` | `use()` の入力 |
+
+## 注意事項
+
+- **`LhLeaves` は配列キーに対して `never` を返します**：`datepicker.months` は配列でキーによるアドレッシングができず、`t()` のドットパスでは到達できません——配列は一律に `tm()` 経由です。
+- **`t` は分割代入可能です**：アロー関数プロパティなので、`const t = lhlocale.t` としても this を失いません。
+- **core コンポーネントは `lhlocale` を直接呼びません**：rate / pagination は [formatMessage](/ja/core/format) で補間を処理し、文案キーの検索は UI 層で完結する——core はシングルトンの副作用に依存しません。
+- **`add` はディープマージです**：渡したキーだけを上書きし、残りはそのまま保持します。
+
+<LocaleInspector />

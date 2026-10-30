@@ -1,0 +1,194 @@
+---
+title: pagination —— ترقيم الصفحات
+description: 'خوارزمية تقلص النافذة عبر getPaginationRange (تبتثيث الصفحتين الأولى والأخيرة + علامتا حذف على الجانبين)، وتطبيع التجاوز عبر clampPage، وaria-current=page'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ترقيم الصفحات هو التنقل القياسي عندما «تتجاوز البيانات سعة الشاشة». ولم تكمن صعوبته الأساسية في تقليب الصفحات، بل في **عرض مجال أرقام الصفحات**: فمع 100 صفحة لا يمكن رسم 100 زر جميعها، ولكل مكتبة خوارزميتها في كيفية التعبير عن الموضع وتوفير القفز السريع باستخدام الصفحتين الأولى والأخيرة + النافذة الحالية + علامات الحذف. ويُنفِّذ `core/pagination` خوارزمية «تقلص النافذة» الشائعة، ويُطبِّع مختلف المدخلات غير الصالحة.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhPagination`: ترقيم أسفل الجداول، وترقيم نتائج البحث، وترقيم الألبومات.
+- المشاهد التي يمكن فيها تقسيم البيانات إلى صفحات ويحتاج المستخدم فيها إلى التحكم الصريح برقم الصفحة.
+- **لا يجب استخدامه**: التحميل بالتمرير اللانهائي (استخدم `virtual-list` أو الاستماع للتمرير)؛ وعندما تكون البيانات قليلة إلى حد تتسع له شاشة واحدة (عدم الترقيم أبسط).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getPageCount,
+  clampPage,
+  getPaginationRange,
+  getPaginationItemAria,
+  formatMessage,
+} from '@lh-ui/share/core/pagination'
+import type {
+  LhPaginationRangeItem,
+  LhPaginationRangeState,
+  LhPaginationMessageParams,
+} from '@lh-ui/share/core/pagination'
+```
+
+## نية التصميم
+
+**تطهير المعاملين في `getPageCount`**: يمر `total` و`pageSize` كلاهما عبر `shared/sanitize.sanitizeNumber` — فلا ينفذ NaN / Infinity ليتحولا إلى عدد صفحات NaN. وهذا الدفاع ليس زائدًا: فـ `total` يأتي عادةً من واجهة غير متزامنة، وقد يكون أثناء التحميل undefined، فيكون `Math.ceil(undefined / 10)` هو NaN، ويُبطل NaN عمل `clampPage` وخوارزمية المجال بالكامل.
+
+**معاملة `clampPage` تفرّق بين NaN وInfinity**: يُعتبر NaN قيمة غير صالحة فيُتراجع إلى الصفحة الأولى؛ أما **±Infinity فيُترك للتقييد** — فـ `Infinity` يقع في الصفحة الأخيرة، و`-Infinity` في الأولى. ولهذا التمييز معنى عملي: القيم غير الصالحة التي يمررها الخارج في الوضع المضبوط (NaN) يجب أن تعود إلى موضع آمن، بينما التعبير عن «اقفز إلى الصفحة الأخيرة» بـ Infinity استخدام قانوني.
+
+**منطق الالتصاق في خوارزمية المجال**: يمر `current` في `getPaginationRange` أولًا عبر `clampPage` للتطبيع — وتسجّل التعليقات سيناريو حقيقيًا: قد يتجاوز `innerCurrent` المُمرَّر من الطرف البصري الحدود briefly (في الوضع المضبوط عندما تخرج القيمة الخارجية عن المزامنة مع القيمة الداخلية، أو عندما يصير total أصغر دون أن يتزامن current)، وعدم تقييده يجعل الصفحة الحالية تقع خارج نافذة العرض، وينقلب حكم علامة الحذف.
+
+**علامة الحذف لا تُخرج إلا عند نشوء فجوة فعلية**: `showLeftEllipsis = leftSibling > 2` لا `> 1` — فعندما تلتصق النافذة بالصفحة الأولى (مثل current=3، siblingCount=1)، لا يُحذف سوى صفحة واحدة هي «2»، وحينها يكون عرض 1،2،3،4،5 متتابعة أوضح من إدراج علامة حذف.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getPageCount` | `(total, pageSize) => number` | إجمالي الصفحات (الأدنى 1) | تطهير المعاملين |
+| `clampPage` | `(page, pageCount) => number` | رقم صفحة مُقيَّد | NaN←1، Infinity←الصفحة الأخيرة |
+| `getPaginationRange` | `(state: LhPaginationRangeState) => LhPaginationRangeItem[]` | مصفوفة عناصر المجال | خوارزمية تقلص النافذة |
+| `getPaginationItemAria` | `(options: { page, current, labelTemplate? }) => LhAriaAttrs` | حزمة سمات aria | aria-current / aria-label |
+| `formatMessage` | إعادة تصدير من `shared/format` | نصوص مع ترجمة متغيرة | الحفاظ على مسار الاستيراد الأصلي |
+
+## تعريف الأنواع
+
+```ts
+export type LhPaginationRangeItemType = 'page' | 'ellipsis'
+
+export interface LhPaginationRangeItem {
+  type: LhPaginationRangeItemType
+  page: number    // عنصر ellipsis دائمًا 0، وموضعه هو دلالته
+}
+
+export interface LhPaginationRangeState {
+  current: number       // الصفحة الحالية (تبدأ من 1)
+  pageCount: number
+  siblingCount?: number // عدد صفحات الجانبين للصفحة الحالية، الافتراضي 1
+}
+
+export type LhPaginationMessageParams = Record<string, string | number>
+```
+
+## إمكانية الوصول
+
+```ts
+getPaginationItemAria({ page: 3, current: 3, labelTemplate: 'الصفحة {page}' })
+// { 'aria-current': 'page', 'aria-label': 'الصفحة 3' }
+
+getPaginationItemAria({ page: 5, current: 3, labelTemplate: 'الصفحة {page}' })
+// { 'aria-label': 'الصفحة 5' }
+
+getPaginationItemAria({ page: 5, current: 3 })
+// {} (دون قالب لا يُخرج aria-label؛ فالرقم داخل الزر مقروء بذاته)
+```
+
+- تُخرج الصفحة الحالية `aria-current="page"` — وهي اصطلاح APG القياسي لترقيم الصفحات، وبناءً عليه ينطق قارئ الشاشة «الصفحة الحالية» بدلًا من معاملة الرقم كرابط عادي.
+- **زر علامة الحذف** يجب أن يحمل `aria-label` (مثل «تقديم 5 صفحات») أو `disabled` — فالنص «…» الصرف يحمل صفر معلومة لقارئ الشاشة، وهو أكثر عيوب إمكانية الوصول شيوعًا في الترقيم.
+- يجب أن يُغلَّف الترقيم كله بـ `<nav aria-label="ترقيم الصفحات">`، لتمييزه عن بقية تنقل الصفحة.
+- يأتي `labelTemplate` من حزمة اللغة (`pagination.page` وغيرها)، ويستبدل هذا المتغيّر `{page}`.
+
+## أمثلة الاستخدام
+
+```ts
+import { getPageCount, clampPage, getPaginationRange } from '@lh-ui/share/core/pagination'
+
+getPageCount(100, 10)    // 10
+getPageCount(105, 10)    // 11
+getPageCount(0, 10)      // 1 (الأدنى صفحة واحدة)
+getPageCount(NaN, 10)    // 1 (يُطهَّر total إلى 0، ثم يرفعه Math.max(1, …) إلى 1)
+getPageCount(100, NaN)   // 100 (يُطهَّر pageSize إلى القيمة الافتراضية 1، أي عنصر واحد لكل صفحة)
+
+clampPage(5, 10)    // 5
+clampPage(0, 10)    // 1
+clampPage(15, 10)   // 10
+clampPage(NaN, 10)  // 1
+clampPage(Infinity, 10)  // 10 (يقع Infinity في الصفحة الأخيرة)
+
+// siblingCount الافتراضي 1، إجمالي الخانات = 1*2 + 5 = 7
+getPaginationRange({ current: 1, pageCount: 10 })
+// [1, 2, 3, …, 10]
+getPaginationRange({ current: 5, pageCount: 10 })
+// [1, …, 4, 5, 6, …, 10]
+getPaginationRange({ current: 10, pageCount: 10 })
+// [1, …, 8, 9, 10]
+getPaginationRange({ current: 5, pageCount: 5 })
+// [1, 2, 3, 4, 5] (الصفحات أقل من الخانات، فتُعرض كلها بلا علامات حذف)
+getPaginationRange({ current: 99, pageCount: 10 })
+// [1, …, 8, 9, 10] (current المتجاوز يُقيَّد)
+```
+
+```vue
+<!-- Vue3 -->
+<nav class="lh-pagination" aria-label="ترقيم الصفحات">
+  <button type="button" class="lh-pagination__prev" :disabled="current <= 1" @click="go(current - 1)">
+    السابقة
+  </button>
+  <template v-for="(item, i) in range" :key="i">
+    <span v-if="item.type === 'ellipsis'" class="lh-pagination__ellipsis">…</span>
+    <button
+      v-else
+      type="button"
+      class="lh-pagination__item"
+      :class="{ 'is-active': item.page === current }"
+      v-bind="getPaginationItemAria({ page: item.page, current, labelTemplate: t('pagination.page') })"
+      @click="go(item.page)"
+    >
+      {{ item.page }}
+    </button>
+  </template>
+  <button type="button" class="lh-pagination__next" :disabled="current >= pageCount" @click="go(current + 1)">
+    التالية
+  </button>
+  <select v-model="pageSize" class="lh-pagination__sizes">
+    <option :value="10">10 عنصرًا/صفحة</option>
+    <option :value="20">20 عنصرًا/صفحة</option>
+    <option :value="50">50 عنصرًا/صفحة</option>
+  </select>
+  <span class="lh-pagination__total">إجمالي {{ total }} عنصرًا</span>
+</nav>
+```
+
+```ts
+const pageCount = computed(() => getPageCount(props.total, pageSize.value))
+const range = computed(() =>
+  getPaginationRange({ current: current.value, pageCount: pageCount.value }),
+)
+function go(page: number) {
+  const next = clampPage(page, pageCount.value)
+  if (next !== current.value) emit('update:current', next)
+}
+```
+
+```tsx
+// React: ترقيم مضبوط، يمتلك المكوّن الأب current؛ وفي go يُستدعى clampPage قبل رد النداء
+```
+
+```ts
+// uniapp: <view> + تكرار <view> لعناصر المجال؛ والقفز إلى صفحة عبر <input type="number"> + زر قفز
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-pagination` | الصنف الأساسي (flex موسَّط) |
+| `.lh-pagination__prev` / `__next` | زرا الصفحتين السابقة/التالية |
+| `.lh-pagination__item` | زر رقم الصفحة |
+| `.lh-pagination__item.is-active` | الصفحة الحالية (خلفية باللون الأساسي) |
+| `.lh-pagination__ellipsis` | علامة الحذف |
+| `.lh-pagination__sizes` | محدد عدد العناصر لكل صفحة |
+| `.lh-pagination__total` / `__jump` | نص الإجمالي / إدخال القفز |
+
+الصفحة الحالية بخلفية `--lh-primary-color` + نص `--lh-color-on-primary`؛ والأزرار المعطّلة `--lh-text-disabled`؛ ويتحكم `--lh-gap-small` في التباعد بين الأزرار.
+
+## ملاحظات
+
+- **أرقام الصفحات تبدأ من 1**: تبدأ `current` و`page` و`pageCount` جميعها من 1، خلافًا لفهارس صفوف `table` (التي تبدأ من 0)، والخلط بينهما خطأ سهل.
+- **علاقة `pageCount` بـ `total`**: يحسبها الطرف البصري عادةً بـ `getPageCount(total, pageSize)`، لكن يمكن تمرير `pageCount` مباشرةً (عند معرفة الخادم لإجمالي الصفحات). ولا تستخدم المصدرين معًا، تفاديًا للتعارض.
+- **تقارب `current` عند تغيُّر `pageSize`**: عند التبديل من 50 عنصرًا/صفحة إلى 10، قد تتجاوز الصفحة الحالية `pageCount` الجديد — فاستدعِ `clampPage` مرة عند `watch(pageSize)`، وإلا ستُعرض صفحة فارغة.
+- **تفاعل علامة الحذف**: ينقل النقر على علامة الحذف عادةً 5 صفحات (`current ± 5`)؛ ولا يبني core هذا السلوك، بل يُنفّذه الطرف البصري ويعطي زر علامة الحذف `aria-label`.
+- **`siblingCount` والخانات**: `totalSlots = siblingCount * 2 + 5` (الصفحتان الأولى والأخيرة + الصفحة الحالية + خانتا علامتي الحذف + شقيقان على الجانبين). وعند `pageCount <= totalSlots` تُعرض كلها بلا علامات حذف — ففي `siblingCount: 2` يكون الحد 9 صفحات.
+- **التجاوز العابر في الوضع المضبوط**: لقد قيَّد `getPaginationRange` داخليًا `current`، فلن يخطئ العرض؛ لكن `aria-current` سيقع على الصفحة المُقيَّدة، وبعد مزامنة الحالة الخارجية يتسق الأمر طبيعيًا.
+- **إعادة تصدير `formatMessage`**: يُعيد هذا النمط تصدير `formatMessage` من `shared/format` بالربطة نفسها، فقط للحفاظ على مسار الاستيراد القائم في المصب (تعبئة نصوص مثل `pagination.total` التي تحمل متغيّر `{total}`)، فليستخدم الكود الجديد `core/shared/format` مباشرة.
+
+<FnPlayground module="pagination" fn="getPaginationRange" params='{"state": {"current": 5, "pageCount": 20, "siblingCount": 1}}' />

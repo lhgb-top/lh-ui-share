@@ -1,0 +1,137 @@
+---
+title: sanitize —— 숫자 정제
+description: 'sanitizeNumber / clamp / safePrecision가 진입 지점에서 NaN과 Infinity를 차단, 하위 렌더링 오염 방지'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+페이지 번호, 간격, step, precision, 크기 상한——core 계층의 수많은 함수가 외부 숫자를 받습니다. `NaN` / `Infinity`가 한 번 흘러들면 하류를 계속 오염시킵니다: `NaNpx` 스타일, `slice(NaN)`의 빈 배열, `toFixed(1000)`의 RangeError로 렌더링이 멈추는 일까지. 이 모듈의 전략은 **진입 지점에서 일괄 차단**하는 것이고, 하류 알고리즘은 「이미 깨끗해진」 숫자만 다룁니다.
+
+## 가져오기
+
+```ts
+import {
+  sanitizeNumber,
+  clamp,
+  safePrecision,
+  LH_PRECISION_MAX,
+  type LhSanitizeNumberOptions,
+} from '@lh-ui/share/core/shared/sanitize'
+```
+
+## 타입과 상수
+
+```ts
+export interface LhSanitizeNumberOptions {
+  min?: number       // 허용 최솟값(유한하지 않은 min 자체는 무시)
+  max?: number       // 허용 최댓값(유한하지 않은 max 자체는 무시)
+  integer?: boolean  // 정수로 만들지(0을 향해 절단)
+}
+
+export const LH_PRECISION_MAX = 100   // precision 상한: toFixed가 100자리를 넘기면 RangeError
+```
+
+## 함수 표
+
+| 함수 | 시그니처 | 역할 |
+| --- | --- | --- |
+| `sanitizeNumber` | `(value: number \| undefined \| null, fallback: number, options?) => number` | 임의의 숫자를 유한수로 정제 |
+| `clamp` | `(value: number, min: number, max: number) => number` | 원시 클램프, **정제를 하지 않음** |
+| `safePrecision` | `(precision: number) => number` | precision을 `[0, 100]` 정수로 정제 |
+
+## sanitizeNumber
+
+```ts
+sanitizeNumber(5, 0)                    // 5
+sanitizeNumber(NaN, 0)                  // 0
+sanitizeNumber(Infinity, 10)            // 10
+sanitizeNumber(undefined, 1)            // 1
+sanitizeNumber(null, 1)                 // 1
+sanitizeNumber(3.7, 0, { integer: true })   // 3(0을 향해 절단, 반올림 아님)
+sanitizeNumber(-5, 0, { min: 0 })       // 0
+sanitizeNumber(999, 0, { max: 100 })    // 100
+```
+
+처리 순서: **유한하지 않음 판정 → `integer` 절단 → `min` 클램프 → `max` 클램프**.
+
+핵심 설계: **`min` / `max` 자체도 유한하지 않음 필터링을 합니다**.
+
+```ts
+sanitizeNumber(5, 0, { min: NaN, max: Infinity })
+// 5  —— 잘못된 min/max가 NaN을 결과에 되돌려 가져오지 않음
+```
+
+왜 중요한가: `min` / `max`는 보통 사용자의 props에서 옵니다(`<lh-slider :min="NaN">`). 걸러내지 않으면 `Math.max(NaN, 5)`가 `NaN`이 되어 정제가 무의미해집니다.
+
+## clamp
+
+```ts
+clamp(12, 0, 10)    // 10
+clamp(-3, 0, 10)    // 0
+clamp(5, 0, 10)     // 5
+clamp(NaN, 0, 10)   // NaN  —— 통과!
+```
+
+`clamp`는 **단순한** `Math.min(Math.max(value, min), max)`이고 정제를 하지 않습니다. 이는 의도된 것입니다:
+
+- **호출 측이 이미 유한함을 보장하는** 시나리오는 정제 중복 비용이 필요 없습니다——input-number의 `clampValue`, slider의 드래그 클램프, popper의 기하학적 되돌림이 이 부류입니다(값이 자체적으로 계산된 중간 결과).
+- **NaN 통과 의미 유지**: 어떤 시나리오는 「NaN은 NaN인 채로」 경계 검사 단계까지 흘려보내야 하고, 일괄적으로 삼켜버리면 오히려 버그를 가립니다.
+
+**선택 원칙**: 값이 외부에서 오면(props, 사용자 입력, 네트워크) → `sanitizeNumber`; 값이 내부 계산에서 오면 → `clamp`.
+
+## safePrecision
+
+```ts
+safePrecision(2)       // 2
+safePrecision(-1)      // 0
+safePrecision(999)     // 100
+safePrecision(NaN)     // 0
+safePrecision(2.7)     // 2(먼저 절단)
+```
+
+`sanitizeNumber(precision, 0, { min: 0, max: LH_PRECISION_MAX, integer: true })`와 동등합니다.
+
+**왜 반드시 정제해야 하는가**: `(1.234).toFixed(precision)`은 `precision > 100`일 때 `RangeError`를 던집니다——잘못된 precision prop 하나가 input-number / statistic의 렌더링을 바로 멈춥니다. 0으로 정제하는 편이 렌더링이 멈추는 것보다 훨씬 낫습니다.
+
+## 누가 쓰는가
+
+| 소비자 | 사용법 |
+| --- | --- |
+| `pagination` | `sanitizeNumber(currentPage, 1, { min: 1 })` |
+| `input-number` | `sanitizeNumber(props.step, 1, { min: 0 })` + `safePrecision(props.precision)` |
+| `space` | `sanitizeNumber(props.size, 8)`(간격) |
+| `popper` | 인수 rect의 필드별 정제 + `clamp` 되돌림 |
+| `keyboard` | `clamp`로 내비게이션 경계 처리 |
+| `statistic` | `safePrecision(props.precision)` |
+
+## 사용 예시
+
+### props 정제
+
+```ts
+// pagination 컴포넌트
+const currentPage = computed(() =>
+  sanitizeNumber(props.currentPage, 1, { min: 1, max: totalPages.value }),
+)
+```
+
+### 방어적 도구
+
+```ts
+// 이벤트에서 값을 꺼낸 뒤 정제
+const value = sanitizeNumber(Number(e.target.value), 0)
+```
+
+### precision 안전
+
+```ts
+const display = modelValue.value.toFixed(safePrecision(props.precision))
+```
+
+## 주의 사항
+
+- **`integer`는 0을 향한 절단**(`Math.trunc`)이지 반올림이 아닙니다: `3.7 → 3`, `-3.7 → -3`. 페이지 매김, 인덱스 같은 시나리오에 필요한 것은 절단입니다.
+- **`clamp`는 정제하지 않습니다**: 버그가 아니라 특성이므로, 정제하도록 「수정」하지 마세요(NaN 통과의 디버깅 가치가 깨집니다).
+- **fallback은 필수입니다**: 합리적인 기본값이 없습니다(시나리오마다 「안전한 값」이 다름), 강제로 전달하게 만들어 호출 측이 생각하게 합니다.
+
+<FnPlayground module="sanitize" fn="sanitizeNumber" params='{"value": null, "fallback": 1, "options": {"min": 0, "max": 10}}' />

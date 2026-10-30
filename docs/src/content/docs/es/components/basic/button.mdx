@@ -1,0 +1,125 @@
+---
+title: button —— Botón
+description: 'isClickable determina la clicabilidad, getSize resuelve un tamaño válido, getClassNames calcula las clases modificadoras de tipo/tamaño/forma'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El botón es uno de los componentes más reescritos de una biblioteca de componentes: tipo, tamaño, forma, estado de carga, estado desactivado y ancho de bloque se combinan en un gran número de variantes. `core/button` extrae el **cálculo** de estas variantes a funciones puras: la capa UI solo tiene que pasar los props y vincular la matriz de nombres de clase al elemento raíz.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhButton`: los nombres de clase los produce completamente `getClassNames`; la capa UI no concatena cadenas por su cuenta.
+- Cuando se necesite reutilizar la misma semántica de «tipo + tamaño» fuera de un botón (como el disparador de `LhDropdown` o `LhBackTop`), llama directamente a las funciones de core en lugar de copiar nombres de clase.
+- **No usarlo para**: la lógica de envío de formularios ni la limitación de frecuencia (throttling). core solo calcula «cómo debe verse ahora», no «qué pasa al hacer clic».
+
+## Importación
+
+```ts
+import { isClickable, getSize, getClassNames } from '@lh-ui/share/core/button'
+import type { LhButtonState } from '@lh-ui/share/core/button'
+```
+
+## Intención de diseño
+
+El modelo de estado del botón es deliberadamente estrecho: `LhButtonState` solo contiene campos que **afectan a los nombres de clase**. Tanto `loading` como `disabled` participan en el cálculo de clases (`--disabled`), pero «si responde a los clics» es semántica de interacción, no semántica visual, de ahí que se separe en `isClickable`: un botón en carga tiene aspecto normal pero no debe ser clicable, y esta evaluación debe ser independiente del cálculo de clases; de lo contrario es fácil que se cuele el caso de «se añadió la clase disabled pero el evento no se interceptó».
+
+El tamaño sigue una cadena de respaldo de dos niveles (props del componente → `LH_SIZE_DEFAULT`), pero ten en cuenta que `getClassNames` internamente, para el tamaño, **solo acepta el tamaño local** (el segundo parámetro está fijado a `undefined`): la escala de tamaño de los nombres de clase no hereda el tamaño global de ConfigProvider; el tamaño global solo afecta a los estilos inline o a las decisiones propias de cada plataforma. Esto es intencional: los nombres de clase son un contrato visual, y la configuración global cambia el «valor predeterminado», no lo «sobrescribe».
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `isClickable` | `(state: { loading?: boolean; disabled?: boolean }) => boolean` | booleano | false si loading o disabled es verdadero; true cuando ambos están ausentes |
+| `getSize` | `(localSize: string \| undefined, globalSize: string \| undefined) => string` | identificador de tamaño | respaldo de dos niveles, con respaldo final en `'medium'` |
+| `getClassNames` | `(state: LhButtonState) => string[]` | matriz de nombres de clase | calcula `lh-button` y todas las clases modificadoras |
+| `getStyle` | `() => Record<string, string>` | `{}` | marcador de posición de variables de tema, siempre vacío (ver abajo) |
+
+Que `getStyle` devuelva siempre un objeto vacío merece una explicación: los colores del botón están totalmente controlados por los tokens de `:root` (`--lh-primary-*`, etc.), y las themeVars de ConfigProvider llegan en cascada al botón a través de las variables CSS del elemento padre: **no hace falta** volver a declararlas en el elemento del botón. Esta función se conserva por simetría con otros componentes que «pueden tener variables de tema inline», de modo que quien llama puede hacer `v-bind` sin pensar.
+
+## Definiciones de tipos
+
+```ts
+export interface LhButtonState {
+  type: LhComponentType       // 'primary' | 'success' | ... | 'default'
+  size: LhComponentSize       // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  loading: boolean
+  disabled: boolean
+  plain: boolean              // plano: contorno en lugar de relleno
+  block: boolean              // bloque: ocupa todo el ancho del contenedor padre
+  round: boolean              // esquinas redondeadas
+  circle: boolean             // círculo completo (suele acompañar a un icono)
+}
+```
+
+## Accesibilidad
+
+`core/button` no emite un paquete de atributos aria: la semántica del botón la aporta la capa UI con un elemento `<button>` nativo, y `disabled` pasa directamente por el atributo nativo, que los lectores de pantalla reconocen de forma natural. Esto refleja el principio de «usar la semántica nativa en lugar de reinventar la rueda»: solo para lo que la semántica nativa no puede expresar (spinbutton, treeitem, progressbar y similares) proporciona core un `getXxxAria`.
+
+Lo único que debe vigilar la capa UI: en estado `loading` el botón aún puede recibir el foco, pero `isClickable` devuelve false. En ese caso hay que añadir al botón `aria-busy="true"`, para que el lector de pantalla sepa que «hay una operación en curso» y no que «el botón está roto».
+
+## Ejemplos de uso
+
+```ts
+import { getClassNames, isClickable } from '@lh-ui/share/core/button'
+
+getClassNames({ type: 'primary', size: 'large', loading: false, disabled: false, plain: false, block: false, round: true, circle: false })
+// ['lh-button', 'lh-button--primary', 'lh-button--large', 'lh-button--round']
+
+isClickable({ loading: true, disabled: false })  // false
+isClickable({})                                   // true
+```
+
+El cableado en cada plataforma sigue siempre el mismo patrón de «props → state → vinculación»:
+
+```vue
+<!-- Vue3 -->
+<button
+  :class="getClassNames({ type, size, loading, disabled, plain, block, round, circle })"
+  :disabled="disabled"
+  :aria-busy="loading"
+  @click="isClickable({ loading, disabled }) && emit('click', $event)"
+>
+  <LhSpinner v-if="loading" :size="14" />
+  <slot />
+</button>
+```
+
+```tsx
+// React
+const cls = getClassNames({ type, size, loading, disabled, plain, block, round, circle })
+return <button className={cls.join(' ')} disabled={disabled} aria-busy={loading} onClick={onClick} />
+```
+
+```ts
+// uniapp: los nombres de clase van igualmente a la vinculación class; el icono de carga usa LhSpinner
+// (la plataforma uniapp recurre a imágenes para el svg)
+```
+
+## Estilos y tokens
+
+Estructura BEM de `styles/button/index.scss`:
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-button` | clase base: layout, tamaño de fuente, transiciones |
+| `.lh-button--{primary\|success\|warning\|danger\|error\|info\|default}` | tipo semántico |
+| `.lh-button--{mini\|small\|medium\|large\|x-large}` | escala de tamaño (altura, padding, tamaño de fuente) |
+| `.lh-button--plain` | estilo plano: fondo transparente + contorno |
+| `.lh-button--block` | ancho de bloque |
+| `.lh-button--round` / `.lh-button--circle` | esquinas redondeadas / círculo completo |
+| `.lh-button--disabled` | estado desactivado (puntero, opacidad) |
+| `.lh-button--blank` | botón en blanco (sin borde ni fondo, solo aparece al pasar el cursor) |
+| `.lh-button__icon` / `.lh-button__text` | slot de icono y texto |
+| `.lh-button__loading` / `.lh-button__spinner` / `.lh-button__path` | gráfico de carga |
+
+Todos los colores pasan por tokens como `var(--lh-primary-*)` / `var(--lh-success-*)`, y en modo oscuro se invierten automáticamente gracias a `var-dark.scss`.
+
+## Notas
+
+- El tamaño de `getClassNames` **no hereda la configuración global** (ver «Intención de diseño»); si tu plataforma exige que el tamaño global afecte al botón, primero llama a `getSize(local, global)` en la capa UI y pásalo después.
+- `loading` y `disabled` son equivalentes en los nombres de clase (ambos producen el aspecto de `--disabled`), pero la evaluación de la interacción pasa por `isClickable`: no infieras la clicabilidad a partir de si la clase está presente.
+- `circle` fuerza un cuadrado + círculo completo en los estilos; añadir `circle` a un botón de texto produce un aspecto extrañamente comprimido.
+- La combinación de `plain` con `type: 'default'` es casi invisible; es el comportamiento esperado del estilo plano.
+
+<FnPlayground module="button" fn="getClassNames" params='{"state": {"type": "primary", "size": "large", "loading": false, "disabled": false, "plain": false, "block": true, "round": false, "circle": false}}' />

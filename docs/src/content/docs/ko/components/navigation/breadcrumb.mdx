@@ -1,0 +1,152 @@
+---
+title: 'breadcrumb 경로 탐색 —— 내비게이션'
+description: 'getEllipsisBeforeIndex 첫 항목 + 말줄임 + 끝 항목 전략, getCollapsedHiddenIndexes 접기 숨김 집합, 마지막 항목 aria-current="page"'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+브레드크럼은 "내가 어디에 있는가, 어떻게 왔는가"를 보여주는 경로 표시입니다: `홈 / 설정 / 보안 / 2단계 인증`. 메뉴보다 가볍습니다——계층 경로만 나타낼 뿐 주 내비게이션을 담지 않습니다; 단계 표시보다 약합니다——순서 흐름이 아닌 포함 관계만 나타냅니다. 계층이 깊어지면 경로가 길어지기 때문에 접기가 핵심 알고리즘입니다.
+
+## 사용 시기
+
+- 각 단말에서 `<LhBreadcrumb>` / `<LhBreadcrumbItem>` 구현: 백엔드 시스템의 계층 경로, 문서 사이트의 분류 경로, 상품 분류 경로.
+- **현재 위치를 표시**하고 **단계별 되돌아가기** 입구를 제공해야 하는 상황.
+- **사용하면 안 되는 경우**: 주 내비게이션(`menu` 사용); 단계 흐름(`steps` 사용); 같은 레벨의 콘텐츠 전환(`tabs` 사용); 단 하나의 레벨뿐인 경로(그것은 브레드크럼이 아니라 페이지 제목입니다).
+
+## 가져오기
+
+```ts
+import {
+  getBreadcrumbItemClassNames,
+  getEllipsisBeforeIndex,
+  getCollapsedHiddenIndexes,
+  getBreadcrumbItemAria,
+} from '@lh-ui/share/core/breadcrumb'
+import type { LhBreadcrumbItemState, LhBreadcrumbCollapseState } from '@lh-ui/share/core/breadcrumb'
+```
+
+## 설계 의도
+
+**접기는 첫 항목을 유지**: `getEllipsisBeforeIndex`의 규칙은 "첫 항목 + 말줄임 + 마지막 maxItems-1개 항목"입니다. **첫 항목은 항상 유지**됩니다——그것은 "가장 최상위로 돌아가기"의 닻(보통 "홈")이며, 생략하면 사용자가 뿌리로 돌아갈 수단을 잃습니다. 이 트레이드오프는 "마지막 항목 유지"(현재 위치)와 동등하게 중요합니다.
+
+**말줄임을 어느 항목 앞에 넣을지**: 반환값은 **말줄임 이후 첫 번째 보이는 항목의 인덱스**(`total - (maxItems - 1)`)이며, UI 계층은 이 위치 앞에 말줄임 요소를 삽입합니다. 접지 않을 때는 -1을 반환합니다——-1은 "접지 않음"을 나타내는 센티넬이지 유효한 인덱스가 아니라는 점에 주의하세요.
+
+**`maxItems < 2`이면 접지 않음**: 최소한 첫 항목 + 이후 항목 하나는 보여야 접기에 의미가 있습니다. `maxItems: 1` 이하에서는 -1을 반환합니다——이것은 방어적 설계로, 잘못된 값을 설정했을 때 브레드크럼이 말줄임 하나만 남도록 접히는 것을 막습니다.
+
+**`getCollapsedHiddenIndexes`와 말줄임 인덱스의 관계**: 숨기는 대상은 "첫 항목과 말줄임 사이의 항목", 즉 반개구간 `[1, ellipsisIndex)`입니다——첫 항목(인덱스 0)과 말줄임 위치 이후의 항목은 모두 유지됩니다. 두 함수는 함께 사용합니다: 먼저 말줄임 위치를 구하고, 그 다음 숨김 집합을 계산합니다.
+
+**마지막 항목의 aria-current="page"**: 마지막 항목은 "현재 페이지"이며, `aria-current="page"`는 WAI-ARIA의 표준 의미입니다——스크린 리더는 "현재 페이지"로 읽어 주어, 텍스트 힌트보다 정확합니다. 마지막이 아닌 항목은 어떤 aria 속성도 출력하지 않습니다(링크 의미는 네이티브 `<a>`가 담당).
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getBreadcrumbItemClassNames` | `(state: LhBreadcrumbItemState) => string[]` | 클래스명 | 링크 상태 + 마지막 항목 |
+| `getEllipsisBeforeIndex` | `(state: LhBreadcrumbCollapseState) => number` | 인덱스 / -1 | 말줄임 위치 |
+| `getCollapsedHiddenIndexes` | `(state: LhBreadcrumbCollapseState) => number[]` | 숨김 인덱스 집합 | 접기 숨김 항목 |
+| `getBreadcrumbItemAria` | `(isLast: boolean) => LhAriaAttrs` | aria 패키지 | 마지막 항목 aria-current |
+
+## 타입 정의
+
+```ts
+export interface LhBreadcrumbItemState {
+  isLast: boolean    // 마지막 항목인지(현재 페이지)
+  isLink: boolean    // 링크로 렌더링할지(to가 전달되고 마지막 항목이 아님)
+}
+
+export interface LhBreadcrumbCollapseState {
+  total: number      // 항목 총수
+  maxItems: number   // 최대 보이는 항목 수(말줄임 포함); 2 미만이면 접지 않음
+}
+```
+
+## 접근성
+
+```ts
+getBreadcrumbItemAria(true)   // { 'aria-current': 'page' }
+getBreadcrumbItemAria(false)  // {}
+```
+
+- **aria-current="page"는 마지막 항목에만**: 중간 항목은 클릭 가능한 링크이므로 current 표시가 필요 없습니다. 스크린 리더는 페이지에 진입했을 때 "홈, 링크 / 설정, 링크 / 보안, 링크 / 2단계 인증, 현재 페이지"로 읽어 줍니다——경로와 위치가 한 번에 완전히 전달됩니다.
+- **JS 점프가 아닌 네이티브 `<a>` 사용**: 중간 항목이 실제 링크일 때는 `<a href="...">`를 사용하세요——가운데 버튼으로 새 창 열기, 링크 주소 복사, JS 없는 환경에서의 이용을 지원합니다. 클라이언트 사이드 라우팅은 UI 계층이 클릭을 가로채서 구현(`@click.prevent`)하되 href는 유지합니다. `getBreadcrumbItemAria`의 주석이 이 점을 설명합니다: 링크가 있을 때 role 의미는 네이티브 a가 담당하므로 함수가 출력할 필요가 없습니다.
+- **말줄임 버튼의 접근성**: 접힌 말줄임은 보통 클릭해서 전체 경로를 펼칠 수 있습니다. 그것은 컨트�이므로 `aria-label="전체 경로 펼치기"`(또는 펼쳐진 상태를 나타내는 aria-expanded)가 필요합니다——그렇지 않으면 이름 없는 버튼이 됩니다.
+- **nav 래퍼 + aria-label**: 브레드크럼 전체를 `<nav aria-label="브레드크럼">`으로 감싸는 것을 권장합니다——페이지에 여러 개의 nav(주 내비게이션, 페이지네이션 내비게이션)가 있을 수 있으므로 aria-label으로 구분합니다.
+- **구분자는 장식화**: `/`나 `»` 구분자는 순수 장식이므로 `aria-hidden`을 주거나 CSS 의사 요소로 구현해, 스크린 리더가 슬래시를 하나씩 읽지 않게 합니다.
+
+## 사용 예시
+
+```ts
+import {
+  getEllipsisBeforeIndex, getCollapsedHiddenIndexes, getBreadcrumbItemAria,
+} from '@lh-ui/share/core/breadcrumb'
+
+getEllipsisBeforeIndex({ total: 6, maxItems: 4 })   // 3(말줄임을 인덱스 3 앞에 삽입)
+getEllipsisBeforeIndex({ total: 4, maxItems: 4 })   // -1(총수 <= maxItems, 접지 않음)
+getEllipsisBeforeIndex({ total: 6, maxItems: 1 })   // -1(maxItems < 2, 접지 않음)
+getEllipsisBeforeIndex({ total: 6, maxItems: 2 })   // 5(첫 항목 + 마지막 1개 유지)
+
+getCollapsedHiddenIndexes({ total: 6, maxItems: 4 })  // [1, 2](첫 항목과 말줄임 사이)
+getCollapsedHiddenIndexes({ total: 4, maxItems: 4 })  // [](접지 않음)
+```
+
+```ts
+// UI 계층: 접기 렌더링(펼침 상태는 로컬 state로 제어)
+const expanded = ref(false)
+const items = ['홈', '시스템', '설정', '보안', '계정', '2단계 인증']
+const ellipsisIndex = computed(() =>
+  getEllipsisBeforeIndex({ total: items.value.length, maxItems: props.maxItems ?? 4 }),
+)
+const hidden = computed(() =>
+  expanded.value ? [] : getCollapsedHiddenIndexes({ total: items.value.length, maxItems: props.maxItems ?? 4 }),
+)
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <nav aria-label="브레드크럼">
+    <LhBreadcrumb :max-items="4">
+      <LhBreadcrumbItem to="/">홈</LhBreadcrumbItem>
+      <LhBreadcrumbItem to="/system">시스템</LhBreadcrumbItem>
+      <LhBreadcrumbItem to="/system/security">보안</LhBreadcrumbItem>
+      <LhBreadcrumbItem>2단계 인증</LhBreadcrumbItem>
+    </LhBreadcrumb>
+  </nav>
+</template>
+```
+
+```tsx
+// React: 경로 데이터는 보통 라우트 테이블에서 파생(useMatches / 커스텀 route meta)되며,
+// 수동으로 항목별 선언하지 않습니다——브레드크럼과 라우트의 매핑은 비즈니스 계약
+```
+
+```ts
+// uniapp: <navigator>는 네이티브 점프 컴포넌트; 미니프로그램 환경에는 <nav> 의미가 없고
+// view + aria-label도 무의미하지만 받아들일 수 있습니다(미니프로그램 화면낭독 생태계가 다름),
+// DOM 구조만 일치시키면 됨
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-breadcrumb` | 컨테이너(inline-flex) |
+| `.lh-breadcrumb__item` | 개별 항목 |
+| `.lh-breadcrumb__item--link` | 링크 상태(hover 시 색상 변화) |
+| `.lh-breadcrumb__item--last` | 마지막 항목(현재 페이지, 굵게 또는 주색) |
+| `.lh-breadcrumb__separator` | 구분자(보통 CSS 의사 요소) |
+| `.lh-breadcrumb__ellipsis` | 말줄임(클릭하여 펼치기 가능) |
+
+텍스트 색상 `--lh-text-regular`, 링크 hover 색상 `--lh-primary-color`, 마지막 항목 `--lh-text-primary`; 글자 크기 `--lh-font-size-base`.
+
+## 주의 사항
+
+- **`maxItems`는 말줄임을 포함**: `maxItems: 4`는 실제로 "첫 항목 + 말줄임 + 마지막 3개 항목" = 5개 요소를 표시하며, 보이는 **텍스트 항목**은 4개입니다. 값을 설정할 때는 보이는 텍스트 항목 수로 계산하세요.
+- **접기의 동적 성격**: 경로 길이는 내비게이션 깊이에 따라 변하고(`getEllipsisBeforeIndex`의 total은 동적), `maxItems`는 고정이면 됩니다——언제 접을지 수동으로 판단할 필요 없이 함수가 자동으로 처리합니다.
+- **말줄임 펼치기 상호작용**: 흔한 두 가지 방법——① 말줄임 클릭 시 그 자리에서 전체 펼치기(`expanded` 상태 전환); ② 클릭 시 popover로 숨겨진 항목 표시. 전자는 간단하고 후자는 공간을 절약하므로, 경로 깊이에 따라 선택하세요.
+- **경로 데이터의 출처**: 브레드크럼은 손으로 작성하기보다 라우트 테이블에서 파생되는 것이 보통입니다——각 라우트의 meta에 `title`을 설정하고, 컴포넌트 계층에서 현재 경로의 조상 meta를 모읍니다. core은 렌더링 알고리즘만 담당하며, 라우트 통합은 UI 계층의 일입니다.
+- **마지막 항목은 링크로 렌더링하지 않음**: 현재 페이지가 자신을 가리키는 것은 의미가 없습니다(`isLink: false`). `getBreadcrumbItemClassNames`의 `--link` 클래스명은 isLink로 제어되므로 마지막 항목에는 자연히 없습니다.
+- **제목이 너무 긴 경우의 생략**: 단일 레벨의 제목이 너무 길면 CSS `text-overflow: ellipsis`(UI 계층 스타일)를 사용합니다——경로 접기와는 다른 "생략"입니다. 접기가 줄이는 것은 계층 수이고, CSS가 줄이는 것은 단일 레벨의 너비입니다.
+- **브레드크럼을 주 내비게이션으로 쓰지 마세요**: 그것은 보조적 위치 표시이며, 주 진입구는 여전히 메뉴입니다. 모바일에서는 공간이 제한적이라 브레드크럼을 생략하거나 "뒤로" 버튼만 남기는 경우가 많습니다.
+
+<FnPlayground module="breadcrumb" fn="getEllipsisBeforeIndex" params='{"total": 6, "maxItems": 4}' />

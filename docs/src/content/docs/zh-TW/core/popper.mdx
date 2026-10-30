@@ -1,0 +1,154 @@
+---
+title: popper —— 彈出層定位引擎
+description: 'computePosition 實作 12 方位擺放、主軸翻轉與交叉軸夾回，純 rect 輸入，可直接單測'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+tooltip、popover、popconfirm、dropdown、select 的下拉、cascader 的面板、date-picker 的日曆——lh-ui 裡所有「浮在觸發器旁邊的東西」，位置都由這一個函式算出來。
+
+## 為什麼不用 floating-ui / popper.js
+
+家族的四端（Vue3 / Vue2 / React / uniapp）都要引這個套件，第三方定位庫的體積與更新節奏會變成四份負擔。share 的定位引擎只覆蓋家族真正用到的子集：12 方位、主軸翻轉、交叉軸夾回、箭頭偏移，約 300 行，零依賴，純函式輸入輸出——**不建立 DOM、不監聽事件、不跑 requestAnimationFrame**。調度與渲染由各 UI 層自己決定（Vue3 用 `watchEffect`，React 用 `useLayoutEffect`，uniapp 用頁面捲動事件）。
+
+## 匯入方式
+
+```ts
+import {
+  computePosition,
+  parsePlacement,
+  getWindowViewport,
+  type LhPlacement,
+  type LhComputePositionOptions,
+} from '@lh-ui/share/core/shared/popper'
+```
+
+## 類型與常數
+
+```ts
+// 12 方位 = 4 方向 × 3 對齊（center 可省略後綴）
+export type LhPlacement =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhPlacementDir = 'top' | 'bottom' | 'left' | 'right'
+export type LhPlacementAlign = 'start' | 'center' | 'end'
+
+// 與 DOMRect 同構的最小結構——測試時直接造字面值
+export interface LhDOMRectLike {
+  top: number
+  left: number
+  width: number
+  height: number
+  right: number
+  bottom: number
+}
+
+export interface LhComputePositionOptions {
+  placement?: LhPlacement       // 預設 'bottom'
+  gap?: number                  // 與觸發器的間距，預設 8
+  padding?: number              // 視區安全邊距，預設 8
+  flip?: boolean                // 主軸溢出翻轉，預設 true
+  shift?: boolean               // 交叉軸夾回，預設 true
+}
+
+export interface LhPopperPosition {
+  top: number
+  left: number
+  placement: LhPlacement        // 翻轉後實際生效的方位
+  arrowOffset: number           // 箭頭在交叉軸上的偏移（px，自彈出層交叉軸起點算）
+}
+```
+
+## 函式表
+
+| 函式 | 簽名 | 作用 |
+| --- | --- | --- |
+| `parsePlacement` | `(placement: LhPlacement) => { dir, align }` | 拆解方位為「方向 + 對齊」，非法方向兜底 `bottom`、非法對齊兜底 `center` |
+| `buildPlacement` | `(dir: LhPlacementDir, align: LhPlacementAlign) => LhPlacement` | 由方向與對齊重建方位（`center` 時省略後綴） |
+| `flipDir` | `(dir: LhPlacementDir) => LhPlacementDir` | 主軸翻轉：top↔bottom、left↔right |
+| `basePosition` | `(dir, align, trigger, popper, gap) => { top, left }` | 按方位的基礎擺放（**不考慮視區約束**） |
+| `fitsInViewport` | `(dir, trigger, popper, viewport, gap, padding) => boolean` | 指定方向上彈出層是否完整落在視區內（主軸判定） |
+| `computePosition` | `(trigger, popper, viewport, options?) => LhPopperPosition` | **主入口**：完整定位計算 |
+| `getWindowViewport` | `() => LhDOMRectLike` | 由瀏覽器視窗構造視區 rect；SSR 守衛，無 `window` 時寬高為 0 |
+| `isOutsideViewport` | `(rect, viewport) => boolean` | rect 是否已完全離開視區（捲動時觸發器不可見即應關閉浮層） |
+
+## computePosition 的計算流程
+
+```
+flip（主軸翻轉）
+  → 僅當翻轉後的方向放得下才翻（避免翻過去更糟）
+  → 按方位擺放（basePosition）
+  → shift 交叉軸夾回（沿 padding 安全邊距）
+  → 主軸夾回（僅 flip 開啟、且兩側都放不下時，貼到能貼的那一側）
+  → 低側鉗制安全網（兜底，保證不出現負座標）
+```
+
+關鍵設計：
+
+- **翻轉是條件性的**。常見的錯誤實作是「溢出就翻轉」，結果觸發器在視區正中、浮層很高時翻過去反而更放不下。`computePosition` 先用 `fitsInViewport` 問一句「翻過去放得下嗎」，放不下就不翻，走主軸鉗制。
+- **傳回實際生效的 `placement`**。翻轉後 `placement` 欄位變成新方位，UI 層據此切換箭頭類別名（`is-top` / `is-bottom`）——箭頭方向必須與實際方位一致，否則視覺上箭頭會與浮層分離。
+- **箭頭始終指向觸發器中心**，`arrowOffset` 是交叉軸上的偏移量，鉗制在彈出層邊界內；`padding` 上限是彈出層一半，避免上下界反轉（箭頭跑到彈出層外面）。
+
+## 使用範例
+
+### 純函式（可直接單測）
+
+```ts
+const trigger = { top: 100, left: 50, width: 80, height: 32, right: 130, bottom: 132 }
+const popper = { top: 0, left: 0, width: 200, height: 120, right: 200, bottom: 120 }
+const viewport = { top: 0, left: 0, width: 375, height: 667, right: 375, bottom: 667 }
+
+computePosition(trigger, popper, viewport, { placement: 'top' })
+// 觸發器上方放得下：
+// { top: 132 - 8 - 120, left: ..., placement: 'top', arrowOffset: ... }
+```
+
+### Vue3 接線
+
+```ts
+// 浮層元件內
+function update() {
+  if (!triggerEl.value || !popperEl.value) return
+  const pos = computePosition(
+    triggerEl.value.getBoundingClientRect(),
+    popperEl.value.getBoundingClientRect(),
+    getWindowViewport(),
+    { placement: placementRef.value, gap: 8 },
+  )
+  popperEl.value.style.top = `${pos.top}px`
+  popperEl.value.style.left = `${pos.left}px`
+  actualPlacement.value = pos.placement
+}
+
+onMounted(() => {
+  watchEffect(update)          // 響應式依賴變化時重算
+  window.addEventListener('scroll', update, true)
+})
+```
+
+### React 接線
+
+```tsx
+useLayoutEffect(() => {
+  if (!triggerRef.current || !popperRef.current) return
+  const pos = computePosition(/* ... */)
+  setPos(pos)
+}, [open, placement])
+```
+
+### uniapp 接線
+
+uniapp 的 `getBoundingClientRect` 在各端實作不同（小程序需用 `uni.createSelectorQuery`），UI 層測出 rect 後呼叫同一個 `computePosition`，演算法本身完全一致。
+
+## 注意事項
+
+- **入參先做欄位級淨化**：非有限欄位（NaN / Infinity）歸 0，不會讓壞 rect 流進幾何計算。
+- **SSR 安全**：`getWindowViewport()` 在無 `window` 環境傳回寬高為 0 的 rect；`computePosition` 本身不碰 DOM，可以在伺服器端預算一次位置。
+- **`flip: false` 的語義**：呼叫方自行接受主軸溢出，此時主軸只保留低側鉗制（不會把浮層推到負座標）。`select` / `cascader` 這類「方向固定」的場景會用它。
+- **不處理 Resize / Scroll 監聽**：調度是 UI 層的事；share 只保證「給定輸入，輸出確定」。
+- 與 `LhPosition`（`'top-left'` / `'bottom-right'` 這套，見 [types](/core/types)）是**兩套方位模型**：`LhPosition` 用於 affix / backtop 這類「貼邊」語義，沒有 `-start` / `-end` 對齊後綴；不要混用。
+
+<FnPlayground module="popper" fn="computePosition" params='{"trigger": {"top": 100, "left": 50, "width": 80, "height": 32, "right": 130, "bottom": 132}, "popper": {"top": 0, "left": 0, "width": 200, "height": 120, "right": 200, "bottom": 120}, "viewport": {"top": 0, "left": 0, "width": 375, "height": 667, "right": 375, "bottom": 667}, "options": {"placement": "top"}}' />

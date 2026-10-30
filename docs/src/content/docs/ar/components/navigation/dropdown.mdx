@@ -1,0 +1,226 @@
+---
+title: dropdown قائمة منسدلة —— تنقل
+description: 'LH_DROPDOWN_PLACEMENT_DEFAULT=b-bottom-start، وgetDropdownMenuStyle للتمرير عبر maxHeight، والتمييز بين haspopup:"menu" و"true" الخاص بـ popover'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+القائمة المنسدلة هي «قائمة العمليات التي تنبثق عند النقر على زر»: عمليات الصف
+«تحرير / حذف / تعطيل»، و«المزيد من العمليات» في أعمدة الجداول. وفرقها عن `popover` هو
+**الدلالة وشكل المحتوى**——فالقائمة المنسدلة ذات **دلالة قائمة** (role=menu + قائمة menuitem)،
+بينما popover ذو **دلالة حوار** (role=dialog، ويحتوي أي محتوى). وفرقها عن `menu` هو **الثبات**——
+القائمة المنسدلة انبثاق مؤقت، مدخل عمليات يختفي عند النقر.
+
+## متى تُستخدم
+
+- لتطبيق `<LhDropdown>` / `<LhDropdownItem>`: قائمة عمليات الصف، وزر «المزيد»، والعمليات
+  المجمّعة، والقوائم السريعة الأمرية.
+- عندما تكون العناصر **بنفس المستوى وعددها معتدل (3~10)** ولا تحتاج نماذج معقدة.
+- **لا ينبغي استخدامها**: الطبقات المنبثقة التي تحتاج نماذج أو محتوى غنيًا (استخدم `popover`)؛
+  العمليات الخطرة التي تحتاج تأكيدًا (وضع زر حذف مباشرة في القائمة المنسدلة بلا تأكيد ثانٍ أمر
+  خطير، استخدم `popconfirm`)؛ التنقّل الرئيسي (استخدم `menu`——فالقائمة المنسدلة تختفي عند
+  التحديث).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_DROPDOWN_PLACEMENT_DEFAULT,
+  LH_DROPDOWN_TRIGGERS,
+  getDropdownClass,
+  getDropdownItemClass,
+  getDropdownMenuStyle,
+  getDropdownTriggerAria,
+  getDropdownMenuAria,
+  getDropdownItemAria,
+} from '@lh-ui/share/core/dropdown'
+import type { LhDropdownTrigger, LhDropdownState, LhDropdownItemState } from '@lh-ui/share/core/dropdown'
+```
+
+## نية التصميم
+
+**الموضع الافتراضي هو `bottom-start` لا `top`**: `LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'`
+——تنفتح القائمة المنسدلة **من الزاوية السفلية للزر نحو الأسفل**، بما يطابق النموذج الذهني
+لـ «القائمة المنسدلة». وقارن بالقيمة الافتراضية `top` لـ `popover` / `popconfirm` (طبقة المعلومات
+ترتفع للأعلى ولا تحجب المحتوى الأسفل): القائمة المنسدلة مدخل عمليات، فالانفتاح نحو الأسفل
+أطبع، و`bottom-start` (محاذاة عند البداية لا في الوسط) يضمن ألا تفيض القوائم الطويلة أفقيًا
+خارج إطار العرض.
+
+**لا توجد طريقة تشغيل focus**: `LH_DROPDOWN_TRIGGERS` هي `hover / click / contextmenu`——
+**لا تشمل focus**. قارن بـ `popover` الذي يدعم `click / hover / focus / manual`. والسبب: العنصر
+المُطلِق للقائمة المنسدلة يكون زرًا عادةً، وتشغيل focus يجعل القائمة تنبثق بالخطأ عندما يعبر Tab
+العنصر، فيُربك سير لوحة المفاتيح. و`contextmenu` لسيناريو قوائم الزر الأيمن (بديلٌ لقائمة
+الزر الأيمن الافتراضية للمتصفح).
+
+**دلالة `hideOnClick` تكمن في طبقة واجهة المستخدم**: يوجد حقل `hideOnClick` في الحالة لكن core
+لا تستهلكه——فالحكم على «هل تُغلق القائمة بعد النقر على عنصر» يتم في طبقة واجهة المستخدم
+(عند النقر على العنصر، يُقرر وفق التكوين). وتحمل core الإعلان فقط، إبقاءً على بنية البيانات
+قادرة على التعبير عن النية كاملة (المنهج نفسه لحقل `trigger` في `form`).
+
+**`getDropdownMenuStyle` يضمّ `overflow: auto` داخليًا**: بمجرد تحديد maxHeight يُضاف التمرير
+تلقائيًا. وعند كثرة عناصر القائمة لا تُفجّر إطار العرض——وهذا اختلاف دقيق عن `popover` (أنماط
+العرض في popover لا تشمل التمرير، وإدارة الفيض من شأن المستدعي).
+
+**`haspopup: 'menu'` لا `'true'`**: قيمة aria-haspopup للعنصر المُطلِق هي **`'menu'`**——إعلان صريح
+أن ما ينبثق قائمة. قارن بـ `'true'` الخاص بـ `popover` (انبثاق عام، يكافئ تعميم dialog/menu/
+listbox). وبناءً عليه يتنبّأ قارئ الشاشة بنمط تفاعل المحتوى المنبثق (القوائم تدعم التنقّل
+بمفاتيح الأسهم).
+
+## جدول الدوال
+
+| الدالة / الثابت | التوقيع | الناتج | الدور |
+| --- | --- | --- | --- |
+| `getDropdownClass` | `(state: { placement, popperClass? }) => string[]` | أسماء الأصناف | الموضع + مخصّص |
+| `getDropdownItemClass` | `(state: { disabled?, divided? }) => string[]` | أسماء الأصناف | تعطيل + فاصل |
+| `getDropdownMenuStyle` | `(maxHeight?: string \| number) => Record<string, string>` | أنماط مضمّنة | maxHeight + overflow |
+| `getDropdownTriggerAria` | `(visible, menuId?) => LhAriaAttrs` | حزمة aria | haspopup="menu" |
+| `getDropdownMenuAria` | `(id?) => LhAriaAttrs` | حزمة aria | role=menu |
+| `getDropdownItemAria` | `(state: { disabled? }) => LhAriaAttrs` | حزمة aria | role=menuitem |
+
+الثوابت: `LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'`، و`LH_DROPDOWN_TRIGGERS`
+(hover / click / contextmenu).
+
+## تعريفات الأنواع
+
+```ts
+export type LhDropdownTrigger = 'hover' | 'click' | 'contextmenu'
+
+export interface LhDropdownState {
+  trigger?: LhDropdownTrigger
+  placement?: LhPlacement          // 12 موضعًا (shared/popper)
+  visible?: boolean
+  disabled?: boolean
+  hideOnClick?: boolean            // هل تُغلق بعد النقر على عنصر (تستهلكه طبقة واجهة المستخدم)
+}
+
+export interface LhDropdownItemState {
+  command?: string | number        // مُعرِّف عنصر القائمة، يُطلق مع حدث command
+  disabled?: boolean
+  divided?: boolean                // فاصل علوي
+}
+```
+
+## إمكانية الوصول
+
+```ts
+getDropdownTriggerAria(true, 'dd-menu-1')
+// { 'aria-expanded': true, 'aria-controls': 'dd-menu-1', 'aria-haspopup': 'menu' }
+getDropdownTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'menu' }
+
+getDropdownMenuAria('dd-menu-1')  // { role: 'menu', id: 'dd-menu-1' }
+getDropdownItemAria({ disabled: true })
+// { role: 'menuitem', 'aria-disabled': true }
+```
+
+- **تنبّؤ قارئ الشاشة لـ `aria-haspopup="menu"`**: عندما يصادفه يعرف أن ما ينفتح قائمة، فيعالجه
+  وفق نمط القوائم (التنقّل بمفاتيح الأسهم، التنشيط بـ Enter). وهو أدقّ من `"true"` المعمّم——وهذا
+  سبب اختلاف dropdown وpopover في القيمة.
+- **اصطلاحات لوحة المفاتيح للقوائم** (نمط APG للقوائم): يفتح العنصر المُطلِق بـ Enter/Space؛
+  وبعد الفتح يقع التركيز على **أول عنصر متاح**؛ يُتنقّل بـ ↑/↓؛ يُنشَّط بـ Enter/Space؛ يُغلق
+  Esc **ويعود التركيز إلى العنصر المُطلِق**. وتُستخدم خوارزمية التنقّل بمفاتيح الأسهم عبر
+  `shared/keyboard.getNextListIndex` (المصدر نفسه لـ menu / tabs).
+- **عقد حدث `command`**: يُطلق حقل `command` الخاص بعنصر القائمة مع حدث النقر
+  (`@command="cmd => ...`)، بدلاً من كتابة معالِج مستقل لكل عنصر——وهذا شكل الـ API المعتمد
+  للقوائم المنسدلة. وتوزّعه طبقة واجهة المستخدم عبر switch.
+- **`aria-disabled` للعناصر المعطّلة لا الخاصية disabled**: `aria-disabled` يضع علامة تعطيل على
+  العنصر في شجرة إمكانية الوصول مع إبقائه قابلًا للتركيز (يستطيع قارئ الشاشة إعلان وجوده وسبب
+  تعطيله)؛ أما `disabled` الأصلي فيُخرجه من تسلسل التركيز، فيتجاوزه مستخدمو لوحة المفاتيح دون
+  أن يعرفوا السبب.
+- **الفاصل زخرفة خالصة**: `divided` مجرد حد CSS بلا دلالة——لا تستخدمه للتعبير عن «تجميع
+  عمليات خطرة»، فالتجميع الخطير يتم عبر `popconfirm` أو لون بصري (لون نص danger).
+- **قائمة الزر الأيمن (contextmenu)**: يجب أن يمنع العنصر المُطلِق القائمة الافتراضية للمتصفح
+  عبر `@contextmenu.prevent`، ويُعَلَّم العنصر على أنه تفاعلي——وقوائم الزر الأيمن يتعذّر الوصول
+  إليها كليًا بمستخدمي لوحة المفاتيح، **فيجب توفير مدخل زر مكافئ** (متطلب صارم لإمكانية الوصول).
+
+## أمثلة الاستخدام
+
+```ts
+import {
+  getDropdownClass, getDropdownItemClass, getDropdownMenuStyle, LH_DROPDOWN_PLACEMENT_DEFAULT,
+} from '@lh-ui/share/core/dropdown'
+
+LH_DROPDOWN_PLACEMENT_DEFAULT  // 'bottom-start'
+
+getDropdownClass({ placement: 'bottom-start' })
+// ['lh-dropdown__menu', 'lh-dropdown__menu--bottom-start']
+getDropdownItemClass({ disabled: true, divided: true })
+// ['lh-dropdown__item', 'lh-dropdown__item--disabled', 'lh-dropdown__item--divided']
+
+getDropdownMenuStyle(200)     // { maxHeight: '200px', overflow: 'auto' }
+getDropdownMenuStyle('30vh')  // { maxHeight: '30vh', overflow: 'auto' }
+getDropdownMenuStyle(undefined)  // {}
+```
+
+```vue
+<!-- Vue3: قائمة عمليات الصف -->
+<template>
+  <LhDropdown @command="onCommand">
+    <template #default>
+      <LhButton size="small">المزيد<LhIcon name="arrow-down" /></LhButton>
+    </template>
+    <template #menu>
+      <LhDropdownItem :command="'edit'">تحرير</LhDropdownItem>
+      <LhDropdownItem :command="'copy'">نسخ</LhDropdownItem>
+      <LhDropdownItem :command="'delete'" divided danger>حذف</LhDropdownItem>
+    </template>
+  </LhDropdown>
+</template>
+
+<script setup>
+function onCommand(command: string | number) {
+  if (command === 'delete') visible.value = true  // الحذف يمر عبر تأكيد popconfirm ثانٍ
+  else if (command === 'edit') router.push(`/edit/${id}`)
+}
+</script>
+```
+
+```tsx
+// React: تصيير عناصر القائمة كمصفوفة + توزيع onCommand؛ والتحكم المرئي مع إغلاق عند
+// النقر خارج القائمة
+```
+
+```ts
+// uniapp: قائمة <view> + catchtap؛ وقوائم الزر الأيمن غير مدعومة في الأطراف غير h5،
+// فيُحتفظ فقط بتشغيل click
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-dropdown__menu` | حاوية القائمة (popper) |
+| `.lh-dropdown__menu--{bottom-start\|top\|…}` | الموضع (القيمة الفعلية بعد flip) |
+| `.lh-dropdown__item` | عنصر القائمة |
+| `.lh-dropdown__item--disabled` | تعطيل (رمادي + لا يستجيب) |
+| `.lh-dropdown__item--divided` | فاصل علوي |
+| `.lh-dropdown__item--danger` | عملية خطرة (نص أحمر، اصطلاح طبقة واجهة المستخدم) |
+
+لون الخلفية `--lh-bg-color`، والظل `--lh-box-shadow-dropdown`، ونصف القطر
+`--lh-border-radius-base`، والحشو الداخلي للعنصر `--lh-dropdown-item-padding`، وz-index
+`--lh-z-index-dropdown`.
+
+## ملاحظات
+
+- **العمليات الخطرة تتطلّب تأكيدًا ثانيًا**: وضع «حذف» في القائمة المنسدلة ينفّذ فورًا بنقرة واحدة،
+  وثمن الخطأ مرتفع. والنهج المعتمد هو أن تُطلق القائمة المنسدلة `popconfirm` («بعد الحذف لا يمكن
+  الاسترجاع، هل أنت متأكد؟)——هذا مسار تعاون بين مكوّنين.
+- **التمرير عند كثرة عناصر القائمة**: عند تجاوز 10 عناصر فكّر في `maxHeight` للتمرير، أو انتقل
+  إلى `select` (دلالة اختيار) أو الدرج. وتجربة التنقّل بلوحة المفاتيح في القوائم الطويلة رديئة
+  (تتطلّب ضغطات أسهم كثيرة).
+- **مشاكل تشغيل `hover` على الهاتف**: لا يوجد hover على شاشات اللمس، مثل `popover`/`tooltip`.
+  والتقصير عبر الأطراف هو click.
+- **سيناريوهات `hideOnClick: false`**: عندما تكون عناصر القائمة مفاتيح «تحديد» (مثل «إظهار العمود
+  X») يُترك القائمة مفتوحة بعد النقر ليُكمل المستخدم تحديده——وهذا سبب وجود الحقل.
+- **القوائم المنسدلة المتداخلة**: تحديد موضع القوائم الفرعية (قائمة منسدلة داخل قائمة منسدلة)
+  وإدارة تركيزها معقّدة للغاية (أي طبقة تغلقها Esc لكل من الأب والابن). ولا تدعم lh-ui القوائم
+  الفرعية داخليًا——وعند الحاجة لتنقّل هرمي استخدم `menu`.
+- **يجب تمرير `placement` بالقيمة الفعلية بعد flip**: مثل `popover`، فإن `getDropdownClass`
+  يستقبل الموضع الفعلي الذي يُرجعه popper، وإلا لن تتطابق أصناف السهم/المحاذاة مع المرئي.
+- **الحدود مع `menu`**: القائمة المنسدلة **مدخل عمليات مؤقت** (يختفي عند التحديث)؛ وmenu
+  **تنقّل دائم** (يدعم الروابط العميقة ويحافظ على حالته عند التحديث). وانتحال التنقّل الرئيسي
+  بقائمة منسدلة يجعل المستخدم عاجزًا عن العودة إلى الصفحات الثانوية.
+- **تركيز العنصر الأول**: عند فتح القائمة يقع التركيز على أول عنصر متاح (دلالة first في
+  `shared/keyboard`)، لا على العنصر المُطلِق——وهذا متطلب APG، فيجب أن يستطيع مستخدم لوحة
+  المفاتيح التشغيل مباشرة بعد الفتح.
+
+<FnPlayground module="dropdown" fn="getDropdownMenuStyle" params='{"maxHeight": 200}' />

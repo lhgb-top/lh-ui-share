@@ -1,0 +1,127 @@
+---
+title: space —— Интервал
+description: 'resolveSpaceGaps приводит предустановленную шкалу/число/массив к CSS gap и помечает, используются ли токены, getSpaceClassNames вычисляет классы раскладки'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`space` решает одну из самых частых задач в библиотеке компонентов: расположить группу элементов с фиксированными промежутками. Это не фреймворк раскладки (это `LhGrid`), а «семантизация интервалов» — `small` / `medium` / `large` суть токены дизайна, числа — разовая подгонка, массив — раздельное управление интервалами по осям.
+
+## Когда использовать
+
+- При реализации `LhSpace` на каждой платформе: группы кнопок, расположение полей форм, раскладка элементов внутри карточки.
+- Везде внутри компонентов, где нужно выразить «эти элементы разделены промежутками».
+- **Не следует использовать**: когда нужна двумерная сетка (используйте `LhGrid`) или сложное выравнивание flex (пишите стили напрямую). space ведает только интервалами, а выравнивание пробрасывается через `align`.
+
+## Импорт
+
+```ts
+import { getSpaceClassNames, resolveSpaceGaps, resolveSpaceAlignment } from '@lh-ui/share/core/space'
+import type { LhSpaceState, LhSpaceSizeInput, LhSpaceAlignment } from '@lh-ui/share/core/space'
+```
+
+## Замысел
+
+Ядро `resolveSpaceGaps` — **различение «токена» и «литерала»**:
+
+- Предустановленная шкала (`small` / `medium` / `large`) выводит `var(--lh-spacing-*)` и возвращает `usesTokens: true` — интервалы меняются вместе с кастомизацией темы.
+- Число трактуется как px-литерал, возвращается `usesTokens: false` — интервал является разовым решением вызывающего.
+- Массив `[columnGap, rowGap]` раздельно управляет двумя осями.
+
+Зачем выставлять `usesTokens` наружу? Потому что стратегия отрисовки в UI-слое разная: при использовании токена класс можно опустить (gap напрямую определяется CSS-переменной), а при литерале необходимо писать инлайновый стиль. Этот флаг избавляет UI-слой от регулярного разбора выводимого значения.
+
+Шкала ссылается только на **фактически зарегистрированные** в `var.scss` spacing-токены, причём fallback-значения совпадают со значениями токенов по умолчанию — реальный эффект даёт только переопределение `--lh-spacing-*` пользователем; это соответствие гарантируется `verify:styles`.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getSpaceClassNames` | `(state: LhSpaceState) => string[]` | массив классов | модификаторы направления, переноса и размера |
+| `resolveSpaceGaps` | `(size: LhSpaceSizeInput) => { columnGap: string; rowGap: string; usesTokens: boolean }` | описание gap | приводит size к CSS gap |
+| `resolveSpaceAlignment` | `(alignment: string) => string` | CSS-значение | проброс значения выравнивания |
+
+Отображение в `resolveSpaceGaps`:
+
+| Вход | columnGap / rowGap | usesTokens |
+| --- | --- | --- |
+| `'small'` | `var(--lh-spacing-sm, 8px)` | true |
+| `'medium'` | `var(--lh-spacing-base, 16px)` | true |
+| `'large'` | `var(--lh-spacing-xl, 24px)` | true |
+| `24` (число) | `24px` | false |
+| `[16, 8]` | `16px` / `8px` | false |
+
+Границы: пропущенный элемент массива или нефинитное значение откатываются к `0` (чтобы избежать `"undefinedpx"`); смешивание шкалы и чисел (например, `['medium', 8]`) не поддерживается.
+
+## Определения типов
+
+```ts
+export type LhSpaceAlignment = 'start' | 'center' | 'end' | 'baseline'
+export type LhSpaceSizeInput = 'small' | 'medium' | 'large' | number | [number, number]
+
+export interface LhSpaceState {
+  direction: 'horizontal' | 'vertical'
+  wrap: boolean
+  size: string    // для классов принимается только предустановленная шкала
+}
+```
+
+Обратите внимание на разделение в типах: `LhSpaceState.size` (для классов) принимает только строки предустановленной шкалы; `LhSpaceSizeInput` (для расчёта gap) дополнительно принимает числа и массивы. Класс `lh-space--16px` появиться не может.
+
+## Доступность
+
+`space` — чисто раскладочный элемент, он не выводит aria-атрибуты и сам по себе невидим для скринридера. Содержимое, которое он оборачивает, сохраняет свою семантику — в этом отличие space от контейнеров вроде `<button>`: он не добавляет никакого уровня семантики.
+
+## Примеры использования
+
+```ts
+import { getSpaceClassNames, resolveSpaceGaps } from '@lh-ui/share/core/space'
+
+getSpaceClassNames({ direction: 'horizontal', wrap: true, size: 'small' })
+// ['lh-space', 'lh-space--horizontal', 'lh-space--small', 'lh-space--wrap']
+
+resolveSpaceGaps('medium')
+// { columnGap: 'var(--lh-spacing-base, 16px)', rowGap: 'var(--lh-spacing-base, 16px)', usesTokens: true }
+
+resolveSpaceGaps([16, 8])
+// { columnGap: '16px', rowGap: '8px', usesTokens: false }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSpaceClassNames({ direction, wrap, size })" :style="gapStyle">
+  <slot />
+</div>
+```
+
+```tsx
+// React
+const gaps = resolveSpaceGaps(size)
+const style = { columnGap: gaps.columnGap, rowGap: gaps.rowGap }
+return <div className={getSpaceClassNames({ direction, wrap, size }).join(' ')} style={style}>{children}</div>
+```
+
+```ts
+// uniapp: gap хорошо поддерживается на не-h5 платформах (nvue/uvue тоже);
+// если на отдельной платформе gap не поддерживается, UI-слой деградирует
+// до добавления margin потомкам
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-space` | базовый класс: flex-контейнер |
+| `.lh-space--horizontal` / `.lh-space--vertical` | направление (flex-direction) |
+| `.lh-space--wrap` | разрешить перенос |
+| `.lh-space--{small\|medium\|large}` | классы шкалы (в паре с токенами `--lh-spacing-*`) |
+
+Классы шкалы и вывод предустановленных значений `resolveSpaceGaps` — это **два выражения одного и того же набора токенов**: классы идут через SCSS-переменные из `@use` (время компиляции), а gap — через CSS-переменные (время выполнения). Значения совпадают, это проверяется `verify:styles`.
+
+## Замечания
+
+- **Не смешивайте**: `resolveSpaceGaps(['medium', 8])` не поддерживается (реализация не распознаёт смешивания); если нужны разные интервалы по осям, используйте только числа `[16, 8]`.
+- **Выбор между числом и токеном**: внутренние значения по умолчанию в библиотеке должны идти через шкалу (чтобы меняться вместе с темой), а разовая подгонка в бизнес-вызовах — числом.
+- Перенос (`wrap`) имеет смысл только при horizontal; vertical + wrap недействителен.
+- `resolveSpaceAlignment` сейчас пробрасывает значение как есть; конкретные ключевые слова flex отображаются в слое стилей (через классы).
+
+<FnPlayground module="space" fn="resolveSpaceGaps" params='{"size": "medium"}' />

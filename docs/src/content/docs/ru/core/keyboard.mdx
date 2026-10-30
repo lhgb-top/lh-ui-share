@@ -1,0 +1,232 @@
+---
+title: keyboard —— алгоритмы клавиатурной навигации
+description: 'Константы клавиш LH_KEYS, три набора алгоритмов навигации (список / сетка / range) и type-ahead; совместно используются select / menu / tree / tabs'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Клавиатурное взаимодействие доступных компонентов имеет стандартный ответ (паттерны listbox / menu / grid из APG), но вычисление «на какой элемент должен переключаться фокус при нажатии стрелки вверх», если писать его отдельно в select / menu / tree / tabs / segmented, в каждом месте будет ошибаться по-своему. `shared/keyboard` превращает это в чистую функцию: на входе «список + текущий индекс + направление», на выходе «целевой индекс».
+
+**Слой core не слушает ни одной клавиши** — прослушивание событий клавиатуры относится к UI-слою (`@keydown` во Vue3, `onKeyDown` в React). Этот модуль предоставляет только проверку и вычисление.
+
+## Импорт
+
+```ts
+import {
+  LH_KEYS,
+  isActivationKey,
+  getNextListIndex,
+  getNextGridCell,
+  getNextRangeValue,
+  findTypeAheadIndex,
+  getRovingTabIndex,
+  type LhListNavigationOptions,
+} from '@lh-ui/share/core/shared/keyboard'
+```
+
+## Константы и типы
+
+```ts
+// Константы имён клавиш (KeyboardEvent.key); UI-слою запрещено писать строковые литералы напрямую
+export const LH_KEYS = {
+  Escape: 'Escape',
+  Enter: 'Enter',
+  Space: ' ',          // внимание: значение — один пробел
+  ArrowUp: 'ArrowUp',
+  ArrowDown: 'ArrowDown',
+  ArrowLeft: 'ArrowLeft',
+  ArrowRight: 'ArrowRight',
+  Home: 'Home',
+  End: 'End',
+  Tab: 'Tab',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
+} as const
+
+// Принимает как настоящее событие, так и «голое» значение key (нужно для тестов чистой функции)
+export type LhKeyEvent = KeyboardEvent | { key: string }
+
+// Направление навигации: числовое смещение или сигнальное значение начала/конца
+export type LhListDirection = 1 | -1 | 'first' | 'last'
+
+// Минимальное ограничение на элемент списка: нужен только флаг блокировки;
+// конкретную форму элемента задаёт вызывающая сторона
+export interface LhListItem {
+  disabled?: boolean
+}
+
+export interface LhListNavigationOptions<T = unknown> {
+  loop?: boolean                    // циклический переход между началом и концом, по умолчанию true
+  skipDisabled?: boolean            // пропускать заблокированные элементы, по умолчанию true
+  isDisabled?: (item: T) => boolean // своя проверка блокировки; по умолчанию читает item.disabled
+}
+
+export interface LhGridNavOptions {
+  cols: number                      // количество столбцов в строке
+  total: number                     // общее количество ячеек сетки
+  loop?: boolean                    // цикличность внутри строки / по всей сетке, по умолчанию false
+                                    // (на границе возвращается null, а перелистывание выполняет UI-слой)
+}
+
+export interface LhRangeNavOptions {
+  min: number
+  max: number
+  step: number                      // шаг стрелок; при не конечном значении или ≤0 вырождается в 1 и выполняется только кламп по границам
+  pageStep?: number                 // шаг PageUp / PageDown, по умолчанию max(step, (max-min)/10)
+}
+```
+
+## Таблица функций
+
+### Определение клавиш
+
+| Функция | Сигнатура | Назначение |
+| --- | --- | --- |
+| `isActivationKey` | `(e: LhKeyEvent) => boolean` | Enter или Space |
+| `isArrowKey` | `(e: LhKeyEvent) => boolean` | четыре клавиши-стрелки |
+| `isEscapeKey` | `(e: LhKeyEvent) => boolean` | Escape (закрытие плавающего слоя) |
+| `isHomeOrEndKey` | `(e: LhKeyEvent) => boolean` | Home / End (прыжок в начало / конец списка) |
+| `isSpaceKey` | `(e: LhKeyEvent) => boolean` | пробел (когда нужно отличить от Enter — например, перелистывание в контейнере с прокруткой) |
+| `isHorizontalArrowKey` | `(e: LhKeyEvent) => boolean` | горизонтальные стрелки |
+| `isVerticalArrowKey` | `(e: LhKeyEvent) => boolean` | вертикальные стрелки |
+
+`isHorizontalArrowKey` / `isVerticalArrowKey` **определяют только физическую клавишу** — что значит «влево» в RTL-раскладке, «предыдущий» или «следующий», является семантикой UI-слоя; алгоритм не переворачивает её за вас.
+
+### Навигационные вычисления
+
+| Функция | Сигнатура | Назначение |
+| --- | --- | --- |
+| `getNextListIndex` | `<T>(items, current, direction, options?) => number` | универсальная навигация по списку, возвращает целевой индекс |
+| `findTypeAheadIndex` | `(labels: string[], query: string, startIndex?) => number` | type-ahead: совпадение по первым символам |
+| `getRovingTabIndex` | `<T>(items, activeIndex) => number` | roving tabindex: возвращает индекс элемента, который должен получить tabindex 0 |
+| `getNextGridCell` | `(current, key, opts: LhGridNavOptions) => number \| null` | навигация в двумерной сетке (сетка дней, сетка месяцев) |
+| `getNextRangeValue` | `(current, key, opts: LhRangeNavOptions) => number` | навигация range-контрола (клавиатурный шаг slider) |
+
+### Семантика возвращаемого значения getNextListIndex
+
+Это самое легко ошибочное место, разберём отдельно:
+
+| Ситуация | Возвращаемое значение |
+| --- | --- |
+| `'first'` / `'last'` | прямой переход к первому / последнему **доступному** элементу |
+| Обычное перемещение | целевой индекс |
+| Без цикла и уже на границе | **остановиться на границе** (возвращается индекс границы, а не -1) |
+| Пустой список / все заблокированы и `skipDisabled` | `-1` (нет доступных элементов) |
+| Заблокированы только граничные элементы и достигнута граница | `-1` |
+| `current` вне диапазона или `-1` | считается «ничего не выбрано»: вперёд — первый элемент, назад — последний |
+
+**В нециклическом режиме -1 никогда не возвращается как признак «достигнут конец»** — возвращается индекс граничного элемента, чтобы фокус остановился на нём. UI-слой на этой основе решает, нужен ли `preventDefault`; -1 выдаётся только тогда, когда «выбирать действительно нечего».
+
+### getRovingTabIndex возвращает индекс
+
+Название легко ввести в заблуждение: функция **возвращает «индекс того элемента, который должен получить tabindex 0»**, а не само значение tabindex. Вызывающая сторона расставляет значения по этому индексу:
+
+```ts
+const activeIndex = getRovingTabIndex(items, selectedIndex)
+items.forEach((item, i) => (item.tabindex = i === activeIndex ? 0 : -1))
+```
+
+Так гарантируется, что в группе **всегда есть один элемент-якорь, доступный для входа по Tab**; если у `activeIndex` нет доступного элемента, происходит откат к первому доступному, и ситуация, когда вся группа получает -1 и клавиатура не может войти, исключена.
+
+### Правила совпадения findTypeAheadIndex
+
+- Метка элемента **начинается со строки запроса** — совпадение (без учёта регистра).
+- Поиск ведётся по кольцу, начиная **после** `startIndex` (по умолчанию `-1` — с начала).
+- Поддерживается накопление нескольких символов: пользователь быстро нажимает `zh`, UI-слой накапливает строку запроса в течение 500 мс, по тайм-ауту очищает её.
+- Нет совпадения / пустой `query` / пустой `labels` → `-1`.
+
+### Межстрочное перетекание getNextGridCell
+
+ArrowRight **в конце строки перетекает в начало следующей строки** (непрерывное перемещение в пределах вьюпорта; `null` возвращается только при выходе за границы всей сетки); ArrowDown / ArrowUp перемещаются по вертикали на `±cols`; Home / End — это **начало / конец строки** (если в последней строке меньше `cols` элементов, концом строки считается `total` — выход за пределы сетки не происходит).
+
+Не-навигационные клавиши, выход за границу в нециклическом режиме, `current` вне диапазона, `cols` / `total` ≤ 0 → `null`.
+
+Значение `loop` по умолчанию `false` выбрано намеренно: в панели дат «выход вправо за границу» обычно означает **переход к следующему месяцу**, и это решение принимает UI-слой, а алгоритм лишь сообщает «достигнут конец».
+
+### getNextRangeValue только клампит, не выравнивает
+
+```ts
+getNextRangeValue(25, 'ArrowUp', { min: 0, max: 100, step: 10 })
+// 25 + 10 = 35 (выравнивания по step не происходит)
+```
+
+**Почему без выравнивания**: если текущее значение — 25 (пользователь получил невыровненное значение перетаскиванием), алгоритм с выравниванием сначала прыгнет на 30, а потом на 40 — визуально похоже на двойной рывок. Выполняется только кламп + шаг, а выравнивание компонент гарантирует при записи localValue (при отпускании перетаскивания — привязка к делению).
+
+Не-навигационные клавиши **возвращают `current` без изменений** — вызывающая сторона по этому признаку решает, «нужно ли обрабатывать это нажатие» и вызывать ли `preventDefault`.
+
+## Примеры использования
+
+### Клавиатурная навигация в select (roving tabindex + list nav)
+
+```ts
+function onKeydown(e: KeyboardEvent) {
+  if (isArrowKey(e)) {
+    e.preventDefault()
+    const next = getNextListIndex(
+      options.value,
+      selectedIndex.value,
+      e.key === LH_KEYS.ArrowDown ? 1 : -1,
+      { loop: true },
+    )
+    if (next !== -1) selectedIndex.value = next
+  } else if (isHomeOrEndKey(e)) {
+    selectedIndex.value = getNextListIndex(
+      options.value,
+      -1,
+      e.key === LH_KEYS.Home ? 'first' : 'last',
+    )
+  } else if (isActivationKey(e)) {
+    open.value = !open.value
+  } else if (isEscapeKey(e)) {
+    open.value = false
+  }
+}
+```
+
+### Сетка дат в date-picker
+
+```ts
+const next = getNextGridCell(focusedIndex.value, e.key, {
+  cols: 7,                    // 7 дней в неделе
+  total: daysInMonth.value,   // количество дней в текущем месяце
+})
+if (next === null) {
+  // Выход за границу → переключение месяца (решает UI-слой)
+  switchMonth(e.key === LH_KEYS.ArrowRight ? 1 : -1)
+} else {
+  focusedIndex.value = next
+}
+```
+
+### Клавиатурный шаг slider
+
+```ts
+if (isArrowKey(e) || isHomeOrEndKey(e) || e.key === LH_KEYS.PageUp || e.key === LH_KEYS.PageDown) {
+  e.preventDefault()
+  modelValue.value = getNextRangeValue(modelValue.value, e.key, {
+    min: props.min,
+    max: props.max,
+    step: props.step,
+  })
+}
+```
+
+### Навигация по вводу символов
+
+```ts
+// Накапливаем строку запроса (тайм-аут 500 мс поддерживается в UI-слое)
+typeAheadBuffer.value += e.key
+const idx = findTypeAheadIndex(labels, typeAheadBuffer.value, selectedIndex.value)
+if (idx !== -1) selectedIndex.value = idx
+```
+
+## Замечания
+
+- **Прослушивание — в UI-слое**: подключение `onKeydown`, момент вызова `preventDefault`, вызов `focus()` после переключения фокуса — всё это ответственность компонентов каждого фреймворка; core даёт только результат вычисления.
+- **RTL-раскладка**: семантический переворот левых / правых стрелок реализуется UI-слоем через реверс `direction` перед вызовом; сам алгоритм сохраняет семантику физических клавиш.
+- **Значение `isDisabled` по умолчанию**: читает `item.disabled`, а если прочитать не удалось — элемент считается не заблокированным; при передаче элементов типа `{}` все элементы доступны для навигации.
+- **Безопасность на пустом списке**: все навигационные функции для пустого списка возвращают `-1` / `null` — UI-слою достаточно проверить это; исключений не бывает.
+
+<FnPlayground module="keyboard" fn="getNextListIndex" params='{"items": [{"disabled": false}, {"disabled": true}, {"disabled": false}, {"disabled": false}], "current": 0, "direction": 1, "options": {"loop": true}}' />

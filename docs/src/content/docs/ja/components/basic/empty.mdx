@@ -1,0 +1,115 @@
+---
+title: empty —— 空の状態
+description: 'getEmptyClassNames がカスタム画像とデフォルトの水墨プレースホルダー画像を区別。内容（タイトル / 説明 / 操作）は UI 層が組み立てる'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+空の状態はリスト / テーブル / 検索結果の「データゼロ状態」です。`core/empty` の状態は極めてシンプルです——`hasImage` という真偽値 1 つだけ。なぜならその中核の視覚的意思決定とは「ユーザーが画像を渡したか、ライブラリのデフォルト水墨画を使うか」であり、この両者はレイアウトが異なるからです（カスタム画像は元の尺寸を尊重し、デフォルト画像は特製の全幅水墨画です）。
+
+## いつ使うか
+
+- 各端が `LhEmpty` を実装する：テーブルのデータなし、検索結果なし、リストの空化、権限不足の提示。
+- 水墨の空状態の視覚を再利用したいカスタムケース。
+- **使うべきでない**：読み込み中の状態。それは `LhSkeleton` または `LhLoading` の責務です。空の状態は「データがゼロであることが確定した」のであって「まだ来ていない」のではありません。
+
+## インポート方法
+
+```ts
+import { getEmptyClassNames } from '@lh-ui/share/core/empty'
+import type { LhEmptyState } from '@lh-ui/share/core/empty'
+```
+
+## 設計意図
+
+`core/empty` に `hasImage` 1 つしかフィールドがない理由は、それ以外のすべて（タイトル、説明、操作ボタン）が**状態**ではなく**内容**だからです——内容はスロット / props で直接レンダリングされ、計算を必要としません。内容まで core に通すのは間接層を増やすだけで利益がありません。
+
+この「状態だけを計算し、内容は計算しない」という境界は lh-ui core 層の一般原則です：core 関数の入力は**出力を変えるもの**であるべきです。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getEmptyClassNames` | `(state: LhEmptyState) => string[]` | クラス名配列 | カスタム画像とデフォルト画像を区別 |
+
+出力例：
+
+```ts
+getEmptyClassNames({ hasImage: true })   // ['lh-empty', 'lh-empty--custom-image']
+getEmptyClassNames({ hasImage: false })  // ['lh-empty']
+```
+
+## 型定義
+
+```ts
+export interface LhEmptyState {
+  hasImage: boolean
+}
+```
+
+## アクセシビリティ
+
+`core/empty` は aria 属性パックを出力しません。空の状態のアクセシビリティの要点は UI 層にあります：
+
+- 空の状態が現れたとき、その手前にあるリスト / テーブルは `aria-live="polite"` を使うか、データの読み込み完了後に能動的に通知すべきです。そうでないとスクリーンリーダーのユーザーは「リストは 0 件」という古い認識にとどまります。
+- デフォルトの水墨画は**装飾的**なため、`aria-hidden="true"` にします（UI 層がレンダリング時に処理）。
+- 説明テキストが本当の情報（「データがありません。ボタンをクリックして更新してください」など）を担い、読み可能でなければなりません。
+- 空の状態に操作ボタンが含まれる場合、ボタン自体はネイティブのセマンティクスで十分です。
+
+## 使用例
+
+```ts
+import { getEmptyClassNames } from '@lh-ui/share/core/empty'
+
+getEmptyClassNames({ hasImage: false })  // ['lh-empty']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getEmptyClassNames({ hasImage: !!image })">
+  <div class="lh-empty__image">
+    <slot name="image">
+      <InkWash />   <!-- デフォルトの水墨プレースホルダー画像、aria-hidden -->
+    </slot>
+  </div>
+  <p class="lh-empty__description">{{ description }}</p>
+  <div class="lh-empty__actions"><slot name="actions" /></div>
+</div>
+```
+
+```tsx
+// React
+const hasImage = !!image
+return (
+  <div className={getEmptyClassNames({ hasImage }).join(' ')}>
+    <div className="lh-empty__image">{image ?? <DefaultInkWash aria-hidden="true" />}</div>
+    <p className="lh-empty__description">{description}</p>
+    <div className="lh-empty__actions">{actions}</div>
+  </div>
+)
+```
+
+```ts
+// uniapp：デフォルトの水墨画は svg で、非 h5 端では画像リソースに差し替える必要がある（各端の UI 層が処理）
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-empty` | ベースクラス：中央揃え、縦方向の間隔 |
+| `.lh-empty--custom-image` | カスタム画像：デフォルト画像の固定サイズの制約を解除 |
+| `.lh-empty__image` | 画像エリア |
+| `.lh-empty__description` | 説明テキスト（セカンダリの文字色） |
+| `.lh-empty__actions` | 操作ボタンエリア |
+| `.lh-empty__illustration` / `__ink-*` | デフォルト水墨イラストの構成要素（遠山、水墨のにじみ、落款、画額） |
+
+デフォルトの水墨イラストは lh-ui の中華風の署名要素の 1 つで、純粋な CSS / SVG で描かれ、ダークモードでは専用の調色があります。
+
+## 注意事項
+
+- `hasImage` の判定権は UI 層にあります：ユーザーが `image` prop や `image` スロットで何かを渡せば「カスタム画像あり」とみなされます。
+- 空の状態は**本来データがあった位置**（テーブル本体、リストコンテナの内側）に現れるべきで、全域に浮かぶ通知にしないでください——それはフィードバックではなく、データの一つの状態です。
+- 404 / 権限なしのような「データが空なわけではない」ケースは、セマンティクス上はむしろ警告に近く、`LhEmpty` より `LhResult`（各端にあれば）やカスタムレイアウトのほうが適しています。
+
+<FnPlayground module="empty" fn="getEmptyClassNames" params='{"state": {"hasImage": false}}' />

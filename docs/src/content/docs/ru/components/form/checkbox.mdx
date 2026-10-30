@@ -1,0 +1,149 @@
+---
+title: checkbox —— Флажок
+description: 'определение через Object.is в isCheckboxChecked, неизменяемое переключение toggleCheckboxValue'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Флажок — это простейший конечный автомат в форме: есть значение в массиве или нет. В `core/checkbox` всего две функции, потому что «отметка» абстрагирована в нём до **множественных операций**: значение группы флажков — это массив, отметка добавляет элемент, снятие отметки — удаляет.
+
+## Когда использовать
+
+- В каждой платформе реализованы `LhCheckbox` и `LhCheckboxGroup` (group хранит массив значений, а item определяет собственное состояние отметки по нему).
+- Сценарии множественного выбора; для двухпозиционного переключателя лучше подойдёт `switch`.
+- **Не использовать для**: одиночного выбора — `radio`; если нужна семантика неопределённого состояния (родительский узел отмечен частично) — каскад отметок в `tree`.
+
+## Импорт
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+import type { LhCheckboxState } from '@lh-ui/share/core/checkbox'
+```
+
+## Замысел дизайна
+
+Для определения используется `Object.is`, а не неявное сравнение через `includes`, потому что значением флажка может быть любой тип (строка, число и даже ссылка на объект). `includes` для NaN возвращает false, а `Object.is(NaN, NaN)` возвращает true — хотя на практике такая ситуация редка, множественная семантика должна быть согласованной.
+
+`toggleCheckboxValue` **неизменяем**: сначала фильтруются элементы с тем же значением (дедупликация), а затем по `checked` принимается решение о добавлении. Такой порядок гарантирует **идемпотентность** — повторный вызов с тем же значением и направлением даёт тот же результат, и в массиве не появляются дубликаты.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `isCheckboxChecked` | `(values: unknown[], value: unknown) => boolean` | логическое значение | есть ли value в массиве |
+| `toggleCheckboxValue` | `(values: unknown[], value: unknown, checked: boolean) => unknown[]` | новый массив | неизменяемое переключение |
+
+## Определения типов
+
+```ts
+export interface LhCheckboxState {
+  values: unknown[]
+  value: unknown
+  checked: boolean
+}
+```
+
+## Доступность
+
+`core/checkbox` не выводит пакет aria-атрибутов — **настоятельно рекомендуется использовать нативный `<input type="checkbox">`** на каждой платформе: нативный элемент уже несёт `aria-checked`, поддерживает работу с клавиатуры и семантику отправки формы, и любой кастомный эквивалент вряд ли сможет полностью это повторить.
+
+Неопределённое (indeterminate) состояние нативного флажка **можно задать только через JS** (соответствующего HTML-атрибута нет) — это единственный особенный момент, который UI-слою нужно обрабатывать в сценариях с group:
+
+```ts
+// Неопределённое состояние родительского флажка (например, «выбрать все»)
+input.indeterminate = checkedCount > 0 && checkedCount < total
+```
+
+## Примеры использования
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+
+isCheckboxChecked(['a', 'b'], 'b')   // true
+isCheckboxChecked(['a', 'b'], 'c')   // false
+
+toggleCheckboxValue(['a', 'b'], 'c', true)   // ['a', 'b', 'c']
+toggleCheckboxValue(['a', 'b', 'c'], 'b', false)  // ['a', 'c']
+toggleCheckboxValue(['a', 'b'], 'b', false)       // ['a']
+toggleCheckboxValue(['a'], 'a', true)             // ['a'] (уже есть, идемпотентно)
+```
+
+```vue
+<!-- Vue3: LhCheckboxGroup -->
+<script setup>
+const model = defineModel<Array<string>>({ default: [] })
+const toggle = (value: string, checked: boolean) => {
+  model.value = toggleCheckboxValue(model.value, value, checked)
+}
+</script>
+
+<template>
+  <div class="lh-checkbox-group" :class="`lh-checkbox-group--${size}`">
+    <label
+      v-for="opt in options"
+      :key="String(opt.value)"
+      class="lh-checkbox"
+      :class="{
+        'lh-checkbox--checked': isCheckboxChecked(model, opt.value),
+        'lh-checkbox--disabled': disabled || opt.disabled,
+      }"
+    >
+      <span class="lh-checkbox__box">
+        <input
+          class="lh-checkbox__input"
+          type="checkbox"
+          :checked="isCheckboxChecked(model, opt.value)"
+          :disabled="disabled || opt.disabled"
+          @change="toggle(opt.value, ($event.target as HTMLInputElement).checked)"
+        />
+      </span>
+      <span class="lh-checkbox__label">{{ opt.label }}</span>
+    </label>
+  </div>
+</template>
+```
+
+```tsx
+// React
+const [values, setValues] = useState<string[]>([])
+return options.map((opt) => (
+  <label key={opt.value} className="lh-checkbox">
+    <input
+      type="checkbox"
+      checked={isCheckboxChecked(values, opt.value)}
+      onChange={(e) => setValues(toggleCheckboxValue(values, opt.value, e.target.checked))}
+    />
+    <span className="lh-checkbox__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp: <checkbox-group> + <checkbox> — встроенные компоненты, событие change
+// сразу отдаёт массив значений; для кастомного вида отметки используется
+// .lh-checkbox__box, перекрывающий внешний вид по умолчанию (на не-h5 платформах
+// следите за реактивностью :checked)
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-checkbox` | базовый класс (обёртка label) |
+| `.lh-checkbox--checked` / `--indeterminate` / `--disabled` | три состояния |
+| `.lh-checkbox--{small\|large}` | размер |
+| `.lh-checkbox__box` | кастомная отметка (перекрывает нативный вид) |
+| `.lh-checkbox__input` | нативный input (визуально скрыт, семантика сохранена) |
+| `.lh-checkbox__label` | текст |
+| `.lh-checkbox-group` / `--{small\|large}` | контейнер группы и размер группы |
+
+Позиция галочки фиксирована `top: 2px / left: 5px` — **корректна только для коробки 16px**, и это пункт, ожидающий унификации в «специальной задаче по токенам высоты» (следует заменить на центрирование через 50%).
+
+## Замечания
+
+- **Согласованность типов значений**: `toggleCheckboxValue(['1'], 1, true)` вернёт `['1', 1]` — строка `'1'` и число `1` это два разных значения. Тип id, приходящего с бэкенда, должен быть унифицирован на UI-слое.
+- **Семантика пустого массива**: `values: []` означает «ничего не выбрано» и отличается от `values: undefined`; значением по умолчанию для group должно быть `[]`.
+- **Направление параметра `checked`**: это «целевое состояние», а не «текущее» — `toggleCheckboxValue(v, x, false)` всегда удаляет x, независимо от того, был ли он в массиве.
+- При большом количестве вариантов рассмотрите `virtual-list`; сама group виртуализацию не делает.
+
+<FnPlayground module="checkbox" fn="toggleCheckboxValue" params='{"values": ["a", "b"], "value": "c", "checked": true}' />

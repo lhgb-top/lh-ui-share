@@ -1,0 +1,205 @@
+---
+title: progress —— شريط التقدم
+description: 'تقييد عبر clampPercent، واشتقاق الحالة success تلقائيًا عند التمام عبر resolveStatus، وأخذ اللون وفق الحالة عبر getProgressColor، ودلالة progressbar'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+يعبّر شريط التقدم عن «كم اكتمل من أمر ما»: الرفع، والتنزيل، والتثبيت، والمراجعة. وهو مكوّن عرض صرف — فالقيمة تقود كل شيء. ويتولّى `core/progress` تقييد النسبة المئوية، واشتقاق الحالة (success تلقائيًا عند التمام)، وحساب محيط الدائرة، ودلالة progressbar في APG.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhProgress`: تقدم رفع الملفات، وتقدم تنفيذ المهام، وتلميح زمن التحميل، واحتلال السعة.
+- المشاهد التي فيها نسبة واضحة «القيمة الحالية / الإجمالي».
+- **لا يجب استخدامه**: التحميل ذو التقدم غير المحدد (استخدم `spinner` / `loading`، فهما يعبران عن «جارٍ الدوران» لا «إلى أين وصل»)؛ وتنقل الخطوات (استخدم `steps`).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  clampPercent,
+  resolveStatus,
+  getProgressClassNames,
+  getCircleCircumference,
+  getProgressColor,
+  formatPercentText,
+  getProgressAria,
+} from '@lh-ui/share/core/progress'
+import type { LhProgressType, LhProgressStatus, LhProgressState } from '@lh-ui/share/core/progress'
+```
+
+## نية التصميم
+
+**الاشتقاق التلقائي في `resolveStatus`**: عندما يكون `status` هو `'normal'` الافتراضي، يتحول `value >= 100` تلقائيًا إلى `'success'`. وهذا «الاتفاق أفضل من الإعداد» — فاكتمال التقدم يعني النجاح، ولا حاجة لأن يكتب المستخدم لكل شريط `:status="value >= 100 ? 'success' : 'normal'"`. لكن **الحالة المحددة صراحةً لا تُستبدل**: فإذا مرّرت `warning` تبقى warning حتى عند 100%.
+
+**تصفير NaN في `clampPercent`**: تُعيد NaN القيمة 0 بدلًا من نشرها. فقيمة التقدم تأتي عادةً من حساب غير متزامن (`loaded / total`، وعندما يكون total صفرًا تكون NaN)، فيُظهر التصفير الواجهة «0%» بدلًا من الانهيار أو عرض `NaN%`.
+
+**حساب محيط الدائرة**: `getCircleCircumference(width, strokeWidth)` = `2π × (width - strokeWidth) / 2`. وهذه الخوارزمية القياسية لـ `stroke-dasharray` في SVG: `stroke-dasharray = المحيط` و`stroke-dashoffset = المحيط × (1 - percent/100)`. ويجب **طرح نصف عرض الحد من نصف القطر أولًا**، وإلا ستكون الدائرة أكبر من اللوحة بمقدار حد.
+
+**الأولوية الثلاثية في `getProgressColor`**: color التي يمررها المستخدم (دالة أو سلسلة) > الرمز المقابل للحالة > اللون الأساسي الافتراضي. والشكل الدالي (`(percentage) => string`) يدعم **أشرطة التقدم المتدرجة** (مثل 0-50 أخضر، و50-80 أصفر، و80+ أحمر).
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `clampPercent` | `(value: number) => number` | [0,100] | تصفير NaN |
+| `resolveStatus` | `(value, status) => LhProgressStatus` | الحالة | normal و≥100 ← success |
+| `getProgressClassNames` | `(state: LhProgressState) => string[]` | أسماء الأصناف | النوع/الحالة/النص |
+| `getCircleCircumference` | `(width, strokeWidth) => number` | المحيط | حساب dash في SVG |
+| `getProgressColor` | `(status, color?, percentage?) => string` | اللون | أولوية ثلاثية |
+| `formatPercentText` | `(percentage) => string` | `'50%'` | نص بتقريب |
+| `getProgressAria` | `(options: { percentage, label? }) => LhAriaAttrs` | حزمة سمات aria | دلالة progressbar |
+
+## تعريف الأنواع
+
+```ts
+export type LhProgressType = 'line' | 'circle'
+export type LhProgressStatus = 'normal' | 'success' | 'warning' | 'exception'
+
+export interface LhProgressState {
+  type: LhProgressType
+  status: LhProgressStatus
+  showText: boolean
+  strokeWidth: number   // في line ارتفاعًا بالبكسل، وفي circle عرض حد SVG
+  width: number         // عرض لوحة الدائرة بالبكسل
+}
+```
+
+## إمكانية الوصول
+
+```ts
+getProgressAria({ percentage: 60, label: 'تقدم الرفع' })
+// { role: 'progressbar', 'aria-valuenow': 60, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-label': 'تقدم الرفع' }
+
+getProgressAria({ percentage: 100 })
+// { role: 'progressbar', 'aria-valuenow': 100, 'aria-valuemin': 0, 'aria-valuemax': 100 }
+```
+
+- `role="progressbar"` هو الدور القياسي في APG، فينطق قارئ الشاشة «شريط التقدم 60%».
+- **`aria-label` إلزامي عند غياب النص المرئي**: فشريط التقدم ذو `showText: false` غير مرئي كليًا لمستخدم قارئ الشاشة، ولا بد من اسم يمكن الوصول إليه. وعند وجود نص مرئي يمكن حذفه (فالنص نفسه هو الاسم).
+- شريط التقدم `aria-readonly` (مُضمَن افتراضيًا)، فلا يحتاج إلى تصريح إضافي.
+- **تنظيم وتيرة نطق التقدم الديناميكي**: بالنسبة لشريط يتحدث عشرات المرات في الثانية، فإن تغير `aria-valuenow` المتكرر يملأ نطق قارئ الشاشة. فينبغي تخفيض وتيرة تحديث الطرف البصري لـ `aria-valuenow` إلى نحو مرة في الثانية (أما الحركة البصرية فلا تتأثر، إذ يُخفَّض فقط معدل تحديث aria).
+
+## أمثلة الاستخدام
+
+```ts
+import { clampPercent, resolveStatus, getProgressColor, getCircleCircumference } from '@lh-ui/share/core/progress'
+
+clampPercent(50)       // 50
+clampPercent(150)      // 100
+clampPercent(-10)      // 0
+clampPercent(NaN)      // 0
+
+resolveStatus(100, 'normal')    // 'success' (اكتمال تلقائي)
+resolveStatus(100, 'warning')   // 'warning' (الحالة الصريحة لا تُستبدل)
+resolveStatus(50, 'normal')     // 'normal'
+
+getProgressColor('normal')                 // 'var(--lh-primary-color)'
+getProgressColor('success')                // 'var(--lh-success-color)'
+getProgressColor('warning')                // 'var(--lh-warning-color)'
+getProgressColor('exception')              // 'var(--lh-danger-color)'
+getProgressColor('normal', '#f00')         // '#f00' (أولوية السلسلة)
+getProgressColor('normal', (p) => p > 80 ? 'var(--lh-danger-color)' : 'var(--lh-success-color)', 90)
+// 'var(--lh-danger-color)' (الدالة تأخذ اللون وفق النسبة الحالية)
+
+getCircleCircumference(120, 8)  // 2π × 56 ≈ 351.86
+formatPercentText(49.6)         // '50%' (تقريب)
+```
+
+```ts
+// إعداد اللون المتدرج (color دالة)
+const color = (percentage: number) =>
+  percentage < 30 ? 'var(--lh-success-color)'
+  : percentage < 70 ? 'var(--lh-warning-color)'
+  : 'var(--lh-danger-color)'
+```
+
+```vue
+<!-- Vue3: خطي -->
+<div :class="getProgressClassNames({ type: 'line', status, showText, strokeWidth, width })">
+  <div
+    class="lh-progress__bar"
+    role="progressbar"
+    :aria-valuenow="clamped"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    :aria-label="showText ? undefined : label"
+  >
+    <div
+      class="lh-progress__fill"
+      :style="{ width: clamped + '%', height: strokeWidth + 'px', background: barColor }"
+    />
+  </div>
+  <span v-if="showText" class="lh-progress__text">{{ formatPercentText(clamped) }}</span>
+</div>
+```
+
+```vue
+<!-- Vue3: دائري -->
+<div :class="getProgressClassNames({ type: 'circle', status, showText, strokeWidth, width })">
+  <svg :width="width" :height="width" :viewBox="`0 0 ${width} ${width}`">
+    <circle
+      :cx="width / 2" :cy="width / 2"
+      :r="(width - strokeWidth) / 2"
+      :stroke-width="strokeWidth"
+      fill="none"
+      class="lh-progress__circle-track"
+    />
+    <circle
+      :cx="width / 2" :cy="width / 2"
+      :r="(width - strokeWidth) / 2"
+      :stroke-width="strokeWidth"
+      fill="none"
+      :stroke="barColor"
+      stroke-linecap="round"
+      :stroke-dasharray="circumference"
+      :stroke-dashoffset="circumference * (1 - clamped / 100)"
+      :transform="`rotate(-90 ${width / 2} ${width / 2})`"
+    />
+  </svg>
+  <span v-if="showText" class="lh-progress__circle-text">{{ formatPercentText(clamped) }}</span>
+</div>
+```
+
+```ts
+const clamped = computed(() => clampPercent(props.percentage))
+const status = computed(() => resolveStatus(clamped.value, props.status))
+const barColor = computed(() => getProgressColor(status.value, props.color, clamped.value))
+const circumference = computed(() => getCircleCircumference(props.width, props.strokeWidth))
+```
+
+```tsx
+// React: يستخدم الدائري حركة stroke-dashoffset (انتقال CSS على هذه الخاصية)
+```
+
+```ts
+// uniapp: يستخدم الخطي <view> بعرض نسبة مئوية؛ أما الدائري فيحتاج <canvas> أو SVG
+// (دعم محدود على بعض الأطراف)، والحل المبسط هو استبدال شريط خطي محل الدائري
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-progress` / `--line` / `--circle` | الصنف الأساسي / النوع |
+| `.lh-progress--success` / `--warning` / `--exception` | الحالة (لون النص + لون التعبئة) |
+| `.lh-progress--no-text` | بلا نص (إزالة خانة النص على جانب النهاية) |
+| `.lh-progress__bar` | المسار |
+| `.lh-progress__fill` | التعبئة (عرضها نسبة مئوية) |
+| `.lh-progress__text` | نص الخطي |
+| `.lh-progress__circle-track` | مسار الدائري |
+| `.lh-progress__circle-text` | نص مركز الدائري |
+
+لون المسار `--lh-fill-color`، والتعبئة افتراضيًا `--lh-primary-color`، وألوان الحالة `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`.
+
+## ملاحظات
+
+- **المعنى المزدوج لـ `strokeWidth`**: في الوضع line هو **ارتفاع** التعبئة (بالبكسل)، وفي circle هو **عرض حد** SVG. فالـ prop الواحد بدلالتين، ويستهلكه الطرف البصري وفق `type`.
+- **علاقة `width` بـ `strokeWidth` في الدائري**: لا يمكن أن يتجاوز `strokeWidth` قيمة `width`، وإلا يصير نصف القطر سالبًا، فيُحسب المحيط عددًا سالبًا، ويكون سلوك `stroke-dashoffset` غير معرف.
+- **عند `showText: false` يجب إعطاء `aria-label`** — فهذا مطلب صارم لإمكانية الوصول، لا خيار.
+- **حدود الحركة**: عندما تقفز تعبئة العرض من 0 إلى 80%، يكمّل انتقال CSS الحركة؛ لكن لحظة تصفير `clamped` من NaN ستومض، فيمكن للطرف البصري ألا يعرض قبل استقرار القيمة.
+- **ربط `resolveStatus` بحالة الطرف البصري**: إذا أراد العمل «100% لكنه لا يزال قيد المعالجة» أن يبقى normal، فإن تمرير `status="normal"` صراحةً سيُستبدل تلقائيًا (لأن الاشتقاق التلقائي لا يعمل إلا عند normal، والاتجاه normal ← success أحادي) — فاستخدم `exception` أو لونًا مخصصًا للالتفاف.
+- **الدلالة العملية لتجاوز النسبة 100%**: يُقيَّد `clampPercent` مباشرة إلى 100. وإن أراد العمل التعبير عن «تجاوز الإنجاز» (مثل 120%)، فلا تستخدم progress، بل اعرض الرقم عبر `statistic`.
+- **تقريب `formatPercentText`**: يُعرض `49.6` على هيئة `50%` مع فقدان الدقة؛ أما المشاهد التي تحتاج إلى منازل عشرية فينسقها العمل بنفسه (لا يوفّر core معاملًا، حفاظًا على أصغر حجم للدالة).
+
+<FnPlayground module="progress" fn="getProgressColor" params='{"status": "normal", "percentage": 90}' />

@@ -1,0 +1,126 @@
+---
+title: 0.4.0 遷移指南
+description: LH 前綴改名映射表 —— 類型、常數、預設識別字的機械替換清單
+---
+
+# 0.4.0 遷移指南
+
+0.4.0 把本倉的非第三方公共符號統一補上 `LH` 前綴，與 plus 倉
+`docs/project/development-guide.md` 的家族命名規範對齊（背景見[命名約定](/guide/naming)）。
+
+**全部是識別字級機械替換**，行為不變、匯出路徑不變。各 UI 庫（plus / vue2 / uniapp）
+已同步改名；獨立使用者請按下方映射改 import。
+
+## 類型 / 介面：`LhXxx`
+
+| 舊 | 新 | 所屬 |
+| --- | --- | --- |
+| `ThemePreset` | `LhThemePreset` | `theme` |
+| `ThemePresetName` | `LhThemePresetName` | `theme` |
+| `ThemeVars` | `LhThemeVars` | `theme` |
+| `SxProps` | `LhSxProps` | `core/shared/sx` |
+| `DOMRectLike` | `LhDOMRectLike` | `core/shared/popper` |
+| `ComputePositionOptions` | `LhComputePositionOptions` | `core/shared/popper` |
+| `PopperPosition` | `LhPopperPosition` | `core/shared/popper` |
+| `PtAttrs` | `LhPtAttrs` | `core/shared/pt` |
+| `SanitizeNumberOptions` | `LhSanitizeNumberOptions` | `core/shared/sanitize` |
+| `VirtualRange` | `LhVirtualRange` | `core/shared/virtual` |
+| `AxisRange` | `LhAxisRange` | `core/shared` |
+| `LocalePath` | `LhLocalePath` | `locales` |
+| `Leaves` | `LhLeaves` | `types/locale` |
+| `LocaleOptions` | `LhLocaleOptions` | `types/locale` |
+
+## 常數：`LH_<模組>_<概念>`
+
+| 舊 | 新 | 所屬 |
+| --- | --- | --- |
+| `DEFAULT_THEME` | `LH_THEME_DEFAULT` | `core/config` |
+| `DEFAULT_DRAWER_DIRECTION` | `LH_DRAWER_DIRECTION_DEFAULT` | `core/drawer` |
+| `DEFAULT_DRAWER_SIZE` | `LH_DRAWER_SIZE_DEFAULT` | `core/drawer` |
+| `DEFAULT_DROPDOWN_PLACEMENT` | `LH_DROPDOWN_PLACEMENT_DEFAULT` | `core/dropdown` |
+| `DROPDOWN_TRIGGERS` | `LH_DROPDOWN_TRIGGERS` | `core/dropdown` |
+| `DEFAULT_POPCONFIRM_TYPE` | `LH_POPCONFIRM_TYPE_DEFAULT` | `core/popconfirm` |
+| `DEFAULT_POPCONFIRM_PLACEMENT` | `LH_POPCONFIRM_PLACEMENT_DEFAULT` | `core/popconfirm` |
+| `POPOVER_TRIGGERS` | `LH_POPOVER_TRIGGERS` | `core/popover` |
+| `DEFAULT_POPOVER_PLACEMENT` | `LH_POPOVER_PLACEMENT_DEFAULT` | `core/popover` |
+| `THEME_PRESETS` | `LH_THEME_PRESETS` | `theme` |
+| `PRESET_THEME_STYLE_ID` | `LH_PRESET_THEME_STYLE_ID` | `theme` |
+
+注意預設值常數是 **`LH_<模組>_<概念>_DEFAULT`**（DEFAULT 在**後**），
+不是 `LH_DEFAULT_<...>`。
+
+## 主題預設物件：小寫 → `LhXxx`
+
+| 舊 | 新 |
+| --- | --- |
+| `cerblue` | `LhCerblue` |
+| `songhua` | `LhSonghua` |
+| `zhusha` | `LhZhusha` |
+| `shuimo` | `LhShuimo` |
+| `golden` | `LhGolden` |
+
+## 不改（豁免）
+
+以下符號**保持原名**，遷移時不要動它們：
+
+| 符號 | 理由 |
+| --- | --- |
+| `zhCN` / `enUS` | 標準 locale 命名，且是三個 UI 庫的公開 API 再匯出 |
+| 預設名的**字串值**（`name: 'cerblue'` 等） | 使用者在 ConfigProvider `theme` 裡寫的設定值，改了破壞全部下游設定 |
+| 函式名（`getThemeVars` / `sxToStyle` 等） | 本次只收斂常數 / 類型 / 介面 / 類別 |
+
+```ts
+// ✅ 遷移後
+import { LH_THEME_PRESETS, LhCerblue, getThemeVars } from '@lh-ui/share/theme'
+import type { LhThemePreset, LhSxProps } from '@lh-ui/share/core/shared/sx'
+
+const preset: LhThemePreset = LhCerblue
+getThemeVars('cerblue')          // 字串值不變
+```
+
+## 一鍵替換範例
+
+```ts
+// before
+import { THEME_PRESETS, PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+import type { SxProps, ThemeVars } from '@lh-ui/share'
+
+// after
+import { LH_THEME_PRESETS, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+import type { LhSxProps, LhThemeVars } from '@lh-ui/share'
+```
+
+## 本次發版的其他內容
+
+除改名外，0.4.0 還包含這些待發布 changeset：
+
+- **本地連動與樣式治理**（minor）——家族配置 alias 機制、`verify:styles` 六項驗證落地
+- **三倉稽核修復**（minor）
+- **高度令牌專項**（minor）——新增 `--lh-control-height-*` 令牌統一控制項外高，
+  **有視覺破壞性變化**：見下方「控制項高度變化」
+- **divider 豎向支援文案**（minor）——豎向分割線支援預設插槽文案，
+  `aria-orientation="vertical"` 從此可達
+- **GUI 回歸缺陷批次**（patch）——Form 必填文案優先級（使用者自訂 `message` 不再被
+  合成規則吞掉）、深主色預設暗色提亮（水墨等預設的主要按鈕暗色下不再幾近不可見）等
+- **date-picker 循環依賴拆除**（patch）——`formatDate` / `parseDate` 下沉到
+  `core/shared/date`，`logic ↔ adapter` 二元環拆為單向
+- **divider 邊框樣式與單測**（patch）
+- **表單控制項置中修復**（patch）
+- **steps 標題換行與折行**（patch）
+- **hairline 標記規則廢止**（patch）——uniapp v3 px 直出，新增 1px 邊框不再需要
+  `/* hairline */` 標記（歷史 65 處標記保留為普通註解）
+- **文件站**（minor）——就是你現在看的這個站
+
+## 控制項高度變化（視覺破壞性）
+
+新增 `--lh-control-height-{mini,small,medium,large,x-large}` 令牌（語義為控制項
+**外高 border-box**），全部表單控制項改引用令牌。此前多數控制項未宣告 `box-sizing: border-box`，
+統一按外高對齊後下列控制項實際渲染高度**降低**：
+
+| 控制項 | 變化 |
+| --- | --- |
+| input | 由 padding 派生改為固定高度：mini 28→20、small 32→24、medium 39→32、large 50→40 |
+| 其他表單控制項 | 統一到同一組高度檔，同表單混排時垂直中心與基線對齊 |
+
+這是**視覺**層面的破壞（DOM 結構與 API 不變）。若專案裡有針對舊像素值的快照測試或
+固定高度版面配置，需要回歸確認。

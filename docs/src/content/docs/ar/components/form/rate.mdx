@@ -1,0 +1,147 @@
+---
+title: rate —— التقييم
+description: 'clampRate للكلاءة، و stepRate لخطوة نصف النجمة، و getStarFill لدرجة تعبئة كل نجمة، وحزمة سمات slider'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+يحوّل التقييم عملية «إعطاء الدرجة» إلى **اختيار نجومي متقطّع**: يشعل المستخدم النجوم بدلاً من إدخال رقم. ويتولّى `core/rate` أمرين: درجة تعبئة كل نجمة (كاملة/نصف/فارغة)، وخطوة نصف النجمة مع التراكم العشري، إضافة إلى دلالة APG slider — فمكوّن التقييم على مستوى إمكانية الوصول هو **منزلق** وليس مجموعة أزرار اختيار.
+
+## متى يُستخدم
+
+- تُنجزه الأطراف على هيئة `LhRate`: تقييم السلع/الخدمات، وسمت الصعوبة، واستبيانات الرضا.
+- مجال القيم أعداد صحيحة من 1 إلى N (أو بخطوة 0.5 عند السماح بنصف نجمة).
+- **لا ينبغي استخدامه**: عند الحاجة لقيم عشرية دقيقة أو مجال متواصل (استخدم `slider` أو `input-number`)؛ ويمكن الاحتفاظ بـ rate في العرض القرائي بلا تفاعل، لكن مع التبديل إلى الحالة `readonly`.
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_RATE_MAX_DEFAULT,
+  clampRate,
+  stepRate,
+  getStarFill,
+  getRateAriaText,
+  getRateClassNames,
+  getRateAria,
+} from '@lh-ui/share/core/rate'
+import type { LhRateState } from '@lh-ui/share/core/rate'
+```
+
+## القصد التصميمي
+
+بعد الجمع/الطرح، ينفّذ `stepRate` العملية `Math.round(next * 10) / 10` — وهي ليست زائدة، بل **وقاية من التراكم العشري**: تعمل خطوة 0.5 في JS على النحو `0.5 → 1.0 → 1.5` دون مشكلة، لكن فخاخاً مثل `0.1 + 0.2 !== 0.3` تظهر مع قيم خطو أخرى، فإبقاء علامة عشرية واحدة يعيد النتيجة إلى عدد عشري نظيف. أما ترتيب الفحص في `getStarFill` فهو `full → half → empty`: تُفحص النجمة الكاملة أولاً ثم النصف، لضمان أن تكون النجمة الثالثة `half` عند `value=2.5` لا `empty`.
+
+يستخدم `getRateAriaText` الدالة `formatMessage` لإدراج `{n}`، ويأتي قالب النص من حزمة اللغة (`rate.ariaText`)، وتُطبَّق نفس عملية التقريب على الرقم قبل تحويله إلى سلسلة — يجب أن يستند نص aria والتعبئة البصرية إلى القيمة الموحَّدة نفسها.
+
+## جدول الدوال
+
+| الدالة | التوقيت | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `clampRate` | `(value: number \| undefined, max: number) => number` | قيمة مكلَّاة | غير العددي يؤول إلى 0، والحد الأعلى بواسطة max |
+| `stepRate` | `(value, direction: 1 \| -1, allowHalf, max) => number` | قيمة الخطوة | خطوة 0.5 مع نصف النجمة، علامة عشرية واحدة |
+| `getStarFill` | `(value, index, allowHalf) => 'full' \| 'half' \| 'empty'` | درجة التعبئة | النجمة رقم index (ابتداءً من 1) |
+| `getRateAriaText` | `(value, template: string) => string` | نص aria | إدراج عدد النجوم `{n}` |
+| `getRateClassNames` | `(state: LhRateState & { readonly, disabled }) => string[]` | أسماء أصناف | مُعدِّلات القراءة فقط/التعطيل |
+| `getRateAria` | `(options: { value, max, disabled?, ariaValueText? }) => LhAriaAttrs` | حزمة سمات aria | دلالة slider |
+
+## تعريفات الأنواع
+
+```ts
+export interface LhRateState {
+  max: number
+  value: number
+  allowHalf: boolean
+}
+
+export const LH_RATE_MAX_DEFAULT = 5
+```
+
+## إمكانية الوصول
+
+يُخرِج `getRateAria` دلالة **slider** (لا radiogroup): فقيمة التقييم قابلة للضبط المتواصل (لا سيما في وضع النصف نجمة)، وكثيراً ما يُنفَّذ نمط rating وفق APG على هيئة منزلق. وتتبع تفاعلات لوحة المفاتيح قواعد slider: ←/↓ للإنقاص و →/↑ للزيادة.
+
+```ts
+getRateAria({ value: 4.5, max: 5 })
+// { role: 'slider', 'aria-valuenow': 4.5, 'aria-valuemin': 0, 'aria-valuemax': 5 }
+
+getRateAria({ value: 0, max: 5, disabled: true, ariaValueText: '0 نجمة' })
+// { role: 'slider', 'aria-valuenow': 0, 'aria-valuemin': 0, 'aria-valuemax': 5,
+//   'aria-disabled': true, 'aria-valuetext': '0 نجمة' }
+```
+
+يُقدَّم `aria-valuetext` في الإعلان **أولويةً على valuenow** — فينطق قارئ الشاشة «4 نجومات ونصف» بدلاً من «4.5». وتحتاج كل نجمة على حدة إلى `aria-label` (تُولَّد في طبقة UI بواسطة `getRateAriaText(value, t('rate.ariaText'))`).
+
+## أمثلة الاستخدام
+
+```ts
+import { getStarFill, stepRate, clampRate } from '@lh-ui/share/core/rate'
+
+getStarFill(3.5, 3, true)   // 'full'
+getStarFill(3.5, 4, true)   // 'half'
+getStarFill(3.5, 4, false)  // 'empty' (في وضع النجمة الكاملة تكون الرابعة فارغة عند 3.5)
+getStarFill(3.5, 5, true)   // 'empty'
+stepRate(3, 1, true, 5)     // 3.5
+stepRate(3.5, 1, true, 5)   // 4
+stepRate(0, -1, true, 5)    // 0 (مكلَّاة)
+clampRate(undefined, 5)     // 0
+clampRate(9, 5)             // 5
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getRateClassNames({ max, value, allowHalf, readonly, disabled })">
+  <div
+    class="lh-rate__star-list"
+    v-bind="getRateAria({ value, max, disabled, ariaValueText: getRateAriaText(value, t('rate.ariaText')) })"
+    tabindex="0"
+    @keydown.left="onStep(-1)"
+    @keydown.right="onStep(1)"
+  >
+    <button
+      v-for="i in max"
+      :key="i"
+      type="button"
+      class="lh-rate__star"
+      :class="`lh-rate__star--${getStarFill(value, i, allowHalf)}`"
+      @click="onSelect(i)"
+    >
+      <LhIcon :name="getStarFill(value, i, allowHalf) === 'empty' ? 'star' : 'star-fill'" />
+    </button>
+  </div>
+</div>
+```
+
+```tsx
+// React: يُحدَّد value في وضع نصف النجمة بحالة hover، وعلى الجوال تُحدَّد نجمة كاملة بالنقر
+// الخطوة: const next = stepRate(value, dir, allowHalf, max); onChange(clampRate(next, max))
+```
+
+```ts
+// uniapp: <view> يطوف على عدد max من النجوم؛ ودعم aria محدود вне h5،
+// فالخصائص ذوات القيمة undefined في getRateAria تُهمَل
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-rate` | الصنف الأساسي |
+| `.lh-rate--readonly` | قراءة فقط (يخفي إبراز hover ويعطّل المؤشر) |
+| `.lh-rate--disabled` | تعطيل |
+| `.lh-rate__star-list` | حاوية مجموعة النجوم (تستضيف tabindex وأحداث لوحة المفاتيح) |
+| `.lh-rate__star` | زر نجمة واحدة |
+| `.lh-rate__star--full` / `--half` / `--empty` | درجة التعبئة (نصف النجمة بطبقة إخفاء نصفية) |
+| `.lh-rate__text` | نص الدرجة (مثل «3.5 درجة») |
+
+لون النجوم `--lh-warning-color` (أصفر)، والنجوم الفارغة `--lh-fill-color` / `--lh-border-color`.
+
+## ملاحظات
+
+- **يبدأ index في `getStarFill` من 1**، فيكون الطواف `v-for="i in max"` (شاملاً max) لا `v-for="i in max - 1"`.
+- **اتساق نصف النجمة مع النجمة الكاملة**: بعد تغيير `allowHalf` يجب تمرير القيمة نفسها إلى `stepRate` و `getStarFill`، وإلا لن تتطابق درجة النقر مع درجة خطو لوحة المفاتيح.
+- **دلالة حالة القراءة فقط**: `readonly` يبدّل اسم الصنف فقط (تعطيل بصري للتفاعل)، ولا يُخرِج `getRateAria` قيمة `aria-disabled` — فالتقييم للقراءة فقط يجب أن يبقى مفهوماً لدى قارئ الشاشة كقيمة تقييم (بالاعتماد على `aria-valuetext`)، وهذا يمايزه عن disabled.
+- **حدود `max`**: قيمة `LH_RATE_MAX_DEFAULT` هي 5؛ وتسمح طبقة UI بتغيير max، لكن كثرة النجوم (مثل 20) تفيض على الشاشات الضيقة، فيلزم التفاف خاص.
+- **قيمة عشرية مع allowHalf بقيمة كاذبة**: لا يتحقق core من هذا المزيج، ويعامل `getStarFill` القيمة 3.5 على أنها «3 نجوم full + الرابعة empty» — وهو خطأ إعداد من جانب المستدعي، يظهر بصرياً كاقتطاع.
+
+<FnPlayground module="rate" fn="getStarFill" params='{"value": 3.5, "index": 4, "allowHalf": true}' />

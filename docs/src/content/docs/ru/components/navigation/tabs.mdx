@@ -1,0 +1,178 @@
+---
+title: 'tabs вкладки —— Навигация'
+description: 'resolveActiveName: подпись вкладки с пустой строкой, getNameAfterRemove: стратегия активации после удаления вкладки, двусторонняя связь tab/tabpanel через aria'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Вкладки — это «переключатель содержимого в одной области»: «Основные / Безопасность / Уведомления» на странице настроек, вкладки браузера. Несколько панелей накладываются в одно пространство, а переключение между ними идёт вкладками — экономится вертикальное пространство, но ценой того, что одновременно видна только одна панель. `core/tabs` отвечает за **распределение активного состояния, стратегию активации после удаления вкладки и навигацию roving tabindex**.
+
+## Когда использовать
+
+- Реализация `<LhTabs>` / `<LhTabPane>` на всех концах: страница настроек, разбиение страницы деталей, переключение панелей дашборда.
+- Разделы содержимого **взаимоисключающие** и **одноранговые**.
+- **Не следует использовать**: пошаговые процессы (используйте `steps` — у tabs нет семантики порядка); иерархическая навигация (используйте `menu`); когда нужно одновременно сравнить две панели (расположите рядом через `grid`); будьте осторожны, если при переключении теряется черновик формы (UI-слой может сохранить состояние через keep-alive).
+
+## Импорт
+
+```ts
+import {
+  getTabsClassNames,
+  resolveActiveName,
+  getNextActiveName,
+  getNameAfterRemove,
+  getTablistAria,
+  getTabAria,
+  getTabpanelAria,
+} from '@lh-ui/share/core/tabs'
+import type {
+  LhTabsType, LhTabsPosition, LhTabRecord, LhTabNavDirection,
+} from '@lh-ui/share/core/tabs'
+```
+
+## Замысел
+
+**`!= null` вместо короткого замыкания по истинности**: `resolveActiveName` проверяет modelValue через `modelValue != null` — потому что **подпись вкладки это бизнес-идентификатор, и пустая строка допустима**. Когда пользователь явно привязывается к вкладке с `name: ''`, короткое замыкание по истинности (`if (modelValue && ...)`) сочтёт пустую строку «значение не передано» и проигнорирует её, активировав первую доступную вкладку, — получится трудно диагностируемое смещение состояния.
+
+- **Проверка активации учитывает disabled**: если `modelValue` задан, но соответствующая вкладка отключена, **она не активируется**, а происходит откат к первой доступной вкладке — отключённую вкладку нельзя выбрать, это жёсткое ограничение, которое не обойти даже явным заданием снаружи.
+- **`getNameAfterRemove`: сначала вправо, потом влево**: если удалена активная вкладка, приоритетный выбор — **ближайший доступный элемент справа** (сохранение позиции взгляда), а при отсутствии справа — ближайший слева. Этот порядок соответствует интуиции «после удаления фокус естественно перемещается вправо». Если удалённый элемент не был активным, активная остаётся прежней.
+- **`getNextActiveName` — оболочка @deprecated**: алгоритм навигации собран в `shared/keyboard.getNextListIndex`, а эта функция сохраняет старую сигнатуру (семантические имена направлений 'next'/'prev'/'first'/'last') и прежнее поведение «при неизвестном или отключённом текущем значении — откат к первому элементу». **В новом коде используйте ядро напрямую.**
+- **Roving tabindex**: стандартный шаблон клавиатурной навигации панели вкладок — roving tabindex: все вкладки получают `tabindex="-1"`, и только активная — `tabindex="0"`. Стрелки перемещают фокус между вкладками, а Tab уходит из панели вкладок в содержимое. `getNextActiveName` возвращает подпись вкладки назначения, а UI-слой по ней перемещает фокус и выставляет tabindex.
+- **Двусторонняя связь aria**: вкладка `aria-controls` → id панели; панель `aria-labelledby` → id активной вкладки. Оба направления должны быть прописаны, чтобы скринридер мог перейти с любого конца на другой. `aria-selected` выводится только при активации (false не выводится — неактивное состояние является поз умолчанию).
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getTabsClassNames` | `(state: { type, position }) => string[]` | классы | внешний вид + позиция |
+| `resolveActiveName` | `(records, modelValue) => string \| null` | подпись активной вкладки | проверка modelValue + откат |
+| `getNextActiveName` ⚠️ | `(records, currentName, direction) => string \| null` | подпись вкладки назначения | клавиатурная навигация |
+| `getNameAfterRemove` | `(records, removedName, currentName) => string \| null` | рекомендуемая активация | после удаления: вправо, затем влево |
+| `getTablistAria` | `(id?) => LhAriaAttrs` | aria-пакет | role=tablist |
+| `getTabAria` | `(options: { active, disabled?, panelId?, id? }) => LhAriaAttrs` | aria-пакет | role=tab |
+| `getTabpanelAria` | `(options: { tabId?, id? }) => LhAriaAttrs` | aria-пакет | role=tabpanel |
+
+⚠️ — оболочка совместимости `@deprecated`; в новом коде используйте `getNextListIndex` из `shared/keyboard`.
+
+## Определения типов
+
+```ts
+export type LhTabsType = 'line' | 'card'      // Подчёркивание / карточный внешний вид
+export type LhTabsPosition = 'top' | 'bottom' // Позиция вкладок
+export type LhTabNavDirection = 'next' | 'prev' | 'first' | 'last'
+
+export interface LhTabRecord {
+  name: string       // уникальный идентификатор (стабильный ключ, не меняется с жизненным циклом)
+  label: string      // заголовок вкладки
+  disabled: boolean
+}
+```
+
+## Доступность
+
+```ts
+getTabAria({ active: true, panelId: 'panel-1', id: 'tab-1' })
+// { role: 'tab', id: 'tab-1', 'aria-controls': 'panel-1', 'aria-selected': true }
+getTabAria({ active: false, disabled: true })
+// { role: 'tab', 'aria-disabled': true } (для неактивных aria-selected не выводится)
+
+getTabpanelAria({ tabId: 'tab-1', id: 'panel-1' })
+// { role: 'tabpanel', id: 'panel-1', 'aria-labelledby': 'tab-1' }
+```
+
+- **Клавиатурные соглашения role=tab** (APG): ←/→ переключают вкладки (причём **активация следует за фокусом** — перемещение фокуса и есть переключение, дополнительное нажатие Enter не требуется); Home/End — переход к первой/последней вкладке. Клавиша Tab выводит из панели вкладок в текущую панель.
+- **first / last в `getNextActiveName`**: direction поддерживает 'first' / 'last' для клавиш Home/End — не пишите сами ещё одну проверку границ.
+- **Панели нужен tabindex**: обычно панель получает `tabindex="0"`, чтобы клавиатурный пользователь мог через Tab войти в содержимое панели (рекомендация APG). Это не ответственность core, реализует UI-слой.
+- **Правильный способ скрытия панелей**: неактивные панели убираются из дерева доступности через `v-if`/`hidden`; **не оставляйте панель доступной для фокуса ничем, кроме `visibility: hidden`**. Если нужно сохранение состояния (черновик формы), используйте `display: none` + кэшированный рендер.
+- **Семантика опускания aria-selected**: в неактивном состоянии атрибут не выводится (а не выводится false) — APG определяет, что aria-selected для tab по умолчанию равен false, явный false хоть и допустим, но избыточен. `getTabAria` следует соглашению об опускании ложных значений из `shared/a11y`.
+
+## Примеры использования
+
+```ts
+import { resolveActiveName, getNameAfterRemove, getNextActiveName } from '@lh-ui/share/core/tabs'
+
+const records = [
+  { name: 'a', label: 'Основные', disabled: false },
+  { name: 'b', label: 'Безопасность', disabled: false },
+  { name: 'c', label: 'Уведомления', disabled: true },
+]
+
+resolveActiveName(records, 'b')   // 'b'
+resolveActiveName(records, 'c')   // 'a' (c отключена, откат к первому доступному)
+resolveActiveName(records, '')    // 'a' (пустая строка != null, идёт в ветку проверки, но вкладки с name '' нет → откат)
+resolveActiveName(records, undefined)  // 'a'
+resolveActiveName([], undefined)       // null (нет доступных вкладок)
+
+getNextActiveName(records, 'a', 'next')  // 'b' (пропуск отключённой c: из a next получается b)
+getNextActiveName(records, 'b', 'next')  // 'a' (доступны только a/b, зацикливание)
+getNextActiveName(records, 'unknown', 'next')  // 'a' (при неизвестном значении откат к первому элементу)
+
+getNameAfterRemove(records, 'b', 'b')  // 'a' (удалена активная вкладка b: справа нет доступных → ближайшая слева)
+getNameAfterRemove(records, 'a', 'b')  // 'b' (удалена не активная вкладка, сохраняется b)
+getNameAfterRemove([{ name: 'a', disabled: true }], 'a', 'a')  // null (нет доступных)
+```
+
+```ts
+// Управляемая активация (UI-слой)
+const activeName = ref<string | null>(null)
+const records = ref<LhTabRecord[]>([])
+
+function onTabClick(name: string) {
+  activeName.value = name
+}
+function onRemove(name: string) {
+  const next = getNameAfterRemove(records.value, name, activeName.value ?? '')
+  records.value = records.value.filter((r) => r.name !== name)
+  activeName.value = next
+}
+watch(records, () => {
+  activeName.value = resolveActiveName(records.value, activeName.value)
+}, { immediate: true })
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTabs v-model="activeName" type="card">
+    <LhTabPane name="basic" label="Основные настройки">…</LhTabPane>
+    <LhTabPane name="security" label="Настройки безопасности">…</LhTabPane>
+  </LhTabs>
+</template>
+```
+
+```tsx
+// React: records регистрируются дочерними компонентами TabPane (useEffect + context)
+// либо передаются напрямую через props; клавиатурная навигация — onKeyDown
+// с вызовом getNextActiveName + focus()
+```
+
+```ts
+// uniapp: вкладки из <view> + горизонтальная прокрутка через scroll-view;
+// подчёркивание активной вкладки позиционируется через transform
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-tabs` | корневой контейнер |
+| `.lh-tabs--{line\|card}` | внешний вид |
+| `.lh-tabs--{top\|bottom}` | позиция вкладок (подчёркивание/рамка карточки меняются вместе с ней) |
+| `.lh-tabs__header` / `__nav` / `__nav-wrap` | панель вкладок / навигация / обёртка прокрутки (прокручиваемая панель вкладок) |
+| `.lh-tabs__item` / `--active` / `--disabled` | вкладка |
+| `.lh-tabs__active-bar` | подчёркивание активной вкладки (тип line, позиционирование через transform) |
+| `.lh-tabs__content` / `__pane` | область панели |
+
+Цвет текста активной вкладки `--lh-tabs-active-color`, подчёркивание того же цвета; карточный тип — рамка `--lh-border-color` + подъём через фон активного состояния `--lh-bg-color`.
+
+## Замечания
+
+- **Прокрутка панели вкладок**: когда вкладок много и они не помещаются, нужны кнопки прокрутки влево/вправо или прокрутка жестом — распространённая реализация: `overflow: hidden` у `__nav-wrap` + сдвиг `__nav` через transform, а величину прокрутки вычисляет UI-слой (core этим не занимается).
+- **Сращивание рамок при `type: card`**: в активном состоянии карточной вкладки убирается та рамка, которая совпадает с областью содержимого (при позиции top — нижняя, при bottom — верхняя), иначе образуется двойная рамка — именно для этого существует класс позиции.
+- **Динамическое добавление/удаление вкладок**: после изменения состава `resolveActiveName` нужно перезапустить (watch records). При удалении вкладки используйте `getNameAfterRemove`, чтобы активное состояние не зависло в воздухе.
+- **Кнопка закрытия внутри вкладки**: кнопке ✕ у вкладки с `closable` нужен `@click.stop` (иначе одновременно сработает переключение вкладки), а также `aria-label`.
+- **Keep-alive и производительность**: тяжёлые панели с частым переключением (графики, таблицы) рекомендуется сохранять, а не уничтожать и пересоздавать — во Vue `<keep-alive>`, в React — сокрытие через CSS + стратегия размонтирования. core этого не контролирует.
+- **Старая сигнатура `getNextActiveName`**: direction использует семантические имена ('next'/'prev'), а не 1/-1 из ядра, и **при неизвестном текущем значении откат идёт к первому элементу независимо от направления** (а не следует направлению) — это сохранение старого поведения, учитывайте его при миграции.
+- **Ловушка подписи вкладки с пустой строкой**: `resolveActiveName(records, '')` будет искать в records вкладку с `name === ''` — если бизнес использует пустую строку как «ничего не выбрано», это конфликтует с допустимой пустой подписью. Выражайте «не выбрано» через `null`, а не через `''`.
+
+<FnPlayground module="tabs" fn="getNameAfterRemove" params='{"records": [{"name": "a", "label": "Основные", "disabled": false}, {"name": "b", "label": "Безопасность", "disabled": false}, {"name": "c", "label": "Уведомления", "disabled": true}], "removedName": "b", "currentName": "b"}' />

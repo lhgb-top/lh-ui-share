@@ -1,0 +1,171 @@
+---
+title: segmented —— セグメントコントローラー
+description: 'normalizeSegmentedOptions のオプション正規化、moveSegmentedIndex のキーボードナビゲーション、radiogroup セマンティクスの属性パック'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+セグメントコントローラーは**コンパクト版の単一選択**です：選択肢を 1 列に並べたボタングループにし、選択中の項目をスライドブロックで示します。radio グループより垂直スペースを節約し、見た目もモダンです；select と違いすべての選択肢を露出するため、クリックが 1 回減ります。`core/segmented` が管理するのは選択肢の 2 つの書き方の正規化、グループ全体の無効化判定、キーボードナビゲーション、そして APG の radiogroup セマンティクスです。
+
+## いつ使うか
+
+- 各端の `LhSegmented` 実装：ビュー切り替え（リスト / グリッド / カード）、時間範囲（日 / 週 / 月）、コンパクトな列挙型の設定。
+- 選択肢が少なく（2～5）、かつ**排他的**なシーン。
+- **使うべきでない**：選択肢が 6 を超える場合（select か radio グループに変える）；複数選択（checkbox グループを使う）；選択肢の文字列が長い場合（折り返して見苦しくなります）。
+
+## インポート方法
+
+```ts
+import {
+  normalizeSegmentedOptions,
+  isSegmentedDisabled,
+  getSegmentedClassNames,
+  moveSegmentedIndex,
+  getSegmentedAria,
+  getSegmentedItemAria,
+} from '@lh-ui/share/core/segmented'
+import type {
+  LhSegmentedInput,
+  LhSegmentedNormalized,
+  LhSegmentedState,
+} from '@lh-ui/share/core/segmented'
+```
+
+## 設計意図
+
+`normalizeSegmentedOptions` は 2 つの書き方——`['日', '週', '月']` または `[{ label: '日', value: 'day' }]`——を受け付け、統一された形式に正規化します。これは「入力は寛容に、内部は厳格に」という取舍です：UI ライブラリの props が寛容なほどユーザーの認知的負担は下がり、内部で `LhSegmentedNormalized` に統一すれば、以降の無効化判定、ナビゲーション、レンダリングは 1 つの構造だけを相手にします。
+
+`isSegmentedDisabled(options, disabled)` が行うのは** 2 レベルの無効化のマージ**です：グループレベルの `disabled` と各選択肢自身の `disabled` のいずれかがグループ全体を使用不可にします——セグメントコントローラーの選択ブロックは連動してスライドするため、「半無効」のグループが存在するとスライドブロックが引っかかるからです。
+
+`moveSegmentedIndex` は共有コアの `getNextListIndex`（`core/shared/keyboard`）に委譲し、無効な項目をスキップしつつ循環ナビゲーションを行い、空配列の場合は current を返します。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `normalizeSegmentedOptions` | `(options: LhSegmentedInput[]) => LhSegmentedNormalized[]` | 正規化された選択肢 | 文字列の省略記法を正規化 |
+| `isSegmentedDisabled` | `(options: LhSegmentedNormalized[], disabled?: boolean) => boolean` | 無効かどうか | グループレベル + 選択肢レベルをマージ |
+| `getSegmentedClassNames` | `(state: LhSegmentedState) => string[]` | クラス名 | disabled / block |
+| `moveSegmentedIndex` | `(options, current: number, direction: 1 \| -1) => number` | 目標のインデックス | 無効な項目をスキップして循環 |
+| `getSegmentedAria` | `(options?: { disabled?; label? }) => LhAriaAttrs` | aria 属性パック | radiogroup セマンティクス |
+| `getSegmentedItemAria` | `(options: { selected; disabled? }) => LhAriaAttrs` | aria 属性パック | radio セマンティクス |
+
+## 型定義
+
+```ts
+export type LhSegmentedValue = string | number
+
+export interface LhSegmentedOption {
+  label: string
+  value: LhSegmentedValue
+  disabled?: boolean
+}
+
+/** 入力の選択肢（文字列の省略記法またはオブジェクト） */
+export type LhSegmentedInput = LhSegmentedValue | LhSegmentedOption
+
+export interface LhSegmentedNormalized {
+  label: string
+  value: LhSegmentedValue
+  disabled: boolean
+}
+
+export interface LhSegmentedState {
+  disabled: boolean
+  block: boolean   // 親幅を満たす（等幅のセグメント）
+}
+```
+
+## アクセシビリティ
+
+セグメントコントローラーはアクセシビリティの観点では**単一選択グループ**です：コンテナに `role="radiogroup"`、各セグメント項目に `role="radio"` + `aria-checked` を持ちます。セマンティクス全体は 2 つの属性パック関数が提供します：
+
+```ts
+getSegmentedAria({ disabled: false, label: 'ビュー' })
+// { role: 'radiogroup', 'aria-label': 'ビュー' }
+
+getSegmentedItemAria({ selected: true })
+// { role: 'radio', 'aria-checked': true }
+
+getSegmentedItemAria({ selected: false, disabled: true })
+// { role: 'radio', 'aria-checked': false, 'aria-disabled': true }
+```
+
+- コンテナに可視の label がない場合、`label` パラメータで `aria-label`（アクセシブル名）を提供します。
+- キーボード操作（UI 層）：←/↑ と →/↓ で `moveSegmentedIndex` を移動し、そのまま選択します（radio モードは「移動即選択」であり、button モードの「移動 + Enter」ではありません）。
+- `roving tabindex`：選択中の項目（または最初の項目）のみ `tabindex="0"` とし、ほかは `-1` にして、Tab キーがグループ内で項目ごとに止まるのを防ぎます。
+
+## 使用例
+
+```ts
+import { normalizeSegmentedOptions, moveSegmentedIndex, isSegmentedDisabled } from '@lh-ui/share/core/segmented'
+
+normalizeSegmentedOptions(['日', '週', '月'])
+// [{ label: '日', value: '日', disabled: false }, ...]
+
+normalizeSegmentedOptions([{ label: '日', value: 'day' }, '週'])
+// [{ label: '日', value: 'day', disabled: false }, { label: '週', value: '週', disabled: false }]
+
+const opts = normalizeSegmentedOptions([
+  { label: '日', value: 'day' },
+  { label: '週', value: 'week', disabled: true },
+  { label: '月', value: 'month' },
+])
+moveSegmentedIndex(opts, 0, 1)   // 2（無効な week をスキップ）
+moveSegmentedIndex(opts, 2, 1)   // 0（循環）
+moveSegmentedIndex([], 0, 1)     // 0（空配列）
+isSegmentedDisabled(opts, false) // true（week が無効 → グループ全体が無効）
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSegmentedClassNames({ disabled, block })" v-bind="getSegmentedAria({ disabled, label })">
+  <div class="lh-segmented__indicator" :style="{ transform: `translateX(${index * 100}%)`, width: `${100 / normalized.length}%` }" />
+  <button
+    v-for="(opt, i) in normalized"
+    :key="String(opt.value)"
+    type="button"
+    class="lh-segmented__item"
+    :class="{ 'lh-segmented__item--active': i === index, 'lh-segmented__item--disabled': opt.disabled }"
+    :tabindex="i === index ? 0 : -1"
+    v-bind="getSegmentedItemAria({ selected: i === index, disabled: opt.disabled })"
+    @click="onSelect(i)"
+    @keydown.left.prevent="onMove(-1)"
+    @keydown.right.prevent="onMove(1)"
+  >
+    {{ opt.label }}
+  </button>
+</div>
+```
+
+```tsx
+// React：indicator は CSS transition でスライド；onMove の中で onChange(normalized[moveSegmentedIndex(normalized, index, dir)].value)
+```
+
+```ts
+// uniapp：<view> + <view> でループ；非 h5 端ではキーボードイベントが使えず、タッチで直接選択する
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-segmented` | 基底クラス（角丸コンテナ + 内側の余白） |
+| `.lh-segmented--disabled` | 無効 |
+| `.lh-segmented--block` | 親幅を満たし、セグメントを等幅にする |
+| `.lh-segmented__indicator` | スライドハイライトブロック（絶対配置 + transform） |
+| `.lh-segmented__item` | 個々のセグメント項目 |
+| `.lh-segmented__item--active` | 選択中の項目（文字は主色） |
+| `.lh-segmented__item--disabled` | 無効な項目 |
+
+コンテナの底色は `--lh-fill-color`（薄いグレーの凹み）、indicator は `--lh-bg-color`（白）+ 影、選択中の文字は `--lh-primary-color` です。
+
+## 注意事項
+
+- **indicator の位置決め**：UI 層では `transform: translateX(index * 100%)` + `width: 100/count%` を使います；count は必ず**正規化後**の長さ（`normalizeSegmentedOptions` の結果）でなければなりません。さもなくば選択肢の増減時にスライドブロックがずれます。
+- **文字列記法とオブジェクト記法の value**：文字列記法では `value === label` になります；UI 層の `v-model` がバインドするのは label ではなく `value` であり、2 つの記法を混用するときは値の出所に注意してください。
+- **グループ全体の無効化の判定タイミング**：`isSegmentedDisabled` は options に依存するため、選択肢が動的に変化する場合は再計算しなければなりません。さもなくば無効状態が更新されません。
+- **radio との取舍**：セグメントコントローラーの選択ブロックは**視覚的にスライド**し、アニメーションは JS による indicator の位置決めに依存します；対象端が transform アニメーションをサポートしない場合（一部のミニプログラム）、radio グループに退化させるほうが安全です。
+- **空の options**：`normalizeSegmentedOptions([])` は `[]` を返し、`moveSegmentedIndex` は current を返します——UI 層は空の状態を処理し、空の凹みをレンダリングしないようにしてください。
+
+<FnPlayground module="segmented" fn="moveSegmentedIndex" params='{"options": [{"label": "日", "value": "day", "disabled": false}, {"label": "週", "value": "week", "disabled": true}, {"label": "月", "value": "month", "disabled": false}], "current": 0, "direction": 1}' />

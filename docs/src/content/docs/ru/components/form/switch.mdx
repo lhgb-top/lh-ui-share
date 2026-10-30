@@ -1,0 +1,144 @@
+---
+title: switch —— Переключатель
+description: 'тексты активного/неактивного состояния в getSwitchLabel, пакет семантических атрибутов role=switch в getSwitchAria'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Переключатель — это «двухпозиционный элемент управления»: вкл или выкл, третьего состояния нет. Внешне он похож на флажок (два состояния), но семантика у него другая — флажок выражает «выбран ли данный вариант», а переключатель — «включена ли некоторая функция». APG определяет для него отдельный `role="switch"`.
+
+## Когда использовать
+
+- В каждой платформе реализован `LhSwitch`: включение и выключение пунктов настроек, переключатели разрешений, состояние подписки.
+- Двухпозиционные операции с семантикой «немедленного применения» (отметил — применилось, без отправки формы).
+- **Не использовать для**: множественного выбора в форме (используйте checkbox); выбора из нескольких позиций (используйте segmented или radio).
+
+## Импорт
+
+```ts
+import { getSwitchClassNames, getSwitchLabel, getSwitchAria } from '@lh-ui/share/core/switch'
+import type { LhSwitchState } from '@lh-ui/share/core/switch'
+```
+
+## Замысел дизайна
+
+Объединение `disabled || loading` в `getSwitchAria` сделано намеренно: переключатель в состоянии загрузки и отключённый переключатель на уровне доступности **ведут себя одинаково** — оба не обладают интерактивностью, и программа чтения экрана должна сообщать «недоступно», а не «доступно, но нажатие не реагирует».
+
+`getSwitchLabel` возвращает `activeText` / `inactiveText`: тексты переключателя расположены по обе стороны от ползунка, и это визуальное преимущество переключателя перед флажком — состояние читается с первого взгляда, а не только по положению.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `getSwitchClassNames` | `(state: LhSwitchState) => string[]` | массив имён классов | модификаторы checked/disabled/loading/size |
+| `getSwitchLabel` | `(state: LhSwitchState) => string` | текст | если выбран, activeText, иначе inactiveText |
+| `getSwitchAria` | `(state: Pick<LhSwitchState, 'checked' \| 'disabled' \| 'loading'>) => LhAriaAttrs` | пакет aria-атрибутов | семантика `role="switch"` |
+
+Примеры вывода:
+
+```ts
+getSwitchClassNames({ checked: true, disabled: false, loading: false, name: '', size: 'medium', activeText: '', inactiveText: '' })
+// ['lh-switch', 'lh-switch--checked']
+
+getSwitchLabel({ checked: true, activeText: 'Вкл', inactiveText: 'Выкл' })  // 'Вкл'
+
+getSwitchAria({ checked: true, disabled: false, loading: false })
+// { role: 'switch', 'aria-checked': true }
+
+getSwitchAria({ checked: false, disabled: false, loading: true })
+// { role: 'switch', 'aria-checked': false, 'aria-disabled': true }
+```
+
+## Определения типов
+
+```ts
+export interface LhSwitchState {
+  checked: boolean
+  disabled: boolean
+  loading: boolean
+  name: string            // ключ при отправке формы
+  size: LhComponentSize
+  activeText: string      // текст во включённом состоянии
+  inactiveText: string    // текст в выключенном состоянии
+}
+```
+
+## Доступность
+
+`getSwitchAria` — пакет атрибутов паттерна switch из APG. **Ключевое значение имеет то, используется нативный input или кастомный элемент управления**:
+
+```ts
+// Вариант A (рекомендуется): нативный <input type="checkbox"> + role="switch" усиливает семантику
+// Собственная семантика checkbox браузера дополняется role="switch", aria-checked
+// автоматически синхронизируется с :checked, а переключение по Space и отправка
+// формы достаются бесплатно
+<input type="checkbox" role="switch" :aria-checked="checked" />
+
+// Вариант B: полностью кастомный элемент управления (имитация на div), нужно вручную
+// навесить всю семантику — именно для этого и подготовлен getSwitchAria:
+// role + aria-checked + aria-disabled
+```
+
+На не-h5 платформах вроде uniapp часто возможен только вариант B (нативный checkbox трудно стилизовать), и тогда `getSwitchAria` необходим.
+
+## Примеры использования
+
+```ts
+import { getSwitchClassNames, getSwitchAria } from '@lh-ui/share/core/switch'
+
+getSwitchAria({ checked: true, disabled: false, loading: false })
+// { role: 'switch', 'aria-checked': true }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSwitchClassNames({ checked, disabled, loading, name, size, activeText, inactiveText })">
+  <span class="lh-switch__label lh-switch__label--left">{{ inactiveText }}</span>
+  <div class="lh-switch__core" v-bind="getSwitchAria({ checked, disabled, loading })" @click="toggle">
+    <LhSpinner v-if="loading" class="lh-switch__loading" :size="12" />
+  </div>
+  <span class="lh-switch__label lh-switch__label--right">{{ activeText }}</span>
+</div>
+```
+
+```tsx
+// React
+const aria = getSwitchAria({ checked, disabled, loading })
+return (
+  <div className="lh-switch">
+    <div className="lh-switch__core" {...aria} onClick={() => !disabled && !loading && onChange(!checked)} />
+  </div>
+)
+```
+
+```ts
+// uniapp: ползунок имитируется через view; на не-h5 платформах поддержка role/aria
+// ограничена, а результат getSwitchAria безопасно деградирует
+// (атрибуты со значениями undefined игнорируются фреймворком, не плодя невалидную разметку)
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-switch` | базовый класс |
+| `.lh-switch--checked` | включённое состояние (ползунок сдвигается, цвет фона становится основным) |
+| `.lh-switch--checked__core` | ползунок во включённом состоянии (вложенная запись, чтобы избежать конфликта с `--checked`) |
+| `.lh-switch--{small\|large}` | размер |
+| `.lh-switch--disabled` / `--loading` | отключено / загрузка |
+| `.lh-switch__core` | дорожка ползунка |
+| `.lh-switch__label` | тексты по сторонам |
+| `.lh-switch__loading` | spinner загрузки |
+
+Цвет включения `var(--lh-primary-color)`, цвет выключения `--lh-fill-color` (нейтрально-серый).
+
+Известная проблема (из «специальной задачи по токенам высоты»): `translate(-50%,-50%)` ползунка **дублируется жёстко** в base и в keyframes, и при изменении размера нужно синхронно править оба места.
+
+## Замечания
+
+- **Согласованность `aria-checked` и визуального состояния**: состояние `checked` кастомного элемента управления должно браться из того же источника, что и вывод `getSwitchAria`, иначе получится «aria говорит, что включено, а визуально выключено».
+- **Состояние loading поглощает клики**: в процессе загрузки клик не должен переключать значение, и обработчик click на UI-слое должен проверять `disabled || loading`.
+- **Расположение текстов**: `activeText` находится со стороны включения (обычно справа), `inactiveText` — со стороны выключения; при пустых текстах стили автоматически убирают пространство по сторонам.
+- Критерий выбора между switch и checkbox: **немедленность применения**. Переключатель применяется сразу, а флажок обычно отправляется вместе с формой.
+
+<FnPlayground module="switch" fn="getSwitchAria" params='{"state": {"checked": true, "disabled": false, "loading": false}}' />

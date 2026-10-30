@@ -1,0 +1,166 @@
+---
+title: slider —— Слайдер
+description: 'притягивание к шагу snapToStep, пересчёт процентов getValueFromPosition, начальное значение интервала getInitialValue, пакет семантических атрибутов slider'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Слайдер превращает выбор числа в **пространственное действие**: перетаскивание нагляднее ввода и сразу показывает положение значения в диапазоне. `core/slider` занимается двусторонним пересчётом «значение ↔ позиция», притягиванием к шагу, начальными значениями двух точек в режиме интервала (range) и семантикой APG slider.
+
+## Когда использовать
+
+- В каждой платформе реализован `LhSlider`: громкость, диапазон цен, регулировка прозрачности.
+- Сценарии с непрерывным диапазоном или сравнительно крупным шагом.
+- **Не использовать для**: точного числового ввода (используйте `input-number` — слайдер не способен выразить «37», не кратное шагу).
+
+## Импорт
+
+```ts
+import {
+  snapToStep,
+  clampAndSnap,
+  getValueFromPosition,
+  getPositionFromValue,
+  getSliderClassNames,
+  getInitialValue,
+  buildMarksList,
+  getSliderThumbAria,
+} from '@lh-ui/share/core/slider'
+import type { LhSliderState, LhSliderMark } from '@lh-ui/share/core/slider'
+```
+
+## Замысел дизайна
+
+`snapToStep` при не конечном `step` или `step <= 0` **возвращает исходное значение**, а не NaN — `step: 0` приводит к NaN в операции остатка от деления, и здесь «недопустимый шаг» трактуется как «без притягивания», а чистый кламп по границам остаётся за `clampAndSnap`. Разделение обязанностей: притягивание и кламп — два независимых действия.
+
+Возврат 0 при `max === min` в `getPositionFromValue` защищает от деления на ноль: когда диапазон вырождается в точку, ползунок, естественно, должен находиться в начале.
+
+В режиме интервала `getInitialValue` возвращает `[кламп к min, кламп к (min+max)/2]` — второй ползунок по умолчанию ставится на **середину**, а не на max, и причин тому визуальные (два слипшихся ползунка выглядят как bug).
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `snapToStep` | `(value: number, min: number, step: number) => number` | значение после притягивания | выравнивание до ближайшей точки сетки по step |
+| `clampAndSnap` | `(value: number, min: number, max: number, step: number) => number` | упорядоченное значение | сначала притягивание, затем кламп |
+| `getValueFromPosition` | `(pct: number, min: number, max: number, step: number) => number` | число | процент → значение |
+| `getPositionFromValue` | `(value: number, min: number, max: number) => number` | процент [0,1] | значение → позиция |
+| `getSliderClassNames` | `(state: LhSliderState) => string[]` | имена классов | disabled/range/size |
+| `getInitialValue` | `(state: LhSliderState) => number \| [number, number]` | начальное значение | для интервала возвращает две точки |
+| `buildMarksList` | `(marks?: Record<number, string>) => LhSliderMark[]` | массив делений | сортировка по возрастанию value |
+| `getSliderThumbAria` | `(options: { value, min, max, vertical?, disabled?, ariaValueText? }) => LhAriaAttrs` | пакет aria-атрибутов | семантика slider |
+
+## Определения типов
+
+```ts
+export interface LhSliderMark {
+  label: string
+  value: number
+}
+
+export interface LhSliderState {
+  value: number | [number, number] | null
+  min: number
+  max: number
+  step: number
+  disabled: boolean
+  range: boolean              // режим интервала (два ползунка)
+  showInput: boolean          // связка с input-number
+  size: LhComponentSize
+  marks: Record<number, string> | undefined
+}
+```
+
+## Доступность
+
+`getSliderThumbAria` выводит семантику APG slider. **В режиме интервала функцию нужно вызвать для каждого из двух ползунков**:
+
+```ts
+getSliderThumbAria({ value: 30, min: 0, max: 100 })
+// { role: 'slider', 'aria-valuenow': 30, 'aria-valuemin': 0, 'aria-valuemax': 100 }
+
+getSliderThumbAria({ value: 60, min: 0, max: 100, vertical: true, disabled: true })
+// { role: 'slider', 'aria-valuenow': 60, 'aria-valuemin': 0, 'aria-valuemax': 100,
+//   'aria-orientation': 'vertical', 'aria-disabled': true }
+```
+
+- `vertical` выводит `aria-orientation: 'vertical'` (горизонтальное направление используется по умолчанию и не объявляется).
+- `ariaValueText` выводится как `aria-valuetext` — когда числу нужно семантическое выражение (например, «30%» или «медленно»), и он **зачитывается вместо valuenow**.
+- Взаимодействие с клавиатурой (UI-слой): ←/→ или ↓/↑ изменяют значение на step, Home/End перемещают к min/max, PageUp/Down — крупный шаг.
+
+## Примеры использования
+
+```ts
+import { getValueFromPosition, getPositionFromValue, snapToStep } from '@lh-ui/share/core/slider'
+
+getValueFromPosition(0.5, 0, 100, 1)   // 50
+getValueFromPosition(0.333, 0, 100, 5) // 35 (притягивается к кратному 5)
+getPositionFromValue(30, 0, 100)       // 0.3
+getPositionFromValue(150, 0, 100)      // 1 (кламп)
+getPositionFromValue(50, 50, 50)       // 0 (max===min, защита от деления на ноль)
+snapToStep(7, 0, 5)                    // 5
+snapToStep(8, 0, 5)                    // 10
+snapToStep(7, 0, 0)                    // 7 (недопустимый step — без притягивания)
+buildMarksList({ 0: 'Низко', 100: 'Высоко' })  // [{ label: 'Низко', value: 0 }, { label: 'Высоко', value: 100 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSliderClassNames({ value, min, max, step, disabled, range, showInput, size, marks })">
+  <div class="lh-slider__track">
+    <div class="lh-slider__bar" :style="{ width: pct + '%' }" />
+    <div
+      class="lh-slider__button-wrapper"
+      :style="{ left: pct + '%' }"
+      v-bind="getSliderThumbAria({ value, min, max, disabled })"
+      @pointerdown="startDrag"
+    >
+      <div class="lh-slider__button" />
+    </div>
+    <template v-if="marks">
+      <div v-for="mark in buildMarksList(marks)" :key="mark.value" class="lh-slider__marks">
+        <span class="lh-slider__mark" :style="{ left: getPositionFromValue(mark.value, min, max) * 100 + '%' }">
+          {{ mark.label }}
+        </span>
+      </div>
+    </template>
+  </div>
+</div>
+```
+
+```tsx
+// React: перетаскивание через pointer events + getBoundingClientRect для расчёта процента
+// const pct = (clientX - rect.left) / rect.width
+// onChange(getValueFromPosition(pct, min, max, step))
+```
+
+```ts
+// uniapp: <slider> — встроенный компонент (один ползунок), поддерживает min/max/step/show-value;
+// режим интервала и marks нужно реализовывать собственным view, перетаскивание через @touchmove
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-slider` | базовый класс |
+| `.lh-slider--{small\|large}` | размер (размер ползунка) |
+| `.lh-slider--disabled` | отключено |
+| `.lh-slider--range` | режим интервала (два ползунка + подсвеченный средний сегмент) |
+| `.lh-slider__track` | дорожка |
+| `.lh-slider__bar` | выбранный интервал (подсвеченный сегмент) |
+| `.lh-slider__button-wrapper` / `__button` | ползунок |
+| `.lh-slider__marks` / `__mark` | деления |
+| `.lh-slider__input` / `__input-text` | связанное поле ввода |
+
+Цвет дорожки `--lh-fill-color`, выбранного сегмента — `--lh-primary-color`.
+
+## Замечания
+
+- **`getPositionFromValue` возвращает дробное число в [0,1]**, а UI-слой добавляет `%`; не следует думать, что возвращаются проценты.
+- **Выравнивание притягивания и делений**: value у `marks` должно быть кратно step, иначе точки делений окажутся между двумя значениями притягивания, и пользователь не сможет перетащить ползунок туда.
+- **Пересечение в режиме интервала**: два ползунка могут проходить сквозь друг друга (UI-слой обычно это запрещает или автоматически меняет их местами); `clampAndSnap` в core эту семантику не обрабатывает.
+- **Вертикальный режим**: при `vertical` высота дорожки заменяет ширину, и знаменатель в пересчёте меняется; `getValueFromPosition` в core не зависит от оси (принимает процент), а pct считает UI-слой.
+- **Связка с `showInput`**: min/max/step у `input-number` должны совпадать со значениями slider, иначе диапазоны значений двух элементов разойдутся.
+
+<FnPlayground module="slider" fn="getValueFromPosition" params='{"pct": 0.35, "min": 0, "max": 100, "step": 5}' />

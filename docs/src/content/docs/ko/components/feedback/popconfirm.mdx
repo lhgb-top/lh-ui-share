@@ -1,0 +1,165 @@
+---
+title: popconfirm —— 확인 풍선
+description: '이차 확인의 가벼운 해결책: alertdialog 의미, warning 기본 어조, 확인/취소 버튼의 이벤트 계약'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+삭제, 제출, 게시——이런 "하면 되돌리기 어려운" 작업은 사용자에게 한 번 더 확인을 요구해야 합니다. `dialog`는 너무 무겁고 (모달, 포커스 탈취, 마스크), `popconfirm`은 그 자리에서 작은 풍선을 띄웁니다: 문장 하나 + 버튼 두 개, 확인하면 즉시 사라집니다. **조작 무게가 tooltip과 dialog 사이에 정확히 자리잡은** 컴포넌트입니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `<LhPopconfirm>`: 행 삭제, 작업 되돌리기, 데이터 비우기, 주문 제출.
+- **가볍고, 그 자리에서, 되돌림 여유가 적은** 이차 확인.
+- **사용하면 안 되는 경우**: 사용자가 온전히 집중해야 할 만큼 심각한 결과 (`dialog` 사용——모달 마스크가 강제로 집중); 단순 정보 알림 (`tooltip` / `message` 사용); 이유를 입력하거나 항목을 체크해야 하는 확인 (`dialog`에 폼을 넣어 사용).
+
+## 임포트 방법
+
+```ts
+import {
+  LH_POPCONFIRM_TYPE_DEFAULT,
+  LH_POPCONFIRM_PLACEMENT_DEFAULT,
+  getPopconfirmIconName,
+  getPopconfirmClass,
+  getPopconfirmTriggerAria,
+  getPopconfirmPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popconfirm'
+import type { LhPopconfirmType, LhPopconfirmTrigger, LhPopconfirmState } from '@lh-ui/share/core/popconfirm'
+```
+
+## 설계 의도
+
+**기본 어조는 info가 아닌 warning입니다**: `LH_POPCONFIRM_TYPE_DEFAULT = 'warning'`——확인 풍선이 나타났다는 건 기본적으로 "위험이 있다"는 뜻이며, 기본값부터 경고 어조여야 합니다. info는 순수 알림적 확인 ("읽음으로 표시하시겠습니까?")에 남겨두고, danger는 되돌릴 수 없는 작업 ("삭제 후 복구할 수 없습니다")에 남겨둡니다.
+
+**세 가지 어조, 세 가지 아이콘**: info → `info`, warning → `warning`, danger → `error` (아이콘명을 danger가 아닌 error로 씁니다——아이콘 라이브러리의 이름이 error이며, 이것이 크로스 네이밍 매핑입니다). 알 수 없는 type은 warning으로 폴백합니다.
+
+**popover의 `"dialog"`가 아닌 `role="alertdialog"`**: alertdialog는 ARIA에서 "사용자의 즉각적인 응답을 요구하는 대화상자"입니다——스크린 리더가 **우선적으로 읽어줍니다** (alert의 중단성과 비슷하지만, 사용자에게 선택을 요구합니다). 이것이 dialog보다 "결정을 기다리는" 의미에 더 가깝습니다.
+
+**확인/취소의 이벤트 계약은 UI 계층에 있습니다**: core는 클래스명, 아이콘, aria, 지연만 내보냅니다; `onConfirm` / `onCancel` 이벤트, 버튼 문구, loading 상태는 모두 UI 계층에 있습니다——이것들은 컴포넌트 트리 통신 (emit)을 다루기 때문에, core는 프레임워크 API를 건드리지 않습니다.
+
+**지연은 popover와 같습니다**: `getDefaultDelay`의 기본값은 200/100으로 popover와 동일합니다——확인 풍선도 hover 트리거를 허용하며, 포인터가 안으로 들어갈 수 있어야 합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getPopconfirmIconName` | `(type: LhPopconfirmType) => string` | 아이콘명 | 알 수 없는 type은 warning으로 폴백 |
+| `getPopconfirmClass` | `(state: { type, placement, popperClass? }) => string[]` | 클래스명 | 어조 + 방위 |
+| `getPopconfirmTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | aria 팩 | expanded/controls/haspopup |
+| `getPopconfirmPopperAria` | `(id?) => LhAriaAttrs` | aria 팩 | role=alertdialog |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | 지연 | 기본값 200 / 100 |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | 허용 여부 | disabled일 때 차단 |
+
+상수: `LH_POPCONFIRM_TYPE_DEFAULT = 'warning'`, `LH_POPCONFIRM_PLACEMENT_DEFAULT = 'top'`.
+
+## 타입 정의
+
+```ts
+export type LhPopconfirmType = 'info' | 'warning' | 'danger'
+export type LhPopconfirmTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopconfirmState {
+  type?: LhPopconfirmType
+  trigger?: LhPopconfirmTrigger
+  placement?: LhPlacement
+  visible?: boolean
+  disabled?: boolean
+  showIcon?: boolean             // 기본값 true
+}
+```
+
+## 접근성
+
+```ts
+getPopconfirmPopperAria('pc-1')
+// { role: 'alertdialog', id: 'pc-1' }
+getPopconfirmTriggerAria(true, 'pc-1')
+// { 'aria-expanded': true, 'aria-controls': 'pc-1', 'aria-haspopup': 'true' }
+```
+
+- **alertdialog의 읽기**: 스크린 리더는 alertdialog를 만나면 즉시 내용을 읽어주며 (aria-labelledby 또는 내부 텍스트), **사용자가 직접 읽으러 가지 않아도 됩니다**——이것이 dialog보다 강제성이 더 강한 부분이며, "확인을 기다리는" 의도에 맞습니다.
+- **버튼에는 명확한 문구를**: "확인 / 취소"가 "OK / NO"나 아이콘 버튼보다 낫습니다. `danger` 어조에서는 확인 버튼 문구에 결과를 명시하는 것을 권장합니다 ("확인"이 아닌 "삭제").
+- **취소가 안전한 방향입니다**: Enter는 기본적으로 **확인**을 트리거할까요, **취소**를 트리거할까요? 흔한 방식은 초기 포커스를 **취소** 버튼에 두는 것입니다 (Tab 한 번에 안전하게 빠져나오기)——파괴적인 작업에서는 확인 버튼에 포커스를 미리 두지 마세요. 이것은 UI 계층의 결정이며 core는 관여하지 않습니다.
+- **Esc = 취소**: `canCloseOnEscape`가 허용할 때 Esc는 단순히 닫는 것이 아니라 onCancel을 트리거해야 합니다——의미상 "확인 풍선 닫기"는 "확인하지 않음"입니다.
+- **아이콘 aria-hidden**: 의미 아이콘 (warning/error)은 이미 문구로 전달되었으므로 아이콘 자체는 장식화하여, 스크린 리더가 "경고"를 거듭 읽지 않게 합니다.
+
+## 사용 예시
+
+```ts
+import { getPopconfirmIconName, getPopconfirmClass, LH_POPCONFIRM_TYPE_DEFAULT } from '@lh-ui/share/core/popconfirm'
+
+getPopconfirmIconName('info')     // 'info'
+getPopconfirmIconName('warning')  // 'warning'
+getPopconfirmIconName('danger')   // 'error'
+getPopconfirmIconName('other' as never)  // 'warning' (폴백)
+
+getPopconfirmClass({ type: 'danger', placement: 'top' })
+// ['lh-popconfirm__popper', 'lh-popconfirm__popper--danger', 'lh-popconfirm__popper--top']
+
+LH_POPCONFIRM_TYPE_DEFAULT  // 'warning'
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopconfirm
+    title="삭제 후 복구할 수 없습니다. 이 행을 삭제하시겠습니까?"
+    type="danger"
+    confirm-text="삭제"
+    cancel-text="취소"
+    @confirm="remove(row)"
+  >
+    <template #reference>
+      <LhButton type="danger" size="small">삭제</LhButton>
+    </template>
+  </LhPopconfirm>
+</template>
+
+<script setup>
+async function remove(row) {
+  // onConfirm 트리거; 컴포넌트 내부에서 confirmLoading 지원 가능: 비동기 완료 후에야 풍선 닫기
+  await api.delete(row.id)
+  LhMessage.success('삭제됨')
+}
+</script>
+```
+
+```ts
+// 비동기 확인: confirm 처리 중 버튼 비활성화 + 로딩 표시, 실패 시 풍선을 열어둠
+// 이것은 UI 계층 로직: core는 비동기 상태를 가지지 않음
+```
+
+```tsx
+// React: onConfirm/onCancel은 props로 전달; 제어형 visible로 비동기 확인 연동
+```
+
+```ts
+// uniapp: <view> 풍선; 버튼 터치 상태는 hover-class 사용; 이벤트 계약은 같은 모델
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-popconfirm__popper` | 풍선 컨테이너 |
+| `.lh-popconfirm__popper--{info\|warning\|danger}` | 어조 (아이콘 색 + 확인 버튼 색) |
+| `.lh-popconfirm__popper--{top\|bottom\|…}` | 방위 |
+| `.lh-popconfirm__icon` | 어조 아이콘 |
+| `.lh-popconfirm__title` | 제목 문구 |
+| `.lh-popconfirm__actions` | 버튼 영역 (오른쪽 정렬) |
+
+확인 버튼 색은 어조를 따릅니다: danger는 `--lh-danger-color`, warning은 `--lh-warning-color`, info는 `--lh-primary-color`.
+
+## 주의사항
+
+- **제목에 결과를 명시**: "삭제하시겠습니까?"는 나쁜 문구입니다 (결과를 말하지 않음); "삭제 후 복구할 수 없습니다. 이 행을 삭제하시겠습니까?"가 좋은 문구입니다. 이것이 popconfirm 경험의 핵심입니다.
+- **중첩하지 마세요**: popconfirm 안에 또 popconfirm을 넣으면 사용자가 지금 어느 층을 확인하고 있는지 헷갈립니다. 여러 단계 확인이 필요하면 dialog을 쓰세요.
+- **트리거가 비활성화된 버튼일 때**: `disabled`된 버튼은 이벤트를 트리거하지 않으므로 (브라우저 고유 제약), popconfirm이 열리지 않습니다——비즈니스 계층이 직접 처리해야 합니다 (비활성화되지 않은 요소로 한 겹 감싸거나, 비활성화 시 아예 렌더링하지 않음).
+- **비동기 확인의 닫기 시점**: confirm 처리 중에는 두 버튼을 비활성화하고 마스크로 반복 클릭을 막아야 합니다; 실패하면 **풍선을 열어둔 채** 오류를 알려주고, 성공해야 닫습니다. onConfirm 안에서 동기적으로 풍선을 닫는 것은 흔한 버그입니다.
+- **message와의 연계**: 확인 완료 후 `message`로 성공 피드백 ("삭제됨")을 주며, 둘이 "확인 → 실행 → 피드백"의 표준 흐름을 이룹니다.
+- **모바일의 hover 트리거**: popover와 마찬가지로 터치 화면에는 hover가 없습니다. 크로스 말단에서는 기본적으로 click 트리거를 사용하세요.
+- **`role="alertdialog"`는 버튼의 암묵적 의미를 포함하지 않습니다**: 버튼 영역은 진짜 `<button>`으로 렌더링해야 (div + onclick이 아님) 키보드 사용자가 조작할 수 있습니다.
+
+<FnPlayground module="popconfirm" fn="getPopconfirmIconName" params='{"type": "danger"}' />

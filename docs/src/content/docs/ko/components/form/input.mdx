@@ -1,0 +1,145 @@
+---
+title: input —— 입력란
+description: 'getWordCount 글자 수 집계, clampString 잘라내기, getInputAria 속성 팩, 크기별 인라인 스타일 단계 매핑'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+입력란은 폼의 초석입니다. `core/input`이 관리하는 것은 네 가지입니다: 글자 수 집계의 표시와 계산, 초과 입력 잘라내기, 크기 단계별 인라인 스타일, 그리고 입력란의 접근성 속성 팩. 이 모듈은 의도적으로 **검증은 다루지 않습니다** (그것은 `core/form`의 책임) 그리고 디바운스도 다루지 않습니다 (그것은 UI 계층의 반응형 문제입니다).
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhInput` (textarea 변형 포함: `--textarea` 수식 클래스).
+- 커스텀 입력 컨트롤에 동일한 글자 수 집계와 aria 속성을 재사용하고 싶을 때.
+- **사용하면 안 되는 경우**: 숫자 입력은 `core/input-number` (스텝과 클램프 있음), 시간은 `core/time-picker`, 날짜는 `core/date-picker`.
+
+## 임포트 방법
+
+```ts
+import {
+  getWordCount,
+  shouldShowWordLimit,
+  clampString,
+  getInputStyle,
+  getInputAria,
+} from '@lh-ui/share/core/input'
+import type { LhInputState } from '@lh-ui/share/core/input'
+```
+
+## 설계 의도
+
+`getWordCount`의 두 가지 경계는 모두 실제 크로스플랫폼 차이에서 비롯되었습니다:
+
+- `value`가 undefined일 때 카운트는 0으로 폴백합니다——React/uniapp에서는 마운트 전 제어 값이 잠시 undefined일 수 있으며, `undefined.length`는 즉시 에러를 냅니다.
+- `maxlength`가 undefined일 때 상한 표시는 `'undefined'`가 아니라 `∞`가 됩니다. 이 기호는 "상한 미설정"을 시각적으로 명확히 하며, 버그처럼 보이지 않게 합니다.
+
+`getInputStyle`의 크기 스타일은 클래스명이 아니라 **인라인**입니다: lh-ui의 입력란은 ConfigProvider 전역 크기를 지원하며, 전역 크기 전환 시 클래스명을 다시 계산할 필요 없이 인라인 스타일이 props에 따라 재계산되면 됩니다. 여기서 크기 매핑은 버튼과 다르다는 점에 주의하세요 (버튼은 클래스명 사용) — 이는 각 컴포넌트의 역사적 진화 결과입니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getWordCount` | `(state: Pick<LhInputState, 'value' \| 'maxlength'>) => string` | `"사용량/상한"` | 글자 수 집계 문자열 |
+| `shouldShowWordLimit` | `(state: Pick<LhInputState, 'maxlength' \| 'minlength'>) => boolean` | 불리언 | maxlength 또는 minlength를 설정하면 집계 표시 |
+| `clampString` | `(value: string, maxlength?: number) => string` | 문자열 | 초과 시 잘라내기 |
+| `getInputStyle` | `(size: string) => Record<string, string>` | 인라인 스타일 | 크기 단계별 padding/글자 크기 매핑 |
+| `getInputAria` | `(options: { label?: string; describedby?: string; invalid?: boolean; required?: boolean }) => LhAriaAttrs` | aria 속성 팩 | 필요할 때마다 네 속성 출력 |
+
+`getInputStyle`의 단계 매핑: `mini` padding `4px 8px` / 글자 크기 12, `small` `6px 10px` / 12, `medium` `8px 12px` / 14, `large` `12px 16px` / 16; 알 수 없는 size는 `medium`으로 폴백합니다.
+
+## 타입 정의
+
+```ts
+export interface LhInputState {
+  value: string
+  size: LhComponentSize
+  maxlength: number | undefined
+  minlength: number | undefined
+}
+```
+
+## 접근성
+
+`getInputAria`의 네 속성은 모두 **필요할 때만 부착**합니다 (참일 때만 출력, 거짓일 때는 키가 나타나지 않음):
+
+```ts
+getInputAria({ label: '사용자 이름', required: true })
+// { 'aria-label': '사용자 이름', 'aria-required': true }
+
+getInputAria({ invalid: true, describedby: 'lh-form-error-username' })
+// { 'aria-invalid': true, 'aria-describedby': 'lh-form-error-username' }
+```
+
+`core/form`과의 연계가 핵심 사용법입니다: `LhFormItem`이 오류 힌트 요소를 렌더링하고 (id는 `getFormFieldErrorId(prop)`로 생성), 그 id를 `describedby`로 전달하면, 스크린 리더가 "유효하지 않은 입력, 오류는 …"이라고 읽어줍니다. [form](/ko/components/form/form)을 참조하세요.
+
+## 사용 예시
+
+```ts
+import { getWordCount, clampString, getInputAria } from '@lh-ui/share/core/input'
+
+getWordCount({ value: 'hello', maxlength: 10 })   // '5/10'
+getWordCount({ value: 'hello', maxlength: undefined })  // '5/∞'
+getWordCount({ value: undefined, maxlength: 10 })       // '0/10'
+clampString('abcdef', 3)   // 'abc'
+clampString('abcdef')      // 'abcdef' (상한 없으면 원래대로 반환)
+getInputAria({ label: '검색' })  // { 'aria-label': '검색' }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-input', `lh-input--${size}`, { 'lh-input--textarea': type === 'textarea' }]">
+  <div class="lh-input__wrapper">
+    <input
+      class="lh-input__inner"
+      :style="getInputStyle(size)"
+      v-bind="getInputAria({ label, describedby, invalid: !!error, required })"
+    />
+  </div>
+  <span v-if="shouldShowWordLimit({ maxlength, minlength })" class="lh-input__count">
+    {{ getWordCount({ value, maxlength }) }}
+  </span>
+</div>
+```
+
+```tsx
+// React
+const aria = getInputAria({ label, describedby, invalid: !!error, required })
+return (
+  <div className={`lh-input lh-input--${size}`}>
+    <div className="lh-input__wrapper">
+      <input className="lh-input__inner" style={getInputStyle(size)} {...aria} />
+    </div>
+  </div>
+)
+```
+
+```ts
+// uniapp: <input>는 내장 컴포넌트이며 class와 style 바인딩을 모두 지원;
+// textarea는 <textarea> 컴포넌트를 사용, 글자 수 집계는 h5가 아닌 말단에서 컴포넌트 자체 속성 count가 담당
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-input` | 기본 클래스 |
+| `.lh-input--{mini\|small\|medium\|large}` | 크기 단계 |
+| `.lh-input--textarea` | textarea 변형 |
+| `.lh-input--disabled` / `.lh-input--prefix` / `.lh-input--suffix` | 상태와 슬롯 |
+| `.lh-input__wrapper` | 감싸는 층 (테두리, 포커스 상태) |
+| `.lh-input__wrapper--focused` / `--disabled` / `--has-label` | 감싸는 층 상태 |
+| `.lh-input__inner` | 네이티브 입력 요소 |
+| `.lh-input__label` / `--float` | 플로팅 라벨 (material 스타일) |
+| `.lh-input__prefix` / `__suffix` | 앞뒤 슬롯 (아이콘, 버튼) |
+| `.lh-input__clear` / `__count` | 지우기 버튼 / 글자 수 집계 |
+
+포커스 테두리 색은 `var(--lh-primary-color)`, 오류 상태는 `var(--lh-danger-color)`를 따릅니다.
+
+## 주의사항
+
+- **`--has-label`의 비대칭 padding**: 플로팅 라벨이 있을 때 `padding-top`은 16px입니다 (라벨 자리 확보), 나머지 단계는 대칭입니다. 이는 "높이 토큰 특별 조사"에 기록된 통일 대기 항목입니다.
+- **컨트롤 높이 불통일**: input 37px / select 32px / cascader 27→32px 등이며, 근본 원인은 `var.scss`에 `--lh-control-height-*` 토큰이 없는 것입니다 (마찬가지로 후속 changeset 대기 중).
+- `maxlength`의 "문자" 의미: `clampString`은 `slice`를 사용하여 UTF-16 코드 단위로 셉니다; emoji 보충 평면 문자는 2로 집계됩니다. UI 계층이 코드포인트 기준으로 세야 한다면 자체 처리하세요.
+- `getInputStyle`의 반환값으로 `sx`를 덮어쓰지 마세요——sx의 우선순위가 더 높으며, 둘은 덮어쓰지 말고 병합해야 합니다.
+
+<FnPlayground module="input" fn="getWordCount" params='{"state": {"value": "青花瓷", "maxlength": 10}}' />

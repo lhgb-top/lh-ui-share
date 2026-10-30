@@ -1,0 +1,189 @@
+---
+title: utils —— ユーティリティ関数
+description: 'createNamespace / deepMerge / debounce / throttle / cssVars など 15 個のフレームワーク非依存ユーティリティ関数'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`src/utils/` は最も下層の汎用ユーティリティです：core すらこれらに依存しません（core が使うのは `core/shared/` のより専門的なアルゴリズム群です）。これらは各 UI ライブラリのコンポーネント実装と利用側にサービスを提供します。
+
+## インポート方法
+
+```ts
+import { createNamespace, deepMerge, debounce, generateId } from '@lh-ui/share/utils'
+```
+
+## 関数表
+
+| 関数 | シグネチャ | 役割 |
+| --- | --- | --- |
+| `generateId` | `(prefix = 'lh') => string` | ユニーク ID を生成（`${prefix}_${Date.now()}_${counter}`） |
+| `generateRandomId` | `() => string` | ランダム ID を生成（7 文字の base36） |
+| `isEmpty` | `(val: unknown) => boolean` | 空値かどうか（`null` / `undefined` / `''` のみ） |
+| `isString` | `(val: unknown) => val is string` | 型ガード：文字列 |
+| `isNumber` | `(val: unknown) => val is number` | 型ガード：数値（`NaN` は `false`） |
+| `isPlainObject` | `(val: unknown) => val is Record<string, unknown>` | 型ガード：プレーンオブジェクト |
+| `debounce` | `<T>(fn: T, delay = 300) => LhDebounced<T>` | デバウンス（`cancel` / `flush` 付き） |
+| `throttle` | `<T>(fn: T, delay = 300) => LhThrottled<T>` | スロットル（先頭で即実行 + 末尾で遅延実行） |
+| `deepMerge` | `<T>(target: T, ...sources: Partial<T>[]) => T` | オブジェクトのディープマージ |
+| `getScrollbarWidth` | `() => number` | スクロールバーの幅を取得（結果はキャッシュ） |
+| `toggleClass` | `(el, className, force?) => void` | CSS class の追加 / 削除 |
+| `getEventValue` | `(e: Event) => string` | イベントから対象の値を取得 |
+
+サブモジュールのエクスポート（`@lh-ui/share/utils` の末尾で re-export）：
+
+| 関数 | シグネチャ | 役割 |
+| --- | --- | --- |
+| `createNamespace` | `(block: string) => LhNamespace` | BEM 名前空間ユーティリティ |
+| `toCssVarName` | `(key: string) => string` | CSS 変数名を生成（すでに `--lh-` プレフィックスが付いたキーはそのまま返す、**べき等**） |
+| `cssVars` | `(vars: Record<string, string>) => Record<string, string>` | themeVars のキーと値のペア → `:style` にバインドできる CSS 変数オブジェクト |
+| `stripCssVarName` | `(key: string) => string` | `--lh-` プレフィックスを取り除き、themeVars prop のキーに戻す |
+
+## createNamespace —— BEM 名前空間
+
+```ts
+const ns = createNamespace('button')
+
+ns.b()              // 'lh-button'
+ns.e('text')        // 'lh-button__text'
+ns.m('primary')     // 'lh-button--primary'
+ns.em('text', 'disabled')  // 'lh-button__text--disabled'
+ns.is('loading', true)     // 'is-loading'
+ns.is('loading', false)    // ''（空文字、フレームワークは無視）
+```
+
+すべての lh-ui コンポーネントのクラス名はこれを経由して生成され、BEM 構造の一貫性と `lh-` プレフィックスの漏れを防ぎます。`is()` の状態クラスは**名前空間プレフィックスを帯びません**（`lh-button--is-loading` ではなく `is-loading`）——これがファミリーの慣例です。
+
+型：
+
+```ts
+export interface LhNamespace {
+  b: () => string                       // Block
+  e: (element: string) => string        // Element
+  m: (modifier: string) => string       // Modifier
+  em: (element: string, modifier: string) => string  // Element + Modifier
+  is: (name: string, state?: boolean | string) => string  // 状態クラス
+}
+```
+
+## debounce / throttle
+
+### debounce —— 沈黙期間中は最後の 1 つだけ実行
+
+```ts
+const debounced = debounce((q: string) => search(q), 300)
+input.addEventListener('input', (e) => debounced(e.target.value))
+
+debounced.cancel()   // アンマウント時に未実行の保留呼び出しを片付ける
+debounced.flush()    // 保留されている 1 回を即座に実行（保留がない場合は何もしない）
+```
+
+`cancel` / `flush` はただの飾りではありません：コンポーネントのアンマウント時にタイマーを片付けないと、すでに破棄されたコンテキストを呼んでしまいます；「今すぐ検索」ボタンは `flush()` でまだ発火していないクエリを即座に走らせます。
+
+### throttle —— 先頭で即実行 + 末尾で遅延実行
+
+```ts
+const throttled = throttle(onScroll, 100)
+window.addEventListener('scroll', throttled)
+```
+
+時間窓の**先頭で即座に実行**（先頭エッジ）し、窓の中の最後の呼び出しは窓の終わりに**遅延実行**（末尾エッジ）します。素朴なスロットルは高速スクロールの最後の 1 フレームを落としてしまいます——スクロールが止まったその瞬間こそ最も更新が必要なときです（sticky / affix の位置判定）。
+
+`throttle` には `cancel` しかありません（末尾タイマーのクリア + `lastTime` のリセット）。`flush` はありません（末尾エッジは意味的に「後で実行」だからです）。
+
+型：
+
+```ts
+export interface LhDebounced<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+  flush(): void
+}
+
+export interface LhThrottled<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+}
+```
+
+## cssVars 3 点セット
+
+ConfigProvider の `themeVars` prop は**省略記法のキー**（`'primary-color'`）を使い、コンポーネントが消費するのは CSS 変数（`--lh-primary-color`）です。この 3 つの関数が両方向の変換をします：
+
+```ts
+cssVars({ 'primary-color': '#1677ff' })
+// { '--lh-primary-color': '#1677ff' }   ← そのまま :style にバインド可能
+
+toCssVarName('primary-color')      // '--lh-primary-color'
+toCssVarName('--lh-primary-color') // '--lh-primary-color'（べき等）
+
+stripCssVarName('--lh-primary-color')  // 'primary-color'
+```
+
+**`toCssVarName` のべき等性が重要です**：一部のパスで既にプレフィックスが付いているキーが二重に補われて `--lh---lh-primary-color` になるのを防ぎます——そのようなキーは（CSS 変数が存在しないため）黙って無効になり、テーマ切り替えが「反応しない」ように見えます。
+
+## deepMerge
+
+```ts
+deepMerge({ a: 1, nested: { x: 1 } }, { nested: { y: 2 } })
+// { a: 1, nested: { x: 1, y: 2 } }
+```
+
+- **両側がともにプレーンオブジェクト**のときだけ再帰します。
+- `sourceVal !== undefined` のときだけ上書きします（明示的に `undefined` を渡しても上書きしない）。
+- **target を破壊的に変更して返す**——ここが注意点で、元のオブジェクトを汚したくない場合は先に `{ ...target }` で 1 層シャローコピーしてください。
+
+## getScrollbarWidth
+
+```ts
+getScrollbarWidth()   // 例：15（Windows）/ 0（macOS でスクロールバーなし）
+```
+
+結果はモジュール変数 `_scrollbarWidth` にキャッシュされます。**SSR ガード**：`typeof document === 'undefined'` のときは `0` を返します。
+
+用途：dialog / drawer を開いたときに body のスクロールをロックすると右側のスクロールバー 1 本分の幅が減るため、`padding-right` で補わないとページの内容が横に揺れます。
+
+## 使用例
+
+### コンポーネント内の BEM + class の結合
+
+```ts
+const ns = createNamespace('dialog')
+
+const headerClass = computed(() => [
+  ns.e('header'),
+  ns.is('centered', props.centered),
+  // ユーザーが渡した class
+  ...(typeof attrs.class === 'string' ? attrs.class.split(' ') : []),
+])
+```
+
+### ConfigProvider がテーマ変数を注入
+
+```ts
+const styleVars = computed(() => cssVars(props.themeVars))
+// <div :style="styleVars">
+```
+
+### スクロール監視のスロットル
+
+```ts
+onMounted(() => {
+  const onScroll = throttle(updateAffixPosition, 100)
+  window.addEventListener('scroll', onScroll, true)
+  onUnmounted(() => {
+    window.removeEventListener('scroll', onScroll, true)
+    onScroll.cancel()
+  })
+})
+```
+
+## 注意事項
+
+- **`isEmpty` が判するのは 3 つだけ**：`null` / `undefined` / `''`。`0` / `false` / `[]` は**空ではありません**。「空の配列 / 空のオブジェクト」を判したい場合は自分で書いてください。
+- **`isNumber(NaN)` は `false`**：意図的に NaN を排除しています。
+- **`deepMerge` は target を破壊的に変更します**：最もよくある誤用の源です。
+- **`generateId` は純関数ではありません**：モジュールレベルの自増カウンターで、同一プロセス内で複数回呼ぶと結果が異なります（SSR / CSR で順序を一致させる必要があります、[a11y の generateAriaId の説明](/ja/core/a11y#generateariaid)を参照）。
+- **`useLhSize` などの composables はここにありません**：Vue の Composition API に依存するものは各フレームワークの UI 層に属し、share はエクスポートしません。
+
+<FnPlayground module="utils" fn="createNamespace" params='{"block": "button"}' />

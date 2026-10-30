@@ -1,0 +1,145 @@
+---
+title: constants —— 상수
+description: 'LH_TYPES_CONST / LH_SIZE_CONST / LH_LANGUAGE_CONST와 두 개의 DEFAULT 상수, 전부 as const로 고정'
+---
+
+`src/constants/`는 패밀리 전체의 **런타임 상수 유일 소스**입니다: 컴포넌트 타입의 의미 색, 크기 단계, 언어 코드. 전부 `as const`로 고정되어 있고, `core/shared/types`의 유니온 타입 도출이 참조합니다([core/types](/ko/core/types) 참고).
+
+## import 방법
+
+```ts
+import {
+  LH_TYPES_CONST,
+  LH_SIZE_CONST,
+  LH_LANGUAGE_CONST,
+  LH_SIZE_DEFAULT,
+  LH_LANGUAGE_DEFAULT,
+} from '@lh-ui/share/constants'
+```
+
+## 상수 표
+
+| 상수 | 값 | 용도 |
+| --- | --- | --- |
+| `LH_TYPES_CONST` | `{ success, warning, error, info, danger }` | 컴포넌트 타입(5개의 의미 색) |
+| `LH_SIZE_CONST` | `{ small, medium, large, mini, old: 'x-large' }` | 컴포넌트 크기 단계 |
+| `LH_SIZE_DEFAULT` | `'medium'`(= `LH_SIZE_CONST.medium`) | 기본 크기 |
+| `LH_LANGUAGE_CONST` | `{ zhCN: 'zh-CN', enUS: 'en-US', jaJP: 'ja-JP', koKR: 'ko-KR', deDE: 'de-DE', frFR: 'fr-FR' }` | 언어 코드 |
+| `LH_LANGUAGE_DEFAULT` | `'zh-CN'`(= `LH_LANGUAGE_CONST.zhCN`) | 기본 언어 |
+
+## LH_TYPES_CONST —— 5개의 의미 색
+
+```ts
+export const LH_TYPES_CONST = {
+  success: 'success',   // 성공
+  warning: 'warning',   // 경고
+  error: 'error',       // 오류
+  info: 'info',         // 정보
+  danger: 'danger',     // 위험
+} as const
+```
+
+각 멤버는 `@alias` JSDoc을 가지며(성공 / 경고 / 오류 / 정보 / 위험), 마우스오버 시 힌트가 나타납니다. `LhComponentType`는 여기에 **추가로 `'default' | 'primary'`**를 보태합니다(기본 외형색, 상태 의미가 아님).
+
+### error와 danger의 차이
+
+둘 다 "잘못되었다"는 붉은 계열이지만 의미가 약간 나뉘며, 각 컴포넌트가 스스로 선택할 수 있습니다:
+
+- `error` —— 유효성 검사 실패(폼의 input 빨간 테두리), 작업 실패(업로드 실패).
+- `danger` —— 파괴적인 작업(삭제 버튼의 붉은 강조).
+
+이것은 규약이지 강제 규칙은 아닙니다; 대부분의 컴포넌트는 둘 중 하나만 사용하며, 각 컴포넌트의 문서를 기준으로 합니다.
+
+## LH_SIZE_CONST —— 5단계 크기
+
+```ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',     // 기본
+  large: 'large',
+  mini: 'mini',         // 인라인 컴팩트 시나리오(표 안의 작업 버튼)
+  old: 'x-large',       // 고령자 전용
+} as const
+```
+
+### `old` 키 이름과 `'x-large'` 값이 일치하지 않는 이유
+
+이것은 **의도적인 명명상의 선택**입니다:
+
+- **키 이름 `old`**는 내부 "고령자 모드"의 의미 식별자이며, `LhBaseProps.old?: boolean`이 이것을 스위치로 사용합니다.
+- **값 `'x-large'`**는 외부를 향한 크기 열거형 값이며, `LhComponentSize` 유니온에 나타나는 것은 이쪽입니다.
+
+외부 사용자가 인식하는 것은 `size="x-large"`(또는 `old` prop 스위치)이고, 내부 상수의 키 이름은 사용자에게 노출되지 않습니다. 코드를 작성할 때 주의: `Object.keys(LH_SIZE_CONST)`로 얻는 것은 키, `Object.values(...)`로 얻는 것은 타입 열거형 값이며, 섞어 쓰지 마세요.
+
+### 각 단계의 용도
+
+| 단계 | 시나리오 |
+| --- | --- |
+| `mini` | 표 행 안의 작업 버튼, 조밀한 폼 |
+| `small` | 컴팩트 레이아웃, 도구 모음 |
+| `medium` | **기본값**, 일반적인 폼과 콘텐츠 영역 |
+| `large` | 독립된 가입 / 로그인 페이지의 주 버튼 |
+| `x-large` | 접근성 고령자 모드: 큰 글꼴, 큰 터치 영역, `old` 불린 스위치와 함께 사용 |
+
+**모든 컴포넌트가 5단계 전부를 지원하는 것은 아닙니다**: `mini` / `x-large`는 일부 컴포넌트에만 구현되어 있으며, 각 컴포넌트의 문서를 기준으로 합니다.
+
+## LH_LANGUAGE_CONST —— 6개 언어
+
+```ts
+export const LH_LANGUAGE_CONST = {
+  zhCN: 'zh-CN',
+  enUS: 'en-US',
+  jaJP: 'ja-JP',
+  koKR: 'ko-KR',
+  deDE: 'de-DE',
+  frFR: 'fr-FR',
+} as const
+```
+
+키 이름은 [zhCN / enUS 같은 관례적인 locale 명명](/ko/guide/naming#예외-등록)이고, 값은 BCP 47 언어 코드입니다. `LhLocaleType`와 `LhComponentLanguage` 모두 여기서 도출됩니다.
+
+**언어 파일의 활성 상태에 주의**: `ja-JP` / `ko-KR` / `de-DE` / `fr-FR`는 현재 **예약된 언어 골격으로, 영어 폴백 번역**입니다([locales](/ko/reference/locales) 참고). 상수에 등록되었다고 해서 문구가 완전한 것은 아닙니다.
+
+## 왜 열거형이 아니라 상수인가
+
+`as const` 객체 + 유니온 타입 도출은 TS `enum`보다 세 가지 장점이 있습니다:
+
+1. **런타임 오버헤드 없음**: `enum`은 추가 코드를 생성하지만(역방향 매핑), `as const` 객체는 하나뿐입니다.
+2. **순회 가능**: `Object.values(LH_TYPES_CONST)`로 모든 열거형 값을 바로 얻어 런타임 검증에 쓸 수 있습니다; `enum`의 순회는 `preserveConstEnums`가 꺼져 있으면 신뢰할 수 없습니다.
+3. **멤버별 JSDoc**: 각 멤버의 `@alias` 힌트를 IDE에서 볼 수 있습니다.
+
+## 사용 예시
+
+### 컴포넌트 props의 기본값
+
+```ts
+import { LH_SIZE_DEFAULT } from '@lh-ui/share/constants'
+
+props: {
+  size: { type: String, default: LH_SIZE_DEFAULT },   // 'medium'
+}
+```
+
+### 런타임 값 검증
+
+```ts
+const TYPE_VALUES = Object.values(LH_TYPES_CONST)
+
+const isValidType = (v: string): v is LhComponentType =>
+  TYPE_VALUES.includes(v as never) || v === 'default' || v === 'primary'
+```
+
+### 순회하며 유틸리티 함수 생성
+
+```ts
+// theme / docs 페이지에서 모든 언어를 순회하며 전환 목록을 생성
+Object.entries(LH_LANGUAGE_CONST).forEach(([key, code]) => {
+  // key: 'zhCN'  code: 'zh-CN'
+})
+```
+
+## 주의 사항
+
+- **상수는 고정되어 있습니다**: `as const`는 타입을 리터럴 유니온으로 만들 뿐, 런타임에서는 여전히 일반 객체입니다(`Object.freeze`가 아님) —— 런타임에 값을 바꾸지 마세요. 하류의 타입 도출은 따라 바뀌지 않습니다.
+- **`LH_SIZE_DEFAULT` / `LH_LANGUAGE_DEFAULT`는 상수의 멤버를 참조**하며, 독립적인 리터럴이 아닙니다 —— 상수의 기본값을 바꾸면 자동으로 따라 바뀝니다.
+- **`old` 키는 사용자에게 직접 노출하지 마세요**: 외부를 향해서는 `size="x-large"` 또는 `old` 불린 스위치입니다.

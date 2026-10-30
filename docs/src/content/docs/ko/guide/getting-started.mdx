@@ -1,0 +1,119 @@
+---
+title: 시작하기
+description: '@lh-ui/share 설치, 순수 함수의 필요에 따른 import, 스타일을 불러오는 네 가지 방법'
+---
+
+# 시작하기
+
+## 설치
+
+```bash
+pnpm add @lh-ui/share
+# 또는 npm i @lh-ui/share / yarn add @lh-ui/share
+```
+
+이 패키지는 `external: []`로 **런타임 의존성이 전혀 없습니다**. 설치하면 바로 쓸 수 있고, 프레임워크를 먼저 peer-install 할 필요도 없습니다.
+
+## 논리 가져오기(JS / TS)
+
+### bare import: 전체
+
+```ts
+import { lhlocale, createNamespace, LH_THEME_PRESETS } from '@lh-ui/share'
+```
+
+전체용 진입점은 `./es/index.js`(CJS의 경우 `./lib/index.js`)입니다. 이 패키지의 `sideEffects`는 `**/*.css`와 `**/*.scss`만 선언하므로, 순수 JS 모듈은 tree-shaking이 가능하고 전체 import로도 불필요한 코드가 들어가지 않습니다.
+
+### 하위 경로 import: 컴포넌트 단위(권장)
+
+```ts
+import { getButtonClasses, getButtonAria } from '@lh-ui/share/core/button'
+import { sxToStyle } from '@lh-ui/share/core/shared/sx'
+import { lhlocale } from '@lh-ui/share/locales'
+import { LH_THEME_PRESETS, buildPresetStyleText } from '@lh-ui/share/theme'
+```
+
+각 하위 경로는 독립적인 types / import / require의 3개 조건부 내보내기를 가지며, 필요에 따른 import에서는 해당 컴포넌트의 순수 함수만 번들에 포함됩니다. 전체 키 목록은 [패키지 진입점과 하위 경로](/ko/guide/exports)를 참고하세요.
+
+## 스타일 불러오기(네 가지 방법)
+
+이 패키지의 `files`는 `es / lib / dist / styles`의 4개 디렉터리만 공개하며, 스타일은 두 경로로 불러올 수 있습니다:
+
+### 1. 전체 테마(가장 간편)
+
+```ts
+// 토큰만 있고 컴포넌트 스타일은 전혀 없으며, 크기가 가장 작습니다
+import '@lh-ui/share/theme.css'       // 밝은색 :root 토큰
+import '@lh-ui/share/theme-dark.css'  // 어두운색 [data-theme='dark'] 덮어쓰기
+```
+
+"디자인 토큰만 필요하고, 컴포넌트 스타일은 직접 작성하겠다"는 프로젝트에 적합합니다.
+
+### 2. 전체 테마 + 전체 컴포넌트 스타일
+
+```ts
+import '@lh-ui/share/styles.css'      // dist/styles/index.css: 토큰 + 전체 58세트 컴포넌트
+```
+
+`dist/index.css`는 빌드 시 집계된 최종 산출물로, 한 줄의 import로 완전한 외형을 얻을 수 있습니다.
+
+### 3. SCSS 소스를 필요에 따라 불러오기(SCSS를 컴파일할 수 있는 번들러 필요)
+
+```scss
+// 전체 집계(테마 토큰 + 모든 컴포넌트)
+@use '@lh-ui/share/styles/index.scss';
+
+// 단일 컴포넌트: 이 세트만 컴파일하여 산출물 크기가 가장 작습니다
+@use '@lh-ui/share/styles/button';
+```
+
+`styles/` 디렉터리는 **소스** 그대로 패키지에 포함되어 vite / webpack의 sass loader가 즉석에서 컴파일하므로, 프로젝트에서 `@use`하여 토큰을 맞춤 설정할 수 있습니다.
+
+### 4. 토큰만 불러와 깊이 맞춤 설정하기
+
+```scss
+@use '@lh-ui/share/styles/theme/common/var.scss' as *;
+
+.my-panel {
+  color: $lh-text-primary;
+  border: 1px solid $lh-border-color;
+}
+```
+
+`styles/theme/common/`은 183개의 `$lh-*` SCSS 변수와 6개의 중국풍 문양 mixin을 공개합니다. 자세한 내용은 [디자인 토큰](/ko/theme/tokens)과 [문양 시스템](/ko/theme/patterns)을 참고하세요.
+
+## TypeScript
+
+모든 하위 경로에 `types` 조건이 있어 별도의 `@types` 패키지가 필요 없습니다:
+
+```ts
+import type { LhThemePreset, LhThemeVars } from '@lh-ui/share/theme'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+```
+
+타입 내보내기는 별도로 `./es/**/*.d.ts`를 거치므로, `import type`이 구현을 번들에 포함시키지 않습니다.
+
+## 순수 함수 한 번 실행해 보기
+
+어떤 프레임워크도 필요 없고, Node에서 바로 실행할 수 있습니다:
+
+```ts
+import { getButtonClasses } from '@lh-ui/share/core/button'
+
+getButtonClasses({ size: 'small', type: 'primary', disabled: true })
+// => 'lh-button lh-button--small lh-button--primary is-disabled'
+```
+
+대화형으로 시도해 보고 싶나요? 이 문서 사이트의 각 컴포넌트 페이지에는 **함수 플레이그라운드** 패널이 있어, 매개변수를 바꾸면 출력을 실시간으로 확인할 수 있습니다 —— 예를 들어 [steps의 함수 플레이그라운드](/ko/components/navigation/steps).
+
+## 다크 모드
+
+이 패키지의 컴포넌트는 스스로 다크 모드를 켜지 않고, CSS 변수만 인식합니다. 루트 노드에 속성을 추가하면 사이트 전체가 전환됩니다:
+
+```html
+<html data-theme="dark">
+  <!-- 또는 <body class="dark">, 두 선택자 모두 var-dark.scss가 다룹니다 -->
+</html>
+```
+
+작동 원리와 "컴파일 타임에 굽기"의 함정은 [다크 모드](/ko/theme/dark-mode)를 참고하세요.

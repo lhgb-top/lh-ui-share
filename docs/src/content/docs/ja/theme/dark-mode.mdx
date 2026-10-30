@@ -1,0 +1,176 @@
+---
+title: ダークモード
+description: 'data-theme=dark の切り替えの仕組み、コンパイル期にベイクされる罠、verify:styles 第 7 項のダークモードカバレッジゲート'
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+lh-ui のすべてのコンポーネントは**デフォルトで明色と暗色をサポートします**。これは後から追加されたテーマではなく、トークンシステムの設計の前提です。
+
+## 切り替えの仕組み
+
+暗色のスイッチは CSS セレクタで、JS ではありません：
+
+```scss
+// styles/theme/common/var-dark.scss
+[data-theme='dark'],
+.dark {
+  --lh-bg-color: #2A2520;
+  --lh-text-primary: #E8E0D8;
+  // ... 118 個の上書き
+}
+```
+
+2 つのトリガ方法：
+
+```html
+<!-- 方法 1：data 属性（推奨、セマンティクスが明確） -->
+<html data-theme="dark">
+
+<!-- 方法 2：class（古いコード / サードパーティの切り替えライブラリとの互換） -->
+<body class="dark">
+```
+
+UI 層（各ライブラリの ConfigProvider か業務コード）はこの属性 / クラス名を切り替えるだけで、**すべてのコンポーネントが即座に変色します**——CSS 変数はランタイム評価されるため、再レンダリングのコストはありません。
+
+```ts
+function toggleDark(isDark: boolean) {
+  document.documentElement.dataset.theme = isDark ? 'dark' : 'light'
+}
+```
+
+## 暗色は上書き層
+
+暗色のファイルが書くのは **118 個だけ**で、185 個の完全なセットではありません。反転が必要なトークンだけを上書きし、残りは明色の値を流用します。
+
+設計原則は**セマンティックトークンの再指向であって、コンポーネントごとの書き直しではない**ことです：
+
+```scss
+// ✅ よいやり方：暗色で暗色のセマンティックトークンを指す
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);
+  --lh-table-cell-color: var(--lh-text-primary);
+}
+
+// ❌ 悪いやり方：暗色で具体的な色を固定する
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: rgba(255, 255, 255, 0.85);   // text-primary とリンク切れ、後日の調色で 2 か所直す必要がある
+}
+```
+
+## コンパイル期にベイクされる罠
+
+これがダークモードで**最も踏みやすい罠**であり、`verify:styles` の第 7 項が存在する理由です。
+
+### 罠の原理
+
+`var.scss` で値が `#{$lh-foo}` の形をしているトークン：
+
+```scss
+// var.scss
+:root {
+  --lh-menu-item-color: #{$lh-menu-item-color};   // SCSS 変数はコンパイル期に具体的な明色の値に置き換えられる
+}
+```
+
+SCSS 変数は**コンパイル期に字面どおりの値にベイクされ固定**され、次と等価になります：
+
+```scss
+:root {
+  --lh-menu-item-color: rgba(0, 0, 0, 0.88);   // 暗色でも自動的には反転しない！
+}
+```
+
+結果：ダークモードでメニュー / テーブル / タイムラインの文字が明色の値のままになり、**黒地に黒字で見えなくなります**。この種の抜けは実際に発生したことがあり、0.4.0 の changeset に修正記録があります。
+
+### 解決策
+
+`var-dark.scss` で明示的に暗色のセマンティックトークンに再指向します：
+
+```scss
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);
+}
+```
+
+### チェーンフォールバックはランタイム評価で安全
+
+コンポーネントの SCSS でのチェーンフォールバック：
+
+```scss
+.lh-button {
+  color: var(--lh-foo, var(--lh-bar, #333));
+}
+```
+
+`var()` のフォールバックは**ランタイム評価**です：チェーン上のいずれかのトークンに暗色上書きがあれば、チェーン全体が反転に追従します。**重複宣言は不要です**。
+
+対応表：
+
+| 書き方 | 評価のタイミング | 暗色の挙動 |
+| --- | --- | --- |
+| `var(--lh-foo, fallback)` | ランタイム | ✅ チェーン上のトークンに暗色上書きがあれば反転 |
+| `#{$lh-foo}`（SCSS 補間） | コンパイル期 | ❌ 明色にベイクされ固定、var-dark での明示的な再指向が必要 |
+| `mix($lh-a, $lh-b)` などの SCSS 関数 | コンパイル期 | ❌ 同上 |
+
+## 深い主色のプリセットの暗色での明るさ補正
+
+5 つの内蔵プリセットのうち、主色が深いもの（青花瓷 / 朱砂 / 水墨）は暗色で主色がページの地色に「沈み込み」ます。`buildPresetDarkVars` が自動的に処理します：
+
+判定ルール：`--lh-primary-color` が暗色のページ地 `#1A1A2E`（`DARK_PAGE_BG`）に対するコントラスト比が 3 未満（`DARK_PRIMARY_CONTRAST_THRESHOLD`）なら深い主色と判定し、次を実行します：
+
+```css
+[data-theme='dark'],
+.dark {
+  --lh-primary-color: color-mix(in srgb, <字面値> 55%, #fff);   /* 55% 明るくする */
+  --lh-primary-color-hover: color-mix(in srgb, var(--lh-primary-color) 70%, #fff);
+  --lh-primary-color-active: color-mix(in srgb, var(--lh-primary-color) 85%, #000);
+  --lh-color-on-primary: #101410;   /* 明るくした後は白字のコントラストが逆に不足するため、墨字に切り替え */
+  --lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent);
+  --lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff);
+}
+```
+
+**なぜ主色の明るさ補正に `var()` ではなく字面値を使うのか**：`color-mix(in srgb, var(--lh-primary-color) 55%, #fff)` は CSS の自己参照ループを形成します（`--lh-primary-color` の値が自分自身を参照する）。そのためこの 1 行だけは**字面値を代入**し、残りは `var()` で現在の主色に追従させます。
+
+主色が浅いプリセット（松花绿 / 藤黄）は明るさ補正の必要がありませんが、`--lh-primary-color-bg` と `--lh-selected-color` の暗色での再定義は受け取ります。
+
+## プリセット注入の順序セマンティクス
+
+`buildPresetStyleText` が生成するテキストは、`:root { ... }` ブロックが先、`[data-theme='dark'], .dark { ... }` ブロックが後です。**同一の詳細度では後者が勝つ**ため、主色が浅いプリセットが `:root` で宣言した `--lh-selected-color` の明色の値が暗色に漏れ込みません。
+
+これが「`<style>` は書けてもインライン style は書けない」根本原因でもあります——インライン style の詳細度 1,0,0,0 は `var-dark.scss` の暗色変数ブロック全体を圧倒し、暗色がそのまま効かなくなります（[テーマシステム概要](/ja/theme/overview#注入制約style-要素のみ許可)を参照）。
+
+## 暗色トークン表
+
+<TokenTable />
+
+## 暗色の完全性を検証する方法
+
+3 つの手段を、弱いものから強いものへ：
+
+1. **`pnpm verify:styles` 第 7 項（ダークモードカバレッジ）**：静的走査で、「明色にベイクされているのに var-dark に上書きがない」トークンを探し出します。これが CI ゲートです。
+2. **`pnpm verify:theme`（AA 4.5:1）**：`es/` の成果物を読み、プリセットテーマの明色 / 暗色両方でのコントラスト比を計算します。先に `pnpm build` が必要です。CI は走らせず、手動で把守します。
+3. **目視検査**：docs サイト / 各ライブラリの playground でダークモードに切り替えてコンポーネントを逐次確認します。
+
+新規トークンを追加するときの自己チェックリスト：
+
+- [ ] このトークンは暗色で反転が必要ですか？
+- [ ] 必要なら `var-dark.scss` に上書きを補いましたか？
+- [ ] 値は `#{$lh-*}` 補間ですか？（はい → 暗色の上書きが必須）
+- [ ] コンポーネントでの消費は `var(--lh-x, fallback)` のチェーンですか？
+
+## 既知の残課題
+
+暗色の完全性は 0.4.0 で体系的な補修を一度行いました（メニュー / テーブル / タイムラインなどで文字が見えなくなる問題、changeset を参照）。残る既知の項目は「高さトークン専用」とともに今後の対応待ちです。
+
+## 関連ドキュメント
+
+- [テーマシステム概要](/ja/theme/overview)
+- [デザイントークン](/ja/theme/tokens)
+- [テーマプリセット](/ja/theme/presets)
+- [スタイルソース](/ja/reference/styles)
+- [verify:styles の 6 項目](/ja/development/verification)

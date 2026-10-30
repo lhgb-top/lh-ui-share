@@ -1,0 +1,132 @@
+---
+title: クイックスタート
+description: '@lh-ui/share のインストール、純関数のオンデマンドインポート、スタイルを読み込む 4 つの方法'
+---
+
+# クイックスタート
+
+## インストール
+
+```bash
+pnpm add @lh-ui/share
+# または npm i @lh-ui/share / yarn add @lh-ui/share
+```
+
+本パッケージは `external: []` で**ランタイム依存が一切ありません**。インストール後すぐに使え、
+フレームワークを先に peer-install する必要もありません。
+
+## ロジックのインポート（JS / TS）
+
+### ベアインポート：全体
+
+```ts
+import { lhlocale, createNamespace, LH_THEME_PRESETS } from '@lh-ui/share'
+```
+
+全体用エントリは `./es/index.js`（CJS の場合は `./lib/index.js`）。本パッケージの `sideEffects`
+は `**/*.css` と `**/*.scss` のみを宣言しているため、純粋な JS モジュールは tree-shaking
+可能で、全体インポートしても余分なコードが入り込むことはありません。
+
+### サブパスインポート：コンポーネント単位（推奨）
+
+```ts
+import { getButtonClasses, getButtonAria } from '@lh-ui/share/core/button'
+import { sxToStyle } from '@lh-ui/share/core/shared/sx'
+import { lhlocale } from '@lh-ui/share/locales'
+import { LH_THEME_PRESETS, buildPresetStyleText } from '@lh-ui/share/theme'
+```
+
+各サブパスは独立した types / import / require の 3 条件エクスポートを持ち、オンデマンドの
+インポートではそのコンポーネントの純関数だけがバンドルされます。完全なキー一覧は
+[パッケージエントリとサブパス](/ja/guide/exports)を参照してください。
+
+## スタイルの読み込み（4 つの方法）
+
+本パッケージの `files` は `es / lib / dist / styles` の 4 ディレクトリのみを公開しており、
+スタイルは 2 つの経路から読み込めます：
+
+### 1. テーマ全体のみ（最も手軽）
+
+```ts
+// トークンのみでコンポーネントスタイルは一切含まず、サイズ最小
+import '@lh-ui/share/theme.css'       // 明色 :root トークン
+import '@lh-ui/share/theme-dark.css'  // 暗色 [data-theme='dark'] の上書き
+```
+
+「設計トークンだけが欲しい、コンポーネントスタイルは自分で書く」というプロジェクトに最適です。
+
+### 2. テーマ全体 + コンポーネントスタイル全体
+
+```ts
+import '@lh-ui/share/styles.css'      // dist/styles/index.css：トークン + 全 58 セットのコンポーネント
+```
+
+`dist/index.css` はビルド時に集約された最終成果物で、1 行の import で完全な見た目が得られます。
+
+### 3. SCSS ソースをオンデマンドで読み込む（SCSS をコンパイルできるバンドラーが必要）
+
+```scss
+// 全体を集約（テーマトークン + すべてのコンポーネント）
+@use '@lh-ui/share/styles/index.scss';
+
+// 単一コンポーネント：このセットだけをコンパイルし、出力サイズ最小
+@use '@lh-ui/share/styles/button';
+```
+
+`styles/` ディレクトリは**ソース**のままパッケージに同梱され、vite / webpack の sass loader に
+よってオンザフライでコンパイルされるため、プロジェクト内で `@use` してトークンをカスタマイズ
+できます。
+
+### 4. トークンのみを読み込んで高度にカスタマイズ
+
+```scss
+@use '@lh-ui/share/styles/theme/common/var.scss' as *;
+
+.my-panel {
+  color: $lh-text-primary;
+  border: 1px solid $lh-border-color;
+}
+```
+
+`styles/theme/common/` は 183 個の `$lh-*` SCSS 変数と 6 つの中華風紋様 mixin を公開しています。
+詳しくは[デザイントークン](/ja/theme/tokens)と[紋様システム](/ja/theme/patterns)を参照してください。
+
+## TypeScript
+
+すべてのサブパスが `types` 条件を備えているため、追加の `@types` パッケージは不要です：
+
+```ts
+import type { LhThemePreset, LhThemeVars } from '@lh-ui/share/theme'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+```
+
+型のエクスポートは別途 `./es/**/*.d.ts` を通るため、`import type` が実装をバンドルに含めることは
+ありません。
+
+## 純関数を動かしてみる
+
+フレームワークは不要で、Node ですぐに実行できます：
+
+```ts
+import { getButtonClasses } from '@lh-ui/share/core/button'
+
+getButtonClasses({ size: 'small', type: 'primary', disabled: true })
+// => 'lh-button lh-button--small lh-button--primary is-disabled'
+```
+
+インタラクティブに試したい？ このドキュメントサイトの各コンポーネントページには**関数
+プレイグラウンド**パネルがあり、パラメータを変えると出力をリアルタイムで確認できます——
+たとえば [steps の関数プレイグラウンド](/ja/components/navigation/steps)。
+
+## ダークモード
+
+本パッケージのコンポーネントは自分でダークモードを切り替えず、CSS 変数だけを見ます。ルート
+ノードに属性を追加すればサイト全体が切り替わります：
+
+```html
+<html data-theme="dark">
+  <!-- または <body class="dark">、どちらのセレクタも var-dark.scss がカバー -->
+</html>
+```
+
+仕組みと「コンパイル時ベイク」の罠は[ダークモード](/ja/theme/dark-mode)を参照してください。

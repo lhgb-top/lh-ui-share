@@ -1,0 +1,195 @@
+---
+title: notification —— 알림
+description: 'groupNotificationsByPosition 네 모서리 그룹화, computeStackOffsets 겹침 변위, message보다 무거운 알림 레이어'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+알림은 메시지의 "무거운 버전"입니다: 제목이 있고, 화면 네 모서리에 붙으며, 더 오래 머물고, 클릭하여 이동할 수 있습니다. **시스템 수준 또는 비동기 이벤트**에 사용됩니다——새 메시지 도착, 작업 완료, 백그라운드 작업 결과. `core/notification`이 관리하는 것은 네 모서리 그룹화와 겹침 변위입니다——이것이 `message` (단일 열, 상단 가운데)와의 핵심 차이입니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhNotification` (서비스형 API): 시스템 알림, 비동기 작업 결과, 나중에 확인해야 하는 이벤트.
+- 콘텐츠가 많은 (제목 + 본문), 사용자가 클릭해 후속 조치해야 하는 상황.
+- **사용하면 안 되는 경우**: 순간적인 작업 피드백 (`message` 사용, 더 가벼움); 즉시 처리해야 하는 확인 (`dialog` 사용); 페이지 안의 지속적 알림 (`alert` 사용).
+
+## 임포트 방법
+
+```ts
+import {
+  LH_NOTIFICATION_DURATION_DEFAULT,
+  LH_NOTIFICATION_GAP_DEFAULT,
+  getNotificationIconName,
+  getNotificationClassNames,
+  isTopPosition,
+  isRightPosition,
+  groupNotificationsByPosition,
+  computeStackOffsets,
+  getNotificationRole,
+  getNotificationAria,
+} from '@lh-ui/share/core/notification'
+import type {
+  LhNotificationType,
+  LhNotificationPosition,
+  LhNotificationRecord,
+} from '@lh-ui/share/core/notification'
+```
+
+## 설계 의도
+
+**단일 열이 아닌 네 모서리 그룹화**: `groupNotificationsByPosition`이 큐를 위치별로 네 그룹으로 나누고, 서비스 레이어가 그룹별로 네 모서리 컨테이너에 렌더링합니다. 주석에 하나의 폴백이 기록되어 있습니다: 알 수 없는 position (JS 측의 오염된 데이터)은 **기본 top-right로 떨어지며**, 오염된 데이터 한 건이 전체 그룹화를 망가뜨리지 않습니다.
+
+**`computeStackOffsets`의 누적 방향**: 각 메시지의 **뷰포트 가장자리**로부터의 오프셋을 반환합니다——가장자리에 붙은 첫 번째가 0이고, 이후 "앞선 메시지의 높이 + 간격"을 순서대로 누적합니다. **바닥에 붙은 컨테이너는 호출자가 직접 방향을 반전**합니다——core는 컨테이너가 어느 쪽에 있는지 모르고, "가장자리로부터 얼마나 떨어져 있는지"만 계산합니다.
+
+**기본 지속 시간은 message보다 깁니다**: `LH_NOTIFICATION_DURATION_DEFAULT = 4500` vs message의 3000——알림은 성격상 "나중에 봐도 되므로" 더 오래 머무르는 것이 합리적입니다.
+
+**`isTopPosition` / `isRightPosition`의 문자열 판정**: `position.startsWith('top')` / `endsWith('right')`——`'top-left'` 같은 복합 위치를 의미 플래그로 분해하여 UI 계층이 컨테이너의 위치 지정과 입장 애니메이션 방향을 결정하는 데 씁니다 (위에 붙은 것은 위에서 미끄러져 들어오고, 아래에 붙은 것은 아래에서 미끄러져 들어옴).
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getNotificationIconName` | `(type) => LhIconName` | 아이콘명 | 네 가지 의미 |
+| `getNotificationClassNames` | `(state: { type, showClose, clickable }) => string[]` | 클래스명 | 유형/닫기 가능/클릭 가능 |
+| `isTopPosition` | `(position) => boolean` | 위에 붙었는지 | 컨테이너 위치 지정과 입장 방향 |
+| `isRightPosition` | `(position) => boolean` | 오른쪽에 붙었는지 | 컨테이너 위치 지정 |
+| `groupNotificationsByPosition` | `(items) => Record<Position, T[]>` | 네 그룹 | 알 수 없는 위치는 top-right로 폴백 |
+| `computeStackOffsets` | `(heights: number[], gap?) => number[]` | 변위 배열 | 높이 + 간격 누적 |
+| `getNotificationRole` | `(type) => 'alert' \| 'status'` | live 역할 | message와 같은 패러다임 |
+| `getNotificationAria` | `(type) => LhAriaAttrs` | aria 속성 팩 | role |
+
+상수: `LH_NOTIFICATION_DURATION_DEFAULT = 4500`, `LH_NOTIFICATION_GAP_DEFAULT = 16`.
+
+## 타입 정의
+
+```ts
+export type LhNotificationType = 'info' | 'success' | 'warning' | 'danger' | 'error'  // loading 없음
+export type LhNotificationPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left'
+
+export interface LhNotificationRecord {
+  id: number
+  type: LhNotificationType
+  title: string
+  content: string
+  duration: number       // 0은 자동으로 닫지 않음을 의미
+  position: LhNotificationPosition
+  showClose: boolean
+  sx?: LhSxProps
+  onClick?: () => void
+  onClose?: () => void
+}
+```
+
+## 접근성
+
+```ts
+getNotificationAria('danger')   // { role: 'alert' }
+getNotificationAria('success')  // { role: 'status' }
+```
+
+- 역할 매핑은 `message` / `alert`와 같은 패러다임입니다: warning/danger/error는 즉시 읽어주고, info/success는 대기열에 넣습니다.
+- **제목의 읽기**: 알림에는 제목이 있으며, 제목을 `<h4>` (또는 `role="heading"`)로 렌더링하는 것을 권장합니다, 스크린 리더가 제목 위계에 따라 처리하게 합니다; live region이 읽어주는 것은 content뿐이며, 제목은 DOM 의미로 전달됩니다.
+- **클릭 가능한 알림**: `clickable` 상태에서는 카드 전체를 클릭하여 이동할 수 있으며, `<button>`이나 `role="link"`로 감싸야 합니다——`<div>`에 onclick만 거는 것은 키보드 사용자가 트리거할 수 없습니다.
+- **닫기 버튼**: 아이콘 버튼에는 `aria-label`이 필요합니다.
+
+## 사용 예시
+
+```ts
+import {
+  groupNotificationsByPosition, computeStackOffsets, isTopPosition,
+} from '@lh-ui/share/core/notification'
+
+isTopPosition('top-right')   // true
+isTopPosition('bottom-left') // false
+isRightPosition('top-right')  // true
+isRightPosition('top-left')   // false
+
+groupNotificationsByPosition([
+  { position: 'top-right' }, { position: 'bottom-left' }, { position: 'top-right' },
+])
+// { 'top-right': [2건], 'top-left': [], 'bottom-right': [], 'bottom-left': [1건] }
+
+groupNotificationsByPosition([{ position: 'middle' as never }])
+// 알 수 없는 위치 → 'top-right'로 폴백
+
+computeStackOffsets([40, 60, 30])
+// [0, 76, 152]  ← 0, 40+16, 40+16+60+16
+computeStackOffsets([40])  // [0]
+```
+
+```ts
+// 서비스 레이어: 네 모서리 컨테이너가 각자 큐를 유지
+const groups = computed(() => {
+  const byPos = groupNotificationsByPosition(queue.value)
+  return Object.entries(byPos).map(([position, items]) => ({
+    position: position as LhNotificationPosition,
+    items,
+    // 겹침 변위: 바닥 컨테이너는 반전 (첫 번째가 바닥에 붙고 이후 위로 쌓임)
+    offsets: computeStackOffsets(items.map((i) => heights.value[i.id] ?? 60)),
+  }))
+})
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <div
+    v-for="group in groups"
+    :key="group.position"
+    class="lh-notification"
+    :class="[`lh-notification--${group.position}`]"
+  >
+    <transition-group :name="isTopPosition(group.position) ? 'lh-notification-slide-top' : 'lh-notification-slide-bottom'" tag="div">
+      <div
+        v-for="(record, i) in group.items"
+        :key="record.id"
+        :class="getNotificationClassNames({ type: record.type, showClose: record.showClose, clickable: !!record.onClick })"
+        :role="getNotificationRole(record.type)"
+        :style="{ transform: `translateY(${(isTopPosition(group.position) ? 1 : -1) * group.offsets[i]}px)` }"
+        @click="record.onClick?.()"
+      >
+        <LhIcon :name="getNotificationIconName(record.type)" />
+        <div class="lh-notification__main">
+          <h4 class="lh-notification__title">{{ record.title }}</h4>
+          <p class="lh-notification__content">{{ record.content }}</p>
+        </div>
+        <button v-if="record.showClose" type="button" aria-label="닫기" @click.stop="close(record.id)">✕</button>
+      </div>
+    </transition-group>
+  </div>
+</teleport>
+```
+
+```tsx
+// React: 높이는 렌더링 후에 측정해야 하며 (ref + useCallbackLayoutEffect) 겹침 변위를 계산;
+// 첫 프레임은 예상 높이를 쓰고 측정 후 업데이트
+```
+
+```ts
+// uniapp: <view> + fixed 네 모서리; 높이 측정은 createSelectorQuery 사용
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-notification` | 컨테이너 (네 모서리 fixed) |
+| `.lh-notification--{top-right\|top-left\|bottom-right\|bottom-left}` | 위치 |
+| `.lh-notification__item` | 개별 카드 |
+| `.lh-notification__item--{info\|success\|warning\|danger\|error}` | 의미 유형 |
+| `.lh-notification__item--closable` / `--clickable` | 닫기 가능 / 클릭 가능 (hover 하이라이트 + 포인터) |
+| `.lh-notification__main` / `__title` / `__content` | 주 영역 / 제목 / 본문 |
+
+너비 고정 (예: 320~360px), `--lh-bg-color` 바탕 + 그림자; 네 가지 의미 색은 아이콘과 왼쪽 색 띠에 적용.
+
+## 주의사항
+
+- **겹침 변위에는 실제 높이가 필요**: `computeStackOffsets`는 heights 배열을 받으며, UI 계층은 각 메시지의 실제 렌더링 높이를 측정해야 합니다. 첫 프레임에 예상 높이를 쓰면 점프가 발생합니다——측정 후 상태로 한 번 업데이트하세요.
+- **바닥 컨테이너의 방향 반전**: `computeStackOffsets`가 반환하는 것은 "가장자리로부터의 거리"이며, bottom 컨테이너는 -1을 곱해야 합니다 (아래가 양수). 이것은 호출자의 책임이고 core는 컨테이너 방위를 인식하지 않습니다.
+- **`duration: 0`인 알림**: 자동으로 닫히지 않으며, "읽지 않은 메시지"처럼 사용자가 직접 없애야 하는 것에 적합합니다——`showClose: true`와 함께 쓰거나 클릭 후 닫기.
+- **`onClick`과 `showClose`의 이벤트 충돌**: 클릭 가능한 카드 위의 닫기 버튼은 `@click.stop`해야 합니다, 그렇지 않으면 닫기를 누를 때 카드 이동도 함께 트리거됩니다.
+- **여러 위치를 섞어 쓸 때의 컨테이너 수**: 네 모서리 컨테이너는 비어 있어도 항상 DOM에 상주합니다 (transition-group에 필요), `v-if`를 쓰면 애니메이션이 망가집니다.
+- **message와의 경계**: 알림이 더 무겁습니다 (모서리 차지, 제목 있음, 더 오래 머무름), 작업 피드백은 message로 충분합니다. 둘은 공존할 수 있습니다 (작업 성공 시 message, 시스템 알림은 notification).
+- **`position`의 타입 엄격성**: TS에서 잘못된 위치를 전달하면 걸리지만, JS 호출자는 `'topCenter'` 같은 것을 전달할 수 있습니다——top-right로 폴백돼 깨지지는 않지만 위치가 예상과 다르므로 호출자가 자체 점검해야 합니다.
+
+<FnPlayground module="notification" fn="groupNotificationsByPosition" params='{"items": [{"position": "top-right"}, {"position": "bottom-left"}, {"position": "top-right"}]}' />

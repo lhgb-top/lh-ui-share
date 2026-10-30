@@ -1,0 +1,163 @@
+---
+title: デザイントークン
+description: '185 個の明色トークン + 118 個の暗色上書き + 183 個の SCSS 変数、3 層のトークンの値と階層、上書き関係'
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+トークン（token）とは、設計言語の変数化です：色、フォントサイズ、間隔、角丸、シャドウ、アニメーション時間を `--lh-*` という CSS 変数として名前付けし、コンポーネントは名前だけを消費して値を固定しません。スキンの切り替えとはトークンの交換です。
+
+## 3 層のトークン
+
+| 層 | 位置 | 数 | 評価のタイミング | 上書き可能性 |
+| --- | --- | --- | --- | --- |
+| CSS 変数 · 明色 | `styles/theme/common/var.scss` の `:root` | **185 個** | ランタイム | ✅ 自由に上書き可能 |
+| CSS 変数 · 暗色 | `styles/theme/common/var-dark.scss` の `[data-theme='dark'], .dark` | **118 個** | ランタイム | ✅ |
+| SCSS 変数 | `styles/theme/common/variables.scss` | **183 個** | **コンパイル期** | ⚠️ ソースを変更して再コンパイルするしかない |
+
+### 明色トークン（var.scss）
+
+```scss
+:root {
+  --lh-primary-color: #2B4C7C;
+  --lh-text-primary: rgba(0, 0, 0, 0.88);
+  --lh-bg-color: #FAF6F0;
+  --lh-border-color: #e5e6eb;
+  --lh-radius-base: 6px;
+  --lh-spacing-base: 8px;
+  // ... 185 個
+}
+```
+
+### 暗色上書き（var-dark.scss）
+
+```scss
+[data-theme='dark'],
+.dark {
+  --lh-bg-color: #2A2520;
+  --lh-text-primary: #E8E0D8;
+  --lh-border-color: #3A3530;
+  // ... 118 個
+}
+```
+
+暗色は**上書き層**であって独立したセットではありません：反転が必要な 118 個だけを書き、残りは明色の値を流用します。
+
+### SCSS 変数（variables.scss）
+
+```scss
+$lh-primary-color: #2B4C7C !default;
+$lh-border-radius-base: 6px !default;
+// ... 183 個
+```
+
+SCSS 変数の用途は**コンパイル期の計算に参加すること**です：色の混合（`mix()` / `shade()`）、シャドウの合成（複数レイヤの shadow の加算）といった、CSS 変数にはできない処理です。代償は**コンパイル期にベイクされ固定される**こと——暗色でも自動的には反転しません。
+
+## トークンの階層構造
+
+トークンは 3 つの段階に分かれ、最初の 2 段階は全体テーマのファイルに、第 3 段階は各コンポーネント自身のスタイルにあります：
+
+```scss
+// 1. SCSS 変数（variables.scss、コンパイル期）
+$lh-primary: #2B4C7C !default;
+$lh-text-primary: #2C2C2C !default;
+
+// 2. 全体 CSS 変数（var.scss の :root、190 個）
+--lh-primary-color: #{$lh-primary};
+--lh-text-primary: #{$lh-text-primary};
+--lh-bg-color: #FAF6F0;
+
+// 3. コンポーネントレベルの変数（コンポーネント自身の scss、スコープはコンポーネントの BEM ルート）
+.lh-card {
+  --lh-card-bg: var(--lh-bg-color, #FAF6F0);
+  --lh-card-border-radius: calc(var(--lh-border-radius-base, 2px) + 2px);
+}
+```
+
+重要な仕組み：
+
+- **第 1・2 段階の間はコンパイル期の補間であって、var() の参照チェーンではありません**：`--lh-primary-color` の値はビルド時に `$lh-primary` からベイクされ、ランタイムで SCSS 変数を変更しても無効です（再コンパイルが必要）。プロジェクト内に「基礎パレット」の中間層は**ありません**——`--lh-blue-6` のような色階変数は存在せず、セマンティックトークンは SCSS 変数から直接生成されます。
+- **スキン切り替えの 2 つのレバー**：`variables.scss` の SCSS 変数を変更して再コンパイルする（すべてのセマンティックトークンに影響）、またはランタイムで `:root` 上の CSS 変数を上書きする（`ConfigProvider` の themeVars はこちらで、即時に行われます）。
+- **第 3 段階はデフォルトで第 2 段階を参照します**：コンポーネントレベルの変数のデフォルト値は通常、全体トークンの `var()` 参照（フォールバック付き）で、テーマとの連動を保ちつつ themeVars で単一のコンポーネントを狙い撃ちて上書きできます。
+
+## セマンティックドメイン
+
+主なセマンティックドメイン（完全なグループ分けは下のトークン表を参照）：
+
+| ドメイン | 代表的なトークン | 用途 |
+| --- | --- | --- |
+| 主色 | `--lh-primary-color` / `-hover` / `-active` / `-bg` / `-border` | ブランド主色の 5 点セット |
+| テキスト | `--lh-text-primary` / `-secondary` / `-tertiary` / `-disabled` | 4 段階の文字の階層 |
+| 背景 | `--lh-bg-color` / `-page` / `-secondary` / `-overlay` | ページ / コンテナ / オーバーレイ |
+| ボーダー | `--lh-border-color` / `-light` / `-dark` | 線 |
+| ステータス | `--lh-success-color` / `-warning` / `-error` / `-danger` / `-info` | 5 つのセマンティック色 |
+| 角丸 | `--lh-radius-small` / `-base` / `-large` / `-circle` | 4 段階の角丸 |
+| 間隔 | `--lh-spacing-*` | 8px 基準のスケール |
+| フォントサイズ | `--lh-font-size-*` | フォントサイズの階段 |
+| シャドウ | `--lh-shadow-*` | シャドウの階層 |
+| アニメーション | `--lh-animation-duration-*` / `-timing-function` | トランジションのテンポ |
+| 装飾 | `--lh-decoration-color` | 中華風の装飾色 |
+
+## トークン全表
+
+<TokenTable />
+
+（データは `scripts/gen-docs-data.mjs` が 3 つのトークンファイルを解析して生成し、数量のアサーションを伴います：明色 190、暗色 118、SCSS 188。不一致ならエラーになります。）
+
+## トークンの上書き
+
+### ランタイム（推奨）
+
+```ts
+// ConfigProvider の themeVars（省略記法のキーに --lh- プレフィックスを自動補完）
+<lh-config-provider :theme-vars="{ 'primary-color': '#1677ff' }">
+```
+
+またはアプリケーションのエントリに CSS を書きます：
+
+```css
+:root {
+  --lh-primary-color: #1677ff;
+  --lh-primary-color-hover: #4096ff;
+  --lh-primary-color-active: #0958d9;
+}
+```
+
+詳細は[ランタイムカスタマイズ](/ja/theme/customization)を参照。
+
+### コンパイル期（SCSS 変数）
+
+```scss
+// プロジェクトのエントリ scss、@use の前に上書きする
+$lh-primary-color: #1677ff;
+
+@use '@lh-ui/share/styles';
+```
+
+`!default` のセマンティクスは「すでに値があれば上書きしない」なので、`@use` の前に値を代入するだけでかまいません。**注意**：これはコンパイル期にベイクされる部分にだけ影響し、ランタイムの CSS 変数は別途上書きが必要です。
+
+## 既知のトークンギャップ
+
+「高さトークン専用」は完了しています（`--lh-control-height-mini/small/medium/large/x-large` を新設、
+button / select / input-number / cascader / tree-select / date-picker / time-picker /
+input はすべてトークンの参照に切り替え、input は padding からの派生を固定高さに変更、has-label の非対称な
+`padding-top: 16px`、checkbox のチェックマークの固定オフセット、switch の `translate(-50%,-50%)` の重複
+ハードコードもあわせて修正）。残る対応待ち：
+
+1. spinner と icon の同名サイズ段階が一致しない（small 16 vs 14、medium 24 vs 16 など）。どちらかを直してもライブラリ全体に波及する（message / notification / loading / すべてのアイコン）。トリガー条件：同じスロットに LhIcon / LhSpinner を混用したときの見た目のクレーム、そのときに単独で項目化する。
+2. size 段階が揃っていない：select / switch は 3 段階のみ、date / time-picker の validator が狭め、tree-select / rate / segmented / pagination に size なし、mini と x-large は CSS 層でほとんど描画されない（ライブラリ全体で x-large は avatar のみ）。API 層の変更で、高さトークンとは切り離されている。
+
+## 注意事項
+
+- **コンポーネントは `--lh-*` を自分で宣言できません**：`var(--lh-*, fallback)` で消費するだけです（ルート AGENTS.md のレッドライン）。新しいトークンは `var.scss` に追加します。
+- **fallback は必須**：`var(--lh-primary-color, #1677ff)`——トークンが欠けていても許容できるデフォルト値があり、`verify:styles` の第 2 項（var fallback）が把守します。
+- **暗色の完全性**：新しいトークンを追加するとき「暗色で反転するか」を自問し、必要なら `var-dark.scss` に上書きを補います。`verify:styles` の第 7 項が把守します。
+- **値が `#{$lh-foo}` の形のトークンはコンパイル期にベイクされます**：暗色で自動的には反転せず、明示的な再指向が必須です（[ダークモード](/ja/theme/dark-mode#コンパイル期にベイクされる罠)を参照）。
+
+## 関連ドキュメント
+
+- [テーマシステム概要](/ja/theme/overview)
+- [テーマプリセット](/ja/theme/presets)
+- [ランタイムカスタマイズ](/ja/theme/customization)
+- [ダークモード](/ja/theme/dark-mode)
+- [スタイルソース](/ja/reference/styles)

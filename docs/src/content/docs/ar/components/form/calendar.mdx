@@ -1,0 +1,174 @@
+---
+title: calendar —— التقويم
+description: 'shiftCalendarMonth للعبور بين الأشهر، normalizeCalendarSpan لتوحيد المجال، toggleCalendarDate لتبديل التحديد المتعدد، aria-current=date'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+التقويم هو **لوحة تواريخ دائمة العرض**: فبينما يخفي date-picker لوحته في طبقة منبثقة، يبسطها calendar في الصفحة. ويدعم ثلاثة أنماط للاختيار—فردي، ومجال (range)، ومتعدد—إضافة إلى قيد نطاق التواريخ الاختيارية. يعيد `core/calendar` استخدام خوارزمية شبكة date-picker (`generateCalendarDays`)، ويُضيف فوقها الإزاحة، وقيد النطاق، وتبديل حالة التحديد.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `LhCalendar`: عروض الجداول الزمنية، تسجيل الحضور، صفحات اختيار تواريخ الفنادق/الرحلات.
+- المشاهد التي تتطلب بقاء التواريخ **مرئية دائماً** بدلاً من الاختيار من طبقة منبثقة.
+- **لا ينبغي استخدامه**: داخل النماذج ذات المساحة المحدودة (استخدم `date-picker`، فالطبقة المنبثقة أوفر للمكان)؛ عند اختيار تاريخ واحد فقط والصفحة مزدحمة أصلاً.
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getCalendarClassNames,
+  shiftCalendarDate,
+  shiftCalendarMonth,
+  isCalendarDateDisabled,
+  clampDateToRange,
+  isCalendarSelected,
+  normalizeCalendarSpan,
+  isCalendarInSpan,
+  toggleCalendarDate,
+  getCalendarCellAria,
+  generateCalendarDays,
+  isSameDay,
+} from '@lh-ui/share/core/calendar'
+import type { LhCalendarRange, LhCalendarSelection } from '@lh-ui/share/core/calendar'
+```
+
+## القصد التصميمي
+
+**اتجاه الاعتماد دلالي**: يستورد calendar الدالة `generateCalendarDays` من `date-picker` بدلاً من إعادة تنفيذها في `core/shared/date`—فخوارزمية شبكة التقويم هي مسؤولية date-picker، وcalendar هو واجهة التقويم لها. أما الأوليات العامة (`compareDate` / `isDateDisabled` / `isSameDay`) فتأتي مباشرة من النواة المشتركة، ولا يعتمد calendar عكسياً على منطق date-picker. هذا هو الاتفاق الطبقي «الأوليات العامة تهبط، والخوارزميات المجالية تستقر في مكانها».
+
+**التحمل مع المجالات المعكوسة**: يستدعي كلٌ من `isCalendarDateDisabled` و`clampDateToRange` أولاً `normalizeCalendarSpan` لتوحيد المجال—فتمرير `[end, start]` (معكوس) لن يؤدي إلى تعطيل كل شيء أو قلب خاطئ. ولا تُلزِم طبقة UI المُستدعي بالفرز المسبق.
+
+**توحيد `shiftCalendarMonth`**: `year * 12 + month + delta` ثم إعادة تفكيكه إلى سنة وشهر، ويعالج `((total % 12) + 12) % 12` باقي القسمة السالب—فعندما يكون delta سالباً عبر السنة (مثل يناير -2) لن يصبح الشهر -1.
+
+**التبديل غير القابل للتغيير في التحديد المتعدد**: `toggleCalendarDate` يزيل عند التطابق، أو يُضيف مع الفرز زمنياً—ويعيد مصفوفة جديدة صالحة مباشرة للتحديث التفاعلي، مع ثبات الترتيب (تفادياً لقفز الواجهة).
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `getCalendarClassNames` | `() => string[]` | `['lh-calendar']` | صنف الحاوية |
+| `shiftCalendarDate` | `(date, days) => Date` | Date جديد | إزاحة بالأيام (آمنة عبر الأشهر) |
+| `shiftCalendarMonth` | `(year, month, delta) => { year, month }` | سنة وشهر | إزاحة بالأشهر |
+| `isCalendarDateDisabled` | `(date, range?) => boolean` | هل هو معطّل | بلا قيود دائماً false |
+| `clampDateToRange` | `(date, range?) => Date` | التاريخ بعد القلب | إرجاع المتجاوز إلى الحدود |
+| `isCalendarSelected` | `(date, selected) => boolean` | هل هو محدد | تطابق اليوم |
+| `normalizeCalendarSpan` | `(a, b) => [Date, Date]` | مجال موحَّد | ضمان start ≤ end |
+| `isCalendarInSpan` | `(date, start, end) => boolean` | هل هو ضمن المجال المغلق | أي طرف null يُعيد false |
+| `toggleCalendarDate` | `(dates, date) => Date[]` | مصفوفة جديدة | إزالة عند التطابق/إضافة مع الفرز |
+| `getCalendarCellAria` | `(options: { date, selected, range? }) => LhAriaAttrs` | حزمة سمات aria | aria-current / aria-disabled |
+
+## تعريفات الأنواع
+
+```ts
+export type LhCalendarRange = [Date, Date]
+export type LhCalendarSelection = 'single' | 'range' | 'multiple'
+```
+
+يعيد هيكل بيانات الشبكة استخدام `LhDatePickerDayData` (انظر date-picker).
+
+## إمكانية الوصول
+
+مخرجات `getCalendarCellAria` مقتصدة جداً—**لا تُخرج السمات إلا عند وجود حالة** (اتفاق حذف القيم الكاذبة في `LhAriaAttrs`):
+
+```ts
+getCalendarCellAria({ date: selectedDate, selected: selectedDate, range: undefined })
+// { 'aria-current': 'date' }
+
+getCalendarCellAria({ date: new Date(2026, 0, 1), selected: null, range: [new Date(2026, 2, 1), new Date(2026, 3, 1)] })
+// { 'aria-disabled': true }
+
+getCalendarCellAria({ date: someDate, selected: null })
+// {} (كائن فارغ عند انعدام الحالة)
+```
+
+- الأيام المختارة تستخدم `aria-current="date"` (لا `aria-selected`)—فالتقويم عنصر تحكم تنقّلي، واتفاق APG يعبّر عن «الموضع الحالي» بـ current.
+- الأيام المعطّلة تستخدم `aria-disabled`، وعلى طبقة UI تخطّي هذه الخلايا في النقر وتنقّل لوحة المفاتيح.
+- تفاعل لوحة المفاتيح: بعد التركيز على خلية تُحرَّك بـ ↑/↓/←/→ عبر `shiftCalendarDate(date, ±1|±7)`، ويُفعَّل الاختيار بـ Enter/Space.
+- يجب أن تحمل الشبكة ككل `role="grid"`، وفقاً للبنية نفسها في لوحة date-picker.
+
+## أمثلة الاستخدام
+
+```ts
+import {
+  shiftCalendarMonth, normalizeCalendarSpan, toggleCalendarDate, isCalendarInSpan,
+} from '@lh-ui/share/core/calendar'
+
+shiftCalendarMonth(2026, 0, -2)   // { year: 2025, month: 10 } (باقي القسمة السالب صحيح)
+shiftCalendarMonth(2026, 11, 1)   // { year: 2027, month: 0 }
+normalizeCalendarSpan(new Date(2026, 3, 1), new Date(2026, 2, 1))
+// [2026-03-01, 2026-04-01] (توحيد المعكوس تلقائياً)
+isCalendarInSpan(new Date(2026, 2, 15), new Date(2026, 2, 1), new Date(2026, 2, 28))  // true
+isCalendarInSpan(new Date(2026, 2, 15), null, null)  // false (أي طرف null)
+toggleCalendarDate([new Date(2026, 2, 1)], new Date(2026, 2, 5))
+// [2026-03-01, 2026-03-05] (إضافة مع الفرز)
+toggleCalendarDate([new Date(2026, 2, 1), new Date(2026, 2, 5)], new Date(2026, 2, 1))
+// [2026-03-05] (إزالة عند التطابق)
+```
+
+```vue
+<!-- Vue3: نمط المجال -->
+<div :class="getCalendarClassNames()">
+  <div class="lh-calendar__header">
+    <button type="button" @click="shift(-1)">‹</button>
+    <span class="lh-calendar__title">{{ year }} / {{ month + 1 }}</span>
+    <button type="button" @click="shift(1)">›</button>
+  </div>
+  <div class="lh-calendar__body" role="grid">
+    <div v-for="row in weekRows(days)" :key="row[0].date.getTime()" class="lh-calendar__row" role="row">
+      <button
+        v-for="cell in row"
+        :key="cell.date.getTime()"
+        type="button"
+        class="lh-calendar__cell"
+        :class="cellClass(cell)"
+        role="gridcell"
+        v-bind="getCalendarCellAria({ date: cell.date, selected: selected, range: allowedRange })"
+        @click="onPick(cell.date)"
+      >
+        {{ cell.day }}
+      </button>
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// الاختيار على مرحلتين في نمط المجال (قواعد طبقة UI، وليست مدمجة في core)
+// if (!rangeStart || (rangeStart && rangeEnd)) { rangeStart = date; rangeEnd = null }
+// else rangeEnd = date  (عند القدم عن rangeStart يُوحِّد normalizeCalendarSpan المجال)
+```
+
+```tsx
+// React: نمط التحديد المتعدد
+// const [dates, setDates] = useState<Date[]>([])
+// onClick: setDates(toggleCalendarDate(dates, cell.date))
+```
+
+```ts
+// uniapp: شبكة <view> + @touchstart؛ ودوال قيد النطاق وتبديل التحديد من core تُستخدم كما هي
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-calendar` | الصنف الأساسي |
+| `.lh-calendar__header` / `__title` | التنقّل العلوي |
+| `.lh-calendar__body` | منطقة الشبكة |
+| `.lh-calendar__row` | أسبوع واحد |
+| `.lh-calendar__cell` | خلية يوم |
+| `.lh-calendar__cell.is-today` / `.is-selected` / `.is-in-range` / `.is-start` / `.is-end` / `.is-disabled` / `.is-other-month` | مُعدِّلات الحالة |
+
+التحديد `--lh-primary-color`، ومقطع المجال بلون أساسي بشفافية منخفضة، واليوم بإطار محدَّد، والتعطيل `--lh-text-disabled`.
+
+## ملاحظات
+
+- **الشهر يبدأ من 0**: موافق لـ date-picker ولـ `Date` الأصلي، مع `+1` في العرض.
+- **علاقة ثلاثة أنماط الاختيار بـ core**: `LhCalendarSelection` مجرد إقرار نوعي، ودوال core مستقلة عن النمط—`isCalendarSelected` يتولّى single، و`isCalendarInSpan` يتولّى range، و`toggleCalendarDate` يتولّى multiple. أما توصيل تبديل النمط فعلى طبقة UI.
+- **حالة التحديد الجزئي في نمط المجال**: عندما يُحدَّد `rangeStart` ولم يُحدَّد `rangeEnd`، يجب أن تُبرز الخلية التي فوقها المؤشر المقطع الأوسط لحظياً (عبر نهاية مؤقتة في طبقة UI)، ويتقبل `generateCalendarDays` في core قيمة null لـ rangeEnd دون خطأ.
+- **استخدامات `clampDateToRange`**: عند ضبط قيمة خارجية (مثل تمرير تاريخ خارج النطاق عبر `v-model`) يُعاد إلى المجال الشرعي، وتستدعيه طبقة UI مرة عند مراقبة تغيّر القيمة.
+- **أداء اللوحة الدائمة**: لا يحسب calendar الشبكة عند الفتح فقط كما يفعل date-picker، بل يكفي إعادة الحساب عند تقليب الشهر؛ لا تُعِد حساب `generateCalendarDays` في كل إطار (فهو ينشئ 35~42 كائن Date).
+- **الحد الفاصل مع date-picker**: يشتركان في بيانات الشبكة ولكنهما **لا يشتركان في نموذج الحالة**—فـ `LhDatePickerState` موجه لتفاعل الطبقة المنبثقة، أما calendar فليس له حالة ظهور.
+
+<FnPlayground module="calendar" fn="shiftCalendarMonth" params='{"year": 2026, "month": 0, "delta": -2}' />

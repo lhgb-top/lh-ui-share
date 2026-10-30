@@ -1,0 +1,181 @@
+---
+title: dialog —— Boîte de dialogue
+description: 'canClose, verrouillage d’évasion ; shouldTrapFocus, décision de piégeage de focus ; getDialogStyle, trois positionnements ; sémantique dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La boîte de dialogue est la couverture modale qui « interrompt le flux en cours et exige que l'utilisateur traite cette chose d'abord » : confirmer une suppression, remplir un formulaire, afficher des détails. Son cœur n'est pas visuel, mais le **verrouillage du focus et du défilement** — modal signifie que la page derrière n'est pas interactive. `core/dialog` ramène « peut-elle se fermer », « faut-il piéger le focus » et « les styles de positionnement » à des fonctions pures ; le piégeage proprement dit est exécuté par `core/shared/focus-trap`.
+
+## Quand l'utiliser
+
+- Chaque framework implémente `LhDialog` : confirmation d'opérations dangereuses, formulaires autonomes (plus focalisés qu'un tiroir), affichage d'informations importantes.
+- Les situations qui exigent une **modale** (interruption du flux principal, traitement obligatoire d'abord).
+- **À ne pas utiliser pour** : notifications légères non modales (utilisez `message` / `notification`) ; panneau de détails latéral coulissant (utilisez `drawer`, qui ne couvre pas tout l'écran) ; confirmations simples (utilisez `popconfirm`, plus léger).
+
+## Import
+
+```ts
+import {
+  canClose,
+  getDialogStyle,
+  getDialogPopperClass,
+  shouldTrapFocus,
+  getDialogAria,
+} from '@lh-ui/share/core/dialog'
+import type { LhDialogState } from '@lh-ui/share/core/dialog'
+```
+
+## Intentions de conception
+
+**Les deux valeurs par défaut de `canClose` sont asymétriques** :
+
+- `closeOnClickModal` vaut **false** par défaut (cliquer sur le masque ne ferme pas) — une boîte de dialogue porte généralement un formulaire ou une confirmation exigeant une action explicite de l'utilisateur ; une fermeture accidentelle via le masque perdrait la saisie.
+- `closeOnPressEscape` vaut **true** par défaut (Esc ferme) — les utilisateurs au clavier ont besoin d'une sortie de secours, c'est la convention du modèle dialog d'APG.
+
+Cette asymétrie est une conception d'expérience délibérée : **protéger contre les erreurs tout en laissant une issue**.
+
+**`shouldTrapFocus` ne fait que décider** : elle renvoie « faut-il activer le piégeage du focus », le piégeage concret est implémenté par la couche UI avec `core/shared/focus-trap` (saveActiveElement + focusFirst à l'ouverture, trapTabKey au keydown, inert géré par setInertOutside, restoreActiveElement à la fermeture pour rendre le focus). La couche core ne touche jamais au DOM.
+
+**Répartition du positionnement dans `getDialogStyle`** : `top` / `center` / `bottom` sont gérés par l'alignement flexbox du conteneur, et `marginTop` n'est appliqué que lorsque `position` vaut `'top'` ou est absent — accumuler un marginTop sur center/bottom entrerait en conflit avec le flexbox.
+
+**La classe visible de `getDialogPopperClass`** : elle sert d'état de départ/fin pour l'animation de transition, pas à contrôler l'affichage (l'affichage est géré par `v-if` / `v-show`).
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `canClose` | `(state, reason: 'modalClick' \| 'escape') => boolean` | fermeture autorisée | verrouillage d'évasion |
+| `getDialogStyle` | `(state: { top?, zIndex?, position? }) => Record<string, string>` | styles | positionnement et empilement |
+| `getDialogPopperClass` | `(state: LhDialogState) => string[]` | noms de classes | état visible |
+| `shouldTrapFocus` | `(state: { visible, lockScroll }) => boolean` | faut-il piéger le focus | décision (aucun accès DOM) |
+| `getDialogAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | paquet d'attributs aria | sémantique dialog |
+
+## Définitions de types
+
+```ts
+export interface LhDialogState {
+  visible: boolean
+  lockScroll: boolean
+  closeOnClickModal: boolean   // false par défaut
+  closeOnPressEscape: boolean  // true par défaut
+  width: string | number | undefined
+  top: string | undefined
+  zIndex: number | undefined
+  position: 'top' | 'center' | 'bottom' | undefined
+}
+```
+
+## Accessibilité
+
+`getDialogAria` produit la sémantique APG modal dialog :
+
+```ts
+getDialogAria({ id: 'lh-dialog-1', titleId: 'lh-dialog-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-dialog-1', 'aria-labelledby': 'lh-dialog-title' }
+
+getDialogAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true` indique aux lecteurs d'écran que l'arrière-plan est inaccessible (complet uniquement combiné à inert / focus-trap).
+- **En présence d'un titre, `titleId` est obligatoire** ; sans titre, `aria-labelledby` n'est pas produit et la couche UI doit fournir un `aria-label` de repli — une boîte de dialogue sans nom accessible est annoncée par les lecteurs d'écran comme un « dialogue » vide.
+- Gestion du focus (couche UI) : à l'ouverture, le focus entre dans la boîte de dialogue (premier élément focalisable ou zone de contenu) ; à la fermeture, **il revient à l'élément déclencheur** — c'est la convention standard du piégeage de focus, omettre le retour désoriente les utilisateurs au clavier.
+- **`aria-modal` n'est pas un substitut** : ce n'est qu'une déclaration ; l'isolation réelle de l'arrière-plan repose sur l'implémentation inert de `core/shared/focus-trap`. Une « fausse modale » qui déclare sans isoler est un défaut courant.
+- Quand la boîte de dialogue contient un formulaire, la sémantique Entrée pour soumettre / Esc pour fermer doit être claire (si des modifications non enregistrées existent avant la fermeture par Esc, une seconde confirmation devrait être requise).
+
+## Exemples d'utilisation
+
+```ts
+import { canClose, shouldTrapFocus, getDialogStyle } from '@lh-ui/share/core/dialog'
+
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'modalClick')  // false
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'escape')      // true
+canClose({}, 'escape')        // true (Esc ferme par défaut)
+canClose({}, 'modalClick')    // false (cliquer sur le masque ne ferme pas par défaut)
+
+shouldTrapFocus({ visible: true, lockScroll: true })   // true
+shouldTrapFocus({ visible: true, lockScroll: false })  // false
+shouldTrapFocus({ visible: false, lockScroll: true })  // false
+
+getDialogStyle({ top: '15vh', position: 'top', zIndex: 2000 })
+// { marginTop: '15vh', zIndex: '2000' }
+getDialogStyle({ top: '15vh', position: 'center' })
+// {} (center est géré par le flexbox, marginTop n'est pas cumulé)
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-dialog-fade">
+    <div v-if="visible" class="lh-dialog__wrapper" :style="{ zIndex }">
+      <div class="lh-dialog__mask" @click="onMaskClick" />
+      <div
+        :class="getDialogPopperClass({ visible })"
+        :style="getDialogStyle({ top, zIndex, position })"
+        v-bind="getDialogAria({ id: dialogId, titleId })"
+      >
+        <header class="lh-dialog__header">
+          <h3 class="lh-dialog__title" :id="titleId">{{ title }}</h3>
+          <button v-if="showClose" type="button" class="lh-dialog__close" aria-label="Fermer" @click="close">✕</button>
+        </header>
+        <div class="lh-dialog__body"><slot /></div>
+        <footer class="lh-dialog__footer"><slot name="footer" /></footer>
+      </div>
+    </div>
+  </transition>
+</teleport>
+```
+
+```ts
+function onMaskClick() {
+  if (canClose({ closeOnClickModal, closeOnPressEscape }, 'modalClick')) close()
+}
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && canClose({ closeOnClickModal, closeOnPressEscape }, 'escape')) close()
+}
+
+// Piégeage de focus (combiné avec shared/focus-trap)
+watch(visible, async (v) => {
+  if (v) { savedFocus = saveActiveElement(); await nextTick(); focusFirst(dialogRef.value) }
+  else { restoreActiveElement(savedFocus) }
+})
+```
+
+```tsx
+// React : CSSTransition ou une approche headless pour les transitions ; le piégeage de
+// focus utilise le même cœur focus-trap
+```
+
+```ts
+// uniapp : <view> + positionnement fixed ; le verrouillage du défilement est géré par la
+// couche UI (les mini-programmes n'ont pas de scroll de body à verrouiller, on enveloppe
+// la zone de contenu dans un scroll-view pour la contrôler) ; canClose / getDialogAria de
+// core s'utilisent tels quels
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-dialog__wrapper` | conteneur externe (centrage flex + zIndex) |
+| `.lh-dialog__mask` | masque (noir semi-transparent) |
+| `.lh-dialog__popper` | corps de la boîte de dialogue |
+| `.lh-dialog__popper--visible` | état déployé (fin de transition) |
+| `.lh-dialog__header` / `__title` / `__close` | en-tête |
+| `.lh-dialog__body` | zone de contenu |
+| `.lh-dialog__footer` | zone des boutons du bas |
+
+Masque `rgba(0, 0, 0, 0.5)` ; corps `--lh-bg-color` + arrondi `--lh-radius-base` + ombre ; la largeur est contrôlée par la prop `width` (50% par défaut).
+
+## Remarques
+
+- **`closeOnClickModal` en conflit avec les formulaires** : pour les boîtes de dialogue contenant un formulaire, il est recommandé de définir explicitement `false` (qui est aussi la valeur par défaut), afin d'éviter que l'utilisateur perde sa saisie en cliquant accidentellement le masque.
+- **Relation entre `lockScroll` et le piégeage de focus** : `shouldTrapFocus` exige que `lockScroll` soit aussi true — verrouiller le défilement signifie généralement une modale complète, auquel cas le piégeage de focus est le comportement associé. Verrouiller le défilement sans piéger le focus crée une expérience désordonnée où « Tab s'échappe vers la page derrière ».
+- **Boîtes de dialogue imbriquées** : le zIndex de la boîte interne doit être supérieur à celui de l'externe (géré par un compteur auto-incrémenté), et le piégeage de focus doit imbriquer les sauvegardes (à la fermeture de la boîte interne, le focus revient à l'élément déclencheur de l'interne, pas à la plus externe).
+- **Gestion du zIndex** : core se contente d'écrire la valeur transmise dans les styles, sans auto-incrément. La couche UI doit utiliser un compteur zIndex global (pour éviter les conflits d'empilement avec message / notification).
+- **Timing du montage de l'animation de transition** : la permutation de `v-if` démonte immédiatement le DOM ; l'animation de fermeture nécessite la coopération de `<transition>` — si le DOM est détruit en pleine animation, le retour du focus échoue ; utilisez `@after-leave` pour différer la logique de démontage réelle.
+- **`position: 'bottom'`** : une boîte de dialogue positionnée en bas (style action sheet mobile) est alignée par le flex-end du flexbox ; `top` est sans effet.
+- **`width` en pourcentage** : `'50%'` est relatif à la largeur du masque ; sur écrans étroits mobiles, envisagez `'90%'` ou une valeur px précise.
+
+<FnPlayground module="dialog" fn="canClose" params='{"state": {"closeOnClickModal": false, "closeOnPressEscape": true}, "reason": "escape"}' />

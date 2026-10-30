@@ -1,0 +1,121 @@
+---
+title: Точка входа пакета и подпути
+description: 'Полная таблица 77 ключей exports пакета @lh-ui/share и практика импорта по требованию'
+---
+
+# Точка входа пакета и подпути
+
+Поле `exports` в `package.json` определяет **единственные допустимые пути импорта** — пути, не перечисленные здесь
+(например, прямой `@lh-ui/share/es/core/button/logic.js`) будут отклонены Node / сборщиком. Всего в пакете
+**77 ключей**.
+
+## Обзор ключей верхнего уровня
+
+| Ключ | Указывает на | Назначение |
+| --- | --- | --- |
+| `.` | `es/index.js` / `lib/index.js` | Полный прямой импорт |
+| `./package.json` | `./package.json` | Чтение номера версии утилитами |
+| `./core` | `es/core/index.js` | Агрегация всех чистых функций core |
+| `./core/<компонент>/*` | `es/core/<компонент>/*` | **56 компонентов** по требованию |
+| `./core/shared/*` | `es/core/shared/*` | 12 модулей общего ядра |
+| `./constants` | `es/constants/index.js` | Константы `LH_*` |
+| `./locales` | `es/locales/index.js` | lhlocale + zhCN / enUS |
+| `./locales/lang/*` | `es/locales/lang/*` | 6 языковых пакетов по отдельности |
+| `./theme` | `es/theme/index.js` | runtime-примитивы темы + пресеты |
+| `./types` | `es/types/index.d.ts` | **Только типы**, без реализации |
+| `./types/components/*` | `es/types/components/*.d.ts` | Типы Props компонентов (только типы) |
+| `./utils` | `es/utils/index.js` | Чистые утилиты: createNamespace / deepMerge и др. |
+| `./utils/*` | `es/utils/*` | Импорт утилит по файлам |
+| `./theme.css` | `dist/theme/index.css` | Светлые токены |
+| `./theme-dark.css` | `dist/theme/index-dark.css` | Тёмное переопределение |
+| `./styles.css` | `dist/styles/index.css` | Токены + полный набор компонентных стилей |
+| `./dist/*` | `dist/*` | Прямой доступ к артефактам dist |
+| `./styles/*` | `styles/<name>/index.scss` | **SCSS-исходники одного компонента** |
+| `./styles/index.scss` | `styles/index.scss` | Полная SCSS-агрегация |
+| `./styles/theme/index.scss` | `styles/theme/index.scss` | SCSS-агрегация темы |
+| `./styles/theme/common/*` | `styles/theme/common/*.scss` | Токены / узоры / mixin-ы переходов |
+
+## Экспорт по трём условиям
+
+Все JS-ключи, кроме чистых CSS / SCSS и ключа `types`, одновременно дают три условия:
+
+```json
+"./core/button/*": {
+  "types": "./es/core/button/*.d.ts",
+  "import": "./es/core/button/*.js",
+  "require": "./lib/core/button/*.js"
+}
+```
+
+- `import` — ESM-артефакты (`es/`), preserveModules зеркально повторяет структуру исходников; при импорте по требованию в сборку попадает только этот файл.
+- `require` — CJS-артефакты (`lib/`), для прямого запуска в Node / сценариев вроде jest.
+- `types` — `.d.ts`, используется `import type` с нулевой runtime-стоимостью.
+
+## 56 подпутей core
+
+```
+affix · alert · anchor · avatar · backtop · badge · breadcrumb · button ·
+calendar · card · cascader · checkbox · collapse · config · date-picker ·
+descriptions · dialog · divider · drawer · dropdown · empty · form · grid ·
+icon · image · input · input-number · loading · menu · message ·
+notification · pagination · popconfirm · popover · progress · radio · rate ·
+segmented · select · skeleton · slider · space · spinner · statistic ·
+steps · switch · table · tabs · tag · time-picker · timeline · tooltip ·
+transfer · tree · upload · virtual-list
+```
+
+Поверхность экспорта каждого подп пути соответствует «таблице функций» на странице компонента — можно посмотреть по каждой странице (см. «API компонентов» в навигации слева).
+
+## 12 подпутей общего ядра
+
+```
+core/shared/a11y · date · delay · focus-trap · format · keyboard ·
+popper · pt · sanitize · sx · types · virtual
+```
+
+Это слой, на который UI-библиотеки платформ ссылаются чаще всего. Документация по каждому модулю — в разделе «Общее ядро» слева.
+
+## tree-shaking и sideEffects
+
+```json
+"sideEffects": ["**/*.css", "**/*.scss"]
+```
+
+Побочные эффекты есть только у файлов стилей. Чистые JS-подпути можно безопасно подвергать tree-shaking:
+
+- ✅ `import { getButtonClasses } from '@lh-ui/share/core/button'` попадёт в сборку только button.
+- ✅ `import type { LhSxProps } from '@lh-ui/share/core/shared/sx` стирается на этапе компиляции.
+- ⚠️ `import '@lh-ui/share/styles.css'` — это **полный объём**, tree-shake его не может. Для стилей
+  используйте собственную компиляцию SCSS-исходников `./styles/<name>` или готовые артефакты UI-библиотек для импорта по требованию.
+
+## Две формы подпутей styles
+
+`./styles/*` указывает на **SCSS-исходники** (`styles/<name>/index.scss`), а не на скомпилированные артефакты:
+
+```scss
+@use '@lh-ui/share/styles/button';   // ✅ Сборщик компилирует SCSS
+```
+
+```ts
+import '@lh-ui/share/styles/button'   // ❌ Требуется расширение .scss, и сборщик его не распознает
+```
+
+Если вы не хотите компилировать SCSS в проекте, подключайте `./styles.css` (полный объём) или используйте готовые
+`es/<name>/style/index.css` (lh-ui-plus) / `es/components/<name>/style/index.css`
+(lh-ui-vue2) из соответствующих UI-библиотек.
+
+## Локальная линковка (разработка внутри семейства)
+
+Внутри семейства UI-библиотеки не зависят от npm: конфигурации dev / test с **existence-гвардом** разрешают
+`@lh-ui/share/**` через alias на исходники соседнего репозитория `lh-ui-share/`:
+
+| Импорт | Указывает на (при семейной раскладке) |
+| --- | --- |
+| `@lh-ui/share/styles/**` | `lh-ui-share/styles/**` (SCSS-исходники, компиляция на лету через vite) |
+| `@lh-ui/share/core/**` | `lh-ui-share/src/core/**` |
+| `@lh-ui/share/{utils,constants,theme,locales,types}/**` | `lh-ui-share/src/$1/**` |
+| `@lh-ui/share` (прямой) | `lh-ui-share/src/index.ts` |
+
+Если соседний репозиторий share не существует, гвард возвращает пустой массив и происходит автоматический fallback на установленный npm-пакет — **работает и при одиночном клонировании репозитория, и
+при семейной раскладке**. Это правило распространяется и на релизы: если после добавления глубоко расположенного файла в share не запущен `pnpm build`
+(включая sync-exports), на стороне npm не будет соответствующего ключа exports, и у пользователей ниже по потоку после `pnpm up` возникнет MODULE_NOT_FOUND.

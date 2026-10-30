@@ -1,0 +1,198 @@
+---
+title: 'virtual-list قائمة افتراضية —— إعداد'
+description: 'وضعان: computeRange للارتفاع الثابت وbuild/patch/find للارتفاع الديناميكي، وتطهير NaN لمنع الشاشة البيضاء، ومشاركة خوارزمية النواة نفسها مع table'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+القائمة الافتراضية «حل لعرض عشرات الآلاف من العناصر»: لا يُعرض سوى بضعة عشرات عنصرًا داخل إطار العرض، وتُستبدل ديناميكيًا عند التمرير. فعرض 100 ألف صف دفعة واحدة يجمد المتصفح، أما القائمة الافتراضية فتجعل عدد عقد DOM ثابتًا. وثمن ذلك أن **الارتفاع يجب أن يكون قابلًا للتنبؤ** — فوضع الارتفاع الثابت يحسب مباشرة، أما وضع الارتفاع الديناميكي فيحتاج إلى قياس أولًا. يغلِّف `core/virtual-list` الوضعين، ويشارك مع التمرير الافتراضي في `table` خوارزمية النواة نفسها في `shared/virtual`.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `<LhVirtualList>`: قوائم الرسائل الطويلة، وتدفقات السجلات، ودفتر العناوين، وخيارات القوائم المنسدلة للبيانات الضخمة.
+- يستحق ذلك فقط عندما تتجاوز كمية البيانات **سعة إطار العرض بـ 5 أضعاف فأكثر**، ولا يكون عرض كل عنصر رخيصًا.
+- **لا يجب استخدامه**: عشرات أو مئات العناصر (تُعرض مباشرة، فتكلفة القياس/التموضع للافتراضية لا تستحق)؛ وعندما يكون ارتفاع العناصر **غير قابل للتنبؤ إطلاقًا ولا يُقاس** (يجب قبول ارتفاع ثابت أو توفير قدرة على القياس)؛ والمشاهد التي تحتاج إلى DOM كامل (تحديد الكل، وبحث المتصفح Ctrl+F، وطباعة الصفحة بالكامل — فما وراء القائمة الافتراضية ليس في DOM، ولن يُعثر عليه في البحث).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_VIRTUAL_ITEM_SIZE,
+  LH_VIRTUAL_OVERSCAN,
+  computeWindow,
+  computeVirtualRange,
+  buildVirtualItems,
+  patchMeasuredSize,
+  findVirtualRange,
+  getItemOffset,
+  getVirtualListClassNames,
+} from '@lh-ui/share/core/virtual-list'
+import type { LhVirtualItem, LhVirtualRange } from '@lh-ui/share/core/virtual-list'
+```
+
+## نية التصميم
+
+**الوضعان**: الارتفاع الثابت (`computeRange`، حساب المجال في O(1)) والارتفاع الديناميكي (`buildVirtualItems` + `patchMeasuredSize` + `findVirtualRange`، ويحتاج قياسًا). والارتفاع الثابت هو الموصى به افتراضيًا — بسيط وبدون وميض. أما الارتفاع الديناميكي فللمشاهد التي تتفاوت فيها ارتفاعات المحتوى فعلًا (رسائل دردشة بأطوال مختلفة).
+
+**مشاركة النواة نفسها مع table**: تسجّل تعليقات `shared/virtual` التاريخ — كان لخوارزمية الارتفاع الثابت **نسخة في كلٍّ من** virtual-list وtable، حتى قيمة التجاوز عن الحافة الافتراضية كانت مختلفة (2 مقابل 3)، فلا تنتقل إصلاحات من أحدهما إلى الآخر. وبعد استخراج الخوارزمية الوحيدة صار كلاهما تغليفًا رفيعًا. و`LH_TABLE_OVERSCAN = 3` قيمة مخصصة لجانب table، بينما يستخدم virtual-list القيمة الافتراضية `LH_VIRTUAL_OVERSCAN = 2`.
+
+**تطهير NaN لمنع الشاشة البيضاء**: تقول تعليقات `computeRange` بوضوح — NaN من scrollTop يدخل `Math.max` / `Math.floor` فيُنتج نافذة NaN، و`array.slice(NaN)` يُعيد مصفوفة فارغة ← **شاشة بيضاء**. لذلك تُطهَّر جميع المدخلات عبر `Number.isFinite`. وتذهب `findVirtualRange` أبعد: فإن `items[NaN].offset` تُرمي TypeError وتُقاطع العرض.
+
+**تقييد `first` عند `total - 1`**: في الإطار الذي يتبع انكماش البيانات (حذف صفوف) وقبل أن يُقيَّد scrollTop، قد يتجاوز `first` القيمة total، فينتج `start > end` ← slice يُعيد فارغًا ← شاشة بيضاء. وهذا التقييد إصلاح لحالة سباق.
+
+**`patchMeasuredSize` يعدِّل في الموضع**: بعد قياس الارتفاع الحقيقي في الوضع الديناميكي، **يُعدَّل المصفوفة الأصلية** وتُزاح إزاحة جميع العناصر التالية، ويُعاد فرق الحجم delta. وبالمقارنة مع إعادة بناء `buildVirtualItems` الكامل (مصفوفة جديدة O(n) + تشغيل diff كامل)، فهو يجتاز مرة واحدة فقط، ولا يُسبب إعادة عرض للعناصر التي لم تتغير. وتشرح التعليقات هذا التضحية — فالثبات هنا يتنازل عن مكانه للأداء.
+
+**اختصار الارتفاع الثابت في `getItemOffset`**: في وضع الارتفاع الثابت، التمرير إلى العنصر N هو مباشرة `N * itemHeight` دون الحاجة إلى مصفوفة items — وتوضّح وثائق الدالة أنها تُستخدم في الوضع الديناميكي فقط.
+
+**`computeWindow` نسخة محايدة относительно المحور**: يشارك التمرير الافتراضي الأفقي (scrollLeft/viewportWidth/itemWidth) والعمودي الخوارزمية نفسها، مع اختلاف أسماء الحقول من offsetY إلى offset. و`LhAxisRange` و`LhVirtualRange` مترادفان.
+
+## جدول الدوال
+
+| الدالة / الثابت | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `computeRange` (عبر `computeVirtualRange`) | `(scrollTop, viewportHeight, itemHeight, total, overscan?) => LhVirtualRange` | المجال المرئي | وضع الارتفاع الثابت |
+| `computeWindow` | `(scrollOffset, viewportSize, itemSize, total, overscan?) => LhAxisRange` | مجال محايد للمحور | الافتراضية الأفقية |
+| `buildVirtualItems` | `(count, sizes, defaultSize?) => { items, totalHeight }` | مصفوفة العناصر | حساب مسبق للارتفاع الديناميكي |
+| `patchMeasuredSize` | `(items, index, size, defaultSize?) => number` | delta | تحديث تزايدي للمقاسات المقيسة |
+| `findVirtualRange` | `(items, scrollTop, viewportHeight, overscan?) => LhVirtualRange` | المجال المرئي | البحث الثنائي للارتفاع الديناميكي |
+| `getItemOffset` ⚠️ | `(items, index) => number` | الإزاحة | التمرير إلى عنصر محدد |
+| `getVirtualListClassNames` | `() => string[]` | أسماء الأصناف | الحاوية |
+
+الثوابت: `LH_VIRTUAL_ITEM_SIZE = 40` (ارتفاع العنصر المُقدَّر افتراضيًا)، و`LH_VIRTUAL_OVERSCAN = 2` (التجاوز عن الحافة الافتراضي).
+
+⚠️ `computeVirtualRange` / `getItemOffset` أسماء توافقية `@deprecated`، وليستخدم الكود الجديد `computeRange` / `getItemOffsetAt` من `shared/virtual` مباشرة.
+
+## تعريف الأنواع
+
+```ts
+export interface LhVirtualItem {
+  size: number      // ارتفاع هذا العنصر المُقدَّر/المُقاس
+  offset: number    // إزاحة هذا العنصر بالنسبة إلى قمة القائمة
+}
+
+export interface LhVirtualRange {
+  start: number     // الفهرس الابتدائي (شامل)
+  end: number       // الفهرس النهائي (غير شامل)
+  offsetY: number   // إزاحة النافذة بالبكسل (ارتفاع العنصر النائب الذي يمسك شريط التمرير)
+  totalHeight: number  // الارتفاع الكلي بالبكسل (يُنشئ شريط التمرير)
+}
+```
+
+## إمكانية الوصول
+
+القائمة الافتراضية **تحدٍّ خفي** لقارئ الشاشة: فلا يوجد في DOM سوى بضعة عشرات عنصرًا، ولا يستطيع قارئ الشاشة نطق «العنصر 3000 من 10000».
+
+- **aria-rowcount / aria-rowindex**: تُضبط `aria-rowcount` على الحاوية (إجمالي العناصر)، و`aria-rowindex` على كل عنصر (الفهرس الفعلي + 1). وهذه طريقة التمرير الافتراضي للجداول (`table`)، ويمكن استعارتها في مشاهد القوائم. **وتُعرَض هذه السمات في الطرف البصري**، أما core فلا يحسب سوى المجال.
+- **الحفاظ على التركيز عند التمرير**: عندما يركّز المستخدم على عنصر ما بلوحة المفاتيح ثم تمر القائمة، فإن خروج ذلك العنصر من DOM يُضيع التركيز. فيحتاج الطرف البصري إلى تسجيل فهرس التركيز قبل الإزالة، واستعادته بعد إعادة التركيب — وهذا أصعب ما في توافر لوحة المفاتيح للقوائم الافتراضية.
+- **لا تستخدم القائمة الافتراضية للقوائم الدلالية**: فـ «التنقل بالعناصر» في قارئ الشاشة يجتاز فقط ما هو موجود في DOM. وتصلح الافتراضية لتدفقات البيانات الضخمة للعرض الصرف (السجلات، الرسائل)؛ أما **القوائم التي يحتاج فيها مستخدم قارئ الشاشة إلى الوصول عنصرًا عنصرًا فيُتحرَّز منها** (كدائمة المستخدمين الذين يودون سماعها واحدة واحدة).
+- **تحديد موضع البحث**: ما وراء القائمة الافتراضية ليس في DOM، فلن يجده بحث المتصفح Ctrl+F. وعمَّا يعوِّض ذلك توفير ميزتين: «القفز إلى العنصر N» و«البحث والتصفية».
+
+## أمثلة الاستخدام
+
+```ts
+import {
+  computeRange, buildVirtualItems, patchMeasuredSize, findVirtualRange,
+} from '@lh-ui/share/core/virtual-list'
+
+// وضع الارتفاع الثابت
+computeRange(800, 400, 50, 1000)
+// { start: 14, end: 26, offsetY: 700, totalHeight: 50000 }
+// (first = floor(800/50) = 16, start = 16-2 = 14, visible = ceil(400/50) = 8,
+//   end = 14 + 8 + 4 = 26)
+
+computeRange(0, 400, 50, 10)   // { start: 0, end: 10, offsetY: 0, totalHeight: 500 }
+computeRange(NaN, 400, 50, 10) // { start: 0, end: 10, offsetY: 0, totalHeight: 500 } (تطهير NaN)
+computeRange(0, 400, 0, 10)    // { start: 0, end: 0, offsetY: 0, totalHeight: 0 } (itemHeight غير صالح)
+```
+
+```ts
+// وضع الارتفاع الديناميكي
+const { items, totalHeight } = buildVirtualItems(5, [30, 0, 60], 40)
+// items: [{ size: 30, offset: 0 }, { size: 40, offset: 30 }, { size: 60, offset: 70 },
+//         { size: 40, offset: 130 }, { size: 40, offset: 170 }]
+// totalHeight: 210 (تُقدَّر العناصر الناقصة في sizes وفق defaultSize=40)
+
+const delta = patchMeasuredSize(items, 1, 50)  // 10 (فرق التغير 40 ← 50)
+// يُزاح items[2..4].offset بمقدار +10؛ items[1].size = 50
+
+findVirtualRange(items, 100, 200)
+// بحث ثنائي عن مجال إطار العرض، يُعيد { start, end, offsetY, totalHeight }
+```
+
+```ts
+// الطرف البصري: العرض في وضع الارتفاع الثابت
+const range = ref<LhVirtualRange>({ start: 0, end: 0, offsetY: 0, totalHeight: 0 })
+
+function onScroll() {
+  range.value = computeRange(
+    container.value!.scrollTop,
+    container.value!.clientHeight,
+    props.itemHeight,
+    props.data.length,
+  )
+}
+const visibleData = computed(() => props.data.slice(range.value.start, range.value.end))
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <div class="lh-virtual-list" @scroll.passive="onScroll">
+    <div class="lh-virtual-list__phantom" :style="{ height: range.totalHeight + 'px' }">
+      <div class="lh-virtual-list__window" :style="{ transform: `translateY(${range.offsetY}px)` }">
+        <div v-for="item in visibleData" :key="item.id" class="lh-virtual-list__item">
+          {{ item.text }}
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+```
+
+```ts
+// وضع الارتفاع الديناميكي: يُقاس الارتفاع الحقيقي لكل item بعد العرض
+function onItemMounted(index: number, el: HTMLElement) {
+  const height = el.getBoundingClientRect().height
+  const delta = patchMeasuredSize(items.value, index, height)
+  if (delta !== 0) {
+    // تغيُّر الارتفاع يُغيّر totalHeight والإزاحات التالية، فيُعاد حساب المجال
+    range.value = findVirtualRange(items.value, scrollTop.value, viewportHeight.value)
+  }
+}
+```
+
+```tsx
+// React: تُحفظ مصفوفة items في useRef (فpatchMeasuredSize يعدِّل في الموضع دون إعادة
+// العرض عبر setState لسلسلة القياس)، وتُقيَّد أحداث التمرير عبر throttle أو requestAnimationFrame
+```
+
+```ts
+// uniapp: <scroll-view scroll-y :scroll-top> + استعلام العقد (createSelectorQuery)
+// لقياس الارتفاع؛ وأحداث scroll في التطبيقات الصغيرة مقيَّدة أصلًا، لكن تزامن
+// scroll-view يتأخر خطوة عن h5
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- | --- |
+| `.lh-virtual-list` | حاوية التمرير (ارتفاع ثابت + overflow: auto) |
+| `.lh-virtual-list__phantom` | عنصر نائب (الارتفاع = totalHeight، يُنشئ شريط التمرير) |
+| `.lh-virtual-list__window` | نافذة العرض (transform: translateY(offsetY)) |
+| `.lh-virtual-list__item` | عنصر واحد |
+
+يحدد العمل ارتفاع الحاوية (`height: 400px` أو ملء flex)؛ و`will-change: transform` يحسّن أداء إزاحة النافذة.
+
+## ملاحظات
+
+- **وضع الارتفاع الثابت يتطلب ارتفاعًا ثابتًا حقًا**: فإن التفاف المحتوى، واختلاف مقاسات الأيقونات، تجعل ارتفاعات العناصر غير متساوية، فيظهر اختلال في وضع الارتفاع الثابت (عناصر مقطوعة أو متداخلة). وإن شككت فاستخدم وضع الارتفاع الديناميكي، أو أَجبِر الارتفاع الثابت أحادي السطر عبر CSS `white-space: nowrap; overflow: hidden; text-overflow: ellipsis`.
+- **معنى `overscan`**: يُعرض عنصران إضافيان فوق إطار العرض وتحت، تفاديًا لوميض الفراغ عند التمرير السريع. وكلما كبرت القيمة كان التمرير أنعم لكن مع عرض أكثر — فالقيمة 2 افتراضية تجريبية، وtable يستخدم 3 (لأن صفوف الجدول أعقد).
+- **مشكلة وميض الارتفاع الديناميكي**: تُعرَض الشاشة الأولى بالارتفاع المُقدَّر، وبعد القياس يختلف الارتفاع الحقيقي ← تقفز القائمة قفزة. والتخفيف: جعل التقدير دقيقًا قدر الإمكان (باستخدام متوسط الارتفاع التاريخي)، أو القياس متزامنًا عند عرض الشاشة الأولى.
+- **استخدامات delta في `patchMeasuredSize`**: يُستخدم فرق الارتفاع المُعاد في **تصحيح scrollTop** — فبعد تغيُّر المقاسات قد لا يقابل موضع التمرير المحتوى الأصلي، فيعوِّض الطرف البصري مقدار التمرير بناءً عليه.
+- **ثبات key**: يجب أن يكون key في `v-for` معرّف عمل مستقرًا (لا الفهرس) — فالقائمة الافتراضية تضيف وتحذف العناصر بتكرار، واستخدام الفهرس كـ key يُعيد استخدام DOM بشكل خاطئ.
+- **للافتراضية الأفقية استخدم `computeWindow`**: فالمتداولات الأفقية والمحاور الزمنية تستخدم النسخة المحايدة للمحور، والخوارزمية واحدة.
+- **الأسماء `@deprecated`**: `computeVirtualRange` / `getItemOffset` أسماء قديمة تفوِّض إلى `shared/virtual` — فليستخدم الكود الجديد النواة مباشرة (`@lh-ui/share/core/shared/virtual`)؛ أما vue2 في المصب فلا يزال يستخدم الأسماء القديمة، فعدِّل المصب قبل الحذف.
+- **الاعتماد الدائري في توقيت القياس**: العرض يعتمد على المجال ← والمجال يعتمد على الارتفاع ← والارتفاع يعتمد على القياس بعد العرض. والحل: عرّض الشاشة الأولى بالارتفاع المُقدَّر، ثم حدِّث مرة واحدة بعد القياس. ولا تُجبِر التخطيط بشكل متزامن داخل رد القياس (`getBoundingClientRect` هو نفسه إعادة تدفّق واحدة).
+- **لا تضع رسومًا متحركة معقدة في القائمة الافتراضية**: فالعناصر تُركَّب وتُفك باستمرار، وستومض رسوم الدخول/الخروج. وإن احتجت إلى رسوم متحركة فاستخدم FLIP أو اجعلها داخل العنصر نفسه.
+
+<FnPlayground module="virtual-list" fn="computeRange" params='{"scrollTop": 800, "viewportHeight": 400, "itemHeight": 50, "total": 1000}' />

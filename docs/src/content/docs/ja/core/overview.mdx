@@ -1,0 +1,103 @@
+---
+title: 共有コア概要
+description: 'core/shared の 12 サブモジュール、純関数層の設計哲学、モジュール間依存'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+## これは何か
+
+`@lh-ui/share/core/shared` は lh-ui ファミリー全体の**共通アルゴリズム層**です——12 個の
+ゼロ依存 TypeScript モジュールが、どのコンポーネントでも使いながら各端がそれぞれ書きがちな
+（そして微妙に差異が出がちな）ロジックを唯一の実装に収束させます：
+
+ポップアップ層の位置決定、仮想スクロール、キーボードナビゲーション、フォーカストラップ、
+aria 属性構築、日付プリミティブ、数値サニタイズ、スタイルパススルー……これらのアルゴリズムは
+**どのフレームワークにも属しません**：入力は普通のデータ、出力も普通のデータで、リアクティビティにも
+DOM グローバル状態にも触れません（少数の関数は DOM を読みますが、SSR ガードがあります）。
+
+lh-ui-plus、lh-ui-vue2、lh-ui-react、lh-ui-uniapp の 4 端で同じコンポーネントは、**同一の**
+`computePosition`、同一の `getNextListIndex` を使用します。1 つのバグを直せば 4 端同時に直り、
+1 つの境界条件を加えれば 4 端同時に備わります。
+
+## 12 のサブモジュール
+
+| モジュール | 責務 | 主要エクスポート |
+| --- | --- | --- |
+| [`sx`](/ja/core/sx) | sx props → インラインスタイル、固定優先度「単辺 > 軸組 > 省略形」 | `sxToStyle` / `mergeSx` / `LhSxProps` |
+| [`popper`](/ja/core/popper) | ポップアップ層の位置決定エンジン：12 方位、主軸反転、交差軸クランプ、矢印オフセット | `computePosition` / `parsePlacement` / `LhPlacement` |
+| [`virtual`](/ja/core/virtual) | 定高の仮想スクロール区間（virtual-list と table が同じアルゴリズムを共有） | `computeRange` / `computeWindow` / `LH_VIRTUAL_OVERSCAN` |
+| [`keyboard`](/ja/core/keyboard) | キーボード操作：キー判定、リスト / グリッド / range ナビゲーション、type-ahead | `getNextListIndex` / `getNextGridCell` / `LH_KEYS` |
+| [`focus-trap`](/ja/core/focus-trap) | フォーカス管理：フォーカス可能要素の列挙、Tab フォーカストラップ、inert 所有権レジストリ | `trapTabKey` / `setInertOutside` / `focusFirst` |
+| [`a11y`](/ja/core/a11y) | aria 属性の原子的ビルダー（「偽値は省略」のセマンティクスを統一） | `getPopupTriggerAria` / `ariaExpanded` / `getDecorativeAria` |
+| [`date`](/ja/core/date) | 日付プリミティブ：月の日数、比較、無効判定、固定幅トークンのフォーマット | `formatDate` / `parseDate` / `isDateDisabled` |
+| [`format`](/ja/core/format) | テキストテンプレートの補間（`{key}` プレースホルダー） | `formatMessage` |
+| [`delay`](/ja/core/delay) | 表示 / 非表示の遅延の正規化（tooltip / popover / popconfirm が共有） | `resolveDelay` |
+| [`pt`](/ja/core/pt) | PT パススルー props の結合（class / style / attrs の浅い結合） | `mergePt` / `LhPtAttrs` |
+| [`sanitize`](/ja/core/sanitize) | 数値サニタイズ：NaN / Infinity を入口で一括遮断 | `sanitizeNumber` / `clamp` / `safePrecision` |
+| [`types`](/ja/core/types) | 共有ユニオン型：サイズ / 言語 / 型 / 位置 | `LhComponentSize` / `LhComponentType` |
+
+集約エントリ `@lh-ui/share/core/shared` は 12 個のモジュールをすべて `export *` します。
+モジュール単位で `@lh-ui/share/core/shared/popper` と正確にインポートすれば、バンドラーに
+使った部分だけを運ばせることもできます。
+
+## 設計哲学
+
+### 純関数、状態は UI 層に
+
+core 層の関数は**コンポーネント状態を保持しません**。popper を例に取ると：
+`computePosition(trigger, popper, viewport, options)` は 3 つの rect リテラルを受け取り、
+`{ top, left, placement, arrowOffset }` を返します——「現在トリガーがどこにあり、フローティング
+層がどれくらいの大きさで、ビューポートがどれくらいか」はすべて UI 層が呼び出しの瞬間に測って
+渡します。つまり：
+
+- 同じ関数が Vue3 の `watchEffect` でも、React の `useLayoutEffect` でも、uniapp の
+  `onPageScroll` でも動きます。
+- **単体テストにコンポーネントのレンダリングは不要**：`tests/unit/` の多くのケースは
+  「rect の組を作り、出力をアサートする」もので、4 端が同じテスト結果を共有します
+  （レッドライン 3：core の単体テストは本リポジトリに唯一のコピー）。
+
+### SSR ガードはデフォルトの契約
+
+少数の関数は DOM を読む必要があります（`getWindowViewport`、`getFocusableElements`、
+`saveActiveElement`）。それらはすべて入口で `typeof document === 'undefined'` /
+`typeof window === 'undefined'` を判定し、安全な空値（`[]` / `null` / 幅高 0 の rect）を
+返すため、Nuxt / Next / uniapp のサーバーサイドレンダリングでも壊れません。ドキュメントでは
+各関数に「SSR 安全」または具体的なガード動作が注記されます。
+
+### 「偽値は省略」の aria 規約
+
+`a11y` モジュールのすべてのビルダーは同じ規約に従います：**真偽型の aria 属性は偽のとき
+`undefined` を出力し、フレームワークにその属性をレンダリングさせない**（`aria-required: false`
+のような「明示的な否定」は多くの場合ノイズです）。例外はセマンティクス上明示的な読み上げが
+必要な属性です：`aria-expanded: false`、`aria-invalid: false` はそのまま出力されます。詳しくは
+[a11y ドキュメント](/ja/core/a11y)を参照してください。
+
+### 入口でサニタイズ、下流は防御しない
+
+`sanitize` の存在により、core の他の関数はあちこちに `Number.isFinite` の防御を書かずに
+済みます。ページ番号、間隔、step、precision といった外部由来の数値は、アルゴリズムに入る前に
+`sanitizeNumber` を通り、NaN / Infinity は安全なデフォルト値に置き換えられます。これは
+「一箇所で遮断し、全体をクリーンに」というトレードオフです：呼び出し側は自分で有限性を
+保証して `clamp` を直接使うか、入口のサニタイズを信頼することを明示的に選びます。
+
+### モジュール間依存は軽い
+
+3 つだけです：
+
+- `keyboard` ← `sanitize.clamp`（ナビゲーション境界のクランプ）
+- `popper` ← `sanitize.clamp` + `sanitize.sanitizeNumber`（クランプと入力のサニタイズ）
+- `shared/types` ← `constants.LH_SIZE_CONST` / `LH_LANGUAGE_CONST` / `LH_TYPES_CONST`
+  （`import type`、ユニオン型は定数から導出）
+
+循環依存もなく、`locales` / UI 層への逆依存もありません。`format` モジュールの存在はこの線の
+産物です：`rate` の `'{n} 星'`、`pagination` の `'共 {total} 条'` のような補間は本来
+locales シングルトンを逆参照する必要がありましたが、純粋な文字列関数に降格したことで、core
+コンポーネントは locales のモジュールレベル副作用に依存しなくなりました。
+
+## 試してみる
+
+<FnPlayground module="sanitize" fn="clamp" params='{"value": 12, "min": 0, "max": 10}' />
+
+各サブモジュールのドキュメントページの末尾には、このようなプレイグラウンドブロックが
+あります：パラメータを入力し、クライアント側で直接実行し、出力を確認できます。

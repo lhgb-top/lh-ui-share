@@ -1,0 +1,125 @@
+---
+title: button —— Кнопка
+description: 'isClickable определяет кликабельность, getSize разрешает действительный размер, getClassNames вычисляет модификаторы типа/размера/формы'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Кнопка — один из самых часто модифицируемых компонентов библиотеки: тип, размер, форма, состояние загрузки, отключённое состояние и блочная ширина комбинируются в огромное число вариантов. `core/button` выделяет **вычисление** этих вариантов в чистые функции — UI-слою остаётся лишь передать props и привязать массив классов к корневому элементу.
+
+## Когда использовать
+
+- При реализации `LhButton` на каждой платформе: классы полностью выдаёт `getClassNames`, UI-слой не склеивает строки вручную.
+- Когда вне кнопки (триггер `LhDropdown`, `LhBackTop` и т. п.) нужно переиспользовать ту же семантику «тип + размер», вызывайте функции core напрямую, а не копируйте классы.
+- **Не следует использовать**: логика отправки формы, троттлинг. core вычисляет только «как это должно выглядеть сейчас», а не «что делать после нажатия».
+
+## Импорт
+
+```ts
+import { isClickable, getSize, getClassNames } from '@lh-ui/share/core/button'
+import type { LhButtonState } from '@lh-ui/share/core/button'
+```
+
+## Замысел
+
+Модель состояний кнопки намеренно узкая: `LhButtonState` содержит только поля, **влияющие на классы**. И `loading`, и `disabled` участвуют в вычислении классов (`--disabled`), но «отзывается ли кнопка на клик» — это интерактивная, а не визуальная семантика, поэтому она вынесена в `isClickable`: кнопка в состоянии загрузки выглядит нормально, но нажимать её нельзя; это условие должно быть независимо от вычисления классов, иначе легко возникает дыра «класс disabled добавлен, а событие не перехвачено».
+
+Размер проходит двухуровневый откат (props компонента → `LH_SIZE_DEFAULT`), но обратите внимание: `getClassNames` внутренне **принимает только local size** (второй аргумент жёстко `undefined`) — размерная ступень в классах не наследует глобальный размер ConfigProvider; глобальный размер действует только на инлайновые стили или остаётся на усмотрение нижестоящего кода. Это сделано намеренно: классы — это визуальный контракт, а глобальная конфигурация меняет «значение по умолчанию», а не «переопределение».
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `isClickable` | `(state: { loading?: boolean; disabled?: boolean }) => boolean` | логическое | false, если loading или disabled истинно; true, если оба опущены |
+| `getSize` | `(localSize: string \| undefined, globalSize: string \| undefined) => string` | идентификатор размера | двухуровневый откат, окончательный `'medium'` |
+| `getClassNames` | `(state: LhButtonState) => string[]` | массив классов | вычисляет `lh-button` и все модификаторы |
+| `getStyle` | `() => Record<string, string>` | `{}` | плейсхолдер переменных темы, всегда пуст (см. ниже) |
+
+То, что `getStyle` всегда возвращает пустой объект, заслуживает пояснения: цвет кнопки полностью определяется токенами в `:root` (`--lh-primary-*` и т. п.), а themeVars из ConfigProvider каскадно доходят до кнопки через CSS-переменные родителя, поэтому повторно объявлять их на самой кнопке **не нужно**. Функция сохранена для симметрии с другими компонентами, у которых «могут быть инлайновые переменные темы», чтобы вызывающий мог не задумываясь использовать `v-bind`.
+
+## Определения типов
+
+```ts
+export interface LhButtonState {
+  type: LhComponentType       // 'primary' | 'success' | ... | 'default'
+  size: LhComponentSize       // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  loading: boolean
+  disabled: boolean
+  plain: boolean              // плоский: контур, а не заливка
+  block: boolean              // блочный: занимает всю ширину родителя
+  round: boolean              // скруглённый
+  circle: boolean             // идеальный круг (обычно с иконкой)
+}
+```
+
+## Доступность
+
+`core/button` не выводит набор aria-атрибутов: семантику кнопки UI-слой несёт нативным элементом `<button>`, `disabled` идёт напрямую нативным атрибутом, и скринридер распознаёт её естественным образом. Это проявление принципа «не изобретай колесо, если хватает нативной семантики» — core предоставляет `getXxxAria` только для того, что нативно невыразимо (spinbutton, treeitem, progressbar и т. п.).
+
+Единственное, за чем должен следить UI-слой: кнопка в состоянии `loading` остаётся в фокусе, но `isClickable` возвращает false. В этот момент кнопке следует добавить `aria-busy="true"`, чтобы скринридер сообщил «операция выполняется», а не «кнопка сломалась».
+
+## Примеры использования
+
+```ts
+import { getClassNames, isClickable } from '@lh-ui/share/core/button'
+
+getClassNames({ type: 'primary', size: 'large', loading: false, disabled: false, plain: false, block: false, round: true, circle: false })
+// ['lh-button', 'lh-button--primary', 'lh-button--large', 'lh-button--round']
+
+isClickable({ loading: true, disabled: false })  // false
+isClickable({})                                   // true
+```
+
+Обвязка каждой платформы следует одному шаблону «props → state → привязка»:
+
+```vue
+<!-- Vue3 -->
+<button
+  :class="getClassNames({ type, size, loading, disabled, plain, block, round, circle })"
+  :disabled="disabled"
+  :aria-busy="loading"
+  @click="isClickable({ loading, disabled }) && emit('click', $event)"
+>
+  <LhSpinner v-if="loading" :size="14" />
+  <slot />
+</button>
+```
+
+```tsx
+// React
+const cls = getClassNames({ type, size, loading, disabled, plain, block, round, circle })
+return <button className={cls.join(' ')} disabled={disabled} aria-busy={loading} onClick={onClick} />
+```
+
+```ts
+// uniapp: классы также попадают в привязку class; иконка загрузки — LhSpinner
+// (на стороне uniapp svg откатывается на изображение)
+```
+
+## Стили и токены
+
+BEM-структура `styles/button/index.scss`:
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-button` | базовый класс: раскладка, размер шрифта, переход |
+| `.lh-button--{primary\|success\|warning\|danger\|error\|info\|default}` | семантический тип |
+| `.lh-button--{mini\|small\|medium\|large\|x-large}` | размерная шкала (высота, padding, размер шрифта) |
+| `.lh-button--plain` | плоский стиль: прозрачный фон + контур |
+| `.lh-button--block` | блочная ширина |
+| `.lh-button--round` / `.lh-button--circle` | скруглённая / идеальный круг |
+| `.lh-button--disabled` | отключённое состояние (курсор, прозрачность) |
+| `.lh-button--blank` | пустая кнопка (без рамки и фона, проявляется только при hover) |
+| `.lh-button__icon` / `.lh-button__text` | слот иконки и текст |
+| `.lh-button__loading` / `.lh-button__spinner` / `.lh-button__path` | графический индикатор загрузки |
+
+Все цвета идут через токены `var(--lh-primary-*)` / `var(--lh-success-*)` и т. д., а в тёмной теме `var-dark.scss` автоматически инвертирует их.
+
+## Замечания
+
+- Размер `getClassNames` **не наследует глобальную конфигурацию** (см. «Замысел»). Если ваша платформа требует, чтобы глобальный размер отражался на кнопке, в UI-слое нужно сначала вызвать `getSize(local, global)` и уже потом передать результат.
+- `loading` и `disabled` эквивалентны в классах (оба дают визуальный `--disabled`), но интерактивную проверку выполняет `isClickable` — не судите о кликабельности по наличию класса.
+- `circle` в стилях принудительно задаёт квадрат + идеальный круг, поэтому добавление `circle` к текстовой кнопке даст странное сплющивание.
+- Комбинация `plain` и `type: 'default'` становится почти невидимой — это ожидаемое поведение плоского стиля.
+
+<FnPlayground module="button" fn="getClassNames" params='{"state": {"type": "primary", "size": "large", "loading": false, "disabled": false, "plain": false, "block": true, "round": false, "circle": false}}' />

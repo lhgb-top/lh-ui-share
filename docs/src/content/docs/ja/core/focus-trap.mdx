@@ -1,0 +1,200 @@
+---
+title: focus-trap —— フォーカス管理
+description: 'フォーカス可能要素の列挙、Tab フォーカストラップ、inert 所有権レジストリ、開く際の記録 / 閉じる際の返却。Dialog / Drawer / Popover が共有'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+モーダル、ドロワー、画像プレビューのような**オーバーレイコンポーネント**には 3 つのフォーカス
+義務があります：開くときにユーザーが元々どこにいたかを覚え、開いている間は Tab をフローティング
+層の中に閉じ込め、閉じるときにフォーカスを返す。この 3 つを dialog / drawer / popover /
+popconfirm / image-viewer でそれぞれ書けば必ずドリフトします。`shared/focus-trap` はそれらの
+唯一の実装です。
+
+## インポート方法
+
+```ts
+import {
+  getFocusableElements,
+  focusFirst,
+  focusLast,
+  saveActiveElement,
+  restoreActiveElement,
+  trapTabKey,
+  supportsInert,
+  setInertOutside,
+} from '@lh-ui/share/core/shared/focus-trap'
+```
+
+## 関数表
+
+| 関数 | シグネチャ | 役割 |
+| --- | --- | --- |
+| `getFocusableElements` | `(container: HTMLElement \| null \| undefined) => HTMLElement[]` | コンテナ内で Tab フォーカスを受けられる要素を列挙する |
+| `focusFirst` | `(container) => boolean` | 最初のフォーカス可能要素にフォーカス、なければ `false` |
+| `focusLast` | `(container) => boolean` | 最後のフォーカス可能要素にフォーカス、なければ `false` |
+| `saveActiveElement` | `() => HTMLElement \| null` | 現在のアクティブ要素を記録し、後で返却できるようにする（SSR ガード付き） |
+| `restoreActiveElement` | `(el: HTMLElement \| null \| undefined) => void` | フォーカスを返却する |
+| `trapTabKey` | `(container: HTMLElement, event: KeyboardEvent) => boolean` | Tab / Shift+Tab を処理し、フォーカスをコンテナ内に閉じ込める |
+| `supportsInert` | `() => boolean` | 現在の環境が `inert` 属性をサポートするか |
+| `setInertOutside` | `(container, active: boolean, locked?: HTMLElement[]) => HTMLElement[]` | コンテナ以外の DOM に inert を付け外しする |
+
+## 各関数の動作詳細
+
+### getFocusableElements
+
+まずセレクタで候補をマッチします：`a[href]`、`button:not([disabled])`、
+`input:not([disabled]):not([type="hidden"])`、`select` / `textarea:not([disabled])`、
+`video[controls]`、`audio[controls]`、`[contenteditable]:not([contenteditable="false"])`、
+`[tabindex]:not([tabindex="-1"])`。次に `isHiddenForFocus` で**祖先チェーンに沿って**
+`disabled` / 負の tabindex / `hidden` / `aria-hidden="true"` / `display:none` /
+`visibility:hidden` に隠された要素を除外します。
+
+祖先チェーンを辿る点が重要です：teleport されたポップアップ層は親の `aria-hidden` の影響を
+受けやすく、要素自身だけを調べると見落とします。`container` が空の場合は `[]` を返します。
+
+### focusFirst / focusLast
+
+`{ preventScroll: true }` でフォーカスします。**なぜか**：ポップアップ層が body へ teleport
+された後の最初の tick では、要素の位置がまだ一時的な場合があり、デフォルトの `focus()` は
+ページを要素の一時的な位置までスクロールしてしまいます。スクロールを防ぐことでこの視覚的な
+跳びを回避します。フォーカス可能な要素がなければ `false` を返し、UI 層はそれに基づいて
+フォーカスをコンテナ自身（`tabindex="-1"`）に置くか決めます。
+
+### saveActiveElement / restoreActiveElement
+
+ポップアップ層を開くときに `const last = saveActiveElement()`、閉じるときに
+`restoreActiveElement(last)`。返却のスキップ条件：
+
+- `el` が空、`document` がない：即座に返す。
+- `!el.isConnected`：トリガーボタンが `v-if` でアンマウントされた（閉じると同時に破棄される
+  など）ため、focus しない。
+- **ターゲットが祖先の `inert` でロックされている**：代わりに現在フォーカスされている要素を
+  `blur()` する。これは仕様が保証するフォールバック経路です——blur 後はフォーカスが body に
+  戻り、ロックされた要素にフォーカスが残留しません。
+
+### trapTabKey
+
+```
+event.key !== 'Tab' または event.defaultPrevented  →  false を返す（処理しない）
+コンテナ内に利用可能なフォーカスなし  →  preventDefault()、true を返す（閉じ込め、フォーカスを逃がさない）
+フォーカスが境界にある  →  preventDefault()、反対側へ跳ぶ、true を返す
+```
+
+境界判定は**リストのインデックス**を使い、参照比較はしません。なぜか：フォーカスがコンテナ内
+でも Tab シーケンスに含まれない要素（`tabindex="-1"` のコンテナ自身が focus されるなど）に
+ある場合、`document.activeElement` は `getFocusableElements()` の結果に見つからず
+（`idx === -1`）、アルゴリズムはそれを「先頭より前」として扱います。Shift+Tab は末尾項目へ、
+通常の Tab は先頭項目へ跳び、直感に合致します。
+
+### setInertOutside と所有権レジストリ
+
+`inert` は W3C 標準属性です（2024 年以降、全ブラウザがサポート）。要素に `inert` を付けると、
+それとサブツリー全体が支援技術から隠され、フォーカス不可、クリック不可になります。これは
+「Tab フォーカストラップ」より徹底した背景のロックです——スクリーンリーダーのユーザーが
+覆われたページ内容に誤って入り込むことはありません。
+
+`setInertOutside` のロック経路：`container` から祖先チェーンを `body` まで遡り、各層で
+**container を含まない兄弟サブツリー**を inert にマークします。こうしてポップアップ層とその
+祖先チェーンだけが到達可能になり、他はすべてロックされます。
+
+難しいのは**複数層のポップアップ層の重なり**です：dialog の中からさらに popover を開いた
+とき、popover を閉じても dialog までアンロックしてはなりません。解決策が所有権レジストリ
+（`WeakMap`）です：
+
+- ロック時、各ロックされたノードは「誰がロックしたか」を登録します。重複呼び出しは所有権を
+  登録するだけで、**setAttribute は繰り返しません**（冪等）。
+- アンロック時、あるノードを**所有権を保持するコンテナがまだ 1 つもない**場合にのみ inert を
+  外します。
+- `locked` パラメータは追加の例外リストです（まだ開いている別の overlay コンテナなど）。
+  これらのノードは container の祖先チェーン上になくてもロックされません。
+
+戻り値：ロック時はロックされたノードの配列（デバッグ / テストのアサーション用）、アンロック
+時は `[]`。
+
+境界：inert 非対応の場合は `[]` を返す（trapTabKey のフォーカストラップ方式へフォールバック）。
+`document.body` がない場合は `locked` を返す。コンテナがすでにドキュメントから外れている
+場合は、残留した所有権を先に解放してから、重複を除いた `locked` を返します。
+
+### supportsInert
+
+プログレッシブエンハンスメント用です：古いブラウザ（Safari 15.4 以前）には `inert` がなく、
+`setInertOutside` は空配列をそのまま返します。このときコンポーネントは**引き続き
+`trapTabKey` を有効にする**べきです（フォールバックとして）。両方式は共存でき、inert がより
+徹底した層です。
+
+## 使用例
+
+### 完全なモーダルのフォーカスライフサイクル
+
+```ts
+// Vue3 dialog コンポーネント
+let lastFocused: HTMLElement | null = null
+let lockedNodes: HTMLElement[] = []
+
+function open() {
+  lastFocused = saveActiveElement()
+  dialogVisible.value = true
+  nextTick(() => {
+    if (!panelRef.value) return
+    focusFirst(panelRef.value)
+    lockedNodes = setInertOutside(panelRef.value, true)
+  })
+}
+
+function close() {
+  setInertOutside(panelRef.value, false, lockedNodes)
+  dialogVisible.value = false
+  restoreActiveElement(lastFocused)
+}
+
+function onKeydown(e: KeyboardEvent) {
+  trapTabKey(panelRef.value, e)   // false が返れば Tab ではないので、他のロジックへ渡す
+}
+```
+
+### React の配線
+
+```tsx
+useEffect(() => {
+  if (!open) return
+  const last = saveActiveElement()
+  focusFirst(panelRef.current)
+  const locked = setInertOutside(panelRef.current, true)
+
+  const onKeydown = (e: KeyboardEvent) => trapTabKey(panelRef.current, e)
+  document.addEventListener('keydown', onKeydown)
+
+  return () => {
+    document.removeEventListener('keydown', onKeydown)
+    setInertOutside(panelRef.current, false, locked)
+    restoreActiveElement(last)
+  }
+}, [open])
+```
+
+### ネストしたポップアップ層
+
+```ts
+// dialog が開いた状態で、さらに popover を開く
+const popoverLocked = setInertOutside(popoverRef.value, true, lockedNodes)
+// popover を閉じる：dialog はまだ lockedNodes の例外リストにあるので、アンロックされない
+setInertOutside(popoverRef.value, false, popoverLocked)
+```
+
+## 注意事項
+
+- **SSR 安全**：`saveActiveElement` は `document` がないとき `null` を返し、
+  `getFocusableElements` は `null` を受け取ると `[]` を返します。ただし `trapTabKey` /
+  `setInertOutside` は DOM を必要とするため、クライアントでのみ呼び出してください。
+- **フォーカスの返却を忘れない**：これはアクセシビリティの厳格な要件です。ロックだけして
+  返却しなければ、キーボードユーザーはポップアップ層を閉じるたびにフォーカスを body へ
+  失い、体験が悪くなります。
+- **`v-if` でアンマウントされたトリガー**：`restoreActiveElement` はすでに `disconnected`
+  な要素（`isConnected === false`）をスキップします。このときフォーカスは自然に body へ
+  戻るので、ドキュメントにないノードに無理やり `focus()` しないでください。
+- **所有権レジストリはモジュールレベルの状態**：`WeakMap` は自動 GC されますが、同一
+  プロセス内の複数インスタンスが同じテーブルを共有します——これは意図的です。そうでなければ
+  2 つのポップアップ層が互いの存在を知らず、誤って相互アンロックしてしまいます。
+
+<FnPlayground module="focus-trap" fn="supportsInert" params='{}' />

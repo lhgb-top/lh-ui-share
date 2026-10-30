@@ -1,0 +1,189 @@
+---
+title: utils —— 通用工具
+description: 'createNamespace / deepMerge / debounce / throttle / cssVars 等 15 個框架無關工具函式'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`src/utils/` 是最底層的通用工具：連 core 都不依賴這些（core 用的是 `core/shared/` 那一批更專用的演算法），它們服務各 UI 庫的元件實作與業務側。
+
+## 匯入方式
+
+```ts
+import { createNamespace, deepMerge, debounce, generateId } from '@lh-ui/share/utils'
+```
+
+## 函式表
+
+| 函式 | 簽名 | 作用 |
+| --- | --- | --- |
+| `generateId` | `(prefix = 'lh') => string` | 生成唯一 ID（`${prefix}_${Date.now()}_${counter}`） |
+| `generateRandomId` | `() => string` | 生成隨機 ID（7 字元 base36） |
+| `isEmpty` | `(val: unknown) => boolean` | 是否為空值（僅 `null` / `undefined` / `''`） |
+| `isString` | `(val: unknown) => val is string` | 類型守衛：字串 |
+| `isNumber` | `(val: unknown) => val is number` | 類型守衛：數字（`NaN` 傳回 `false`） |
+| `isPlainObject` | `(val: unknown) => val is Record<string, unknown>` | 類型守衛：普通物件 |
+| `debounce` | `<T>(fn: T, delay = 300) => LhDebounced<T>` | 防抖（帶 `cancel` / `flush`） |
+| `throttle` | `<T>(fn: T, delay = 300) => LhThrottled<T>` | 節流（頭沿立即 + 尾沿補執行） |
+| `deepMerge` | `<T>(target: T, ...sources: Partial<T>[]) => T` | 深合併物件 |
+| `getScrollbarWidth` | `() => number` | 取得捲動軸寬度（結果快取） |
+| `toggleClass` | `(el, className, force?) => void` | 新增 / 移除 CSS class |
+| `getEventValue` | `(e: Event) => string` | 從事件取目標值 |
+
+子模組匯出（`@lh-ui/share/utils` 結尾 re-export）：
+
+| 函式 | 簽名 | 作用 |
+| --- | --- | --- |
+| `createNamespace` | `(block: string) => LhNamespace` | BEM 命名空間工具 |
+| `toCssVarName` | `(key: string) => string` | 生成 CSS 變數名（已帶 `--lh-` 前綴則原樣傳回，**冪等**） |
+| `cssVars` | `(vars: Record<string, string>) => Record<string, string>` | themeVars 鍵值對 → 可綁 `:style` 的 CSS 變數物件 |
+| `stripCssVarName` | `(key: string) => string` | 去掉 `--lh-` 前綴，還原 themeVars prop 鍵 |
+
+## createNamespace —— BEM 命名空間
+
+```ts
+const ns = createNamespace('button')
+
+ns.b()              // 'lh-button'
+ns.e('text')        // 'lh-button__text'
+ns.m('primary')     // 'lh-button--primary'
+ns.em('text', 'disabled')  // 'lh-button__text--disabled'
+ns.is('loading', true)     // 'is-loading'
+ns.is('loading', false)    // ''（空串，框架會忽略）
+```
+
+所有 lh-ui 元件的類別名都經它生成，保證 BEM 結構一致、`lh-` 前綴不漏。`is()` 的狀態類**不帶命名空間前綴**（`is-loading` 而非 `lh-button--is-loading`），這是家族約定。
+
+類型：
+
+```ts
+export interface LhNamespace {
+  b: () => string                       // 區塊
+  e: (element: string) => string        // 元素
+  m: (modifier: string) => string       // 修飾符
+  em: (element: string, modifier: string) => string  // 元素修飾符
+  is: (name: string, state?: boolean | string) => string  // 狀態類
+}
+```
+
+## debounce / throttle
+
+### debounce —— 靜默期內只執行最後一次
+
+```ts
+const debounced = debounce((q: string) => search(q), 300)
+input.addEventListener('input', (e) => debounced(e.target.value))
+
+debounced.cancel()   // 卸載時清掉未執行的擱置呼叫
+debounced.flush()    // 立即執行擱置的那一次（無擱置時為空操作）
+```
+
+`cancel` / `flush` 不是可選的裝飾：元件卸載時不清計時器會調已銷毀的上下文；「立即搜尋」按鈕要 `flush()` 把還沒觸發的查詢立刻跑掉。
+
+### throttle —— 頭沿立即 + 尾沿補執行
+
+```ts
+const throttled = throttle(onScroll, 100)
+window.addEventListener('scroll', throttled)
+```
+
+時間窗**起點立即執行**（頭沿），視窗內的最後一次呼叫在視窗結束時**補執行**（尾沿）。樸素的節流會丟掉快速捲動的最後一幀——捲動停下來的那一刻恰恰是最需要更新的（sticky / affix 的位置判定）。
+
+`throttle` 只有 `cancel`（清尾沿計時器 + 重設 `lastTime`），沒有 `flush`（尾沿語義上就是「稍後執行」）。
+
+類型：
+
+```ts
+export interface LhDebounced<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+  flush(): void
+}
+
+export interface LhThrottled<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+}
+```
+
+## cssVars 三件套
+
+ConfigProvider 的 `themeVars` prop 用**簡寫鍵**（`'primary-color'`），元件消費的是 CSS 變數（`--lh-primary-color`）。這三個函式做雙向轉換：
+
+```ts
+cssVars({ 'primary-color': '#1677ff' })
+// { '--lh-primary-color': '#1677ff' }   ← 可直接綁 :style
+
+toCssVarName('primary-color')      // '--lh-primary-color'
+toCssVarName('--lh-primary-color') // '--lh-primary-color'（冪等）
+
+stripCssVarName('--lh-primary-color')  // 'primary-color'
+```
+
+**`toCssVarName` 的冪等性很重要**：防止某些路徑上已經帶前綴的鍵被二次補成 `--lh---lh-primary-color`——那種鍵會靜默失效（CSS 變數不存在），主題切換看起來「沒反應」。
+
+## deepMerge
+
+```ts
+deepMerge({ a: 1, nested: { x: 1 } }, { nested: { y: 2 } })
+// { a: 1, nested: { x: 1, y: 2 } }
+```
+
+- 僅當**兩側都是普通物件**時遞迴。
+- `sourceVal !== undefined` 才覆蓋（顯式傳 `undefined` 不覆蓋）。
+- **就地修改並傳回 target**——這是注意點，不想汙染原物件先 `{ ...target }` 淺拷一層。
+
+## getScrollbarWidth
+
+```ts
+getScrollbarWidth()   // 例：15（Windows）/ 0（macOS 無捲動軸）
+```
+
+結果快取在模組變數 `_scrollbarWidth`。**SSR 守衛**：`typeof document === 'undefined'` 傳回 `0`。
+
+用途：dialog / drawer 開啟時鎖定 body 捲動，右側會少一條捲動軸的寬度，需要 `padding-right` 補上，否則頁面內容會橫向抖動。
+
+## 使用範例
+
+### 元件內 BEM + class 合併
+
+```ts
+const ns = createNamespace('dialog')
+
+const headerClass = computed(() => [
+  ns.e('header'),
+  ns.is('centered', props.centered),
+  // 使用者傳入的 class
+  ...(typeof attrs.class === 'string' ? attrs.class.split(' ') : []),
+])
+```
+
+### ConfigProvider 注入主題變數
+
+```ts
+const styleVars = computed(() => cssVars(props.themeVars))
+// <div :style="styleVars">
+```
+
+### 捲動監聽節流
+
+```ts
+onMounted(() => {
+  const onScroll = throttle(updateAffixPosition, 100)
+  window.addEventListener('scroll', onScroll, true)
+  onUnmounted(() => {
+    window.removeEventListener('scroll', onScroll, true)
+    onScroll.cancel()
+  })
+})
+```
+
+## 注意事項
+
+- **`isEmpty` 只判三件事**：`null` / `undefined` / `''`。`0` / `false` / `[]` 都**不是空**。要判「空陣列 / 空物件」自己寫。
+- **`isNumber(NaN)` 是 `false`**：刻意排除了 NaN。
+- **`deepMerge` 就地改 target**：最常見的誤用來源。
+- **`generateId` 不是純函式**：模組級自增計數器，同程序多次呼叫結果不同（SSR / CSR 順序需一致，詳見 [a11y 的 generateAriaId 說明](/core/a11y#generateariaid)）。
+- **`useLhSize` 等 composables 不在這裡**：依賴 Vue 的組合式 API 屬於各框架 UI 層，share 不匯出。
+
+<FnPlayground module="utils" fn="createNamespace" params='{"block": "button"}' />

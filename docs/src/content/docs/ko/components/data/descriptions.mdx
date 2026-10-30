@@ -1,0 +1,176 @@
+---
+title: descriptions —— 설명 목록
+description: 'buildDescriptionRows가 span에 따라 행 구조를 정규화(잘못된 값 폴백, 초과 너비 클램프, 마지막 행 빈칸 채우기)'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+설명 목록은 '읽기 전용 표'입니다: 하나의 레코드에 속한 여러 필드(레이블 + 값)를 보여주고, 정렬, 거르기, 페이지 매김이 필요 없습니다. 난점은 매우 집중되어 있습니다. **항목이 여러 열을 차지할 때의 줄바꿈 계산**: 어떤 항목이 `span: 2`인데 이 행의 남은 너비가 1열뿐이라면 어떻게 할까요? 마지막 행에 항목이 2개뿐인데 열이 4개라면, 빈칸을 채울까요? `buildDescriptionRows`가 바로 이 질문에 답합니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhDescriptions`를 구현할 때: 상세 페이지(주문 상세, 사용자 프로필), 설정 요약, 결제 흐름 정보 표시.
+- 읽기 전용의 '레이블-값'을 그룹으로 보여주고, 행마다 여러 필드를 담아야 하는 경우.
+- **사용하면 안 되는 곳**: 정렬/거르기/행 작업이 필요한 표(`table` 사용); 단일 필드 표시(레이블 + 텍스트면 충분); 편집이 필요한 경우(`form` 사용).
+
+## 가져오기
+
+```ts
+import {
+  getDescriptionsClassNames,
+  buildDescriptionRows,
+} from '@lh-ui/share/core/descriptions'
+import type { LhDescriptionsItem, LhDescriptionsState } from '@lh-ui/share/core/descriptions'
+```
+
+## 설계 의도
+
+`buildDescriptionRows`의 네 가지 규칙은 모두 방어적이며, 각각 한 부류의 실제 입력에 대응합니다:
+
+1. **잘못된 span은 1로 폴백**: `span <= 0`, NaN, 숫자가 아닌 값(`Number('宽')` = NaN)은 모두 1로 취급합니다. 설정은 사용자가 넘긴 props에서 오는 경우가 많고, 잘못된 값 때문에 레이아웃이 0열로 무너져서는 안 됩니다.
+2. **이 행의 남은 너비를 넘으면 클램프**: `used + span > column`일 때 남은 너비로 클램프합니다(최소 1열). 줄을 바꾸어버리면 현재 행에 빈칸이 남아 시각적으로 버그처럼 보입니다.
+3. **단일 항목의 span이 행 전체를 넘기면 행 전체로 클램프**: `column: 3`일 때 `span: 5`인 항목은 넘치지 않고 행 전체를 차지합니다.
+4. **마지막 행 빈칸 채우기**: 마지막 행이 `column`에 미달할 때, `filler` 필드가 렌더링 계층에 몇 개의 자리표시자 셀을 채워야 하는지 알려줍니다. 테두리 스타일에서 빈칸을 채우지 않으면 테두리 한 선이 빠집니다.
+
+반환값은 '행의 배열'이며, 각 행은 `cells`(항목 + 실제 span)와 `filler`(채울 자리표시자 수)를 가집니다. UI 계층은 두 겹의 `v-for`만 하면 됩니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getDescriptionsClassNames` | `(state: LhDescriptionsState) => string[]` | 클래스명 | border 수정자 |
+| `buildDescriptionRows` | `(items: LhDescriptionsItem[], column: number) => Row[]` | 행 구조 | 줄바꿈 + 빈칸 채우기 |
+
+```ts
+type Row = {
+  cells: { item: LhDescriptionsItem; span: number }[]
+  filler: number
+}
+```
+
+## 타입 정의
+
+```ts
+export interface LhDescriptionsItem {
+  label: string
+  value?: string | number    // 범위 슬롯으로 전달할 수도 있음
+  span?: number              // 차지하는 열 수, 기본 1, column을 초과하면 클램프됨
+}
+
+export interface LhDescriptionsState {
+  column: number    // 행마다 보여줄 열 수
+  border: boolean   // 테두리 표시 여부(표 레이아웃)
+}
+```
+
+## 접근성
+
+`descriptions`는 **표시용 컴포넌트**로 APG 역할 요구가 없습니다. 권장하는 DOM 구조는 정의 목록의 의미입니다:
+
+```html
+<dl>
+  <dt>사용자 이름</dt><dd>lhgb</dd>
+  <dt>이메일</dt><dd>i@lhgb.top</dd>
+</dl>
+```
+
+이것은 '레이블-값'의 데이터 모델과 자연스럽게 대응하고, 스크린 리더가 '사용자 이름: lhgb'을 올바르게 읽어줍니다. `<table>`로 구현한다면(테두리 스타일일 때 흔함) `role="presentation"`을 주거나 표 머리글 의미를 유지하세요. 진짜 `<th scope="row">`를 쓰면서 summary를 주지 않는 것은 피하세요. 스크린 리더가 이것을 상호작용 가능한 표로 오해합니다.
+
+테두리가 있을 때 `filler`가 채우는 자리표시자 셀에는 `aria-hidden="true"`를 주어 스크린 리더가 빈 셀을 읽지 않도록 해야 합니다.
+
+## 사용 예
+
+```ts
+import { buildDescriptionRows } from '@lh-ui/share/core/descriptions'
+
+// column 3: 세 번째 항목이 span 2이지만 이 행의 남은 너비는 1열 → 1로 클램프
+buildDescriptionRows([
+  { label: '사용자 이름', value: 'lhgb' },
+  { label: '이메일', value: 'i@lhgb.top' },
+  { label: '서명', value: '코드를 짜는 사람', span: 2 },
+], 3)
+// [{ cells: [사용자 이름(1), 이메일(1), 서명(1)], filler: 0 }]  ← 클램프 후 행이 꽉 참
+
+// 참고: 구현은 **줄을 바꾸지 않고 남은 너비로 클램프**합니다. span이 이 행에 들어가지 않을 때 다음 행으로 밀어내지 않습니다.
+buildDescriptionRows([
+  { label: '사용자 이름', value: 'lhgb' },
+  { label: '서명', value: '코드를 짜는 사람', span: 2 },
+  { label: '이메일', value: 'i@lhgb.top' },
+], 2)
+// [
+//   { cells: [사용자 이름(1), 서명(2→1 클램프)], filler: 0 },  ← 행이 참
+//   { cells: [이메일(1)], filler: 1 },                    ← 마지막 행에 자리표시자 1개 채움
+// ]
+
+// 단일 항목의 span이 행의 열 수를 초과: 마찬가지로 남은 너비로 클램프(여기서는 행 전체)
+buildDescriptionRows([{ label: 'A', span: 1 }, { label: 'B', span: 5 }], 2)
+// [{ cells: [A(1), B(5→1 클램프)], filler: 0 }]  ← B는 첫 행의 남은 1열에 들어감
+
+// B 하나뿐이고 span이 행 전체를 넘을 때만 행 전체를 차지
+buildDescriptionRows([{ label: 'B', span: 5 }], 2)
+// [{ cells: [B(5→2 클램프)], filler: 0 }]
+
+// 잘못된 span 폴백
+buildDescriptionRows([{ label: 'A', span: 0 }, { label: 'B', span: NaN }, { label: 'C', span: -1 }], 3)
+// [{ cells: [A(span 1), B(span 1), C(span 1)], filler: 0 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getDescriptionsClassNames({ column, border })">
+  <div v-for="(row, ri) in rows" :key="ri" class="lh-descriptions__row">
+    <template v-for="(cell, ci) in row.cells" :key="ci">
+      <div class="lh-descriptions__label" :style="{ gridColumn: `span ${cell.span}` }">
+        {{ cell.item.label }}
+      </div>
+      <div class="lh-descriptions__value" :style="{ gridColumn: `span ${cell.span}` }">
+        <slot :name="cell.item.label" :item="cell.item">{{ cell.item.value }}</slot>
+      </div>
+    </template>
+    <div
+      v-for="f in row.filler"
+      :key="`filler-${f}`"
+      class="lh-descriptions__filler"
+      aria-hidden="true"
+    />
+  </div>
+</div>
+```
+
+```ts
+const rows = computed(() => buildDescriptionRows(props.items, props.column))
+```
+
+```tsx
+// React: CSS grid의 gridColumn: `span ${cell.span}` 사용;
+// label과 value가 각각 span 열을 차지하므로 'column 3'은 실제로는 6개의 그리드 셀임에 주의
+```
+
+```ts
+// uniapp: <view> + flex 비율(span / column * 100%);
+// border가 있을 때 flex 레이아웃의 테두리는 가상 요소나 box-shadow로 표 선을 흉내 내야 함
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-descriptions` | 기본 클래스 |
+| `.lh-descriptions--border` | 테두리 있음(레이블 배경색으로 구분) |
+| `.lh-descriptions__row` | 하나의 행 |
+| `.lh-descriptions__label` | 레이블 칸 |
+| `.lh-descriptions__value` | 값 칸 |
+| `.lh-descriptions__filler` | 마지막 행 자리표시자(`aria-hidden`) |
+
+레이블 너비의 두 가지 모드: `border`에서는 레이블과 값이 같은 열에서 같은 너비를 가지고, 테두리가 없을 때는 레이블 너비가 콘텐츠에 따라 결정됩니다(`--lh-descriptions-label-width`로 덮어쓰기 가능). 레이블 글자 `--lh-text-color-secondary`, 값 `--lh-text-color-primary`.
+
+## 주의사항
+
+- **column과 그리드 셀의 관계**: `span`은 '항목 수' 단위이지만, 렌더링할 때 레이블과 값이 각각 너비 한 몫을 차지합니다. CSS grid를 써서 label/value를 각각 하나의 그리드 셀로 보면, `column: 3`은 실제로 6열 그리드가 필요합니다. UI 계층의 열 수 정의는 core의 `column` 기준과 일치해야 합니다(하나의 항목 = 하나의 span 단위).
+- **반응형 column**: 좁은 화면에서는 `column`을 작게 조정(예: 3 → 1)하고, `buildDescriptionRows`가 다시 계산하면 됩니다. core는 화면 너비를 감시하지 않으며, UI 계층이 미디어 쿼리나 컨테이너 쿼리로 전환합니다.
+- **범위 슬롯의 key**: UI 계층은 보통 `item.label`을 슬롯 이름으로 씁니다. 레이블에 특수 문자(공백, 한자)가 있을 때 프레임워크 호환성은 괜찮지만, `/`가 있거나 레이블이 중복되면 충돌합니다. UI 계층이 `slot` 필드 별칭을 제공하는 것을 권장합니다(이 타입에는 아직 없으며, 각 단말이 자체 확장 가능).
+- **`filler`는 border 모드에서만 필수**: 테두리가 없을 때 자리표시자 셀은 보이지 않지만, 유지해도 추가 렌더링 비용이 없고 통일 렌더링이 더 단순합니다.
+- **빈 items**: `buildDescriptionRows([], 3)`은 `[]`를 반환하고 UI 계층은 빈 컨테이너를 렌더링합니다. 빈 상태(`empty` 컴포넌트나 알림 문구)를 잊지 마세요.
+- **값의 기본 표시**: `value`가 undefined일 때 무엇을 보여줄지는 UI 계층이 정합니다(보통 `—`), core가 문구에 간섭하지 않습니다.
+
+<FnPlayground module="descriptions" fn="buildDescriptionRows" params='{"items": [{"label": "사용자 이름", "value": "lhgb"}, {"label": "이메일", "value": "i@lhgb.top"}, {"label": "서명", "value": "코드를 짜는 사람", "span": 2}], "column": 2}' />

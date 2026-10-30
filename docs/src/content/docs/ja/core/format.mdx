@@ -1,0 +1,99 @@
+---
+title: format —— テキスト補間
+description: 'formatMessage は {key} プレースホルダーをパラメータ値に置換する。未知のプレースホルダーはそのまま残し、rate / pagination が共用'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`{total} 件`、`{n} つ星`、`第 {index} ステップ`——言語パックの文案テンプレートは、プレースホルダーを実行時の数値に置き換える必要があります。この補間能力はもともと locales のシングルトンにありましたが、それが core コンポーネント（rate の星の数、pagination のページ数）に使われるとき、core が locales のモジュールレベルのシングルトン副作用に**逆依存**することになります。純粋な文字列関数へ格下げしたことで、core コンポーネントの文案補間はもはやいかなるシングルトンにも依存しません。
+
+## インポート方法
+
+```ts
+// 共有コアから（推奨）
+import { formatMessage } from '@lh-ui/share/core/shared/format'
+
+// または locales エントリから（エクスポート面は変わらない）
+import { formatMessage } from '@lh-ui/share/locales'
+```
+
+## 関数表
+
+| 関数 | シグネチャ | 役割 |
+| --- | --- | --- |
+| `formatMessage` | `(template: string, params?: Record<string, unknown>) => string` | `'{key}'` プレースホルダーを `params` の値に置換する |
+
+## 挙動の詳細
+
+```ts
+formatMessage('全 {total} 件', { total: 42 })   // '全 42 件'
+formatMessage('{n} つ星', { n: 5 })             // '5 つ星'
+formatMessage('プレースホルダーなし')             // 'プレースホルダーなし'
+formatMessage('未知のプレースホルダー {missing}') // '未知のプレースホルダー {missing}'
+```
+
+3 つのルール：
+
+1. **未知のプレースホルダーはそのまま残す**。エラーを投げず、空文字にも置き換えない——呼び出し側は通常すでに言語パックからプレースホルダー付きのテンプレートを取得しており、プレースホルダーに対応するパラメータがないということは上流の渡し漏れです。そのまま残すことで問題が UI 上に見えるようにします（暗黙に飲み込むのではなく）。
+2. **値は一律 `String(...)`**：数値も真偽値も補間できる。
+3. **`params` のデフォルトは `{}`**：パラメータを渡さない場合はテンプレートを純粋に透過する。
+
+## lhlocale との関係
+
+`lhlocale.t(path, params)` の内部とは「言語パックを引く → テンプレートを得る → `formatMessage` を呼ぶ」ことです：
+
+```ts
+// locales の内部実装（簡略化）
+t(path, fallbackOrParams) {
+  const template = resolve(path) ?? fallback
+  return typeof fallbackOrParams === 'object'
+    ? formatMessage(template, fallbackOrParams)
+    : template
+}
+```
+
+`@lh-ui/share/locales` が `formatMessage` を再エクスポートしているのは意図的です——古いエクスポート面にそれがあり、core へ格下げした後もインポートパスを変えず、下流はゼロ修正で済みます。
+
+## いつ使い、いつ使わないか
+
+| ケース | 使うか |
+| --- | --- |
+| core コンポーネント内部の文案補間 | ✅ 直接 `formatMessage` を使う（locales シングルトンを引かない） |
+| 業務コードの文案補間 | ✅ `str.replace` より安全（未知のプレースホルダーが残る） |
+| 言語パックの参照 + 補間が必要 | ❌ `lhlocale.t(path, params)` を使い、一発で済ませる |
+| テンプレートに条件分岐 / 複数形が必要 | ❌ この関数は単純な置換しかしない；条件付きの文案は言語パックで複数のキーに分割する |
+
+## 使用例
+
+### pagination の総数文案
+
+```ts
+// コンポーネント内部
+const totalText = computed(() =>
+  formatMessage(lhlocale.t('pagination.total'), { total: props.total }),
+)
+// 言語パック：'全 {total} 件'  →  '全 42 件'
+```
+
+### rate の星の数の読み上げ
+
+```ts
+const ariaLabel = formatMessage(lhlocale.t('rate.stars'), { n: currentValue.value })
+// 言語パック：'{n} つ星'  →  '3 つ星'
+```
+
+### 汎用の文字列ユーティリティ
+
+```ts
+// 言語パックを伴わない純粋な補間
+formatMessage('第 {index} ステップ / 全 {total} ステップ', { index: 2, total: 5 })
+// '第 2 ステップ / 全 5 ステップ'
+```
+
+## 注意事項
+
+- **プレースホルダーの構文は `{key}`**（単一の中括弧）であり、`${key}` でも `{{key}}` でもありません。
+- **ネストテンプレートはサポートしない**：`params` の値は `String()` され、再帰的に解析されることはありません。
+- **パフォーマンス**：単一の呼び出しが行うのは `String.replace` のループです。高頻度のループの中で同じテンプレートに対して繰り返し呼ばないでください——UI 層で `computed` キャッシュを一つ作るだけで済みます。
+
+<FnPlayground module="format" fn="formatMessage" params='{"template": "全 {total} 件", "params": {"total": 42}}' />

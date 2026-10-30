@@ -1,0 +1,151 @@
+---
+title: "types —— les types publics"
+description: "LhLocaleType / LhLeaves / LhBaseProps / les génériques LhTypes et les déclarations globales ambient"
+---
+
+`src/types/` est la couche de types publics exposée à l'extérieur. La différence avec [core/shared/types](/fr/core/types) (les types unions internes de core) : ici se trouvent les **formes de base utilisées par les Props des composants de chaque bibliothèque UI**.
+
+## Comment importer
+
+```ts
+import type {
+  LhLocaleType,
+  LhLocaleMessages,
+  LhLocaleMessageValue,
+  LhLeaves,
+  LhBaseProps,
+  LhTypes,
+  LhSizes,
+  LhLanguages,
+} from '@lh-ui/share/types'
+```
+
+## La structure des exports
+
+```ts
+// src/types/index.ts
+export * from './locale'           // Ce qui touche aux paquets de langues
+export * from './components/base'  // Les attributs de base des composants
+```
+
+`global.d.ts`, `theme.ts` et `scss.d.ts` sont des déclarations ambient ; elles participent à la compilation via l'`include` du tsconfig, **sans être explicitement exportées ici**.
+
+## Les types liés à locale
+
+| Type | Définition | Usage |
+| --- | --- | --- |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | L'union des six codes de langue |
+| `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | Les feuilles du paquet de langues (récursivement en lecture seule) |
+| `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | Le paquet de langues dans son ensemble |
+| `LhLeaves<T, Prefix extends string = ''>` | Type de mapping récursif | Déduit l'union des chemins pointillés de toutes les « feuilles chaînes » |
+| `LhLocaleOptions` | `{ locale: LhLocaleType; messages: LhLocaleMessages }` | La forme du paramètre d'entrée de `lhlocale.use()` |
+
+### Le comportement de LhLeaves
+
+```ts
+type ZhLeaves = LhLeaves<typeof zhCN>
+// 'common.loading' | 'input.placeholder' | 'input.password' | 'pagination.total' | …
+```
+
+- Une **feuille chaîne** → le chemin complet (`'input.placeholder'`).
+- Une **clé de tableau** (par exemple `datepicker.months`) → `never`. Les tableaux ne sont pas adressables par clé, `t()` ne peut pas les atteindre ; seul `tm()` peut les récupérer.
+- Un **objet** → récursion sur les sous-clés.
+
+`LhLocalePath = LhLeaves<typeof zhCN>` fournit à `lhlocale.t()` l'autocomplétion des clés littérales et la vérification de l'orthographe.
+
+## Les attributs de base des composants
+
+Trois unions génériques (qui permettent au côté métier d'étendre les valeurs personnalisées) :
+
+```ts
+export type LhTypes<T extends string | undefined = undefined> =
+  T extends string ? LhComponentType | T : LhComponentType
+
+export type LhSizes<T extends string | undefined = undefined> =
+  T extends string ? LhComponentSize | T : LhComponentSize
+
+export type LhLanguages<T extends string | undefined = undefined> =
+  T extends string ? LhComponentLanguage | T : LhComponentLanguage
+```
+
+Utilisation :
+
+```ts
+type MyType = LhTypes<'brand' | 'dangerous'>
+// LhComponentType | 'brand' | 'dangerous'
+```
+
+### LhBaseProps —— la forme de base des Props des composants
+
+```ts
+export interface LhBaseProps<
+  T extends string | undefined = undefined,
+  S extends string | undefined = undefined,
+  L extends string | undefined = undefined,
+> {
+  type?: T extends string ? LhTypes<T> : LhTypes
+  size?: S extends string ? LhSizes<S> : LhSizes
+  disabled?: boolean
+  loading?: boolean
+  plain?: boolean
+  block?: boolean
+  icon?: string
+  nativeType?: string
+  href?: string
+  target?: string
+  title?: string
+  alt?: string
+  lang?: L extends string ? LhLanguages<L> : LhLanguages
+  langPath?: string
+  old?: boolean      // mode senior
+}
+```
+
+Les Props des composants de chaque bibliothèque UI `extends LhBaseProps` et obtiennent automatiquement `type` / `size` / `disabled` / `lang` et les autres champs publics — garantissant que les noms des props publiques sont cohérents dans toute la famille (l'utilisateur n'a pas à se demander « est-ce que cette bibliothèque l'appelle `disabled`, est-ce que l'autre ne l'a pas »).
+
+| Champ | Sémantique |
+| --- | --- |
+| `type` | La couleur sémantique (`LhTypes`) |
+| `size` | Le palier de taille (`LhSizes`) |
+| `disabled` | Désactivé |
+| `loading` | En cours de chargement |
+| `plain` | Le style épuré (la version contour, sans couleur de fond) |
+| `block` | Largeur de bloc à 100 % |
+| `icon` | Le nom de l'icône (le jeu d'icônes intégré, voir la section icônes de [Jetons de conception](/fr/theme/tokens)) |
+| `nativeType` | Le `type` natif du bouton (`submit` / `reset` / `button`) |
+| `href` / `target` | Les liens quand le composant est rendu en `<a>` |
+| `title` / `alt` | Le titre et le texte alternatif (accessibilité) |
+| `lang` | La surcharge de langue au niveau du composant |
+| `langPath` | Le préfixe de chemin personnalisé des clés de libellés |
+| `old` | L'interrupteur du mode senior (à utiliser avec `size="x-large"`, voir [constants](/fr/reference/constants)) |
+
+## Les déclarations globales ambient
+
+Elles prennent effet via l'`include` du tsconfig, sans import nécessaire :
+
+```ts
+// src/types/global.d.ts
+interface CSSVariable { [key: string]: string }
+
+interface LhUIConfig {
+  prefix?: string
+  theme?: Record<string, string>
+  locale?: string
+}
+
+interface InstallOptions {
+  prefix?: string
+  theme?: Record<string, string>
+  locale?: string
+  components?: any[]
+}
+```
+
+Ce sont les types ambient destinés aux options de configuration globale du type « `app.use(LhUI, { prefix: 'x' })` ». `theme.ts` est actuellement un emplacement vide (les types de thème sont dans `src/theme/types.ts`) ; `scss.d.ts` déclare le module `.scss`.
+
+## Points d'attention
+
+- **`LhBaseProps` est entièrement optionnel** : tous les champs sont facultatifs ; chaque composant l'étend et le resserre selon ses besoins (par exemple `type` est obligatoire sur button).
+- **La relation entre `lang` et la langue globale** : `lang` est une surcharge au niveau du composant (`<lh-button lang="en-US">`) ; il n'appelle pas `lhlocale.setLocale`, le composant choisit son paquet de langue en interne.
+- **Le piège de la valeur par défaut du générique** : `LhTypes<undefined>` retombe sur `LhComponentType` — passer `undefined` comme paramètre générique ou une littérale `string` ne donne pas le même résultat, c'est délibéré (la branche `extends string ? ... : ...`).
+- **`LH_LANGUAGE_CONST` n'est pas dans la surface d'export publique de types** : `types/locale.ts` l'`import` en interne pour la dérivation, mais `types/index.ts` n'exporte que `./locale` et `./components/base` ; pour utiliser la constante, importez-la de `@lh-ui/share/constants`.

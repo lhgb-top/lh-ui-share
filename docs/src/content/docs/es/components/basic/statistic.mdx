@@ -1,0 +1,132 @@
+---
+title: statistic —— Valor estadístico
+description: 'formatStatisticValue con precisión fija + separador de miles, los enteros muy grandes usan una ruta de cadenas sin perder precisión, precision se sanea con safePrecision'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El componente de valor estadístico muestra «los números clave»: usuarios activos diarios, ingresos, tasa de finalización. Su riesgo principal no es el layout, sino la **precisión**: `Number(12345678901234567890).toFixed(2)` da un resultado erróneo en JS (excede el entero seguro), y el redondeo de `(0.1).toFixed` también esconde trampas de coma flotante. `formatStatisticValue` de `core/statistic` cubre estos escollos una sola vez en la capa compartida, para uso de las tres plataformas.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhStatistic`: números de paneles, resúmenes de informes, indicadores de finalización.
+- En cualquier escenario que necesite formatear un número con «decimales fijos + separador de miles», aunque no se use el componente: se puede llamar a `formatStatisticValue` directamente.
+- **No usarlo para**: símbolos de moneda, conversión de unidades ni formateo de zonas horarias: son asuntos de la capa de negocio; el formateo de fechas usa `core/shared/date`.
+
+## Importación
+
+```ts
+import { formatStatisticValue, getStatisticClassNames } from '@lh-ui/share/core/statistic'
+import type { LhStatisticState } from '@lh-ui/share/core/statistic'
+```
+
+## Intención de diseño
+
+Las tres líneas de defensa de precisión de `formatStatisticValue`:
+
+1. **Las entradas ilegales no lanzan errores**: NaN / Infinity se devuelven tal cual como `String(value)`, sin intentar formatear «algo que no es un número».
+2. **Saneamiento de precision**: `toFixed(101)` lanza un RangeError; aquí primero pasa por el `safePrecision` de `shared/sanitize`, que lo sanea a un entero en `[0, 100]`. Esta línea de defensa se comparte con `input-number` (ver [input-number](/es/components/form/input-number)).
+3. **Los enteros muy grandes usan la ruta de cadenas**: cuando la parte entera supera `Number.MAX_SAFE_INTEGER`, en ningún momento se pasa por una conversión a Number: el redondeo usa acarreo decimal sobre cadenas (el `incrementDigits` interno) y la agrupación, cortes de cadena (`formatBigString`). Es la única forma de garantizar que `99999999999999999999` se formatee correctamente.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `formatStatisticValue` | `(value: number \| string, state: Pick<LhStatisticState, 'precision' \| 'separator'>) => string` | cadena formateada | precisión + separador de miles |
+| `getStatisticClassNames` | `(prefixCls?: string) => string[]` | matriz de nombres de clase | clase del contenedor, con prefijo intercambiable |
+
+Detalles de comportamiento:
+
+| Entrada | Salida | Ruta |
+| --- | --- | --- |
+| `1234567.891`, `{ precision: 2, separator: ',' }` | `'1,234,567.89'` | toFixed + agrupación |
+| `1234567.8`, `{ precision: 0, separator: '' }` | `'1234568'` | sin separador |
+| `'99999999999999999999'`, `{ precision: 0, separator: ',' }` | `'99,999,999,999,999,999,999'` | ruta de cadenas |
+| `NaN`, cualquiera | `'NaN'` | devuelto tal cual |
+| `'abc'`, cualquiera | `'abc'` | `Number('abc')` es NaN |
+
+El separador solo sirve para la **agrupación de la parte entera**; el separador decimal es siempre `.` (si alguna plataforma necesita un separador decimal localizado, lo sustituye en su capa UI).
+
+## Definiciones de tipos
+
+```ts
+export interface LhStatisticState {
+  precision: number      // número de decimales (saneado por safePrecision a [0, 100])
+  separator: string      // separador de miles; la cadena vacía significa no agrupar
+}
+```
+
+## Accesibilidad
+
+`core/statistic` no emite un paquete de atributos aria. Los puntos clave de accesibilidad del valor estadístico están en la capa UI:
+
+- El número en sí, como texto normal, ya lo lee el lector de pantalla, pero **las comas de separación de miles se leerán como «coma»** (por ejemplo, «1,234,567» se leerá «uno coma dos tres cuatro...»). Se debería proporcionar un `aria-label` a todo el bloque del valor, con una formulación hablada («un millón doscientos treinta y cuatro mil quinientos sesenta y siete», o los dígitos uno a uno: «1 2 3 4 5 6 7»).
+- La animación al cambiar el valor (desplazamiento hasta el valor objetivo) es puramente visual y no porta información; si durante la animación el valor no es legible, el aria-label del valor anterior debe mantenerse hasta que se asiente.
+
+## Ejemplos de uso
+
+```ts
+import { formatStatisticValue } from '@lh-ui/share/core/statistic'
+
+formatStatisticValue(9876543.21, { precision: 1, separator: ' ' })
+// '9 876 543.2'
+
+formatStatisticValue(0.1 + 0.2, { precision: 2, separator: '' })
+// '0.30'  (en lugar de una porción de 0.30000000000000004)
+
+formatStatisticValue('12345678901234567890', { precision: 0, separator: ',' })
+// '12,345,678,901,234,567,890'
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getStatisticClassNames()">
+  <span v-if="prefix" class="lh-statistic__prefix">{{ prefix }}</span>
+  <span class="lh-statistic__content">
+    <span class="lh-statistic__title">{{ title }}</span>
+    <span class="lh-statistic__value" :aria-label="ariaLabel">
+      {{ formatStatisticValue(value, { precision, separator }) }}
+    </span>
+  </span>
+  <span v-if="suffix" class="lh-statistic__suffix">{{ suffix }}</span>
+</div>
+```
+
+```tsx
+// React
+const text = formatStatisticValue(value, { precision, separator })
+return (
+  <div className="lh-statistic">
+    <span className="lh-statistic__content">
+      <span className="lh-statistic__title">{title}</span>
+      <span className="lh-statistic__value" aria-label={spoken}>{text}</span>
+    </span>
+  </div>
+)
+```
+
+```ts
+// uniapp: salida de cadena pura, sin diferencias entre plataformas;
+// la animación la resuelve cada plataforma con su propia solución de desplazamiento
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-statistic` | clase base: layout |
+| `.lh-statistic__title` | título (color de texto secundario, tamaño de fuente menor) |
+| `.lh-statistic__content` | zona de contenido (título + valor dispuestos en vertical) |
+| `.lh-statistic__value` | valor (color de texto principal, tamaño de fuente grande, dígitos de ancho fijo `font-variant-numeric: tabular-nums`) |
+| `.lh-statistic__prefix` / `.lh-statistic__suffix` | prefijo y sufijo (como ¥, %) |
+
+La fuente de los valores pasa por el token `--lh-font-family-numeric` (si existe), para garantizar la alineación de los anchos de los dígitos.
+
+## Notas
+
+- **El límite superior de precision es 100**: si se excede, `safePrecision` lo trunca en lugar de lanzar un error; un precision negativo se lleva a 0.
+- **La semántica de la entrada de cadena**: `formatStatisticValue('123', ...)` primero intenta `Number('123')` y, si lo logra, sigue la ruta numérica; solo `'abc'` se devuelve tal cual. Las cadenas de enteros muy grandes **deben pasarse como cadena**: escribir el literal numérico `99999999999999999999` ya pierde precisión en el propio código fuente JS y core no puede recuperarlo.
+- **No** escribas tu propio `toLocaleString` de separación de miles en la capa UI: depende del locale en tiempo de ejecución y puede no ser coherente entre las tres plataformas; usa siempre `formatStatisticValue`.
+- El parámetro `prefixCls` de `getStatisticClassNames` permite cambiar el prefijo (por defecto `lh-statistic`) para los escenarios en que alguna plataforma necesita coexistir con nombres de clase preexistentes.
+
+<FnPlayground module="statistic" fn="formatStatisticValue" params='{"value": 1234567.891, "state": {"precision": 2, "separator": ","}}' />

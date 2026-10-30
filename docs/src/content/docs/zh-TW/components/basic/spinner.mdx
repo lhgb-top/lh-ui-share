@@ -1,0 +1,113 @@
+---
+title: spinner —— 旋轉載入圖形
+description: 'LH_SPINNER_SIZE_PX 尺寸到直徑映射表，getSpinnerClassNames 輸出尺寸修飾類'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`spinner` 是純粹的「轉圈圖形」——它不是載入遮罩（那是 `LhLoading`），不是骨架（那是 `LhSkeleton`），而是一個可複用的**旋轉元素**：按鈕裡的載入圖示、訊息提示裡的 loading 圖示、卡片載入角的轉圈，都是它。
+
+## 何時使用
+
+- 各端實作 `LhSpinner`，以及任何元件內部需要一個旋轉圖形的地方（button loading、message loading 等）。
+- **不該用它**：整屏載入、區域載入。那是 `LhLoading` 的職責（`spinner` 只是它的一部分）。
+
+## 匯入方式
+
+```ts
+import { getSpinnerClassNames } from '@lh-ui/share/core/spinner'
+import { LH_SPINNER_SIZE_PX, LH_SPINNER_SIZE_CONST } from '@lh-ui/share/core/spinner'
+import type { LhSpinnerSize } from '@lh-ui/share/core/spinner'
+```
+
+## 設計意圖
+
+spinner 的尺寸體系與全域尺寸檔對齊（`LH_SPINNER_SIZE_CONST` 直接展開 `LH_SIZE_CONST`），但**像素映射是獨立的**——元件的「medium」是 24px，按鈕的 medium 高度是 37px，圖形與容器不必同尺寸。這個獨立性寫在常數裡而非散落在各處魔法數字。
+
+`LH_SPINNER_SIZE_PX` 是唯一的事實來源，UI 層讀它來設 SVG/元素的 width/height，而不是自己寫 `size === 'small' ? 16 : 24`。
+
+## 函式與常數表
+
+| 匯出 | 簽名 / 值 | 作用 |
+| --- | --- | --- |
+| `getSpinnerClassNames` | `(state: { size: LhSpinnerSize }) => string[]` | 類別名陣列 |
+| `LH_SPINNER_SIZE_CONST` | `{ small: 'small', medium: 'medium', large: 'large', mini: 'mini', 'x-large': 'x-large' }` | 尺寸列舉（對齊 `LH_SIZE_CONST`） |
+| `LH_SPINNER_SIZE_PX` | `{ mini: 12, small: 16, medium: 24, large: 32, 'x-large': 40 }` | 尺寸 → 直徑 px |
+
+```ts
+getSpinnerClassNames({ size: 'small' })  // ['lh-spinner', 'lh-spinner--small']
+LH_SPINNER_SIZE_PX['large']              // 32
+```
+
+## 類型定義
+
+```ts
+export type LhSpinnerSize =
+  (typeof LH_SPINNER_SIZE_CONST)[keyof typeof LH_SPINNER_SIZE_CONST]
+// 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+```
+
+## 無障礙
+
+`core/spinner` 不提供 aria 屬性包。旋轉圖形的無障礙處理取決於**它出現在哪裡**：
+
+- **按鈕內的 spinner**：按鈕加 `aria-busy="true"`，spinner 本身 `aria-hidden`。
+- **訊息提示內的 spinner**：訊息的 live-region role 已經傳達「正在處理」，spinner 裝飾化。
+- **獨立展示「正在載入」**：必須配可讀文字（如「載入中…」），純圖形對讀屏使用者等於無資訊。
+
+通用原則：**旋轉圖形本身永遠應當 `aria-hidden`**，資訊由它周圍的語義（aria-busy、role、文字）承載。
+
+## 使用範例
+
+```ts
+import { getSpinnerClassNames, LH_SPINNER_SIZE_PX } from '@lh-ui/share/core/spinner'
+
+getSpinnerClassNames({ size: 'medium' })  // ['lh-spinner', 'lh-spinner--medium']
+LH_SPINNER_SIZE_PX['medium']              // 24
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="getSpinnerClassNames({ size })"
+  :width="px" :height="px"
+  viewBox="0 0 50 50"
+  aria-hidden="true"
+>
+  <circle class="lh-spinner__circle" cx="25" cy="25" r="20" fill="none" />
+</svg>
+```
+
+```tsx
+// React
+const px = LH_SPINNER_SIZE_PX[size]
+return (
+  <svg className={getSpinnerClassNames({ size }).join(' ')} width={px} height={px} viewBox="0 0 50 50" aria-hidden="true">
+    <circle className="lh-spinner__circle" cx="25" cy="25" r="20" fill="none" />
+  </svg>
+)
+```
+
+```ts
+// uniapp：非 h5 端 svg 動畫支援差，通常換成 CSS border 旋轉方案或 GIF；
+// LH_SPINNER_SIZE_PX 的直徑值仍然適用（border 方案的寬高）
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-spinner` | 基礎類：旋轉動畫（`animation: lh-spinner-rotate`） |
+| `.lh-spinner--{mini\|small\|medium\|large\|x-large}` | 尺寸檔（設寬高） |
+| `.lh-spinner__circle` | SVG circle：部分弧描邊 + `stroke-linecap: round` |
+
+線條顏色預設 `currentColor`（繼承父級文字色），旋轉速度在樣式層定義，`prefers-reduced-motion` 下由 CSS 媒體查詢暫停。
+
+## 注意事項
+
+- **尺寸一致性**：`LH_SPINNER_SIZE_PX` 的 small 是 16px，而圖示的 small 是 14px（見[圖示](/components/basic/icon)）——這是已知的檔位不統一，記錄在「高度令牌專項」待後續 changeset 統一，現階段請直接用常數表而不是自己換算。
+- `getSpinnerClassNames` 不驗證 `size` 合法性（類型保證），傳越界值會產出無樣式的髒類。
+- SVG circle 的描邊弧度（`stroke-dasharray`）在樣式層寫死為約 75% 弧，改弧度請改樣式不要改 core。
+- 旋轉動畫是 CSS keyframes，`prefers-reduced-motion` 的尊重在樣式層。
+
+<FnPlayground module="spinner" fn="getSpinnerClassNames" params='{"state": {"size": "medium"}}' />

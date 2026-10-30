@@ -1,0 +1,154 @@
+---
+title: focus-trap —— 焦點管理
+description: '可聚焦元素列舉、Tab 焦點圈、inert 所有權登記表與開啟記錄 / 關閉歸還，Dialog / Drawer / Popover 共用'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+modal 方塊、抽屜、圖片預覽這類**覆蓋層元件**有三個焦點義務：開啟時記住使用者原本在哪、開啟期間把 Tab 圈在浮層內、關閉時把焦點還回去。這三件事在 dialog / drawer / popover / popconfirm / image-viewer 裡各寫一遍必然漂移，`shared/focus-trap` 是它們的唯一實作。
+
+## 匯入方式
+
+```ts
+import {
+  getFocusableElements,
+  focusFirst,
+  focusLast,
+  saveActiveElement,
+  restoreActiveElement,
+  trapTabKey,
+  supportsInert,
+  setInertOutside,
+} from '@lh-ui/share/core/shared/focus-trap'
+```
+
+## 函式表
+
+| 函式 | 簽名 | 作用 |
+| --- | --- | --- |
+| `getFocusableElements` | `(container: HTMLElement \| null \| undefined) => HTMLElement[]` | 列舉容器內可 Tab 落入的元素 |
+| `focusFirst` | `(container) => boolean` | 聚焦首個可聚焦元素，無則 `false` |
+| `focusLast` | `(container) => boolean` | 聚焦末個可聚焦元素，無則 `false` |
+| `saveActiveElement` | `() => HTMLElement \| null` | 記錄當前活躍元素供後續歸還（SSR 守衛） |
+| `restoreActiveElement` | `(el: HTMLElement \| null \| undefined) => void` | 歸還焦點 |
+| `trapTabKey` | `(container: HTMLElement, event: KeyboardEvent) => boolean` | 處理 Tab / Shift+Tab，焦點圈在容器內 |
+| `supportsInert` | `() => boolean` | 當前環境是否支援 `inert` 屬性 |
+| `setInertOutside` | `(container, active: boolean, locked?: HTMLElement[]) => HTMLElement[]` | 給容器以外的 DOM 加 / 去 inert |
+
+## 各函式的行為細節
+
+### getFocusableElements
+
+先按選擇器匹配候選：`a[href]`、`button:not([disabled])`、`input:not([disabled]):not([type="hidden"])`、`select` / `textarea:not([disabled])`、`video[controls]`、`audio[controls]`、`[contenteditable]:not([contenteditable="false"])`、`[tabindex]:not([tabindex="-1"])`。再用 `isHiddenForFocus` **沿祖先鏈**排除被 `disabled` / 負 tabindex / `hidden` / `aria-hidden="true"` / `display:none` / `visibility:hidden` 遮擋的元素。
+
+沿祖先鏈這一點很關鍵：teleport 出去的彈層常被父級的 `aria-hidden` 影響，只查元素自身會漏判。`container` 為空傳回 `[]`。
+
+### focusFirst / focusLast
+
+用 `{ preventScroll: true }` 聚焦。**為什麼**：浮層 teleport 到 body 後的第一個 tick 內，元素位置可能還是臨時的，預設的 `focus()` 會把頁面捲到元素臨時位置。防止捲動避免了這個視覺跳動。無可聚焦元素傳回 `false`，UI 層據此決定要不要把焦點放到容器自身（`tabindex="-1"`）。
+
+### saveActiveElement / restoreActiveElement
+
+開啟浮層時 `const last = saveActiveElement()`，關閉時 `restoreActiveElement(last)`。歸還的跳過條件：
+
+- `el` 為空、無 `document`：直接傳回。
+- `!el.isConnected`：觸發按鈕被 `v-if` 卸載了（比如關閉的同時銷毀），不 focus。
+- **目標被祖先 `inert` 鎖定**：改為 `blur()` 當前焦點元素。這是規範保證的回退路徑——blur 後焦點回到 body，不會讓焦點卡在鎖住的元素上。
+
+### trapTabKey
+
+```
+event.key !== 'Tab' 或 event.defaultPrevented  →  傳回 false（不處理）
+容器內無可用焦點  →  preventDefault()，傳回 true（圈住，別讓焦點跑出去）
+焦點在邊界  →  preventDefault()，跳到另一端，傳回 true
+```
+
+邊界判定用**列表索引**而不是參照比較。為什麼：焦點可能落在容器內但不在 Tab 序列的元素上（比如 `tabindex="-1"` 的容器自身被 focus），此時 `document.activeElement` 在 `getFocusableElements()` 的結果裡查不到（`idx === -1`），演算法把它當作「在頭部之前」，Shift+Tab 會跳到末項、普通 Tab 跳到首項——符合直覺。
+
+### setInertOutside 與所有權登記表
+
+`inert` 是 W3C 標準屬性（2024 年起全瀏覽器支援），給元素加 `inert` 後它和它的整個子樹都對輔助技術隱藏、不可聚焦、不可點選。這是比「Tab 焦點圈」更徹底的背景鎖定——讀屏使用者不會誤入被遮住的頁面內容。
+
+`setInertOutside` 的加鎖路徑：從 `container` 沿祖先鏈向上走到 `body`，每層把**不含 container 的兄弟子樹**標記 inert。這樣只有浮層及其祖先鏈可達，其餘全部鎖住。
+
+難點是**多層浮層疊加**：dialog 裡再開 popover，popover 關閉時不能把 dialog 也解鎖了。解決辦法是所有權登記表（`WeakMap`）：
+
+- 加鎖時，每個被鎖節點登記「誰鎖的」；重複呼叫只登記所有權，**不重複 setAttribute**（冪等）。
+- 解鎖時，只有當某節點**沒有任何容器還持有所有權**時才移除 inert。
+- `locked` 參數是額外豁免清單（如另一個仍開啟的 overlay 容器），這些節點即使不在 container 的祖先鏈上也不被鎖。
+
+傳回值：加鎖時為被加鎖節點陣列（供除錯 / 測試斷言），解鎖時為 `[]`。
+
+邊界：不支援 inert 傳回 `[]`（回退到 trapTabKey 焦點圈方案）；無 `document.body` 傳回 `locked`；容器已脫離文件時先釋放殘留所有權再傳回去重後的 `locked`。
+
+### supportsInert
+
+漸進增強用：老瀏覽器（Safari 15.4 以前）沒有 `inert`，`setInertOutside` 會直接傳回空陣列，此時元件應**仍然啟用 `trapTabKey`** 作為兜底。兩套方案可以共存，inert 是更徹底的那一層。
+
+## 使用範例
+
+### 完整的 modal 方塊焦點生命週期
+
+```ts
+// Vue3 dialog 元件
+let lastFocused: HTMLElement | null = null
+let lockedNodes: HTMLElement[] = []
+
+function open() {
+  lastFocused = saveActiveElement()
+  dialogVisible.value = true
+  nextTick(() => {
+    if (!panelRef.value) return
+    focusFirst(panelRef.value)
+    lockedNodes = setInertOutside(panelRef.value, true)
+  })
+}
+
+function close() {
+  setInertOutside(panelRef.value, false, lockedNodes)
+  dialogVisible.value = false
+  restoreActiveElement(lastFocused)
+}
+
+function onKeydown(e: KeyboardEvent) {
+  trapTabKey(panelRef.value, e)   // 傳回 false 時說明不是 Tab，交給別的邏輯
+}
+```
+
+### React 接線
+
+```tsx
+useEffect(() => {
+  if (!open) return
+  const last = saveActiveElement()
+  focusFirst(panelRef.current)
+  const locked = setInertOutside(panelRef.current, true)
+
+  const onKeydown = (e: KeyboardEvent) => trapTabKey(panelRef.current, e)
+  document.addEventListener('keydown', onKeydown)
+
+  return () => {
+    document.removeEventListener('keydown', onKeydown)
+    setInertOutside(panelRef.current, false, locked)
+    restoreActiveElement(last)
+  }
+}, [open])
+```
+
+### 巢狀浮層
+
+```ts
+// dialog 已開，裡面再開 popover
+const popoverLocked = setInertOutside(popoverRef.value, true, lockedNodes)
+// popover 關閉：dialog 仍在 lockedNodes 豁免清單裡，不會被解鎖
+setInertOutside(popoverRef.value, false, popoverLocked)
+```
+
+## 注意事項
+
+- **SSR 安全**：`saveActiveElement` 在無 `document` 時傳回 `null`；`getFocusableElements` 收到 `null` 傳回 `[]`。但 `trapTabKey` / `setInertOutside` 需要 DOM，只在用戶端呼叫。
+- **別忘了歸還焦點**：這是無障礙的硬要求。只鎖定不歸還，鍵盤使用者每次關彈層都丟焦點到 body，體驗很差。
+- **`v-if` 卸載的觸發器**：`restoreActiveElement` 會跳過已 `disconnected` 的元素（`isConnected === false`），此時焦點自然回 body，不要強行 `focus()` 一個不在文件裡的節點。
+- **所有權登記表是模組級狀態**：`WeakMap` 自動 GC，但同行程多實例共享同一張表——這是刻意的，否則兩個浮層互相不知道對方的存在，會錯誤互解。
+
+<FnPlayground module="focus-trap" fn="supportsInert" params='{}' />

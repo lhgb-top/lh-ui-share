@@ -1,0 +1,165 @@
+---
+title: 'config إعداد عام —— إعداد'
+description: 'دمج ثلاثي الطبقات عبر mergeConfig، وLH_THEME_DEFAULT=cerblue، وسلسلة جلب القيم عبر getEffectiveXxx (لا يُعيد core سوى أسماء المسبقات، وحقن DOM في الطرف البصري)'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ConfigProvider هو «المدخل الوحيد للمفاتيح العامة»: يُغلَّف التطبيق بطبقة `<LhConfigProvider :size="..." :theme="..." :locale="...">`، فتتغير جميع defaults للمكوّنات الداخلية من حيث المقاس والسمة واللغة وأساس z-index. وهو لا يعرض أي محتوى، بل يوفّر **سياقًا للإعداد**. ويتولّى `core/config` دمج الإعدادات وسلسلة lookup — أما كيفية العمل الفعلي (حقن متغيّرات CSS، وتوفير نسخة locale) فهو في الطرف البصري.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `<LhConfigProvider>`: تغليف جذر التطبيق، وتبديل السمة، وتبديل التدويل، وضبط المقاس العام.
+- المشاهد التي تحتاج إلى **توحيد القيم الافتراضية عبر المكوّنات**، وتتطلب إمكانية **التبديل وقت التشغيل**.
+- **لا يجب استخدامه**: مقاس/سمة مكوّن واحد (اكتفِ بتمرير props إلى ذلك المكوّن، فConfigProvider طبقة «القيم الافتراضية»).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  mergeConfig,
+  getEffectiveSize,
+  getEffectiveZIndex,
+  getEffectiveTheme,
+} from '@lh-ui/share/core/config'
+import {
+  LH_THEME_DEFAULT,
+  createDefaultConfig,
+} from '@lh-ui/share/core/config'
+import type { LhConfigState } from '@lh-ui/share/core/config'
+```
+
+## نية التصميم
+
+**أولوية الدمج الثلاثي الطبقات**: يدمج `mergeConfig(defaults, global, local)` دمجًا مسطحًا، يغطي فيه اللاحق السابق — `القيم الافتراضية < العامة (ConfigProvider) < المحلية (props الخاصة بالمكوّن)`. وتبسط `createDefaultConfig()` القاعدة بحيث يكون لكل حقل قيمة (فلا تكون القيم الافتراضية undefined فيتعثر التفكيك في المصب).
+
+**القيمة الافتراضية لـ `size` هي undefined لا 'medium'**: هذا متعمَّد — فundefined تعني «غير مُعد، استخدم القيمة الافتراضية لرمز SCSS». ولو أعطى core قيمة 'medium' لانفصل عن الدرجة الافتراضية لـ `--lh-control-height-medium` في `styles/`، ولن يؤثر تغيير الدرجة الافتراضية للرمز. **undefined إشارة «التراجع إلى طبقة الأنماط»**.
+
+**`getEffectiveTheme` لا يُعيد سوى اسم المسبق**: يُعيد سلسلة مثل `'cerblue'`، **ولا يُعيد كائن vars ولا يمس DOM**. وبعد أن يحصل الطرف البصري على الاسم، يستدعي `getThemeVars(name)` لأخذ vars، ثم `buildPresetStyleText(vars)` لتوليد نص `<style>` وحقنه. وهذا التقسيم يبقي core خاليًا من DOM (الخط الأحمر 1)، ويترك للطرف البصري التحكم في توقيت الحقن وموضعه.
+
+**التزامن الثنائي المصدر في `LH_THEME_DEFAULT = 'cerblue'`**: يجب أن يكون اسم المسبق الافتراضي من المصدر نفسه الذي للون الأساسي الافتراضي في `styles/theme/common/variables.scss` (`$lh-primary`) — وهناك حارس انحدار في `theme.spec.ts`. وتغيير السمة الافتراضية يجب أن يتم في الموضعين معًا، وإلا لن يتوافق المسبق الذي يحقنه جانب JS مع اللون الافتراضي الذي يجمعه SCSS.
+
+**أساس zIndex هو 2000**: تتزايد منه المكوّنات الطبقية (dialog/drawer/popover/dropdown…). ويُرفع الأساس عالميًا في مشاهد التعارض «تحتوي صفحة العمل على عناصر z-index أعلى» — وهذا أحد الأسباب الكلاسيكية لوجود ConfigProvider.
+
+## جدول الدوال
+
+| الدالة / الثابت | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `createDefaultConfig` | `() => LhConfigState` | إعداد افتراضي | قيم القاعدة |
+| `mergeConfig` | `(defaults, global, local) => LhConfigState` | إعداد مدمج | افتراضي < عام < محلي |
+| `getEffectiveSize` | `(localSize?, globalSize?) => LhComponentSize \| undefined` | المقاس الفعّال | تراجع undefined إلى طبقة الأنماط |
+| `getEffectiveZIndex` | `(localZIndex?, globalZIndex) => number` | z-index الفعّال | محلي ?? عام |
+| `getEffectiveTheme` | `(localTheme?, globalTheme?) => LhThemePresetName` | اسم المسبق الفعّال | لا يُعيد الاسم إلا، دون مس DOM |
+
+الثوابت: `LH_THEME_DEFAULT = 'cerblue'`.
+
+## تعريف الأنواع
+
+```ts
+export interface LhConfigState {
+  size: LhComponentSize | undefined    // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  zIndex: number                       // أساس الطبقات المنبثقة
+  locale: LhComponentLanguage          // 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR' | 'de-DE' | 'fr-FR'
+  theme: LhThemePresetName             // اسم المسبق (الأسماء المخصصة المسجلة عبر registerTheme قانونية كذلك)
+}
+```
+
+الدرجات الخمس لـ `size` تأتي من `LH_SIZE_CONST` (في `src/constants`)، حيث `old: 'x-large'` **اسم دلالي لدرجة كبار السن** (خط كبير وعناصر تحكم كبيرة)، وقيمته نفس `x-large` — لإعطاء مشاهد الملاءمة لكبار السن مدخلًا ذا دلالة.
+
+اللغات الست لـ `locale` تأتي من `LH_LANGUAGE_CONST`، والافتراضي `LH_LANGUAGE_DEFAULT = 'zh-CN'`.
+
+## إمكانية الوصول
+
+لا تربط ConfigProvider بإمكانية الوصول إلا علاقة مباشرة واحدة: **تبديل locale يغير لغة النصوص الداخلية للمكوّنات** (مثل «该字段为必填项» في التحقق من النماذج / «This field is required»). ويتم ذلك بإنزال نسخة `lhlocale` من `locales` — راجع صفحتي `core/locales` و`reference/locales`.
+
+- **نطاق سريان تبديل اللغة**: يُنزَل locale عبر context من ConfigProvider، **فتستجيب المكوّنات المُعرَضة فورًا** (تحديث تفاعلي). وفي سيناريوهات SSG تتحدد لغة الشاشة الأولى وقت البناء، ثم تُبدَّل بعد التنشيط على العميل وفق إعدادات المستخدم.
+- **تبديل السمة لا يحتاج إعادة عرض**: فالسمة تعمل عبر حقن متغيّرات CSS، وتستهلك أنماط المكوّنات `var(--lh-*)` — فتبديل السمة لا يغيّر سوى محتوى عنصر style، بينما DOM الخاص بالمكوّنات لا يتحرك. وهذا فصل مقصود في التصميم.
+
+## أمثلة الاستخدام
+
+```ts
+import {
+  mergeConfig, getEffectiveSize, getEffectiveZIndex, getEffectiveTheme, createDefaultConfig,
+} from '@lh-ui/share/core/config'
+
+createDefaultConfig()  // { size: undefined, zIndex: 2000, locale: 'zh-CN', theme: 'cerblue' }
+
+mergeConfig(
+  {},                       // defaults على مستوى المكوّن (فارغ عادةً)
+  { size: 'small', theme: 'ink' },  // ConfigProvider العام
+  { size: 'large' },        // props المحلية
+)
+// { size: 'large', zIndex: 2000, locale: 'zh-CN', theme: 'ink' }
+
+getEffectiveSize('large', 'small')   // 'large'
+getEffectiveSize(undefined, 'small') // 'small'
+getEffectiveSize(undefined, undefined)  // undefined (تراجع إلى الدرجة الافتراضية في SCSS)
+
+getEffectiveZIndex(3000, 2000)  // 3000
+getEffectiveZIndex(undefined, 2500)  // 2500
+
+getEffectiveTheme('ink', 'cerblue')   // 'ink'
+getEffectiveTheme(undefined, 'cerblue')  // 'cerblue'
+getEffectiveTheme(undefined, undefined)  // 'cerblue' (تراجع LH_THEME_DEFAULT)
+```
+
+```ts
+// الطرف البصري: حقن السمة (يُكتب فقط في عنصر <style>، لا في style مضمّن على documentElement —
+// فخصوصية style المضمّن أعلى من كتلة متغيّرات الوضع الداكن بأكملها في var-dark.scss،
+// مما سيؤدي إلى تشوه ألوان الوضع الداكن)
+import { getThemeVars, buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyTheme(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+  const styleText = buildPresetStyleText(vars)
+  let el = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!el) {
+    el = document.createElement('style')
+    el.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(el)
+  }
+  el.textContent = styleText
+}
+```
+
+```vue
+<!-- Vue3: تغليف الجذر -->
+<template>
+  <LhConfigProvider :size="size" :theme="theme" :locale="locale">
+    <App />
+  </LhConfigProvider>
+</template>
+```
+
+```tsx
+// React: الإنزال عبر createContext + useContext؛ وتبديل السمة يستدعي applyTheme داخل effect
+```
+
+```ts
+// uniapp: يُحفظ الإعداد العام في globalData أو store؛ وحقن السمة بالنموذج نفسه
+// (على طرف h5 يُكتب في <style>، وعلى طرف التطبيقات الصغير تُمرَّر متغيّرات CSS
+// واحدة واحدة عبر خاصية style للصفحة — فالتطبيقات الصغيرة لا تدعم حقن <style>)
+```
+
+## الأنماط والرموز
+
+لا أنماط خاصة بـ ConfigProvider. والرموز التي يؤثر فيها:
+
+| الإعداد | الرموز المتأثرة |
+| --- | --- |
+| `size` | `--lh-control-height-mini/small/medium/large/x-large` (تُختار عبر اسم صنف size الخاص بالمكوّن) |
+| `theme` | مجموعة `--lh-*` بأكملها (يُولِّد `buildPresetStyleText` كتلة `:root`) |
+| `zIndex` | أساس `--lh-z-index-{dialog/drawer/popover/...}` |
+
+## ملاحظات
+
+- **`size: undefined` ميزة لا نقص**: فهي تعني «التراجع إلى الدرجة الافتراضية في طبقة الأنماط». وتتراجع سلسلة `getEffectiveSize` إلى undefined لا إلى 'medium' مُبرمج — فيكفي تغيير الدرجة الافتراضية في SCSS لتتغير المقاسات الافتراضية العامة.
+- **تكتب السمة في عنصر `<style>` فقط**: يحذّر تعليق `buildPresetStyleText` بصراحة — فالكتابة في style مضمّن على `documentElement` تجعل خصوصيته أعلى من كتلة تغطية الوضع الداكن بأكملها في `var-dark.scss`، فيتشوّه تنسيق ألوان الوضع الداكن.
+- **يقبل `theme` الأسماء المخصصة المسجَّلة عبر registerTheme**: بعد `registerTheme(preset)`، يمكن ملء theme في ConfigProvider بالاسم المخصص — وسيعثر عليه `getThemeVars`. والمسبقات لا تقتصر على الخمسة الداخلية.
+- **ConfigProvider المتداخل**: يغطي المحلي العامَ، ويغطي الداخلي الخارجي. والاستخدام النموذجي: منطقة تحتاج مقاسات أكبر (مثل وحدة تحكم باللمس) تُغلَّف وحدها بطبقة.
+- **يختلف طريقة سريان locale عن theme**: فlocale يسير عبر context (تدفق بيانات تفاعلي)، وtheme يسير عبر حقن متغيّرات CSS (عمل DOM). وتبديل locale يستدعي الطرف البصري `lhlocale.setLocale()`؛ وتبديل theme يستدعي `applyTheme` — إياك أن تمزجهما في effect واحد.
+- **وميض السمة في SSR**: لا يعرف الخادم سمة المستخدم (فهي في cookie/localStorage)، فتُعرَض الشاشة الأولى بالسمة الافتراضية ثم تُبدَّل بعد تنشيط العميل فتومض. والحل الشائع هو تضمين سكربت متزامن في `<head>` يقرأ localStorage مبكرًا وحقن `data-theme` — وهذا شأن طبقة النشر، ولا يتدخل core فيه.
+- **معنى أساس zIndex**: 2000 يترك للطبقة العملية مجال 0~1999 (أشرطة التنقل، والطبقات العائمة المخصصة). فإذا كان لديك عنصر z-index: 9999 يحجب طبقة منبثقة، فارفع الأساس العام بدلًا من تعديل كل مكوّن على حدة.
+
+<FnPlayground module="config" fn="mergeConfig" params='{"defaults": {}, "global": {"size": "small", "theme": "ink"}, "local": {"size": "large"}}' />

@@ -1,0 +1,110 @@
+---
+title: types —— 공유 유니언 타입
+description: 'LhComponentSize / LhComponentLanguage / LhComponentType / LhPosition, constants 상수에서 파생'
+---
+
+core 컴포넌트가 공유하는 네 개의 유니언 타입입니다. 이들의 값은 손으로 적은 리터럴 유니언이 아니라 **`src/constants/`의 `as const` 상수에서 파생**됩니다——크기 하나 / 언어 하나를 추가할 때 상수만 바꾸면 타입이 자동으로 따라옵니다.
+
+## 가져오기
+
+```ts
+import type {
+  LhComponentSize,
+  LhComponentLanguage,
+  LhComponentType,
+  LhPosition,
+} from '@lh-ui/share/core/shared/types'
+```
+
+## 네 개의 타입
+
+| 타입 | 정의 | 실제 값 |
+| --- | --- | --- |
+| `LhComponentSize` | `(typeof LH_SIZE_CONST)[keyof typeof LH_SIZE_CONST]` | `'small' \| 'medium' \| 'large' \| 'mini' \| 'x-large'` |
+| `LhComponentLanguage` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | `'zh-CN' \| 'en-US' \| 'ja-JP' \| 'ko-KR' \| 'de-DE' \| 'fr-FR'` |
+| `LhComponentType` | `(typeof LH_TYPES_CONST)[keyof typeof LH_TYPES_CONST] \| 'default' \| 'primary'` | `'success' \| 'warning' \| 'error' \| 'info' \| 'danger' \| 'default' \| 'primary'` |
+| `LhPosition` | 리터럴 유니언 | `'top' \| 'top-left' \| 'top-right' \| 'bottom' \| 'bottom-left' \| 'bottom-right' \| 'left' \| 'right'` |
+
+### LhComponentSize의 `'x-large'`
+
+이것은 **고령자 전용 크기**입니다(큰 글꼴, 큰 터치 영역). 상수의 구조를 주목하세요:
+
+```ts
+// src/constants/index.ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',
+  large: 'large',
+  mini: 'mini',
+  old: 'x-large',   // 키 이름은 old, 값은 'x-large'; // 고령자 전용
+} as const
+```
+
+**키 이름과 값이 다릅니다**(`old` ↔ `'x-large'`), 타입 유니언에 나타나는 것은 **값**인 `'x-large'`입니다. 한편 컴포넌트 props에서 고령자 모드를 켜는 스위치는 또 다른 불린 필드 `old?: boolean`입니다([LhBaseProps](/ko/reference/types) 참조)——크기 열거값과 스위치 prop은 별개이니 섞지 마세요.
+
+### LhComponentType의 두 기본 색
+
+`'default'` / `'primary'`는 `LH_TYPES_CONST`에 없습니다(그쪽은 다섯 개의 **의미 색**: 성공 / 경고 / 오류 / 정보 / 위험), 타입 층에서 `| 'default' | 'primary'`로 보충됩니다. 이들은 「상태 의미」가 아니라 버튼 등 컴포넌트의 기본 외관 색입니다.
+
+### LhPosition과 LhPlacement는 두 벌의 모델
+
+| | `LhPosition` | `LhPlacement`([popper](/ko/core/popper)) |
+| --- | --- | --- |
+| 용도 | 가장자리 밀착 배치(affix / backtop) | 부유층 배치(tooltip / popover) |
+| 값 | `'top'` / `'top-left'` / `'top-right'` / `'bottom'` / `'bottom-left'` / `'bottom-right'` / `'left'` / `'right'` | `'top'` / `'top-start'` / `'top-end'` / `'bottom'` / `'bottom-start'` / `'bottom-end'` / `'left'` / `'left-start'` / `'left-end'` / `'right'` / `'right-start'` / `'right-end'` |
+| 정렬 접미사 | `-left` / `-right`(양끝만) | `-start` / `-end`(의미론적 정렬, RTL 뒤집기 지원) |
+
+`LhPosition`의 `-left` / `-right`는 **물리 방향**이고, `LhPlacement`의 `-start` / `-end`는 **논리 방향**입니다(RTL 레이아웃에서 자동으로 뒤집힘). 서로 변환해서 쓰지 마세요.
+
+## 왜 상수에서 파생하는가
+
+```ts
+// 반례: 손으로 적은 유니언, 언어 추가에 두 곳을 고쳐야 함
+type LhComponentLanguage = 'zh-CN' | 'en-US'  // ← 상태와 동기화되기 쉽지 않음
+
+// 이 저장소의 방식: 상수가 유일한 원본
+type LhComponentLanguage = (typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]
+```
+
+언어 하나를 추가할 때 `LH_LANGUAGE_CONST`에 한 줄만 추가하면 타입, `LhLocaleType`, `setLocale`의 인수 검증이 전부 자동으로 갱신됩니다. 이것이 [명명 규범](/ko/guide/naming)의 「상수 `LH_XXX`, 타입 `LhXxx`」 계층화가 떨어지는 한 지점입니다.
+
+## 사용 예시
+
+### 컴포넌트 props
+
+```ts
+import type { LhComponentSize, LhComponentType } from '@lh-ui/share/core/shared/types'
+
+interface LhButtonProps {
+  type?: LhComponentType   // 자동 보완 'primary' | 'success' | …
+  size?: LhComponentSize   // 자동 보완 'small' | 'medium' | …
+}
+```
+
+### 비즈니스 확장이 있는 제네릭 버전
+
+비즈니스 측에서는 흔히 「컴포넌트 타입 + 우리 쪽의 몇 가지 타입」이 필요합니다. `src/types/components/base.ts`가 제네릭 버전을 제공합니다([types 참조](/ko/reference/types)):
+
+```ts
+import type { LhTypes } from '@lh-ui/share/types'
+
+type MyButtonType = LhTypes<'brand' | 'dangerous'>
+// → LhComponentType | 'brand' | 'dangerous'
+```
+
+### 실행 시점 검증
+
+타입 자체는 실행 시점 검증을 하지 않습니다. 컴포넌트 내부는 상수로 값을 검사합니다:
+
+```ts
+import { LH_SIZE_CONST } from '@lh-ui/share/constants'
+
+const isValidSize = (v: string): v is LhComponentSize =>
+  Object.values(LH_SIZE_CONST).includes(v as LhComponentSize)
+```
+
+## 주의 사항
+
+- **타입만 내보냅니다**: 이 모듈은 상수를 `import type`으로 가져오고, 컴파일 뒤 실행 시점 코드를 만들지 않습니다(상수 자체는 제외). 순수 타입 가져오기는 패키지 크기에 영향을 주지 않습니다.
+- **`'mini'`과 `'x-large'`는 확장 단계**: `small / medium / large`가 규격의 세 단계이고; `mini`는 인라인 컴팩트 시나리오(표 안의 동작 버튼)에, `x-large`는 접근성 고령자 단계에 쓰입니다. 모든 컴포넌트가 다섯 단계를 전부 지원하지는 않으니 각 컴포넌트 문서를 기준으로 하세요.
+- **`LhPosition`은 `src/types` 공개 내보내기에 없습니다**: 이것은 `core/shared/types` 안에 있고 `@lh-ui/share/core/shared/types`에서 가져와야 하며, `@lh-ui/share/types`에는 없습니다.

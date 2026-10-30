@@ -1,0 +1,142 @@
+---
+title: virtual —— desplazamiento virtual
+description: 'computeRange / computeWindow calculan el intervalo de desplazamiento virtual de altura fija; virtual-list y table comparten el mismo algoritmo'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+El desplazamiento virtual de altura fija tenía originalmente una implementación en `virtual-list` y otra en `table` (hasta el sobrepasado por defecto era distinto: 2 frente a 3); al arreglar un extremo se dejaba el otro desatendido. `shared/virtual` extrae el algoritmo a una implementación única y ambos solo hacen un envoltorio fino.
+
+## Cuándo usarlo
+
+- **Listas virtuales / tablas**: con miles de filas de datos, renderizar únicamente las pocas decenas que están dentro del viewport.
+- **Desplazamiento virtual horizontal**: `computeWindow` es independiente del eje y sirve igualmente para líneas temporales horizontales o barras de pestañas de desplazamiento horizontal.
+- **Cuándo no usarlo**: en escenarios de altura variable **solo se ofrece la capacidad de «obtener el desplazamiento»** (`getItemOffsetAt`), sin algoritmo de ventana de alturas variables: el desplazamiento virtual con alturas dinámicas exige que la capa UI mantenga una tabla acumulada de alturas; este módulo solo proporciona el paso de obtención del desplazamiento.
+
+## Importación
+
+```ts
+import {
+  computeRange,
+  computeWindow,
+  getItemOffsetAt,
+  LH_VIRTUAL_OVERSCAN,
+  type LhVirtualRange,
+} from '@lh-ui/share/core/shared/virtual'
+```
+
+## Tipos y constantes
+
+```ts
+export interface LhVirtualRange {
+  start: number        // Índice de inicio del intervalo renderizado (inclusivo)
+  end: number          // Índice de fin del intervalo renderizado (exclusivo)
+  offsetY: number      // Desplazamiento del elemento de inicio respecto a la parte superior
+                        // del contenedor (el punto de partida negativo del estiramiento)
+  totalHeight: number  // Altura total de todos los datos (para estirar el contenedor)
+}
+
+export interface LhAxisRange {
+  start: number
+  end: number
+  offset: number
+  totalSize: number
+}
+
+export const LH_VIRTUAL_OVERSCAN = 2   // Filas de sobrepasado por defecto
+```
+
+## Tabla de funciones
+
+| Función | Firma | Acción |
+| --- | --- | --- |
+| `computeRange` | `(scrollTop, viewportHeight, itemHeight, total, overscan?) => LhVirtualRange` | Intervalo virtual vertical de altura fija |
+| `computeWindow` | `(scrollOffset, viewportSize, itemSize, total, overscan?) => LhAxisRange` | Ventana de altura fija independiente del eje (para uso horizontal) |
+| `getItemOffsetAt` | `(items: { offset: number }[], index: number) => number` | En modo altura dinámica, obtiene el desplazamiento de desplazamiento de un elemento dado |
+
+## La lógica del cálculo
+
+El núcleo de `computeRange` son tres pasos:
+
+1. **Índice del primer elemento**: `first = floor(scrollTop / itemHeight)` y, a continuación, se amplía `overscan` filas antes y después.
+2. **Índice del último elemento**: `end = min(total, start + visible + overscan × 2)`, donde `visible = ceil(viewportHeight / itemHeight)`.
+3. **Altura total**: `totalHeight = total × itemHeight`, que sirve para estirar el contenedor hasta su altura real y que la proporción de la barra de desplazamiento sea correcta.
+
+El `offsetY` devuelto es «la posición del punto de partida del renderizado dentro de la altura total»; la capa UI lo usa como `translateY` (o padding-top) del contenedor de contenido.
+
+## Protección de los extremos
+
+La defensa de este módulo se dirige sobre todo a **el fotograma en que se contraen los datos**: quien usa el componente está viendo la fila 500 y, de pronto, los datos pasan a 10; el `scrollTop` aún no ha dado tiempo a que el navegador lo clampee de vuelta y un algoritmo simple calcularía `start = 490 > end`, con lo que `slice()` devolvería un arreglo vacío y la pantalla se quedaría en blanco.
+
+El tratamiento: `first` se clampea a `total - 1`, de modo que `start <= end` se cumpla siempre. Resto de guardianes de la misma familia:
+
+| Entrada defectuosa | Comportamiento |
+| --- | --- |
+| `itemHeight` no finito / ≤ 0 | Devuelve un intervalo todo ceros (sin renderizar, sin error) |
+| `total` no finito / ≤ 0 | Devuelve un intervalo todo ceros |
+| `scrollTop` no finito | Retrocede a 0 |
+| `viewportHeight` no finito | Retrocede a 0 (→ solo se renderiza la parte del overscan, sin pantalla en blanco) |
+| `overscan` no finito | Retrocede a `LH_VIRTUAL_OVERSCAN` |
+
+## Ejemplos de uso
+
+### Función pura
+
+```ts
+computeRange(400, 300, 40, 1000)
+// first = 10, visible = 8, overscan = 2
+// start = 10 - 2 = 8, end = min(1000, 10 + 8 + 4) = 22
+// offsetY = 8 * 40 = 320, totalHeight = 40000
+// → se renderizan los elementos 8~21 y el contenedor se traslada con translateY 320px
+```
+
+### Cableado en Vue3
+
+```vue
+<template>
+  <div class="lh-virtual-list" @scroll="onScroll" :style="{ height: `${viewportHeight}px` }">
+    <div :style="{ height: `${range.totalHeight}px` }">
+      <div :style="{ transform: `translateY(${range.offsetY}px)` }">
+        <LhVirtualItem v-for="i in visibleItems" :key="i.index" :data="i.data" />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+const range = ref<LhVirtualRange>({ start: 0, end: 0, offsetY: 0, totalHeight: 0 })
+
+function onScroll(e: Event) {
+  range.value = computeRange(
+    (e.target as HTMLElement).scrollTop,
+    viewportHeight.value,
+    props.itemHeight,
+    props.data.length,
+  )
+}
+</script>
+```
+
+### Desplazamiento horizontal
+
+```ts
+// El mismo algoritmo, cambiando de eje
+const window = computeWindow(scrollLeft, viewportWidth, itemWidth, total)
+```
+
+### Desplazamiento hasta un elemento dado (altura dinámica)
+
+```ts
+// La capa UI mantiene una tabla de desplazamientos acumulados [{ offset: 0 }, { offset: 40 }, ...]
+const offset = getItemOffsetAt(itemOffsets, targetIndex)
+container.scrollTop = offset
+```
+
+## Advertencias
+
+- **La altura fija es un requisito previo**: `computeRange` asume que todos los elementos tienen exactamente la misma altura. Si la altura de los elementos de la lista puede variar, la capa UI debe mantener por su cuenta la tabla de alturas y usar `getItemOffsetAt` para los saltos: este módulo no ofrece un algoritmo de ventana de alturas variables.
+- **`getItemOffsetAt` devuelve 0 fuera de rango**: lista vacía o índice fuera de rango devuelven 0, sin lanzar error.
+- **La disyuntiva del sobrepasado**: `LH_VIRTUAL_OVERSCAN = 2` es el punto de equilibrio entre «no parpadee al desplazar rápido» y «renderizar más filas»; al desplazar con rapidez, la región del `overscan` garantiza que el contenido del siguiente fotograma ya esté renderizado. Se puede sobreescribir con un parámetro, pero un valor menor que 1 producirá parpadeos al desplazar.
+- **`computeWindow` y `computeRange` comparten origen**: el primero delega en el segundo internamente y luego renombra los campos; el comportamiento es exactamente el mismo y, en escenarios verticales, sirve cualquiera de los dos.
+
+<FnPlayground module="virtual" fn="computeRange" params='{"scrollTop": 400, "viewportHeight": 300, "itemHeight": 40, "total": 1000}' />

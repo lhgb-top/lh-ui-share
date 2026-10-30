@@ -1,0 +1,179 @@
+---
+title: dialog —— Cuadro de diálogo
+description: 'compuerta de cierre canClose, decisión de trampa de foco shouldTrapFocus, tres posicionamientos de getDialogStyle, semántica de dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Un cuadro de diálogo es la capa modal que «interrumpe el flujo actual y exige al usuario resolver esto primero»: confirmar un borrado, rellenar un formulario, mostrar detalles. Su núcleo no es visual, sino el **bloqueo de foco y de desplazamiento**: modal significa que la página detrás no es interactiva. `core/dialog` reduce «¿se puede cerrar?», «¿hay que atrapar el foco?» y «los estilos de posicionamiento» a funciones puras; la trampa de foco real la ejecuta `core/shared/focus-trap`.
+
+## Cuándo usarlo
+
+- Cada framework implementa `LhDialog`: confirmación de operaciones peligrosas, formularios independientes (más enfocados que un drawer), presentación de información importante.
+- Escenarios que requieren **modal** (interrumpen el flujo principal y deben resolverse primero).
+- **No usarlo para**: avisos ligeros no modales (usa `message` / `notification`); paneles laterales deslizantes (usa `drawer`, que no cubre toda la pantalla); confirmaciones simples (usa `popconfirm`, más ligero).
+
+## Importación
+
+```ts
+import {
+  canClose,
+  getDialogStyle,
+  getDialogPopperClass,
+  shouldTrapFocus,
+  getDialogAria,
+} from '@lh-ui/share/core/dialog'
+import type { LhDialogState } from '@lh-ui/share/core/dialog'
+```
+
+## Intención de diseño
+
+**Los dos valores por defecto de `canClose` son asimétricos**:
+
+- `closeOnClickModal` es **false** por defecto (hacer clic en la máscara no cierra): un cuadro de diálogo suele contener un formulario o una confirmación que requiere una acción explícita del usuario; cerrarlo por error con la máscara perdería lo introducido.
+- `closeOnPressEscape` es **true** por defecto (Esc cierra): los usuarios de teclado necesitan una salida de emergencia, y esta es la convención del patrón dialog de APG.
+
+Esta asimetría es un diseño de experiencia deliberado: **proteger contra errores pero dejar siempre una salida**.
+
+**`shouldTrapFocus` solo decide**: devuelve «si se activa la trampa de foco»; la trampa concreta la implementa la capa UI junto con `core/shared/focus-trap` (al abrir saveActiveElement + focusFirst; al pulsar teclas trapTabKey; inert lo gestiona setInertOutside; al cerrar restoreActiveElement devuelve el foco). La capa core no toca el DOM.
+
+**Reparto de responsabilidades en el posicionamiento de `getDialogStyle`**: `top` / `center` / `bottom` los resuelve la alineación flexbox del contenedor, y `marginTop` solo se aplica cuando `position: 'top'` o no está definido — sumar un marginTop a center/bottom entraría en conflicto con el flexbox.
+
+**La clase visible de `getDialogPopperClass`**: se usa como estado inicial/final de la animación de transición, no para controlar la visibilidad (la visibilidad la gestionan `v-if` / `v-show`).
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `canClose` | `(state, reason: 'modalClick' \| 'escape') => boolean` | si se permite cerrar | compuerta de cierre |
+| `getDialogStyle` | `(state: { top?, zIndex?, position? }) => Record<string, string>` | estilos | posicionamiento y capas |
+| `getDialogPopperClass` | `(state: LhDialogState) => string[]` | clases | estado visible |
+| `shouldTrapFocus` | `(state: { visible, lockScroll }) => boolean` | si se atrapa el foco | decisión (sin tocar el DOM) |
+| `getDialogAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | bolsa de atributos aria | semántica de dialog |
+
+## Definiciones de tipos
+
+```ts
+export interface LhDialogState {
+  visible: boolean
+  lockScroll: boolean
+  closeOnClickModal: boolean   // por defecto false
+  closeOnPressEscape: boolean  // por defecto true
+  width: string | number | undefined
+  top: string | undefined
+  zIndex: number | undefined
+  position: 'top' | 'center' | 'bottom' | undefined
+}
+```
+
+## Accesibilidad
+
+`getDialogAria` emite la semántica de dialog modal de APG:
+
+```ts
+getDialogAria({ id: 'lh-dialog-1', titleId: 'lh-dialog-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-dialog-1', 'aria-labelledby': 'lh-dialog-title' }
+
+getDialogAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true` indica a los lectores de pantalla que el fondo es inalcanzable (solo es completo si se combina con inert / focus-trap).
+- **Si hay título, debes pasar `titleId`**; sin título no se emite `aria-labelledby`, y entonces la capa UI debe proporcionar un `aria-label` de respaldo — un diálogo sin nombre accesible es anunciado por los lectores de pantalla como un «dialog» vacío.
+- Gestión del foco (capa UI): al abrir, el foco entra en el diálogo (primer elemento enfocable o la zona de contenido); al cerrar, **se devuelve al elemento que lo abrió** — esta es la convención estándar de la trampa de foco; omitir la devolución deja a los usuarios de teclado desorientados.
+- **`aria-modal` no es un sustituto**: es solo una declaración; el aislamiento real del fondo depende de la implementación inert de `core/shared/focus-trap`. Un «falso modal» que solo declara sin aislar es un defecto frecuente.
+- Cuando el diálogo contiene un formulario, la semántica de Enter para enviar / Esc para cerrar debe ser clara (si al cerrar con Esc hay cambios sin guardar, se debería pedir una segunda confirmación).
+
+## Ejemplos de uso
+
+```ts
+import { canClose, shouldTrapFocus, getDialogStyle } from '@lh-ui/share/core/dialog'
+
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'modalClick')  // false
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'escape')      // true
+canClose({}, 'escape')        // true (por defecto Esc cierra)
+canClose({}, 'modalClick')    // false (por defecto hacer clic en la máscara no cierra)
+
+shouldTrapFocus({ visible: true, lockScroll: true })   // true
+shouldTrapFocus({ visible: true, lockScroll: false })  // false
+shouldTrapFocus({ visible: false, lockScroll: true })  // false
+
+getDialogStyle({ top: '15vh', position: 'top', zIndex: 2000 })
+// { marginTop: '15vh', zIndex: '2000' }
+getDialogStyle({ top: '15vh', position: 'center' })
+// {} (center lo centra el flexbox; no se suma marginTop)
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-dialog-fade">
+    <div v-if="visible" class="lh-dialog__wrapper" :style="{ zIndex }">
+      <div class="lh-dialog__mask" @click="onMaskClick" />
+      <div
+        :class="getDialogPopperClass({ visible })"
+        :style="getDialogStyle({ top, zIndex, position })"
+        v-bind="getDialogAria({ id: dialogId, titleId })"
+      >
+        <header class="lh-dialog__header">
+          <h3 class="lh-dialog__title" :id="titleId">{{ title }}</h3>
+          <button v-if="showClose" type="button" class="lh-dialog__close" aria-label="Cerrar" @click="close">✕</button>
+        </header>
+        <div class="lh-dialog__body"><slot /></div>
+        <footer class="lh-dialog__footer"><slot name="footer" /></footer>
+      </div>
+    </div>
+  </transition>
+</teleport>
+```
+
+```ts
+function onMaskClick() {
+  if (canClose({ closeOnClickModal, closeOnPressEscape }, 'modalClick')) close()
+}
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && canClose({ closeOnClickModal, closeOnPressEscape }, 'escape')) close()
+}
+
+// Trampa de foco (junto con shared/focus-trap)
+watch(visible, async (v) => {
+  if (v) { savedFocus = saveActiveElement(); await nextTick(); focusFirst(dialogRef.value) }
+  else { restoreActiveElement(savedFocus) }
+})
+```
+
+```tsx
+// React: usa CSSTransition o una solución headless para las transiciones; la trampa de foco usa el mismo núcleo focus-trap
+```
+
+```ts
+// uniapp: <view> + posicionamiento fixed; el bloqueo de desplazamiento lo gestiona la capa UI (los miniprogramas
+// no tienen un scroll de body que bloquear; envuelve la zona de contenido en un scroll-view para controlarlo);
+// canClose / getDialogAria de core se usan tal cual
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-dialog__wrapper` | capa exterior (centrado flex + zIndex) |
+| `.lh-dialog__mask` | máscara (negro semitransparente) |
+| `.lh-dialog__popper` | el cuerpo del diálogo |
+| `.lh-dialog__popper--visible` | estado expandido (final de la transición) |
+| `.lh-dialog__header` / `__title` / `__close` | cabecera |
+| `.lh-dialog__body` | zona de contenido |
+| `.lh-dialog__footer` | zona de botones inferior |
+
+Máscara `rgba(0, 0, 0, 0.5)`; el cuerpo usa `--lh-bg-color` + esquinas redondeadas de `--lh-radius-base` + sombra; la anchura la controla la prop `width` (por defecto 50%).
+
+## Advertencias
+
+- **Conflicto entre `closeOnClickModal` y los formularios**: en diálogos con formulario se recomienda definirlo explícitamente como `false` (que es el valor por defecto), para evitar que el usuario pierda lo introducido al pulsar la máscara por error.
+- **Relación entre `lockScroll` y la trampa de foco**: `shouldTrapFocus` exige que `lockScroll` también sea true — bloquear el desplazamiento suele implicar un modal completo, y entonces la trampa de foco es el comportamiento acompañante. Bloquear el desplazamiento sin atrapar el foco produce una experiencia disonante de «Tab se escapa a la página de detrás».
+- **Diálogos anidados**: el zIndex del diálogo interior debe ser mayor que el del exterior (gestionado con un contador autoincremental), y la trampa de foco debe anidar el foco guardado (al cerrar el interior, el foco vuelve a su elemento disparador, no al más exterior).
+- **Gestión de `zIndex`**: core solo escribe el valor recibido en los estilos, no lo autoincrementa. La capa UI debería usar un contador global de zIndex (para evitar conflictos de apilamiento con message / notification).
+- **Momento de montaje de la animación de transición**: el conmutador `v-if` desmonta el DOM de inmediato; la animación de cierre necesita la cooperación de `<transition>` — si el DOM se destruye a mitad de la animación, la devolución del foco falla; usa `@after-leave` para retrasar la lógica real de desmontaje.
+- **`position: 'bottom'`**: un diálogo posicionado abajo (estilo hoja de acciones móvil) se alinea con flex-end del flexbox; `top` no tiene efecto.
+- **`width` como porcentaje**: `'50%'` es relativo a la anchura de la máscara; en pantallas móviles estrechas conviene usar `'90%'` o un valor px concreto.
+
+<FnPlayground module="dialog" fn="canClose" params='{"state": {"closeOnClickModal": false, "closeOnPressEscape": true}, "reason": "escape"}' />

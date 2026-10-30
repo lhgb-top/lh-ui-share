@@ -1,0 +1,93 @@
+---
+title: delay —— normalización de retardos de aparición y ocultación
+description: 'resolveDelay lleva undefined a los valores por defecto del componente para el ritmo de aparición y ocultación; lo comparten tooltip / popover / popconfirm'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+tooltip quiere «mostrarse al instante al pasar el cursor y desaparecer tras un breve instante apartarlo» (para evitar el parpadeo al rozarlo); popconfirm quiere «aparecer al instante al pulsarlo». Cada componente de capa flotante tiene su propio ritmo de aparición y ocultación, pero «qué valor por defecto usar cuando nadie lo pasa» es algo común.
+
+## Cuándo usarlo
+
+- Capas flotantes de tipo hover, como tooltip / popover / popconfirm, cuyas props exponen `show-delay` / `hide-delay`.
+- Cualquier parámetro de temporización «que se pueda sobreescribir, pero con un valor por defecto razonable».
+
+**Cuándo no usarlo**: en los escenarios de temporización fija (el cierre automático a los 3 segundos de message) se escribe la constante directamente, sin pasar por la normalización.
+
+## Importación
+
+```ts
+import { resolveDelay, type LhDefaultDelay } from '@lh-ui/share/core/shared/delay'
+```
+
+## Tipos y funciones
+
+```ts
+export interface LhDefaultDelay {
+  show: number
+  hide: number
+}
+```
+
+| Función | Firma | Acción |
+| --- | --- | --- |
+| `resolveDelay` | `(showDelay: number \| undefined, hideDelay: number \| undefined, defaults: LhDefaultDelay) => LhDefaultDelay` | Normalización de los retardos de aparición y ocultación |
+
+```ts
+resolveDelay(undefined, undefined, { show: 0, hide: 150 })
+// { show: 0, hide: 150 }   —— nadie pasó valores, se usan los del componente
+
+resolveDelay(200, undefined, { show: 0, hide: 150 })
+// { show: 200, hide: 150 } —— solo se ha sobrescrito show
+```
+
+La implementación son dos `??`: `showDelay ?? defaults.show`, `hideDelay ?? defaults.hide`. `null` sigue la misma ruta (`??` trata `null` y `undefined` a la vez).
+
+## Por qué se extrae como función aparte
+
+Los tres componentes tienen valores por defecto distintos, pero la misma lógica de normalización:
+
+| Componente | show por defecto | hide por defecto | Motivo |
+| --- | --- | --- | --- |
+| tooltip | 0 | 150 | Aparece al instante para evitar «pasar el cursor sin reacción»; tarda en desaparecer para evitar el parpadeo al moverse hacia el destino |
+| popover | 0 | 150 | Ídem, pero su contenido es interactivo y el hide es mayor (lo decide la capa UI) |
+| popconfirm | 0 | 0 | Se dispara por pulsación, sin semántica de hover |
+
+Al extraerlo, un nuevo componente de capa flotante solo pasa sus propios `defaults`, sin volver a escribir el «fallback de undefined».
+
+## La diferencia con debounce
+
+Dos cosas que se confunden fácilmente:
+
+| | `resolveDelay` | `debounce` (utils) |
+| --- | --- | --- |
+| Semántica | **Normalización de parámetros** sobre «cuánto esperar antes de mostrar / ocultar esta vez» | Herramienta de limitación que **converge** las llamadas de alta frecuencia en una sola ejecución |
+| Uso | Calcular los valores de retardo | Usar los valores de retardo para envolver un temporizador real |
+
+La cadena típica es en serie: `const { hide } = resolveDelay(props.hideDelay, undefined, DEFAULTS)` → `hideTimer = debounce(actualHide, hide)`.
+
+## Ejemplos de uso
+
+```ts
+// Interior del componente popover
+const DEFAULT_DELAY: LhDefaultDelay = { show: 0, hide: 150 }
+
+const delay = computed(() =>
+  resolveDelay(props.showDelay, props.hideDelay, DEFAULT_DELAY),
+)
+
+function onShow() {
+  setTimeout(open, delay.value.show)
+}
+function onHide() {
+  setTimeout(close, delay.value.hide)
+}
+```
+
+## Advertencias
+
+- **Solo hace fallback, no clamp**: un retardo negativo se devuelve tal cual. Si cada capa UI necesita que «el retardo no sea negativo», lo gestiona por su cuenta en `setTimeout(fn, Math.max(0, ms))` (`setTimeout` trata los negativos como 0, de modo que en la práctica no habrá problemas).
+- **`show` / `hide` son independientes**: tras la normalización siguen siendo dos números independientes que el componente usa en dos temporizadores distintos.
+- **Devuelve un objeto nuevo**: cada llamada devuelve un `{ show, hide }` nuevo, se puede envolver de forma reactiva con seguridad.
+
+<FnPlayground module="delay" fn="resolveDelay" params='{"showDelay": null, "hideDelay": 300, "defaults": {"show": 0, "hide": 150}}' />

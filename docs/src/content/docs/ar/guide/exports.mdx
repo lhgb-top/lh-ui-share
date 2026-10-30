@@ -1,0 +1,127 @@
+---
+title: مداخل الحزمة والمسارات الفرعية
+description: 'الجدول الكامل لمفاتيح exports الـ 77 في @lh-ui/share وممارسات الاستيراد عند الطلب'
+---
+
+# مداخل الحزمة والمسارات الفرعية
+
+يحدّد حقل `exports` في `package.json` **مسارات الاستيراد الشرعية الوحيدة** — أي مسار
+غير مدرج هنا (مثل `@lh-ui/share/es/core/button/logic.js` مباشرةً) سيرفضه Node / الحازم.
+تملك هذه الحزمة **77 مفتاحًا**.
+
+## قائمة المفاتيح العليا
+
+| المفتاح | يشير إلى | الاستخدام |
+| --- | --- | --- |
+| `.` | `es/index.js` / `lib/index.js` | استيراد مجرّد كامل |
+| `./package.json` | `./package.json` | لقراءة رقم الإصدار بالأدوات |
+| `./core` | `es/core/index.js` | تجميع كل دوال core النقية |
+| `./core/<المكوّن>/*` | `es/core/<المكوّن>/*` | **56 مكوّنًا** كلٌّ على حدة عند الطلب |
+| `./core/shared/*` | `es/core/shared/*` | 12 وحدة من النواة المشتركة |
+| `./constants` | `es/constants/index.js` | ثوابت `LH_*` |
+| `./locales` | `es/locales/index.js` | lhlocale + zhCN / enUS |
+| `./locales/lang/*` | `es/locales/lang/*` | استيراد حزم اللغات الست كلًّا على حدة |
+| `./theme` | `es/theme/index.js` | بدائيع وقت تشغيل السمة + المسبقات |
+| `./types` | `es/types/index.d.ts` | **أنواع فقط**، بلا تنفيذ |
+| `./types/components/*` | `es/types/components/*.d.ts` | أنواع Props للمكوّنات (أنواع فقط) |
+| `./utils` | `es/utils/index.js` | أدوات نقية مثل createNamespace / deepMerge |
+| `./utils/*` | `es/utils/*` | استيراد الأدوات حسب الملف |
+| `./theme.css` | `dist/theme/index.css` | رموز الوضع الفاتح |
+| `./theme-dark.css` | `dist/theme/index-dark.css` | تجاوزات الوضع الداكن |
+| `./styles.css` | `dist/styles/index.css` | الرموز + أنماط كل المكوّنات |
+| `./dist/*` | `dist/*` | وصول مباشر لمخرجات dist |
+| `./styles/*` | `styles/<name>/index.scss` | **مصدر SCSS لمكوّن واحد** |
+| `./styles/index.scss` | `styles/index.scss` | تجميع SCSS الكامل |
+| `./styles/theme/index.scss` | `styles/theme/index.scss` | تجميع SCSS للسمة |
+| `./styles/theme/common/*` | `styles/theme/common/*.scss` | الرموز / الزخارف / mixin الانتقال |
+
+## التصدير ثلاثي الشروط
+
+باستثناء ملفات CSS / SCSS الخالصة ومفاتيح `types`، يحمل كل مفتاح JS ثلاثة شروط في وقت واحد:
+
+```json
+"./core/button/*": {
+  "types": "./es/core/button/*.d.ts",
+  "import": "./es/core/button/*.js",
+  "require": "./lib/core/button/*.js"
+}
+```
+
+- `import` —— مخرجات ESM (`es/`)، تحاكي preserveModules بنية المصدر، فيُضمَّن ملف واحد فقط عند الاستيراد عند الطلب.
+- `require` —— مخرجات CJS (`lib/`)، لتشغيل Node مباشرةً / jest وغيرها.
+- `types` —— ملفات `.d.ts`، ويمر منها `import type` دون أي تكلفة في وقت التشغيل.
+
+## مسارات core الفرعية الـ 56
+
+```
+affix · alert · anchor · avatar · backtop · badge · breadcrumb · button ·
+calendar · card · cascader · checkbox · collapse · config · date-picker ·
+descriptions · dialog · divider · drawer · dropdown · empty · form · grid ·
+icon · image · input · input-number · loading · menu · message ·
+notification · pagination · popconfirm · popover · progress · radio · rate ·
+segmented · select · skeleton · slider · space · spinner · statistic ·
+steps · switch · table · tabs · tag · time-picker · timeline · tooltip ·
+transfer · tree · upload · virtual-list
+```
+
+سطح التصدير لكل مسار فرعي مذكور في «جدول الدوال» بصفحة المكوّن، ويمكن الرجوع إليه صفحةً
+صفحة (انظر «واجهات برمجة تطبيقات المكوّنات» في التنقل الأيسر).
+
+## مسارات النواة المشتركة الـ 12
+
+```
+core/shared/a11y · date · delay · focus-trap · format · keyboard ·
+popper · pt · sanitize · sx · types · virtual
+```
+
+هذه هي الطبقة التي تشير إليها مكتبات واجهة المستخدم في كل طرف بشكل متكرر. وثائق كل وحدة
+ضمن «النواة المشتركة» في التنقل الأيسر.
+
+## tree-shaking و sideEffects
+
+```json
+"sideEffects": ["**/*.css", "**/*.scss"]
+```
+
+الآثار الجانبية محصورة في ملفات الأنماط. ويمكن تطبيق tree-shaking بأمان على المسارات
+الفرعية لـ JS الخالص:
+
+- ✅ `import { getButtonClasses } from '@lh-ui/share/core/button'` يضمّن button فقط.
+- ✅ `import type { LhSxProps } from '@lh-ui/share/core/shared/sx` يُمحى في وقت الترجمة.
+- ⚠️ `import '@lh-ui/share/styles.css'` هو **استيراد كامل** لا يقبل tree-shaking ——
+  للاستيراد عند الطلب استخدم مصدر SCSS ضمن `./styles/<name>` وترجمه بنفسك، أو استخدم
+  المخرجات عند الطلب من كل مكتبة واجهة.
+
+## شكلا مسارات styles الفرعية
+
+يشير `./styles/*` إلى **مصدر SCSS** (`styles/<name>/index.scss`) لا إلى المخرجات المترجمة:
+
+```scss
+@use '@lh-ui/share/styles/button';   // ✅ الحازم يترجم SCSS
+```
+
+```ts
+import '@lh-ui/share/styles/button'   // ❌ يحتاج إلى الامتداد .scss ولا يتعرف عليه الحازم
+```
+
+إن لم تكن راغبًا في ترجمة SCSS داخل مشروعك، فاستورد `./styles.css` (الكامل) أو استخدم
+المخرجات الجاهزة `es/<name>/style/index.css` (lh-ui-plus) / `es/components/<name>/style/index.css`
+(lh-ui-vue2) من كل مكتبة واجهة.
+
+## الربط المحلي (التطوير داخل العائلة)
+
+لا تعتمد مكتبات واجهة المستخدم داخل العائلة على npm: تُوجِّه إعدادات dev / test موقع
+`@lh-ui/share/**` عبر **حارس وجود** (existence guard) إلى مصدر المستودع الشقيق `lh-ui-share/`:
+
+| الاستيراد | الوجهة في تخطيط العائلة |
+| --- | --- |
+| `@lh-ui/share/styles/**` | `lh-ui-share/styles/**` (مصدر SCSS، تُرجم في vite مباشرةً) |
+| `@lh-ui/share/core/**` | `lh-ui-share/src/core/**` |
+| `@lh-ui/share/{utils,constants,theme,locales,types}/**` | `lh-ui-share/src/$1/**` |
+| `@lh-ui/share` (المجرّد) | `lh-ui-share/src/index.ts` |
+
+عند عدم وجود مستودع share شقيق، يعيد الحارس مصفوفة فارغة ويتراجع تلقائيًا إلى حزمة npm
+المثبتة —— **فالعمل ممكن في clone أحادي المستودع وفي تخطيط العائلة على حد سواء**.
+تنطبق القاعدة نفسها على الإصدار: إذا أضافت share ملفًا عميقًا جديدًا دون تشغيل
+`pnpm build` (الذي يشمل sync-exports)، فلن يكون هناك مفتاح exports مقابل على جانب npm،
+وسيواجه المستهلك MODULE_NOT_FOUND بعد `pnpm up`.

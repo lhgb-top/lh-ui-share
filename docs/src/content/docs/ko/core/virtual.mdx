@@ -1,0 +1,141 @@
+---
+title: virtual —— 가상 스크롤
+description: 'computeRange / computeWindow 정규격 가상 스크롤 구간, virtual-list와 table이 동일 알고리즘을 공유'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+정규격 가상 스크롤은 원래 `virtual-list`와 `table`에 각각 한 범씩 있었습니다——기본 오버스캔조차 달랐고(2와 3), 한쪽 경계를 고치면 다른 쪽이 새는 일이 반복됐습니다. `shared/virtual`이 알고리즘을 유일한 한 벌로 뽑아냈고, 양쪽은 얇은 래핑만 합니다.
+
+## 사용 시기
+
+- **가상 목록 / 표**: 데이터가 수천 행일 때 뷰포트 안의 열몇 줄만 렌더링합니다.
+- **수평 가상 스크롤**: `computeWindow`는 축 무관입니다. 가로 타임라인, 가로 스크롤 tabs 바에도 그대로 쓸 수 있습니다.
+- **쓰면 안 되는 곳**: 가변 높이 시나리오에는 **「오프셋 가져오기」 능력만**(`getItemOffsetAt`) 있고, 가변 높이 윈도우 알고리즘은 없습니다——동적 높이 가상 스크롤은 UI 계층이 누적 높이 표를 유지해야 하며, 이 모듈은 오프셋 가져오기 한 단계만 제공합니다.
+
+## 가져오기
+
+```ts
+import {
+  computeRange,
+  computeWindow,
+  getItemOffsetAt,
+  LH_VIRTUAL_OVERSCAN,
+  type LhVirtualRange,
+} from '@lh-ui/share/core/shared/virtual'
+```
+
+## 타입과 상수
+
+```ts
+export interface LhVirtualRange {
+  start: number        // 렌더링 구간 시작 인덱스(포함)
+  end: number          // 렌더링 구간 끝 인덱스(미포함)
+  offsetY: number      // 시작 요소의 컨테이너 상단 기준 오프셋(높이 채우기의 음수 시작점)
+  totalHeight: number  // 전체 데이터의 총 높이(컨테이너 높이 채우기용)
+}
+
+export interface LhAxisRange {
+  start: number
+  end: number
+  offset: number
+  totalSize: number
+}
+
+export const LH_VIRTUAL_OVERSCAN = 2   // 기본 오버스캔 행 수
+```
+
+## 함수 표
+
+| 함수 | 시그니처 | 역할 |
+| --- | --- | --- |
+| `computeRange` | `(scrollTop, viewportHeight, itemHeight, total, overscan?) => LhVirtualRange` | 세로 정규격 가상 구간 |
+| `computeWindow` | `(scrollOffset, viewportSize, itemSize, total, overscan?) => LhAxisRange` | 축 무관 정규격 윈도우(가로용) |
+| `getItemOffsetAt` | `(items: { offset: number }[], index: number) => number` | 동적 높이 모에서 지정 항목의 스크롤 오프셋 |
+
+## 계산 로직
+
+`computeRange`의 핵심은 세 단계입니다:
+
+1. **첫 항목 인덱스**: `first = floor(scrollTop / itemHeight)`이고, 앞뒤로 각각 `overscan`행씩 확장합니다.
+2. **끝 항목 인덱스**: `end = min(total, start + visible + overscan × 2)`, 여기서 `visible = ceil(viewportHeight / itemHeight)`입니다.
+3. **총 높이**: `totalHeight = total × itemHeight`, 컨테이너를 실제 높이까지 채워 스크롤 바 비율이 올바르게 합니다.
+
+반환된 `offsetY`는 「렌더링 시작점이 총 높이 안에 있는 위치」이고, UI 계층은 이것을 콘텐츠 컨테이너의 `translateY`(또는 padding-top)로 씁니다.
+
+## 경계 보호
+
+이 모듈의 방어는 주로 **데이터가 수축하는 그 프레임**을 겨냥합니다: 사용자가 500번째 행을 보고 있는데 데이터가 갑자기 10개로 줄면, `scrollTop`이 아직 브라우저에 의해 클램프되기 전에 단순한 알고리즘은 `start = 490 > end`를 계산하고, `slice()`가 빈 배열을 반환해 → 하얀 화면이 됩니다.
+
+처리 방식: `first`를 `total - 1`까지 클램프해 `start <= end`가 항상 성립하게 합니다. 같은 부류의 수호가 또 있습니다:
+
+| 나쁜 입력 | 동작 |
+| --- | --- |
+| `itemHeight`이 유한하지 않거나 ≤ 0 | 전부 0인 구간 반환(렌더링하지 않고, 에러도 없음) |
+| `total`이 유한하지 않거나 ≤ 0 | 전부 0인 구간 반환 |
+| `scrollTop`이 유한하지 않음 | 0으로 폴백 |
+| `viewportHeight`이 유한하지 않음 | 0으로 폴백(→ overscan 부분만 렌더링, 하얀 화면 없음) |
+| `overscan`이 유한하지 않음 | `LH_VIRTUAL_OVERSCAN`으로 폴백 |
+
+## 사용 예시
+
+### 순수 함수
+
+```ts
+computeRange(400, 300, 40, 1000)
+// first = 10, visible = 8, overscan = 2
+// start = 10 - 2 = 8, end = min(1000, 10 + 8 + 4) = 22
+// offsetY = 8 * 40 = 320, totalHeight = 40000
+// → 8~21번 항목 렌더링, 컨테이너 translateY 320px
+```
+
+### Vue3 접속
+
+```vue
+<template>
+  <div class="lh-virtual-list" @scroll="onScroll" :style="{ height: `${viewportHeight}px` }">
+    <div :style="{ height: `${range.totalHeight}px` }">
+      <div :style="{ transform: `translateY(${range.offsetY}px)` }">
+        <LhVirtualItem v-for="i in visibleItems" :key="i.index" :data="i.data" />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+const range = ref<LhVirtualRange>({ start: 0, end: 0, offsetY: 0, totalHeight: 0 })
+
+function onScroll(e: Event) {
+  range.value = computeRange(
+    (e.target as HTMLElement).scrollTop,
+    viewportHeight.value,
+    props.itemHeight,
+    props.data.length,
+  )
+}
+</script>
+```
+
+### 가로 스크롤
+
+```ts
+// 같은 알고리즘, 축만 바꿈
+const window = computeWindow(scrollLeft, viewportWidth, itemWidth, total)
+```
+
+### 지정 항목으로 스크롤(동적 높이)
+
+```ts
+// UI 계층이 누적 오프셋 표를 유지 [{ offset: 0 }, { offset: 40 }, ...]
+const offset = getItemOffsetAt(itemOffsets, targetIndex)
+container.scrollTop = offset
+```
+
+## 주의 사항
+
+- **정규격이 전제**: `computeRange`는 각 항목의 높이가 엄격히 같다고 가정합니다. 목록 항목의 높이가 변할 수 있다면 UI 계층이 직접 높이 표를 유지하고, `getItemOffsetAt`으로 점프해야 합니다——이 모듈은 가변 높이 윈도우 알고리즘을 제공하지 않습니다.
+- **`getItemOffsetAt`은 범위 밖에서 0 반환**: 빈 목록, 인덱스 범위 초과 모두 0이고, 에러를 던지지 않습니다.
+- **오버스캔의 트레이드오프**: `LH_VIRTUAL_OVERSCAN = 2`은 「빠른 스크롤 시 깜빡임 없음」과 「레더링 행 수」의 균형점입니다; 사용자가 빠르게 스크롤할 때 `overscan` 영역이 다음 프레임의 콘텐츠를 미리 렌더링해 둡니다. 파라미터로 덮어쓸 수 있지만, 1보다 작으면 스크롤 시 깜빡입니다.
+- **`computeWindow`와 `computeRange`는 동일 원본**: 전자는 내부적으로 후자에게 위임한 뒤 필드 이름만 바꿉니다. 동작이 완전히 같으므로 세로 시나리오에서는 어느 쪽을 써도 됩니다.
+
+<FnPlayground module="virtual" fn="computeRange" params='{"scrollTop": 400, "viewportHeight": 300, "itemHeight": 40, "total": 1000}' />

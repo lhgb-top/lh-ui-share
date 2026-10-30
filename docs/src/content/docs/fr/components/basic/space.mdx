@@ -1,0 +1,127 @@
+---
+title: space —— Espacement
+description: 'resolveSpaceGaps normalise paliers préréglés / nombres / tableaux en CSS gap et indique si l’on passe par les jetons, getSpaceClassNames calcule les classes de disposition'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`space` résout l'un des problèmes les plus courants d'une bibliothèque de composants : disposer un groupe d'éléments à intervalle fixe. Ce n'est pas un framework de mise en page (c'est le rôle de `LhGrid`), mais une « sémantisation de l'espacement » — `small` / `medium` / `large` sont des jetons de conception, les nombres sont des ajustements ponctuels, et les tableaux permettent de contrôler séparément les espacements de ligne et de colonne.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhSpace` : groupes de boutons, disposition des champs de formulaire, mise en page des éléments d'une carte.
+- Partout où l'on doit exprimer au sein d'un composant « ces éléments sont espacés les uns des autres ».
+- **À ne pas utiliser pour** : les grilles bidimensionnelles (utilisez `LhGrid`) ou les alignements flex avancés (écrivez directement les styles). space ne gère que l'espacement ; l'alignement est transmis via `align`.
+
+## Importation
+
+```ts
+import { getSpaceClassNames, resolveSpaceGaps, resolveSpaceAlignment } from '@lh-ui/share/core/space'
+import type { LhSpaceState, LhSpaceSizeInput, LhSpaceAlignment } from '@lh-ui/share/core/space'
+```
+
+## Intentions de conception
+
+Le cœur de `resolveSpaceGaps` est de **distinguer « jeton » et « littéral »** :
+
+- Les paliers préréglés (`small` / `medium` / `large`) produisent `var(--lh-spacing-*)` et renvoient `usesTokens: true` — l'espacement suit les personnalisations du thème.
+- Les nombres sont traités comme des littéraux en px et renvoient `usesTokens: false` — l'espacement est une décision ponctuelle de l'appelant.
+- Le tableau `[columnGap, rowGap]` contrôle séparément les deux axes.
+
+Pourquoi exposer `usesTokens` ? Parce que la stratégie de rendu de la couche UI diffère : avec les jetons, les noms de classe peuvent être omis (le gap est directement piloté par la variable CSS) ; avec un littéral, il faut écrire un style inline. Ce drapeau évite à la couche UI de parser la valeur de sortie avec une expression rationnelle.
+
+Les paliers ne référencent que les jetons d'espacement **effectivement enregistrés** dans `var.scss`, et la valeur de repli est identique à la valeur par défaut du jeton — la substitution par l'utilisateur de `--lh-spacing-*` a donc un effet réel ; cette cohérence est garantie par `verify:styles`.
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getSpaceClassNames` | `(state: LhSpaceState) => string[]` | tableau de classes | Classes de direction, wrap et taille |
+| `resolveSpaceGaps` | `(size: LhSpaceSizeInput) => { columnGap: string; rowGap: string; usesTokens: boolean }` | Description du gap | Normalisation de size en CSS gap |
+| `resolveSpaceAlignment` | `(alignment: string) => string` | Valeur CSS | Transmission de la valeur d'alignement |
+
+Mapping de `resolveSpaceGaps` :
+
+| Entrée | columnGap / rowGap | usesTokens |
+| --- | --- | --- |
+| `'small'` | `var(--lh-spacing-sm, 8px)` | true |
+| `'medium'` | `var(--lh-spacing-base, 16px)` | true |
+| `'large'` | `var(--lh-spacing-xl, 24px)` | true |
+| `24` (nombre) | `24px` | false |
+| `[16, 8]` | `16px` / `8px` | false |
+
+Aux limites : les cases manquantes du tableau ou les valeurs non finies ont une repli sur `0` (pour éviter `"undefinedpx"`) ; le mélange préréglage + nombre (comme `['medium', 8]`) n'est pas pris en charge.
+
+## Définitions de types
+
+```ts
+export type LhSpaceAlignment = 'start' | 'center' | 'end' | 'baseline'
+export type LhSpaceSizeInput = 'small' | 'medium' | 'large' | number | [number, number]
+
+export interface LhSpaceState {
+  direction: 'horizontal' | 'vertical'
+  wrap: boolean
+  size: string    // Le calcul des noms de classe n'accepte que les paliers préréglés
+}
+```
+
+Notez la répartition dans les types : `LhSpaceState.size` (pour les noms de classe) n'accepte que les chaînes de paliers préréglés, tandis que `LhSpaceSizeInput` (pour le calcul du gap) accepte en plus les nombres et les tableaux. Aucune classe `lh-space--16px` ne peut apparaître dans les noms de classe.
+
+## Accessibilité
+
+`space` est un élément de pure mise en page : il n'émet pas d'attributs aria et est lui-même invisible pour le lecteur d'écran. Le contenu qu'il enveloppe conserve chacun sa propre sémantique — c'est ce qui distingue space des conteneurs comme `<button>` : il n'introduit aucune couche sémantique.
+
+## Exemples d'utilisation
+
+```ts
+import { getSpaceClassNames, resolveSpaceGaps } from '@lh-ui/share/core/space'
+
+getSpaceClassNames({ direction: 'horizontal', wrap: true, size: 'small' })
+// ['lh-space', 'lh-space--horizontal', 'lh-space--small', 'lh-space--wrap']
+
+resolveSpaceGaps('medium')
+// { columnGap: 'var(--lh-spacing-base, 16px)', rowGap: 'var(--lh-spacing-base, 16px)', usesTokens: true }
+
+resolveSpaceGaps([16, 8])
+// { columnGap: '16px', rowGap: '8px', usesTokens: false }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSpaceClassNames({ direction, wrap, size })" :style="gapStyle">
+  <slot />
+</div>
+```
+
+```tsx
+// React
+const gaps = resolveSpaceGaps(size)
+const style = { columnGap: gaps.columnGap, rowGap: gaps.rowGap }
+return <div className={getSpaceClassNames({ direction, wrap, size }).join(' ')} style={style}>{children}</div>
+```
+
+```ts
+// uniapp : gap est bien géré sur les cibles non h5 (nvue / uve le supportent) ;
+// si une plateforme ne gère pas gap, la couche UI se replie sur des marges
+// appliquées aux enfants
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-space` | Classe de base : conteneur flex |
+| `.lh-space--horizontal` / `.lh-space--vertical` | Direction (flex-direction) |
+| `.lh-space--wrap` | Autorise le passage à la ligne |
+| `.lh-space--{small\|medium\|large}` | Classes de palier (associées aux jetons `--lh-spacing-*`) |
+
+Les classes de palier et la sortie préréglée de `resolveSpaceGaps` sont **deux expressions d'un même jeu de jetons** : les noms de classe passent par les variables SCSS `@use` (à la compilation), le gap par les variables CSS (à l'exécution). Les valeurs concordent, vérifiées par `verify:styles`.
+
+## Remarques
+
+- **Ne pas mélanger** : `resolveSpaceGaps(['medium', 8])` n'est pas pris en charge (l'implémentation ne reconnaît pas les mélanges) ; si vous souhaitez des espacements différents sur les deux axes, utilisez uniquement des nombres `[16, 8]`.
+- **Choix entre nombres et jetons** : les valeurs par défaut internes de la bibliothèque de composants devraient passer par les paliers (elles suivent le thème), tandis que les ajustements ponctuels aux points d'appel métier utilisent des nombres.
+- Le passage à la ligne (`wrap`) n'a de sens qu'en horizontal ; vertical + wrap est sans effet.
+- `resolveSpaceAlignment` est pour l'instant une simple transmission : le mapping concret des mots-clés flex se trouve dans la couche styles (pilotée par les noms de classe).
+
+<FnPlayground module="space" fn="resolveSpaceGaps" params='{"size": "medium"}' />

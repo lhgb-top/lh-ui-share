@@ -1,0 +1,162 @@
+---
+title: timeline —— Chronologie
+description: 'getTimelineSide pour l’\’’alternance gauche/droite, quatre types de nœuds sémantiques, disposition double colonne en mode alternate'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La chronologie visualise « des événements ordonnés dans le temps » : une ligne verticale relie plusieurs nœuds, chacun avec une heure, un titre, un contenu. On la trouve dans les Suivis de livraison, les journaux d'opérations, les historiques de versions. `core/timeline` est très léger — l'essentiel du travail est le calcul de l'alternance gauche/droite côté disposition et l'assemblage des classes.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhTimeline` : suivi de livraison, historique d'approbation, journal des mises à jour, flux d'audit des opérations.
+- Scénarios où les événements sont **ordonnés dans le temps** et nécessitent de mettre en valeur cet axe temporel.
+- **À ne pas utiliser pour** : des étapes sans dimension temporelle (utilisez `steps`, qui met l'accent sur la progression plutôt que sur le temps) ; des événements nécessitant filtrage/recherche (utilisez une liste + filtre).
+
+## Importation
+
+```ts
+import {
+  getTimelineItemClassNames,
+  getTimelineClassNames,
+  getTimelineSide,
+} from '@lh-ui/share/core/timeline'
+import type { LhTimelineMode, LhTimelineType, LhTimelineItemState } from '@lh-ui/share/core/timeline'
+```
+
+## Intentions de conception
+
+**Deux modes de disposition** :
+
+- `left` (par défaut) : la ligne verticale est à l'extrême gauche, tout le contenu est disposé dans une colonne unique à droite. Simple, densité d'information élevée.
+- `alternate` : la ligne est centrée, le contenu **alterne gauche/droite** — `getTimelineSide(index)` utilise `index % 2` pour déterminer le côté (pair à gauche, impair à droite). Ce mode est visuellement plus symétrique, adapté lorsque les blocs de contenu sont volumineux et que la chronologie est l'élément principal de la page.
+
+**Pourquoi `getTimelineSide` est-il dans core et non dans les styles** : le côté ne détermine pas seulement la classe CSS, mais aussi **l'ordre d'arrangement des sous-composants de contenu** (l'horodatage doit précéder le contenu dans la colonne de gauche, et suivre dans la colonne de droite). C'est calculé par une fonction pure, la logique de rendu est identique sur toutes les cibles, et l'on évite la divergence « côté Vue on alterne, côté React tout est à gauche ».
+
+**Quatre types sémantiques** : `primary` / `success` / `warning` / `danger`, correspondant aux couleurs des pastilles des nœuds. La sémantique est donnée par l'appelant en fonction de la nature de l'événement (une opération réussie → success, une alerte → warning) ; core ne fait que la correspondance de classes et n'interprète pas la signification métier.
+
+**L'utilité de `isLast`** : le dernier nœud **ne dessine pas de segment de ligne** (la classe `--last` supprime le segment `::before`), sinon l'axe dépasse d'un cran après le dernier nœud.
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getTimelineItemClassNames` | `(state: LhTimelineItemState) => string[]` | Classes | Type / creux / côté / dernier |
+| `getTimelineClassNames` | `(mode: LhTimelineMode) => string[]` | Classes | Modificateur alternate |
+| `getTimelineSide` | `(index: number) => 'left' \| 'right'` | Côté | Pair à gauche, impair à droite |
+
+## Définitions de types
+
+```ts
+export type LhTimelineMode = 'left' | 'alternate'
+export type LhTimelineType = 'primary' | 'success' | 'warning' | 'danger'
+
+export interface LhTimelineItemState {
+  type: LhTimelineType | undefined
+  hollow: boolean       // Nœud creux (contour seul, pour les événements « non encore atteints »)
+  side: 'left' | 'right'  // Côté en mode alternate
+  isLast: boolean
+}
+```
+
+## Accessibilité
+
+timeline est un composant **purement présentationnel**, sans rôle interactif APG. Le contenu porte lui-même la sémantique de liste ordonnée, il est recommandé de l'envelopper dans un `<ol>` :
+
+```html
+<ol class="lh-timeline">
+  <li class="lh-timeline__item">
+    <time datetime="2026-10-12T10:00">10:00</time> Commande reçue
+  </li>
+</ol>
+```
+
+- L'élément `<time>` permet aux lecteurs d'écran et aux moteurs de recherche de reconnaître le moment ; l'attribut `datetime` utilise le format ISO 8601.
+- Les pastilles des nœuds sont purement décoratives : `aria-hidden="true"` ou implémentées en pseudo-élément (les pseudo-éléments ne figurent naturellement pas dans l'arbre d'accessibilité).
+- Si la chronologie exprime une **progression** (par exemple « actuellement à l'étape 3 »), envisagez plutôt `steps` avec `aria-current`.
+
+## Exemples d'utilisation
+
+```ts
+import { getTimelineSide, getTimelineClassNames } from '@lh-ui/share/core/timeline'
+
+getTimelineSide(0)  // 'left'
+getTimelineSide(1)  // 'right'
+getTimelineSide(2)  // 'left'
+getTimelineClassNames('alternate')  // ['lh-timeline', 'lh-timeline--alternate']
+getTimelineClassNames('left')       // ['lh-timeline']
+```
+
+```vue
+<!-- Vue3 : mode alternate -->
+<ol :class="getTimelineClassNames(mode)">
+  <li
+    v-for="(item, index) in items"
+    :key="item.id"
+    :class="getTimelineItemClassNames({
+      type: item.type,
+      hollow: item.hollow,
+      side: getTimelineSide(index),
+      isLast: index === items.length - 1,
+    })"
+  >
+    <template v-if="mode === 'alternate'">
+      <!-- Colonne de gauche -->
+      <div v-if="getTimelineSide(index) === 'left'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+        <p class="lh-timeline__desc">{{ item.desc }}</p>
+      </div>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <!-- Colonne de droite -->
+      <div v-if="getTimelineSide(index) === 'right'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+    <template v-else>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <div class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+  </li>
+</ol>
+```
+
+```tsx
+// React : en mode alternate, le côté détermine l'ordre de rendu, via une branche sur getTimelineSide(index)
+```
+
+```ts
+// uniapp : <view> en boucle ; la double colonne alternate utilise un positionnement absolu
+// et une disposition gauche/droite à 50 % chacun
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-timeline` | Classe de base (réinitialisation du `<ol>`) |
+| `.lh-timeline--alternate` | Mode alterné (axe centré) |
+| `.lh-timeline__item` | Un nœud |
+| `.lh-timeline__item--{primary\|success\|warning\|danger}` | Type sémantique (couleur de la pastille) |
+| `.lh-timeline__item--hollow` | Pastille creuse (non encore atteint) |
+| `.lh-timeline__item--right` | Colonne de droite en alternate |
+| `.lh-timeline__item--last` | Dernier nœud (ne dessine pas le segment d'axe inférieur) |
+| `.lh-timeline__dot` | Pastille (`::before` dessine l'axe) |
+| `.lh-timeline__content` / `__time` / `__title` / `__desc` | Zone de contenu |
+
+Couleur de l'axe `--lh-border-color` ; les quatre couleurs de pastilles sont respectivement `--lh-primary-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color` ; les nœuds creux utilisent une bordure + un fond transparent.
+
+## Remarques
+
+- **`isLast` doit être transmis** : sans lui, l'axe dépasse après le dernier nœud et donne visuellement l'impression d'une barre de progression tronquée.
+- **L'ordre des données en mode `alternate`** : l'alternance gauche/droite se fait **selon l'index**, cohérente avec l'ordre temporel des données — ne calcule pas le côté après avoir réordonné côté UI, sous peine d'un décalage des côtés.
+- **La sémantique des nœuds creux `hollow`** : ils indiquent « cet événement n'est pas encore atteint » (par exemple « en attente de réception » d'un suivi de livraison). Elle est orthogonale à `type` : creux + warning signifie « non encore atteint et présentant un risque ».
+- **Le débordement de contenu** : en mode alternate, chaque colonne ne dispose que de la moitié de la largeur, les textes longs reviennent nombreuses fois à la ligne ; lorsque le contenu est abondant, utilisez le mode `left` ou donnez à la zone de contenu un `max-height` + un déploiement.
+- **Le formatage des dates** : core ne formate pas les dates, la couche UI utilise `core/shared/date.formatDate` ou effectue le traitement elle-même ; `<time datetime>` doit être au format ISO pour être analysable par machine.
+- **La chronologie inversée** : certains scénarios exigent l'événement le plus récent en haut — il suffit d'inverser au niveau des données, core n'a pas connaissance de la direction.
+
+<FnPlayground module="timeline" fn="getTimelineSide" params='{"index": 3}' />

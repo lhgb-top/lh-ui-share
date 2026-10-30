@@ -1,0 +1,268 @@
+---
+title: table —— 表格
+description: 'sortTableRows 空值排末尾、buildHeaderCells 多級表頭展開、getStickyOffsets 固定列偏移、computeVisibleRange 虛擬捲動'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+表格是資料展示的「重器」：排序、篩選、多級表頭、固定列、虛擬捲動、列寬拖曳，每一項都是獨立的演算法難題。`core/table` 把這些全部抽成純函式——UI 層只管把結果綁到 DOM。它是本套件裡函式最多的元件模組之一。
+
+## 何時使用
+
+- 各端實作 `LhTable`：後臺列表、資料報表、批次操作表格。
+- 結構化資料需要排序 / 篩選 / 固定列 / 多級表頭的場景。
+- **不該用它**：資料量極小且無互動（簡單的 `descriptions` 或手寫表格更輕）；卡片式資訊流（用 `card` 版面配置）。
+
+## 匯入方式
+
+```ts
+import {
+  LH_TABLE_ROW_HEIGHT,
+  LH_TABLE_OVERSCAN,
+  LH_TABLE_MIN_COL_WIDTH,
+  computeVisibleRange,
+  cycleSortOrder,
+  sortTableRows,
+  getCellValue,
+  getColumnWidth,
+  getGridTemplate,
+  getStickyOffsets,
+  getTableClassNames,
+  getTableCellClassNames,
+  flattenLeafColumns,
+  buildHeaderCells,
+  getHeaderStickyOffsets,
+  filterTableRows,
+  clampColumnWidth,
+  getTableSortAria,
+} from '@lh-ui/share/core/table'
+import type {
+  LhTableAlign,
+  LhTableColumn,
+  LhTableFilterOption,
+  LhTableHeaderCell,
+  LhTableRow,
+  LhTableSortOrder,
+  LhTableVisibleRange,
+  LhTableCellSticky,
+} from '@lh-ui/share/core/table'
+```
+
+## 設計意圖
+
+**空值排末尾**：`sortTableRows` 對 `null` / `undefined` / `NaN` 統一處理——它們不參與正常比較，一律排到末尾，**且 desc 時仍在末尾**。這是一個明確的產品決策：空資料的行不應該因為倒序就跑到第一行擋住有效資料。
+
+**多級表頭的 DAG 安全**：`flattenLeafColumns` 與 `buildHeaderCells` 用**全域 seen** 而非祖先鏈 seen——因為同一 column 物件可能被 DAG 式共享引用（同一列出現在兩個組下），全域判重保證它只發射一次，表體列數才與表頭葉子格數一致。`buildHeaderCells` 的 `leafSpan` 用「遞迴實際發射的葉子數」而非先驗計數，正是為了防止共享子樹被算兩遍導致列數錯位。
+
+**組表頭的 sticky 繼承**：`getHeaderStickyOffsets` 只在「區間內葉子列全部 fixed 同側」時讓組表頭繼承首末葉子的偏移——跨固定區與流動區的組表頭無法用單一偏移定位，乾脆不固定。
+
+**`clampColumnWidth` 的同構重載**：`數進數出、字串進字串出`，呼叫方不必為同構變換再做類型斷言；NaN 直接傳回下限（拖曳過程中可能出現 NaN 座標）。
+
+**`computeVisibleRange` 已 @deprecated**：虛擬捲動演算法已收斂到共享核心 `core/shared/virtual` 的 `computeRange`（與 VirtualList 同源），本函式保留相容別名供 vue2 等下游既有引用。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `computeVisibleRange` | `(scrollTop, viewportHeight, rowHeight, total, overscan?) => LhTableVisibleRange` | 可視區間 | **@deprecated**，委派 `computeRange` |
+| `cycleSortOrder` | `(current?) => LhTableSortOrder \| undefined` | 下一排序狀態 | 無→asc→desc→無 |
+| `sortTableRows` | `(rows, prop, order, sorter?) => LhTableRow[]` | 新陣列 | 空值排末尾 |
+| `getCellValue` | `(row, column) => string` | 顯示值 | formatter 優先 |
+| `getColumnWidth` | `(column) => string` | `'120px'` / `'1fr'` | 無寬度均分 |
+| `getGridTemplate` | `(columns) => string` | grid 模板 | 供 CSS grid 版面配置 |
+| `getStickyOffsets` | `(columns) => LhTableCellSticky[]` | 左右偏移 | 固定列累加 |
+| `getTableClassNames` | `(state: { stripe, border, size, virtual }) => string[]` | 類別名 | 四修飾 |
+| `getTableCellClassNames` | `(state) => string[]` | 類別名 | 對齊/固定列/拖寬 |
+| `flattenLeafColumns` | `(columns) => LhTableColumn[]` | 葉子列 | 多級表頭表體用 |
+| `buildHeaderCells` | `(columns) => LhTableHeaderCell[]` | 扁平表頭格 | 含 rowspan/colspan |
+| `getHeaderStickyOffsets` | `(leafColumns, headerCells) => LhTableCellSticky[]` | 表頭偏移 | 組表頭條件繼承 |
+| `filterTableRows` | `(rows, filters) => LhTableRow[]` | 新陣列 | 列間 AND、列內 OR |
+| `clampColumnWidth` | `(width: number \| string) => number \| string` | 鉗制後寬度 | 下限 40px |
+| `getTableSortAria` | `(options: { sortOrder?, sortable? }) => LhAriaAttrs` | aria 屬性包 | aria-sort |
+
+常數：`LH_TABLE_ROW_HEIGHT = 48`（預設行高）、`LH_TABLE_OVERSCAN = 3`（捲動緩衝行數）、`LH_TABLE_MIN_COL_WIDTH = 40`（拖寬下限）。
+
+## 類型定義
+
+```ts
+export type LhTableAlign = 'left' | 'center' | 'right'
+export type LhTableSortOrder = 'asc' | 'desc'
+export type LhTableRow = Record<string, any>
+
+export interface LhTableColumn {
+  prop: string
+  label: string
+  width?: number | string          // 數字為 px
+  align?: LhTableAlign
+  fixed?: 'left' | 'right'         // 需配合 width
+  sortable?: boolean
+  slot?: string                    // 自訂單元格插槽名
+  formatter?: (row: LhTableRow, value: any) => string
+  children?: LhTableColumn[]       // 設定即得多級表頭
+  filters?: LhTableFilterOption[]  // 僅葉子列生效
+  filterMethod?: (value: string | number, row: LhTableRow) => boolean
+  filterMultiple?: boolean         // 預設 true
+  resizable?: boolean              // 需為數字 width 的葉子列
+}
+
+export interface LhTableHeaderCell {
+  column: LhTableColumn
+  level: number          // 表頭層級 0 起
+  leafStart: number      // 葉子列序起點
+  leafSpan: number       // 跨葉子列數
+  rowspan: number        // 補齊到最大深度
+  colspan: number        // = leafSpan
+  isLeaf: boolean
+}
+
+export interface LhTableVisibleRange { start: number; end: number; offsetY: number; totalHeight: number }
+export interface LhTableCellSticky { left?: number; right?: number }
+```
+
+## 無障礙
+
+`getTableSortAria` 輸出 `aria-sort`，與 `cycleSortOrder` 的狀態機嚴格對齊：
+
+```ts
+getTableSortAria({ sortable: true, sortOrder: 'asc' })    // { 'aria-sort': 'ascending' }
+getTableSortAria({ sortable: true, sortOrder: 'desc' })   // { 'aria-sort': 'descending' }
+getTableSortAria({ sortable: true })                      // { 'aria-sort': 'none' }
+getTableSortAria({ sortable: false })                     // {}（不可排序欄不輸出）
+```
+
+注意第三種：未排序時輸出 `aria-sort="none"` 而非省略——這是 APG 的明確要求，**顯式宣告「該欄可排序但目前未排序」**，讀屏軟體據此提示使用者可在此欄執行排序操作。
+
+其餘約定（UI 層實作）：表頭用 `<th scope="col">`；固定列不要用 `tabindex` 製造額外焦點；分頁區是獨立的 `nav`；行選擇列的 checkbox 需 `aria-label`（如「選擇第 3 行」）。
+
+## 使用範例
+
+```ts
+import { cycleSortOrder, sortTableRows, filterTableRows, buildHeaderCells } from '@lh-ui/share/core/table'
+
+cycleSortOrder(undefined)  // 'asc'
+cycleSortOrder('asc')      // 'desc'
+cycleSortOrder('desc')     // undefined（取消排序）
+
+const rows = [
+  { name: '王五', age: 30 },
+  { name: '李四', age: null },
+  { name: '张三', age: 20 },
+]
+sortTableRows(rows, 'age', 'asc')
+// 張三 20 → 王五 30 → 李四 null（空值恆在末尾）
+sortTableRows(rows, 'age', 'desc')
+// 王五 30 → 張三 20 → 李四 null（倒序時空值仍在末尾）
+sortTableRows(rows, 'age', undefined)  // 原順序副本
+
+filterTableRows(rows, [{ column: { prop: 'name' }, values: ['张三'] }])
+// [{ name: '张三', age: 20 }]
+filterTableRows(rows, [])  // 全量副本（無激活篩選）
+
+// 多級表頭
+const columns = [
+  { label: '基本信息', children: [{ prop: 'name', label: '姓名' }, { prop: 'age', label: '年龄' }] },
+  { prop: 'city', label: '城市' },
+]
+flattenLeafColumns(columns)  // [姓名, 年齡, 城市]（表體按此渲染）
+buildHeaderCells(columns)
+// 基本資訊（level 0, leafStart 0, colspan 2）、姓名（rowspan 2 補齊）、
+// 年齡（rowspan 2）、城市（level 0, rowspan 2）
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTableClassNames({ stripe, border, size, virtual })">
+  <div class="lh-table__wrapper">
+    <div class="lh-table__header" :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }">
+      <div
+        v-for="cell in headerCells"
+        :key="`${cell.level}-${cell.leafStart}`"
+        class="lh-table__header-cell"
+        :style="cellStyle(cell)"
+        v-bind="getTableSortAria({ sortOrder: sortState[cell.column.prop], sortable: cell.column.sortable })"
+        @click="onSort(cell.column)"
+      >
+        {{ cell.column.label }}
+        <span v-if="cell.column.sortable" class="lh-table__sort-indicator">
+          {{ sortState[cell.column.prop] === 'asc' ? '↑' : sortState[cell.column.prop] === 'desc' ? '↓' : '↕' }}
+        </span>
+      </div>
+    </div>
+    <div class="lh-table__body">
+      <div
+        v-for="row in displayRows"
+        :key="row.id"
+        class="lh-table__row"
+        :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }"
+      >
+        <div
+          v-for="column in leafColumns"
+          :key="column.prop"
+          :class="getTableCellClassNames({ align: column.align ?? 'left', fixed: column.fixed })"
+        >
+          {{ getCellValue(row, column) }}
+        </div>
+      </div>
+    </div>
+  </div>
+  <LhPagination :total="total" v-model:current="current" v-model:page-size="pageSize" />
+</div>
+```
+
+```ts
+// 排序接線（受控）
+function onSort(column: LhTableColumn) {
+  if (!column.sortable) return
+  const next = cycleSortOrder(sortState.value[column.prop])
+  if (next) sortState.value = { ...sortState.value, [column.prop]: next }
+  else delete sortState.value[column.prop]
+}
+
+const displayRows = computed(() =>
+  filterTableRows(
+    sortTableRows(props.data, sortProp.value, sortOrder.value),
+    activeFilters.value,
+  ),
+)
+```
+
+```tsx
+// React：虛擬捲動
+// const range = computeRange(scrollTop, viewportHeight, rowHeight, rows.length, 3)
+// 渲染 range.start..range.end，外層用 totalHeight 撐高、內層 translateY(range.offsetY)
+```
+
+```ts
+// uniapp：<scroll-view scroll-y> + 計算可視區間；CSS grid 在部分端支援有限，
+// 可退化為 flex 列；core 的排序/篩選/表頭展開函數端無關，照用
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-table` / `--{small\|medium\|large}` | 基礎類 / 尺寸檔（行高與內邊距） |
+| `.lh-table--stripe` / `--border` / `--virtual` | 斑馬紋 / 邊框 / 虛擬捲動 |
+| `.lh-table__header` / `__header-cell` | 表頭 |
+| `.lh-table__body` / `__row` | 表體 |
+| `.lh-table__cell` / `--{left\|center\|right}` | 單元格 / 對齊 |
+| `.lh-table__cell--fixed-left` / `--fixed-right` | 固定列（sticky） |
+| `.lh-table__cell--fixed-left-last` / `--fixed-right-first` | 固定列邊界（投影分隔） |
+| `.lh-table__cell--resizable` | 可拖寬列 |
+| `.lh-table__empty` | 空狀態 |
+
+行高預設 48px（`LH_TABLE_ROW_HEIGHT`），與虛擬捲動演算法的 `rowHeight` 參數必須一致，否則視窗錯位。表頭底色 `--lh-fill-color`，邊框 `--lh-border-color`，hover 行 `--lh-fill-color-light`。
+
+## 注意事項
+
+- **行高一致性是虛擬捲動的前提**：`computeRange` 假定每行等高；若行內內容撐高（長文字換行），虛擬捲動會錯位——高度不規則的表格不要開 `virtual`。
+- **固定列必須宣告 `width`**：`getStickyOffsets` 只對數字 px 或 `'Npx'` 字串換算偏移；`'20%'` 這類單位無法換算，按 0 累加，固定列會疊在一起。
+- **`resizable` 的前提**：必須是**數字 width 的葉子列**，拖寬後用 `clampColumnWidth` 鉗到下限再寫回列設定。
+- **排序的 `prop` 與資料的鍵**：`sortTableRows` 按 `row[prop]` 取值，巢狀欄位（`user.name`）不自動支援，用 `sorter` 自訂。
+- **篩選的列內 OR**：同一列的多個選取值是「或」關係，不同列之間是「與」——這是與 Element 一致的通行的語義。
+- **多級表頭的表體列序**：表體必須用 `flattenLeafColumns(columns)` 而非 `columns`，否則列數與表頭葉子格數不匹配。
+- **DAG 共享列**：同一 column 物件在兩組下引用時，全域 seen 保證只發射一次——但**引用同一個物件的副作用是改一處即改兩處**，若需要「同名不同設定」請深拷貝。
+- **大資料量的排序是 O(n log n)**：每幀排序上萬行會卡頓，考慮伺服器端排序（`sortable: 'custom'` 由 UI 層約定）。
+- **`getTableSortAria` 的 `aria-sort` 掛在 `<th>` 上**，不是整列的每個單元格。
+
+<FnPlayground module="table" fn="cycleSortOrder" params='{"current": "asc"}' />

@@ -1,0 +1,131 @@
+---
+title: statistic —— قيمة إحصائية
+description: 'دقة ثابتة + فاصل الآلاف عبر formatStatisticValue، والأعداد الصحيحة الكبيرة جدًا تسلك مسار السلاسل كي لا تفقد الدقة، ويُطهَّر precision عبر safePrecision'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+يعرض مكوّن القيمة الإحصائية «الأرقام الرئيسية»: المستخدمين النشطين يوميًا، والإيرادات، ونسبة الإتمام. وخطره الجوهري ليس التخطيط بل **الدقة**: يُعطي `Number(12345678901234567890).toFixed(2)` نتيجة خاطئة في JS (لتجاوزه العدد الصحيح الآمن)، كما أن في التقريب على طريقة `(0.1).toFixed` فخاخ الفاصلة العائمة. يسد `formatStatisticValue` الخاص بـ `core/statistic` هذه الحفر دفعة واحدة في الطبقة المشتركة، فيستفيد منها الأطراف الثلاثة.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhStatistic`: أرقام لوحات القيادة، وملخصات التقارير، وعرض نسب الإتمام.
+- المشاهد التي تحتاج إلى تنسيق أي عدد على هيئة «عدد عشري ثابت + فاصل آلاف»، حتى دون استخدام المكوّن، يمكنها استدعاء `formatStatisticValue` مباشرة.
+- **لا يجب استخدامه**: رموز العملات، وتحويل الوحدات، وتنسيق المناطق الزمنية — تلك شؤون طبقة العمل؛ أما تنسيق التواريخ فباستخدام `core/shared/date`.
+
+## طريقة الاستيراد
+
+```ts
+import { formatStatisticValue, getStatisticClassNames } from '@lh-ui/share/core/statistic'
+import type { LhStatisticState } from '@lh-ui/share/core/statistic'
+```
+
+## نية التصميم
+
+ثلاثة خطوط دفاع للدقة في `formatStatisticValue`:
+
+1. **المدخلات غير الصالحة لا تُرمي خطأ**: تُعاد NaN / Infinity كما هي `String(value)`، دون محاولة تنسيق «شيء ليس عددًا».
+2. **تطهير precision**: فإن `toFixed(101)` يرمي RangeError، وهنا يُطهَّر أولًا عبر `safePrecision` من `shared/sanitize` إلى عدد صحيح في `[0, 100]`. ويتشارك هذا الخط `input-number` (راجع [input-number](/ar/components/form/input-number)).
+3. **الأعداد الصحيحة الكبيرة جدًا تسلك مسار السلاسل**: عندما يتجاوز الجزء الصحيح `Number.MAX_SAFE_INTEGER`، لا يمر التحويل عبر Number إطلاقًا — فالتقريب بحمل عشري على السلاسل (داخليًا `incrementDigits`)، والفصل بقطع السلاسل (`formatBigString`). وهذا هو الطريق الوحيد لضمان تنسيق `99999999999999999999` بشكل صحيح.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `formatStatisticValue` | `(value: number \| string, state: Pick<LhStatisticState, 'precision' \| 'separator'>) => string` | سلسلة منسَّقة | الدقة + فاصل الآلاف |
+| `getStatisticClassNames` | `(prefixCls?: string) => string[]` | مصفوفة أسماء الأصناف | صنف الحاوية، مع إمكانية استبدال البادئة |
+
+تفاصيل السلوك:
+
+| المدخل | المُخرَج | المسار |
+| --- | --- | --- |
+| `1234567.891`, `{ precision: 2, separator: ',' }` | `'1,234,567.89'` | toFixed + فصل |
+| `1234567.8`, `{ precision: 0, separator: '' }` | `'1234568'` | بلا فاصل |
+| `'99999999999999999999'`, `{ precision: 0, separator: ',' }` | `'99,999,999,999,999,999,999'` | مسار السلاسل |
+| `NaN`, أي قيمة | `'NaN'` | إعادة كما هي |
+| `'abc'`, أي قيمة | `'abc'` | `Number('abc')` هي NaN |
+
+يُستخدم الفاصل في **فصل الجزء الصحيح** فقط، وتظل العلامة العشرية `.` ثابتة (وعند الحاجة إلى علامة عشرية محلية على طرف ما، يُستبدل في الطرف البصري).
+
+## تعريف الأنواع
+
+```ts
+export interface LhStatisticState {
+  precision: number      // عدد المنازل العشرية (يُطهَّر عبر safePrecision إلى [0, 100])
+  separator: string      // فاصل الآلاف، والسلسلة الفارغة تعني عدم الفصل
+}
+```
+
+## إمكانية الوصول
+
+لا يُخرج `core/statistic` حزمة سمات aria. وتكمن أهمية إمكانية الوصول للقيمة الإحصائية في الطرف البصري:
+
+- الرقم نفسه يُقرأ بالنص العادي عبر قارئ الشاشة، لكن **فاصلة الآلاف تُنطق «فاصلة»** (فـ `1,234,567` تُنطق «واحد فاصلة اثنان ثلاثة أربعة...»). لذا يجب توفير `aria-label` لكتلة القيمة بأكملها بصياغة لغوية («مائة وثلاثة وعشرون ألفًا وأربعمائة وسبعة وستون» أو نطق كل رقم على حدة «1 2 3 4 5 6 7»).
+- حركة تغيُّر القيمة (التمرير إلى القيمة الهدف) بصرية صرفة لا تحمل معلومة؛ وإذا كانت القيمة غير قابلة للقراءة أثناء الحركة، فيُحتفظ بـ aria-label للقيمة القديمة حتى تستقر.
+
+## أمثلة الاستخدام
+
+```ts
+import { formatStatisticValue } from '@lh-ui/share/core/statistic'
+
+formatStatisticValue(9876543.21, { precision: 1, separator: ' ' })
+// '9 876 543.2'
+
+formatStatisticValue(0.1 + 0.2, { precision: 2, separator: '' })
+// '0.30'  (وليس جزءًا من 0.30000000000000004)
+
+formatStatisticValue('12345678901234567890', { precision: 0, separator: ',' })
+// '12,345,678,901,234,567,890'
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getStatisticClassNames()">
+  <span v-if="prefix" class="lh-statistic__prefix">{{ prefix }}</span>
+  <span class="lh-statistic__content">
+    <span class="lh-statistic__title">{{ title }}</span>
+    <span class="lh-statistic__value" :aria-label="ariaLabel">
+      {{ formatStatisticValue(value, { precision, separator }) }}
+    </span>
+  </span>
+  <span v-if="suffix" class="lh-statistic__suffix">{{ suffix }}</span>
+</div>
+```
+
+```tsx
+// React
+const text = formatStatisticValue(value, { precision, separator })
+return (
+  <div className="lh-statistic">
+    <span className="lh-statistic__content">
+      <span className="lh-statistic__title">{title}</span>
+      <span className="lh-statistic__value" aria-label={spoken}>{text}</span>
+    </span>
+  </div>
+)
+```
+
+```ts
+// uniapp: مُخرجات سلسلية صرفة، بلا فروق بين الأطراف؛ وكل طرف يستخدم حل التمرير الخاص به للحركة
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-statistic` | الصنف الأساسي: التخطيط |
+| `.lh-statistic__title` | العنوان (لون نص ثانوي، حجم خط أصغر) |
+| `.lh-statistic__content` | منطقة المحتوى (ترتيب عمودي للعنوان + القيمة) |
+| `.lh-statistic__value` | القيمة (لون النص الرئيسي، حجم خط أكبر، أرقام بعرض ثابت `font-variant-numeric: tabular-nums`) |
+| `.lh-statistic__prefix` / `.lh-statistic__suffix` | البادئة واللاحقة (مثل ¥ و%) |
+
+يسير خط القيم عبر رمز `--lh-font-family-numeric` (إن وُجد)، ضمانًا لتوافق عرض الأرقام.
+
+## ملاحظات
+
+- **الحد الأعلى لـ precision هو 100**: ويُقتطَع ما يتجاوزه عبر `safePrecision` بدلًا من رمي خطأ؛ وprecision السالب يُعامَل إلى 0.
+- **دلالة المدخل النصي**: يحاول `formatStatisticValue('123', ...)` أولًا `Number('123')`، فإذا نجح سلك مسار الأعداد؛ أما `'abc'` فيُعاد كما هو. ولا بد من تمرير **الأعداد الصحيحة الكبيرة جدًا كسلاسل** — فتمرير القيمة الحرفية العددية `99999999999999999999` تفقد دقتها بالفعل في النص المصدري لـ JS، ولا يستطيع core إنقاذها.
+- **لا** تكتب فاصل الآلاف بنفسك في الطرف البصري عبر `toLocaleString`: فهو يتأثر بـ locale زمن التشغيل، وقد يختلف بين الأطراف الثلاثة؛ استخدم `formatStatisticValue` موحَّدًا.
+- تسمح وسيلة `prefixCls` في `getStatisticClassNames` باستبدال البادئة (والافتراضي `lh-statistic`)، للمشاهد التي يحتاج فيها طرف ما إلى التعايش مع أسماء أصناف قائمة.
+
+<FnPlayground module="statistic" fn="formatStatisticValue" params='{"value": 1234567.891, "state": {"precision": 2, "separator": ","}}' />

@@ -1,0 +1,268 @@
+---
+title: table —— テーブル
+description: 'sortTableRows の null 値末尾配置、buildHeaderCells の多段ヘッダー展開、getStickyOffsets の固定列オフセット、computeVisibleRange の仮想スクロール'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+テーブルはデータ表示の「重器」です：ソート、フィルタ、多段ヘッダー、固定列、仮想スクロール、列幅ドラッグ、それぞれが独立したアルゴリズムの難問です。`core/table` はこれらをすべて純関数として切り出します——UI 層は結果を DOM にバインドするだけです。このモジュールは本パッケージで最も関数の多いコンポーネントモジュールの一つです。
+
+## いつ使うか
+
+- 各端末で `LhTable` を実装するケース：管理画面のリスト、データレポート、一括操作テーブル。
+- 構造化データにソート / フィルタ / 固定列 / 多段ヘッダーが必要なシーン。
+- **使うべきでないケース**：データ量が極端に少なくインタラクションもない（シンプルな `descriptions` か手書きのテーブルの方が軽い）；カード式の情報ストリーム（`card` レイアウトを使う）。
+
+## インポート方法
+
+```ts
+import {
+  LH_TABLE_ROW_HEIGHT,
+  LH_TABLE_OVERSCAN,
+  LH_TABLE_MIN_COL_WIDTH,
+  computeVisibleRange,
+  cycleSortOrder,
+  sortTableRows,
+  getCellValue,
+  getColumnWidth,
+  getGridTemplate,
+  getStickyOffsets,
+  getTableClassNames,
+  getTableCellClassNames,
+  flattenLeafColumns,
+  buildHeaderCells,
+  getHeaderStickyOffsets,
+  filterTableRows,
+  clampColumnWidth,
+  getTableSortAria,
+} from '@lh-ui/share/core/table'
+import type {
+  LhTableAlign,
+  LhTableColumn,
+  LhTableFilterOption,
+  LhTableHeaderCell,
+  LhTableRow,
+  LhTableSortOrder,
+  LhTableVisibleRange,
+  LhTableCellSticky,
+} from '@lh-ui/share/core/table'
+```
+
+## 設計意図
+
+**null 値は末尾**：`sortTableRows` は `null` / `undefined` / `NaN` を統一的に扱います——これらは通常の比較に参加せず、一律で末尾に置かれ、**desc のときも末尾のまま**です。これは明確なプロダクトの決定です：空データの行が、逆順になったからといって先頭に跳んで有効なデータを遮ってはなりません。
+
+**多段ヘッダーの安全性**：`flattenLeafColumns` と `buildHeaderCells` は祖先チェーンの seen ではなく**グローバルな seen** を使います——同一の column オブジェクトが DAG 的に共有参照される（同じ列が 2 つのグループの下に現れる）ことがあるためです。グローバルな重複判定によりその列は一度だけ送出され、本体の列数がヘッダーの葉セルの数と一致します。`buildHeaderCells` の `leafSpan` が「再帰的に実際に送出された葉の数」を使うのも、共有サブツリーが 2 回数えられて列数がずれるのを防ぐためです。
+
+**グループヘッダーの sticky 継承**：`getHeaderStickyOffsets` は「その区間内の葉列がすべて同じ側に fixed」のときだけグループヘッダーに先頭 / 末尾の葉のオフセットを継承させます——固定区と流動区にまたがるグループヘッダーは単一のオフセットで位置を決められないため、固定しないようにします。
+
+**`clampColumnWidth` の同型オーバーロード**：数値を入れれば数値、文字列を入れれば文字列が出る——呼び出し側は同型変換のために型アサーションをする必要はありません。NaN はそのまま下限を返します（ドラッグ中に NaN の座標が出ることがあります）。
+
+**`computeVisibleRange` は @deprecated**：仮想スクロールのアルゴリズムは共有コア `core/shared/virtual` の `computeRange`（VirtualList と同源）に収束しました。この関数は vue2 など下流の既存参照のための互換エイリアスとして残っています。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `computeVisibleRange` | `(scrollTop, viewportHeight, rowHeight, total, overscan?) => LhTableVisibleRange` | 可視区間 | **@deprecated**、`computeRange` に委譲 |
+| `cycleSortOrder` | `(current?) => LhTableSortOrder \| undefined` | 次のソート状態 | なし→asc→desc→なし |
+| `sortTableRows` | `(rows, prop, order, sorter?) => LhTableRow[]` | 新しい配列 | null 値は末尾 |
+| `getCellValue` | `(row, column) => string` | 表示値 | formatter を優先 |
+| `getColumnWidth` | `(column) => string` | `'120px'` / `'1fr'` | 幅指定なしは均等分割 |
+| `getGridTemplate` | `(columns) => string` | grid テンプレート | CSS grid レイアウト用 |
+| `getStickyOffsets` | `(columns) => LhTableCellSticky[]` | 左右のオフセット | 固定列の累積 |
+| `getTableClassNames` | `(state: { stripe, border, size, virtual }) => string[]` | クラス名 | 4 つの修飾 |
+| `getTableCellClassNames` | `(state) => string[]` | クラス名 | 整列 / 固定列 / 幅ドラッグ |
+| `flattenLeafColumns` | `(columns) => LhTableColumn[]` | 葉列 | 多段ヘッダーの本体用 |
+| `buildHeaderCells` | `(columns) => LhTableHeaderCell[]` | フラットなヘッダーセル | rowspan/colspan を含む |
+| `getHeaderStickyOffsets` | `(leafColumns, headerCells) => LhTableCellSticky[]` | ヘッダーのオフセット | グループヘッダーの条件付き継承 |
+| `filterTableRows` | `(rows, filters) => LhTableRow[]` | 新しい配列 | 列間は AND、列内は OR |
+| `clampColumnWidth` | `(width: number \| string) => number \| string` | クランプ後の幅 | 下限 40px |
+| `getTableSortAria` | `(options: { sortOrder?, sortable? }) => LhAriaAttrs` | aria 属性バッグ | aria-sort |
+
+定数：`LH_TABLE_ROW_HEIGHT = 48`（デフォルト行高）、`LH_TABLE_OVERSCAN = 3`（スクロールのバッファ行数）、`LH_TABLE_MIN_COL_WIDTH = 40`（幅ドラッグの下限）。
+
+## 型定義
+
+```ts
+export type LhTableAlign = 'left' | 'center' | 'right'
+export type LhTableSortOrder = 'asc' | 'desc'
+export type LhTableRow = Record<string, any>
+
+export interface LhTableColumn {
+  prop: string
+  label: string
+  width?: number | string          // 数値は px
+  align?: LhTableAlign
+  fixed?: 'left' | 'right'         // width との併用が必要
+  sortable?: boolean
+  slot?: string                    // カスタムセルのスロット名
+  formatter?: (row: LhTableRow, value: any) => string
+  children?: LhTableColumn[]       // 設定するだけで多段ヘッダーになる
+  filters?: LhTableFilterOption[]  // 葉列でのみ有効
+  filterMethod?: (value: string | number, row: LhTableRow) => boolean
+  filterMultiple?: boolean         // デフォルト true
+  resizable?: boolean              // 数値 width の葉列である必要がある
+}
+
+export interface LhTableHeaderCell {
+  column: LhTableColumn
+  level: number          // ヘッダー階層 0 から
+  leafStart: number      // 葉列の順序の起点
+  leafSpan: number       // またがる葉列の数
+  rowspan: number        // 最大深さに合わせて補完
+  colspan: number        // = leafSpan
+  isLeaf: boolean
+}
+
+export interface LhTableVisibleRange { start: number; end: number; offsetY: number; totalHeight: number }
+export interface LhTableCellSticky { left?: number; right?: number }
+```
+
+## アクセシビリティ
+
+`getTableSortAria` は `aria-sort` を出力し、`cycleSortOrder` の状態機械と厳密に揃えます：
+
+```ts
+getTableSortAria({ sortable: true, sortOrder: 'asc' })    // { 'aria-sort': 'ascending' }
+getTableSortAria({ sortable: true, sortOrder: 'desc' })   // { 'aria-sort': 'descending' }
+getTableSortAria({ sortable: true })                      // { 'aria-sort': 'none' }
+getTableSortAria({ sortable: false })                     // {}（ソート不可列は出力しない）
+```
+
+3 つ目に注意してください：未ソートのとき出力を省略するのではなく `aria-sort="none"` を出力します——これは APG の明確な要件で、**「この列はソート可能だが現在未ソートである」ことを明示**します。スクリーンリーダーはこれに基づいて、この列でソート操作を実行できるとユーザーに伝えます。
+
+その他の規約（UI 層が実装）：ヘッダーは `<th scope="col">`；固定列に `tabindex` を作って余分なフォーカスを与えない；ページネーション領域は独立した `nav`；行選択列の checkbox には `aria-label` が必要です（例：「3 行目を選択」）。
+
+## 使用例
+
+```ts
+import { cycleSortOrder, sortTableRows, filterTableRows, buildHeaderCells } from '@lh-ui/share/core/table'
+
+cycleSortOrder(undefined)  // 'asc'
+cycleSortOrder('asc')      // 'desc'
+cycleSortOrder('desc')     // undefined（ソート解除）
+
+const rows = [
+  { name: '鈴木', age: 30 },
+  { name: '佐藤', age: null },
+  { name: '田中', age: 20 },
+]
+sortTableRows(rows, 'age', 'asc')
+// 田中 20 → 鈴木 30 → 佐藤 null（null 値は常に末尾）
+sortTableRows(rows, 'age', 'desc')
+// 鈴木 30 → 田中 20 → 佐藤 null（逆順でも null 値はやはり末尾）
+sortTableRows(rows, 'age', undefined)  // 元の順序のコピー
+
+filterTableRows(rows, [{ column: { prop: 'name' }, values: ['田中'] }])
+// [{ name: '田中', age: 20 }]
+filterTableRows(rows, [])  // 全件のコピー（有効なフィルタなし）
+
+// 多段ヘッダー
+const columns = [
+  { label: '基本情報', children: [{ prop: 'name', label: '名前' }, { prop: 'age', label: '年齢' }] },
+  { prop: 'city', label: '都市' },
+]
+flattenLeafColumns(columns)  // [名前, 年齢, 都市]（本体はこれに従ってレンダリング）
+buildHeaderCells(columns)
+// 基本情報（level 0, leafStart 0, colspan 2）、名前（rowspan 2 で補完）、
+// 年齢（rowspan 2）、都市（level 0, rowspan 2）
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTableClassNames({ stripe, border, size, virtual })">
+  <div class="lh-table__wrapper">
+    <div class="lh-table__header" :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }">
+      <div
+        v-for="cell in headerCells"
+        :key="`${cell.level}-${cell.leafStart}`"
+        class="lh-table__header-cell"
+        :style="cellStyle(cell)"
+        v-bind="getTableSortAria({ sortOrder: sortState[cell.column.prop], sortable: cell.column.sortable })"
+        @click="onSort(cell.column)"
+      >
+        {{ cell.column.label }}
+        <span v-if="cell.column.sortable" class="lh-table__sort-indicator">
+          {{ sortState[cell.column.prop] === 'asc' ? '↑' : sortState[cell.column.prop] === 'desc' ? '↓' : '↕' }}
+        </span>
+      </div>
+    </div>
+    <div class="lh-table__body">
+      <div
+        v-for="row in displayRows"
+        :key="row.id"
+        class="lh-table__row"
+        :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }"
+      >
+        <div
+          v-for="column in leafColumns"
+          :key="column.prop"
+          :class="getTableCellClassNames({ align: column.align ?? 'left', fixed: column.fixed })"
+        >
+          {{ getCellValue(row, column) }}
+        </div>
+      </div>
+    </div>
+  </div>
+  <LhPagination :total="total" v-model:current="current" v-model:page-size="pageSize" />
+</div>
+```
+
+```ts
+// ソートの配線（受控）
+function onSort(column: LhTableColumn) {
+  if (!column.sortable) return
+  const next = cycleSortOrder(sortState.value[column.prop])
+  if (next) sortState.value = { ...sortState.value, [column.prop]: next }
+  else delete sortState.value[column.prop]
+}
+
+const displayRows = computed(() =>
+  filterTableRows(
+    sortTableRows(props.data, sortProp.value, sortOrder.value),
+    activeFilters.value,
+  ),
+)
+```
+
+```tsx
+// React：仮想スクロール
+// const range = computeRange(scrollTop, viewportHeight, rowHeight, rows.length, 3)
+// range.start..range.end をレンダリング。外側で totalHeight で高さを確保し、内側を translateY(range.offsetY)
+```
+
+```ts
+// uniapp：<scroll-view scroll-y> + 可視区間の計算；CSS grid は一部の端末でサポートが限定のため
+// flex 列に退化可；core のソート / フィルタ / ヘッダー展開の関数は端末非依存でそのまま使える
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-table` / `--{small\|medium\|large}` | 基本クラス / サイズの段階（行高とパディング） |
+| `.lh-table--stripe` / `--border` / `--virtual` | シマシマ / 枠線 / 仮想スクロール |
+| `.lh-table__header` / `__header-cell` | ヘッダー |
+| `.lh-table__body` / `__row` | 本体 |
+| `.lh-table__cell` / `--{left\|center\|right}` | セル / 整列 |
+| `.lh-table__cell--fixed-left` / `--fixed-right` | 固定列（sticky） |
+| `.lh-table__cell--fixed-left-last` / `--fixed-right-first` | 固定列の境界（投影で区切る） |
+| `.lh-table__cell--resizable` | 幅ドラッグ可 |
+| `.lh-table__empty` | 空状態 |
+
+デフォルトの行高は 48px（`LH_TABLE_ROW_HEIGHT`）。仮想スクロールアルゴリズムの `rowHeight` パラメータと一致していなければならず、そうでないとウィンドウがずれます。ヘッダー背景 `--lh-fill-color`、枠線 `--lh-border-color`、hover 行 `--lh-fill-color-light`。
+
+## 注意事項
+
+- **行高の一致性は仮想スクロールの前提**：`computeRange` はすべての行が等しい高さであると仮定します；行内のコンテンツが高さを押し上げると（長いテキストの折り返し）仮想スクロールはずれます——高さが不揃いなテーブルでは `virtual` を有効にしないでください。
+- **固定列は `width` の宣言が必須**：`getStickyOffsets` は数値 px または `'Npx'` 文字列だけをオフセットに換算します；`'20%'` のような単位は換算できず 0 として累積され、固定列が重なってしまいます。
+- **`resizable` の前提**：**数値 width の葉列**でなければなりません。ドラッグ後に `clampColumnWidth` で下限にクランプしてから列設定に書き戻します。
+- **ソートの `prop` とデータのキー**：`sortTableRows` は `row[prop]` で値を取ります。ネストしたフィールド（`user.name`）は自動でサポートされません。`sorter` でカスタマイズしてください。
+- **フィルタの列内 OR**：同じ列の複数の選択値は「または」の関係で、異なる列の間は「かつ」です——これは Element と一致する広く普及したセマンティクスです。
+- **多段ヘッダーの本体の列順**：本体は `columns` ではなく `flattenLeafColumns(columns)` を使わなければなりません。そうでないと列数がヘッダーの葉セルの数と一致しません。
+- **DAG 共有列**：同一の column オブジェクトを 2 つのグループの下で参照するとき、グローバルな seen が一度だけの送出を保証します——しかし**同一オブジェクトを参照する副作用は、一箇所変えれば両方変わること**です。「同名で別の設定」が必要なら深いコピーを作ってください。
+- **大規模データのソートは O(n log n)**：毎フレーム数万行をソートするとひっかかります。サーバーサイドソートを検討してください（`sortable: 'custom'` は UI 層が約束事を決める）。
+- **`getTableSortAria` の `aria-sort` は `<th>` に付けます**。列のすべてのセルではありません。
+
+<FnPlayground module="table" fn="cycleSortOrder" params='{"current": "asc"}' />

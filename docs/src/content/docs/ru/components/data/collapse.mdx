@@ -1,0 +1,164 @@
+---
+title: collapse —— Сворачиваемая панель
+description: 'normalizeActiveKeys приводит к единому виду, toggleCollapseKey в режиме аккордеона, неизменяемое обновление'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Сворачиваемая панель — стандартное решение для «контента слишком много, по умолчанию свёрнуто, разворачивается по необходимости»: часто встречается в FAQ, группировке настроек, разделении длинных форм. Её модель состояний максимально проста — массив «какие панели открыты» — а трудности сосредоточены только в **режиме аккордеона** (одновременно открыта только одна) и **нормализации управляемого значения**.
+
+## Когда использовать
+
+- При реализации `LhCollapse` на каждой платформе: FAQ-вопросы, группы настроек, сворачивание разделов сложных форм, группы боковых меню.
+- Блоки контента, которые можно независимо сворачивать/разворачивать и нужно экономить вертикальное пространство.
+- **Не следует использовать**: всего два-три фиксированных пункта (проще показать напрямую); строгие линейные пошаговые сценарии (используйте `steps`).
+
+## Импорт
+
+```ts
+import {
+  normalizeActiveKeys,
+  toggleCollapseKey,
+  getCollapseItemClassNames,
+} from '@lh-ui/share/core/collapse'
+import type { LhCollapseKey } from '@lh-ui/share/core/collapse'
+```
+
+## Замысел
+
+**Трёхстадийная нормализация в `normalizeActiveKeys`**: управляемый `v-model` может передать одиночное значение (`'1'`), массив (`['1','2']`) или undefined (всё свёрнуто). После приведения к единому массиву нижестоящей проверке `includes` остаётся иметь дело с одной формой — очередной пример «вход терпимый, внутренне строгий».
+
+**«Разрешён ноль открытых» в аккордеоне**: `toggleCollapseKey(keys, key, true)` при `keys.includes(key)` возвращает `[]`, а не сохраняет остальные элементы — повторный клик по открытой панели в аккордеоне **сворачивает всё**, и это интуитивное поведение (не переключение на другую панель). Если в аккордеоне передано одиночное значение, `v-model` UI-слоя получит массив, и тип придётся обрабатывать отдельно (или UI-слой предоставляет для аккордеона дополнительный API с одиночным значением).
+
+**Неизменяемое обновление**: обе функции возвращают новые массивы, их можно напрямую отдать реактивному состоянию, не модифицируя входные аргументы.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `normalizeActiveKeys` | `(value: LhCollapseKey \| LhCollapseKey[] \| undefined) => LhCollapseKey[]` | массив ключей | трёхстадийная нормализация |
+| `toggleCollapseKey` | `(keys, key, accordion: boolean) => LhCollapseKey[]` | новый массив ключей | аккордеон / обычный режим |
+| `getCollapseItemClassNames` | `(state: { active, disabled }) => string[]` | классы | развёрнут / отключён |
+
+## Определения типов
+
+```ts
+export type LhCollapseKey = string | number
+```
+
+## Доступность
+
+collapse — типичная реализация паттерна **accordion / disclosure** из APG; семантическую обвязку собирает UI-слой (core не предоставляет функцию-обёртку атрибутов, так как паттерн прост, а DOM на разных платформах сильно различается):
+
+```html
+<!-- каждый item — это disclosure -->
+<div class="lh-collapse__item">
+  <h3>
+    <button type="button" aria-expanded="true" aria-controls="panel-1" id="trigger-1">
+      Заголовок
+    </button>
+  </h3>
+  <div id="panel-1" role="region" aria-labelledby="trigger-1">Содержимое</div>
+</div>
+```
+
+- `aria-expanded` висит на кнопке-триггере и имеет общий источник с `active` — это **ключевой атрибут** доступности сворачиваемой панели.
+- Контейнер панели получает `role="region"` + обратную ссылку `aria-labelledby` на триггер, образуя двустороннюю связь.
+- **Отключённые пункты**: кнопке-триггеру добавляется `disabled` (настоящий атрибут disabled, а не просто класс) — его распознают и клавиатура, и скринридер.
+- Клавиатура: Tab перемещает между триггерами, Enter/Space переключает разворот.
+- В режиме аккордеона **не следует** скрывать свёрнутые панели через `aria-hidden="true"` — содержимое остаётся в DOM (и видимо во время анимации), достаточно CSS-анимации высоты; если DOM действительно удаляется, состоянием `aria-expanded` нужно тщательно управлять.
+
+## Примеры использования
+
+```ts
+import { normalizeActiveKeys, toggleCollapseKey } from '@lh-ui/share/core/collapse'
+
+normalizeActiveKeys('1')          // ['1']
+normalizeActiveKeys(['1', '2'])   // ['1', '2']
+normalizeActiveKeys(undefined)    // []
+
+toggleCollapseKey([], '1', false)       // ['1']
+toggleCollapseKey(['1'], '1', false)    // [] (повторный клик сворачивает)
+toggleCollapseKey(['1'], '2', false)    // ['1', '2'] (обычный режим позволяет несколько открытых)
+toggleCollapseKey(['1'], '1', true)     // [] (аккордеон: повторный клик сворачивает всё)
+toggleCollapseKey(['1'], '2', true)     // ['2'] (аккордеон: остаётся только новая)
+```
+
+```vue
+<!-- Vue3 -->
+<div class="lh-collapse">
+  <div
+    v-for="item in items"
+    :key="item.key"
+    :class="getCollapseItemClassNames({ active: activeKeys.includes(item.key), disabled: item.disabled })"
+  >
+    <h4 class="lh-collapse__header">
+      <button
+        type="button"
+        class="lh-collapse__trigger"
+        :disabled="item.disabled"
+        :aria-expanded="activeKeys.includes(item.key)"
+        :aria-controls="`lh-panel-${item.key}`"
+        :id="`lh-trigger-${item.key}`"
+        @click="onToggle(item)"
+      >
+        <span class="lh-collapse__arrow">{{ activeKeys.includes(item.key) ? '▾' : '▸' }}</span>
+        {{ item.title }}
+      </button>
+    </h4>
+    <div
+      v-show="activeKeys.includes(item.key)"
+      class="lh-collapse__panel"
+      :id="`lh-panel-${item.key}`"
+      role="region"
+      :aria-labelledby="`lh-trigger-${item.key}`"
+    >
+      <slot :name="item.key" :item="item" />
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// Управление + аккордеон
+const activeKeys = computed(() => normalizeActiveKeys(props.modelValue))
+function onToggle(item) {
+  if (item.disabled) return
+  emit('update:modelValue', toggleCollapseKey(activeKeys.value, item.key, props.accordion))
+}
+```
+
+```tsx
+// React: будет ли v-model в режиме аккордеона одиночным значением или массивом,
+// решает API UI-слоя; core всегда работает с массивом, а UI-слой
+// при emit преобразует при необходимости (accordion + нужно одно значение → берём [0])
+```
+
+```ts
+// uniapp: <view> + v-show; анимация разворота через CSS transition max-height (<view> поддерживает)
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-collapse` | базовый класс |
+| `.lh-collapse__item` | отдельный элемент панели |
+| `.lh-collapse__item--active` | развёрнутое состояние |
+| `.lh-collapse__item--disabled` | отключён |
+| `.lh-collapse__header` / `__trigger` | шапка / кнопка-триггер |
+| `.lh-collapse__arrow` | стрелка разворота (анимация вращения) |
+| `.lh-collapse__panel` | область содержимого панели |
+
+Цвет фона шапки `--lh-fill-color`, стрелки `--lh-text-color-secondary`, отключённые пункты `--lh-text-disabled`, рамка панели `--lh-border-color`.
+
+## Замечания
+
+- **`v-show` vs `v-if`**: анимация разворота требует постоянного присутствия в DOM (`v-show` + transition высоты/max-height). При `v-if` анимация сворачивания не воспроизведётся — опыт получается грубым.
+- **Тип управляемого значения и аккордеон**: логически в аккордеоне может быть развёрнут только один элемент, но `toggleCollapseKey` возвращает массив (возможно `[]` или `[key]`). Если UI-слой выставляет для аккордеона API с одиночным значением, при emit берётся `[0] ?? undefined`; массивный API тоже приемлем — просто вызывающий должен сам себя ограничивать.
+- **Момент вызова `normalizeActiveKeys`**: нормализация при каждом рендере стоит копейки (одна проверка `Array.isArray`); если беспокоит — кешируйте в `computed`.
+- **Вложенные сворачиваемые панели**: `activeKeys` внутреннего уровня независимы от внешнего; при вложении DOM панель внутреннего уровня с `role="region"` окажется внутри другого region — это разрешено, но id в `aria-labelledby` должен быть глобально уникальным (префиксуйте ключом).
+- **Высота во время анимации**: для схемы `max-height` нужен достаточно большой потолок (например, `1000px`), иначе при высоком содержании искажается скорость анимации; более точный вариант — JS-измерение `scrollHeight` и установка значения, core в этом не участвует, UI-слой реализует сам.
+- **Уникальность id**: `aria-controls` / `aria-labelledby` опираются на id; на странице, где сосуществуют несколько экземпляров collapse, добавляйте к ключу префикс уровня компонента (в UI-слое через `useId` или uid экземпляра).
+
+<FnPlayground module="collapse" fn="toggleCollapseKey" params='{"keys": ["1", "2"], "key": "3", "accordion": false}' />

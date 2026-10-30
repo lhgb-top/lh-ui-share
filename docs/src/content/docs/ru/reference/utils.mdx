@@ -1,0 +1,189 @@
+---
+title: utils —— общие утилиты
+description: 'createNamespace / deepMerge / debounce / throttle / cssVars и другие — 15 утилит, не зависящих от фреймворков'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Каталог `src/utils/` — это самый нижний слой общих утилит: на них не полагается даже core (core использует более специализированные алгоритмы из `core/shared/`); они служат реализации компонентов в UI-библиотеках и стороне бизнеса.
+
+## Способ импорта
+
+```ts
+import { createNamespace, deepMerge, debounce, generateId } from '@lh-ui/share/utils'
+```
+
+## Таблица функций
+
+| Функция | Сигнатура | Назначение |
+| --- | --- | --- |
+| `generateId` | `(prefix = 'lh') => string` | Генерирует уникальный ID (`${prefix}_${Date.now()}_${counter}`) |
+| `generateRandomId` | `() => string` | Генерирует случайный ID (7 символов base36) |
+| `isEmpty` | `(val: unknown) => boolean` | Пустое ли значение (только `null` / `undefined` / `''`) |
+| `isString` | `(val: unknown) => val is string` | Страж типа: строка |
+| `isNumber` | `(val: unknown) => val is number` | Страж типа: число (`NaN` возвращает `false`) |
+| `isPlainObject` | `(val: unknown) => val is Record<string, unknown>` | Страж типа: обычный объект |
+| `debounce` | `<T>(fn: T, delay = 300) => LhDebounced<T>` | Дебаунс (с `cancel` / `flush`) |
+| `throttle` | `<T>(fn: T, delay = 300) => LhThrottled<T>` | Троттлинг (немедленный вызов на переднем фронте + донный на заднем) |
+| `deepMerge` | `<T>(target: T, ...sources: Partial<T>[]) => T` | Глубокое слияние объектов |
+| `getScrollbarWidth` | `() => number` | Получает ширину полосы прокрутки (результат кэшируется) |
+| `toggleClass` | `(el, className, force?) => void` | Добавляет / удаляет CSS-класс |
+| `getEventValue` | `(e: Event) => string` | Извлекает значение цели из события |
+
+Реэкспорт подмодулей (в конце `@lh-ui/share/utils`):
+
+| Функция | Сигнатура | Назначение |
+| --- | --- | --- |
+| `createNamespace` | `(block: string) => LhNamespace` | Утилита пространства имён BEM |
+| `toCssVarName` | `(key: string) => string` | Создаёт имя CSS-переменной (если префикс `--lh-` уже есть, возвращается как есть — **идемпотентно**) |
+| `cssVars` | `(vars: Record<string, string>) => Record<string, string>` | Пары ключ-значение themeVars → объект CSS-переменных, пригодный для привязки к `:style` |
+| `stripCssVarName` | `(key: string) => string` | Убирает префикс `--lh-`, восстанавливая ключ prop-а themeVars |
+
+## createNamespace —— пространство имён BEM
+
+```ts
+const ns = createNamespace('button')
+
+ns.b()              // 'lh-button'
+ns.e('text')        // 'lh-button__text'
+ns.m('primary')     // 'lh-button--primary'
+ns.em('text', 'disabled')  // 'lh-button__text--disabled'
+ns.is('loading', true)     // 'is-loading'
+ns.is('loading', false)    // '' (пустая строка, фреймворк её проигнорирует)
+```
+
+Все имена классов компонентов lh-ui генерируются через него, что гарантирует согласованность BEM-структуры и отсутствие пропусков префикса `lh-`. Классы состояний `is()` **не несут префикса пространства имён** (`is-loading`, а не `lh-button--is-loading`) — это семейное соглашение.
+
+Типы:
+
+```ts
+export interface LhNamespace {
+  b: () => string                       // блок
+  e: (element: string) => string        // элемент
+  m: (modifier: string) => string       // модификатор
+  em: (element: string, modifier: string) => string  // элемент-модификатор
+  is: (name: string, state?: boolean | string) => string  // класс состояния
+}
+```
+
+## debounce / throttle
+
+### debounce —— за время тишины выполняется только последний вызов
+
+```ts
+const debounced = debounce((q: string) => search(q), 300)
+input.addEventListener('input', (e) => debounced(e.target.value))
+
+debounced.cancel()   // При размонтировании очищает невыполненные ожидающие вызовы
+debounced.flush()    // Немедленно выполняет ожидающий вызов (если ожидающих нет — ничего не делает)
+```
+
+`cancel` / `flush` — необязательное украшение: если при размонтировании компонента не очистить таймер, будет вызван уже уничтоженный контекст; а кнопке «немедленный поиск» нужен `flush()`, чтобы сразу выполнить ещё не отправленный запрос.
+
+### throttle —— немедленный передний фронт + донный на заднем
+
+```ts
+const throttled = throttle(onScroll, 100)
+window.addEventListener('scroll', throttled)
+```
+
+В начале временного окна выполнение происходит **немедленно** (передний фронт), а последний вызов внутри окна **выполняется в самом его конце** (задний фронт). Наивный троттлинг теряет последний кадр при быстрой прокрутке — а момент остановки прокрутки как раз требует обновления больше всего (определение позиции sticky / affix).
+
+У `throttle` есть только `cancel` (очистка заднефронтового таймера + сброс `lastTime`), а `flush` отсутствует (в семантике заднего фронта «выполнить попозже» и нет).
+
+Типы:
+
+```ts
+export interface LhDebounced<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+  flush(): void
+}
+
+export interface LhThrottled<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+}
+```
+
+## Тройка cssVars
+
+Prop `themeVars` у ConfigProvider использует **сокращённые ключи** (`'primary-color'`), а компоненты потребляют CSS-переменные (`--lh-primary-color`). Эти три функции выполняют двустороннее преобразование:
+
+```ts
+cssVars({ 'primary-color': '#1677ff' })
+// { '--lh-primary-color': '#1677ff' }   ← можно сразу привязать к :style
+
+toCssVarName('primary-color')      // '--lh-primary-color'
+toCssVarName('--lh-primary-color') // '--lh-primary-color' (идемпотентно)
+
+stripCssVarName('--lh-primary-color')  // 'primary-color'
+```
+
+**Идемпотентность `toCssVarName` очень важна**: она предотвращает двойное добавление префикса на тех путях, где ключ уже его несёт, — иначе получилось бы `--lh---lh-primary-color`, и такой ключ тихо перестал бы работать (несуществующая CSS-переменная), а переключение темы казалось бы «не реагирующим».
+
+## deepMerge
+
+```ts
+deepMerge({ a: 1, nested: { x: 1 } }, { nested: { y: 2 } })
+// { a: 1, nested: { x: 1, y: 2 } }
+```
+
+- Рекурсия только если **обе стороны — обычные объекты**.
+- Перекрытие происходит только при `sourceVal !== undefined` (явная передача `undefined` не перекрывает).
+- **Изменяет target на месте и возвращает его** — это и есть подводный камень: чтобы не загрязнить исходный объект, сначала сделайте поверхностную копию `{ ...target }`.
+
+## getScrollbarWidth
+
+```ts
+getScrollbarWidth()   // Например: 15 (Windows) / 0 (macOS, без полосы прокрутки)
+```
+
+Результат кэшируется в переменной модуля `_scrollbarWidth`. **SSR-гвард**: при `typeof document === 'undefined'` возвращает `0`.
+
+Назначение: при открытии dialog / drawer блокируется прокрутка body, и ширина полосы прокрутки справа исчезает; нужно добавить `padding-right`, иначе содержимое страницы дёрнется по горизонтали.
+
+## Примеры использования
+
+### BEM и объединение классов внутри компонента
+
+```ts
+const ns = createNamespace('dialog')
+
+const headerClass = computed(() => [
+  ns.e('header'),
+  ns.is('centered', props.centered),
+  // class, переданный пользователем
+  ...(typeof attrs.class === 'string' ? attrs.class.split(' ') : []),
+])
+```
+
+### Инъекция переменных темы в ConfigProvider
+
+```ts
+const styleVars = computed(() => cssVars(props.themeVars))
+// <div :style="styleVars">
+```
+
+### Троттлинг слушателя прокрутки
+
+```ts
+onMounted(() => {
+  const onScroll = throttle(updateAffixPosition, 100)
+  window.addEventListener('scroll', onScroll, true)
+  onUnmounted(() => {
+    window.removeEventListener('scroll', onScroll, true)
+    onScroll.cancel()
+  })
+})
+```
+
+## Примечания
+
+- **`isEmpty` оценивает только три случая**: `null` / `undefined` / `''`. `0` / `false` / `[]` **не считаются пустотой**. Чтобы проверить «пустой массив / пустой объект», напишите сами.
+- **`isNumber(NaN)` возвращает `false`**: NaN намеренно исключён.
+- **`deepMerge` изменяет target на месте**: самый частый источник неправильного использования.
+- **`generateId` — не чистая функция**: счётчик с автоприращением на уровне модуля; многократные вызовы в рамках одного процесса дают разные результаты (порядок вызовов при SSR / CSR должен быть согласован; см. описание generateAriaId в [a11y](/ru/core/a11y#generateariaid)).
+- **Composables вроде `useLhSize` здесь не живут**: они зависят от Composition API фреймворков и относятся к UI-слою каждого фреймворка; share их не экспортирует.
+
+<FnPlayground module="utils" fn="createNamespace" params='{"block": "button"}' />

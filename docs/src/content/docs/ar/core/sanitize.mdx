@@ -1,0 +1,137 @@
+---
+title: sanitize —— تطهير الأرقام
+description: 'اعتراض sanitizeNumber / clamp / safePrecision لـ NaN وInfinity عند المدخل، لمنع تلويث العرض في المصب'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+رقم الصفحة، والتباعد، وstep، وprecision، والحد الأقصى للحجم—تستقبل كثير من دوال طبقة core قيمًا عددية من الخارج. وإن تسربت `NaN` / `Infinity` لوَّثت المصب كله: أنماط `NaNpx`، ومصفوفة فارغة من `slice(NaN)`، و`RangeError` من `toFixed(1000)` يُسقط العرض. وتتمثل استراتيجية هذه الوحدة في **الاعتراض الموحَّد عند المدخل**، فلا تتعامل خوارزميات المصب إلا مع الأرقام «التي طُهِّرت فعلًا».
+
+## طريقة الاستيراد
+
+```ts
+import {
+  sanitizeNumber,
+  clamp,
+  safePrecision,
+  LH_PRECISION_MAX,
+  type LhSanitizeNumberOptions,
+} from '@lh-ui/share/core/shared/sanitize'
+```
+
+## الأنواع والثوابت
+
+```ts
+export interface LhSanitizeNumberOptions {
+  min?: number       // الحد الأدنى المسموح (يُهمَل min غير المنتهي ذاته)
+  max?: number       // الحد الأقصى المسموح (يُهمَل max غير المنتهي ذاته)
+  integer?: boolean  // هل يُقطَّع إلى عدد صحيح (اقتطاع نحو الصفر)
+}
+
+export const LH_PRECISION_MAX = 100   // الحد الأعلى لـ precision: فإن تجاوز toFixed 100 خانة رفع RangeError
+```
+
+## جدول الدوال
+
+| الدالة | التوقيع | الدور |
+| --- | --- | --- |
+| `sanitizeNumber` | `(value: number \| undefined \| null, fallback: number, options?) => number` | تطهير أي قيمة عددية إلى قيمة منتهية |
+| `clamp` | `(value: number, min: number, max: number) => number` | احتجاز أولي، **دون أي تطهير** |
+| `safePrecision` | `(precision: number) => number` | تطهير precision إلى عدد صحيح في `[0, 100]` |
+
+## sanitizeNumber
+
+```ts
+sanitizeNumber(5, 0)                    // 5
+sanitizeNumber(NaN, 0)                  // 0
+sanitizeNumber(Infinity, 10)            // 10
+sanitizeNumber(undefined, 1)            // 1
+sanitizeNumber(null, 1)                 // 1
+sanitizeNumber(3.7, 0, { integer: true })   // 3 (اقتطاع نحو الصفر، لا تقريب)
+sanitizeNumber(-5, 0, { min: 0 })       // 0
+sanitizeNumber(999, 0, { max: 100 })    // 100
+```
+
+ترتيب المعالجة: **الحكم على عدم الانتهاء ← اقتطاع `integer` ← احتجاز `min` ← احتجاز `max`**.
+
+التصميم الجوهري: **يُطبَّق الترشيح غير المنتهي على `min` / `max` أنفسهما**.
+
+```ts
+sanitizeNumber(5, 0, { min: NaN, max: Infinity })
+// 5  —— min/max الفاسدان لا يعيدان NaN إلى النتيجة
+```
+
+ولماذا هذا مهم: فالقيمتان `min` / `max` تأتيان عادةً من خصائص المستخدم (`<lh-slider :min="NaN">`)، ولولا الترشيح لكان `Math.max(NaN, 5)` هو `NaN`، فيذهب التطهير سُدىً.
+
+## clamp
+
+```ts
+clamp(12, 0, 10)    // 10
+clamp(-3, 0, 10)    // 0
+clamp(5, 0, 10)     // 5
+clamp(NaN, 0, 10)   // NaN  —— تمرير!
+```
+
+`clamp` هو `Math.min(Math.max(value, min), max)` في صورته **البسيطة**، بلا تطهير. وذلك مقصود:
+
+- السيناريوهات التي **ضمن فيها المستدعي الانتهاء** لا تحتاج إلى عبء تطهير مكرر—ومنها `clampValue` في input-number، واحتجاز السحب في slider، والاحتجاز الهندسي في popper (فالقيم تأتي من نتائج وسيطة حُسبت داخليًا).
+- **الحفاظ على دلالة تمرير NaN**: فهناك سيناريوهات تحتاج إلى أن يمر «NaN كما هو» إلى خطوة فحص الحدود، فيخفي ابتلاعه الأخطاء بدلًا من كشفها.
+
+**مبدأ الاختيار**: القيمة من الخارج (خصائص، إدخال المستخدم، الشبكة) ← `sanitizeNumber`؛ القيمة من حساب داخلي ← `clamp`.
+
+## safePrecision
+
+```ts
+safePrecision(2)       // 2
+safePrecision(-1)      // 0
+safePrecision(999)     // 100
+safePrecision(NaN)     // 0
+safePrecision(2.7)     // 2 (يُقطَّع أولًا)
+```
+
+وهو يكافئ `sanitizeNumber(precision, 0, { min: 0, max: LH_PRECISION_MAX, integer: true })`.
+
+**لماذا يلزم التطهير**: يرفع `(1.234).toFixed(precision)` خطأ `RangeError` عندما يتجاوز `precision` القيمة 100—فيكفي prop غير صالح لـ precision ليُسقط عرض input-number / statistic. والتطهير إلى 0 خيرٌ بكثير من إسقاط العرض.
+
+## من يستخدمها
+
+| المستهلك | الاستخدام |
+| --- | --- |
+| `pagination` | `sanitizeNumber(currentPage, 1, { min: 1 })` |
+| `input-number` | `sanitizeNumber(props.step, 1, { min: 0 })` + `safePrecision(props.precision)` |
+| `space` | `sanitizeNumber(props.size, 8)` (التباعد) |
+| `popper` | تطهير حقول rect للمدخلات + احتجاز `clamp` |
+| `keyboard` | `clamp` لحدود التنقل |
+| `statistic` | `safePrecision(props.precision)` |
+
+## أمثلة الاستخدام
+
+### تطهير الخصائص
+
+```ts
+// مكوّن pagination
+const currentPage = computed(() =>
+  sanitizeNumber(props.currentPage, 1, { min: 1, max: totalPages.value }),
+)
+```
+
+### أداة دفاعية
+
+```ts
+// التطهير بعد أخذ القيمة من الحدث
+const value = sanitizeNumber(Number(e.target.value), 0)
+```
+
+### أمان precision
+
+```ts
+const display = modelValue.value.toFixed(safePrecision(props.precision))
+```
+
+## ملاحظات
+
+- **`integer` هو اقتطاع نحو الصفر** (`Math.trunc`)، لا تقريب: `3.7 → 3`، و`-3.7 → -3`. وسيناريوهات الترقيم والفهارس هي التي تريد الاقتطاع تحديدًا.
+- **`clamp` لا يُطهِّر**: هذا ميزة لا عيب، فلا تُصلِحه إلى نسخة مُطهَّرة (فسيتلف القيمة التصحيحية لتمرير NaN في التنقيح).
+- **`fallback` إلزامي**: فلا قيمة افتراضية معقولة واحدة (إذ تختلف «القيمة الآمنة» باختلاف السيناريو)، وإلزام تمريرها يجعل المستدعي يفكر فيها.
+
+<FnPlayground module="sanitize" fn="sanitizeNumber" params='{"value": null, "fallback": 1, "options": {"min": 0, "max": 10}}' />

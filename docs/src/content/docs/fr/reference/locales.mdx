@@ -1,0 +1,167 @@
+---
+title: "locales —— l'internationalisation"
+description: "Le singleton lhlocale et ses méthodes t / tm / use / add / setLocale / subscribe, les 38 clés de libellés racines et les dix langues"
+---
+
+import LocaleInspector from '../../../../components/LocaleInspector.astro'
+
+L'internationalisation de la famille lh-ui est un **pur émetteur d'événements** : `lhlocale` ne porte aucune réactivité de framework ; la couche d'adaptation de chaque bibliothèque UI convertit son numéro de version `version` en le signal de nouveau rendu de son propre framework. Ainsi, un seul paquet de langues peut servir à la fois Vue3 / Vue2 / React / uniapp, tandis que la couche core ne dépend d'aucun framework.
+
+## Le singleton et l'import
+
+```ts
+import { lhlocale, zhCN, enUS, formatMessage } from '@lh-ui/share/locales'
+import type { LhLocalePath, LhLocaleType, LhLocaleMessages } from '@lh-ui/share/locales'
+```
+
+## La table des membres
+
+| Membre | Signature | Rôle |
+| --- | --- | --- |
+| `version` | `get version(): number` | Le numéro de version : s'incrémente à chaque changement de langue (la couche d'adaptation UI s'y abonne pour déclencher le nouveau rendu) |
+| `subscribe` | `(listener: LhLocaleListener) => () => void` | S'abonner aux changements de langue ; renvoie une fonction de désabonnement |
+| `use` | `(options: { locale: LhLocaleType; messages: LhLocaleMessages }) => void` | Enregistrer et basculer la langue |
+| `t` | `(path: LhLocalePath, fallbackOrParams?) => string` | Récupérer le libellé traduit à partir d'un chemin |
+| `tm` | `(path: string, fallback?: string[]) => string[]` | Récupérer les libellés sous forme de tableau (noms des mois / des jours) |
+| `getLocale` | `() => LhLocaleType` | Obtenir la langue courante |
+| `setLocale` | `(locale: LhLocaleType) => void` | Basculer la langue courante |
+| `add` | `(locale: string, messages: LhLocaleMessages) => void` | Ajouter un paquet de langue personnalisé (fusion profonde) |
+
+## Le comportement détaillé de chaque méthode
+
+### t —— l'autocomplétion des clés littérales
+
+```ts
+const t = lhlocale.t   // propriété en fonction fléchée, la déstructuration ne perd pas le this
+
+t('pagination.total')                       // '共 {total} 条'
+t('pagination.total', { total: 42 })        // '共 42 条'
+t('not.exists', 'Libellé de repli')         // 'Libellé de repli'
+t('not.exists')                             // 'not.exists' (retombe sur le chemin lui-même)
+```
+
+Le type de `path` est `LhLocalePath` — l'union de **tous les types des chemins des feuilles chaînes**, déduite de la structure `as const` du paquet de langues `zh-CN` (par exemple `'input.placeholder'`). Une erreur de clé est signalée par l'éditeur. L'assemblage dynamique du chemin (`t(\`pagination.\${key}\`)`) passe par une surcharge permissive et le type se relâche en `string`.
+
+Le deuxième paramètre prend deux formes : une **chaîne** est la valeur de repli ; un **objet** est le paramètre d'interpolation `{key}` (le traitement sous-jacent passe par [formatMessage](/fr/core/format)).
+
+### tm —— les libellés en tableau
+
+```ts
+lhlocale.tm('datepicker.months')
+// ['1月', '2月', …, '12月']
+
+lhlocale.tm('datepicker.weeks')   // ← faux : weeks est un objet, pas un tableau
+lhlocale.tm('datepicker.weeks.sun', ['日'])   // ← faux également : seules les feuilles chaînes d'un objet sont atteignables par t()
+```
+
+`t()` ne renvoie que des chaînes ; les feuilles en tableau (`months`) sont accessibles via `tm()`. En cas d'échec ou de non-tableau, c'est le `fallback` qui est renvoyé (`[]` par défaut).
+
+### use vs add —— deux méthodes faciles à confondre
+
+| | `use` | `add` |
+| --- | --- | --- |
+| Action | Enregistrer **et basculer** | Enregistrer seulement (la diffusion n'a lieu que si c'est la langue courante) |
+| Stockage des messages | Inscription dans le registre utilisateur `userLocales`, **sans écraser le registre intégré** | idem |
+| Mode de fusion | Le paquet entier est installé | **Fusion profonde** dans « le paquet actuellement en vigueur » |
+
+Pourquoi `add` fait une fusion profonde : côté métier, on ne veut généralement changer que quelques clés (remplacer « Confirmer » par « Soumettre »), afin que les autres clés restent disponibles depuis le paquet intégré. L'ancienne implémentation remplaçait le paquet entier et toutes les clés oubliées disparaissaient.
+
+Pourquoi `use` n'écrase pas le registre intégré : l'ancienne implémentation `locales[locale] = messages` **détruisait définitivement le paquet de langues intégré** (plus moyen de revenir avec `setLocale` ensuite). Désormais le paquet intégré est en lecture seule et les paquets utilisateurs passent devant.
+
+### La sémantique de « non-décrochage » de setLocale
+
+```ts
+lhlocale.setLocale('en-US')   // le paquet de langues n'a jamais été enregistré
+lhlocale.getLocale()          // 'en-US'  ← signale la langue demandée
+lhlocale.t('pagination.total')// le libellé du paquet par défaut intégré, pas celui de en-US
+```
+
+Cela paraît contradictoire, mais c'est délibéré : l'ordre de résolution est `userLocales ?? locales intégrés ?? paquet par défaut`. En l'absence d'enregistrement, `getLocale()` signale la langue demandée et `t()` utilise le contenu du paquet par défaut — **les deux ne se décrochent pas** (pas de combinaison bizarre du type « la langue annoncée est l'anglais, mais les libellés sont en chinois ») ; le côté métier sait alors qu'il doit faire `add` ou `use`.
+
+### version et subscribe
+
+```ts
+const unsubscribe = lhlocale.subscribe((version: number) => {
+  // la langue a changé, déclencher le nouveau rendu
+})
+unsubscribe()   // à appeler au démontage du composant
+```
+
+`subscribe` renvoie une fonction de désabonnement (style RxJS). `bump()` isole les mauvais abonnés via un try/catch interne et journalise `[lhlocale] listener error:` : qu'un auditeur d'un composant lève une erreur, cela n'affecte pas les autres composants.
+
+## Comment chaque plateforme s'abonne à version
+
+```ts
+// Vue3 / Vue2 / uniapp
+const version = ref(lhlocale.version)
+lhlocale.subscribe(() => (version.value = lhlocale.version))
+// le template dépend de version ; tout changement déclenche le nouveau rendu
+
+// React
+useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)
+```
+
+## Les fichiers de langue
+
+| Fichier | État |
+| --- | --- |
+| `zh-CN.ts` | ✅ Langue par défaut (`as const`, la source de la dérivation de `LhLocalePath`), source de vérité |
+| `zh-TW.ts` / `en-US.ts` / `ja-JP.ts` / `ko-KR.ts` / `es.ts` / `ar.ts` (RTL) / `fr-FR.ts` / `ru.ts` | ✅ Complet (les neuf langues, alignées avec tous les sites de documentation ; terminologie selon le `docs/i18n/glossary.md` de la famille) |
+| `de-DE.ts` | ✅ Complet (pack linguistique d'**extension d'exécution** : fourni uniquement par l'exécution de la bibliothèque de composants ; les sites de documentation n'ont pas de contenu allemand) |
+
+Import par sous-chemin : `@lh-ui/share/locales/lang/zh-CN`. La structure des clés de chaque
+pack linguistique reproduit exactement celle de `zh-CN.ts` (vérifiée par le cas miroir de
+`tests/unit/locales.spec.ts`) ; vous pouvez basculer vers n'importe lequel par `setLocale`.
+
+### Les 38 clés racines
+
+`common` / `input` / `datepicker` / `timepicker` / `cascader` / `tag` / `badge` / `select` / `form` / `switch` / `slider` / `progress` / `avatar` / `descriptions` / `empty` / `alert` / `dialog` / `message` / `breadcrumb` / `pagination` / `tabs` / `steps` / `popconfirm` / `drawer` / `notification` / `loading` / `collapse` / `rate` / `backtop` / `image` / `menu` / `table` / `tree` / `treeSelect` / `transfer` / `upload` / `anchor` / `ariaLabels`
+
+Les dix fichiers de langue ont le même nombre de clés racines (38 chacun) et des structures alignées. Parmi elles, `ariaLabels` est la clé des libellés d'accessibilité (environ 40 entrées) ; chaque composant la lit pour générer ses aria-label.
+
+Les libellés d'interpolation typiques :
+
+```ts
+pagination.total: '共 {total} 条'
+pagination.sizeChanger: '{size} 条/页'
+pagination.page: '第 {page} 页'
+steps.step: '第 {index} 步'
+rate.stars: '{n} 星'
+cascader.columnLabel: '第 {n} 级'
+collapse.toggle: '展开或折叠 {title}'
+datepicker.panelTitle: '{year}年{month}'
+menu.submenuLabel: '子菜单 {title}'
+```
+
+## Ajouter une nouvelle langue
+
+Trois étapes (la même explication se trouve dans `src/locales/lang/README.md`) :
+
+1. Créer `src/locales/lang/<lang>.ts` et exporter une structure `LhLocaleMessages` (les clés racines doivent être alignées sur les 38, vérifiable avec `satisfies`).
+2. Ajouter la constante dans `LH_LANGUAGE_CONST` de `src/constants/index.ts`.
+3. La monter dans le registre intégré `locales` de `src/locales/locale.ts`.
+
+Ensuite, `pnpm test` (`theme.spec` et les cas liés à locale contiennent une régression de cohérence de structure).
+
+## Les types associés
+
+| Type | Définition | Usage |
+| --- | --- | --- |
+| `LhLocaleType` | Dérivé de `LH_LANGUAGE_CONST` | L'union des codes de langue pris en charge |
+| `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | Le type global du paquet de langues |
+| `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | Les feuilles du paquet de langues (récursivement en lecture seule) |
+| `LhLeaves<T>` | Dérivation récursive | À partir de la structure du paquet de langues, génère l'union des chemins pointillés de toutes les feuilles chaînes |
+| `LhLocalePath` | `LhLeaves<typeof zhCN>` | Le type des clés littérales de `t()` |
+| `LhTranslate` | Type de surcharge | La signature d'appel de `t()` |
+| `LhTranslateArray` | `(path: string, fallback?: string[]) => string[]` | La signature d'appel de `tm()` |
+| `LhLocaleListener` | `(version: number) => void` | L'auditeur des changements de langue |
+| `LhLocaleOptions` | `{ locale: LhLocaleType; messages: LhLocaleMessages }` | Le paramètre d'entrée de `use()` |
+
+## Points d'attention
+
+- **`LhLeaves` renvoie `never` pour les clés de tableau** : `datepicker.months` est un tableau, non adressable par clé ; le chemin pointillé de `t()` ne peut pas l'atteindre — les tableaux passent systématiquement par `tm()`.
+- **`t` est déstructurable** : c'est une propriété en fonction fléchée, `const t = lhlocale.t` ne perd pas le this.
+- **Les composants core n'appellent pas `lhlocale` directement** : rate / pagination traitent l'interpolation avec [formatMessage](/fr/core/format) et la recherche des clés de libellés reste à la charge de la couche UI — core ne dépend pas des effets de bord du singleton.
+- **`add` fait une fusion profonde** : seules les clés que vous passez sont surchargées, le reste est préservé.
+
+<LocaleInspector />

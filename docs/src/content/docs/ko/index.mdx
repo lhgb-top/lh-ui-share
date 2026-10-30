@@ -1,0 +1,60 @@
+---
+title: '@lh-ui/share'
+description: lh-ui 패밀리의 유일한 프레임워크 비종속 공유 레이어 —— core 순수 함수 / theme / 스타일 소스
+template: splash
+hero:
+  title: '@lh-ui/share'
+  tagline: lh-ui 패밀리의 유일한 <b>프레임워크 비종속 공유 레이어</b> —— 56개 core 컴포넌트 순수 함수, 12개 공유 코어, 중국풍 테마 시스템, 순수 emitter 기반 국제화, 58세트의 컴포넌트 스타일 소스. 하나의 논리로 Vue3 / Vue2 / React / uniapp의 모든 UI 라이브러리를 뒷받침합니다.
+  actions:
+    - text: 시작하기
+      link: /lhui/share/ko/guide/getting-started
+      icon: right-arrow
+      variant: primary
+    - text: 테마 프리셋
+      link: /lhui/share/ko/theme/presets
+      icon: sun
+    - text: GitHub
+      link: https://github.com/lhgb-top/lh-ui-share
+      icon: github
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid cols={3}>
+  <Card title="Core 순수 함수" icon="code-branch">
+    56개 컴포넌트의 클래스명 계산, 상태 머신, 접근성 속성 팩은 모두 의존성 없는 순수 함수입니다. 프레임워크 계층은 연결만 담당하고, 논리는 단일 소스이며 단위 테스트도 유일한 사본입니다.
+  </Card>
+  <Card title="공유 코어" icon="puzzle">
+    popper 배치 엔진, 가상 스크롤, 포커스 트랩, 키보드 내비게이션, sx 스타일 props, 숫자 정제 —— 12개 모듈이 각 단말에서 그대로 재사용됩니다.
+  </Card>
+  <Card title="중국풍 테마" icon="pencil">
+    5개 내장 프리셋(青花瓷 (청화백자) / 松花绿 (송화록) / 朱砂 (주사) / 水墨 (수묵) / 藤黄 (등황)), CSS 변수 + 다크 모드 + 문양 시스템, AA 대비 스크립트가 지킵니다.
+  </Card>
+  <Card title="순수 emitter 국제화" icon="translate">
+    LhLocale은 순수 이벤트 에미터로, 프레임워크의 반응성을 전혀 가지지 않습니다. 각 단말은 자신의 신호 메커니즘으로 version을 구독합니다.
+  </Card>
+  <Card title="스타일 유일 소스" icon="open-book">
+    `styles/`는 패밀리 전체의 컴포넌트 BEM 스타일 유일 소스입니다. 전환 클래스명은 3개 mixin이 Vue2 / Vue3 / React의 차이를 통합합니다.
+  </Card>
+  <Card title="프레임워크 의존성 없음" icon="padlock">
+    `external: []`로 완전한 무의존성 번들. `verify:dts` 게이트가 산출물에 프레임워크 import가 전혀 나타나지 않음을 보장합니다.
+  </Card>
+</CardGrid>
+
+## 이 문서의 독자
+
+- **각 단말 UI 라이브러리의 개발자**(lh-ui-plus / lh-ui-vue2 / lh-ui-react / lh-ui-uniapp): 각 순수 함수의 시그니처, 반환값, 경계 조건, 그리고 스타일 토큰의 덮어쓰기 방법을 조사하기 위해.
+- **share를 직접 사용하는 독립 개발자**: 프로젝트에 접근성 기준선과 중국풍 테마 토큰만 필요하고, UI 라이브러리는 전혀 도입하지 않는 경우.
+- **기여자**: 디렉터리 책임, 레드라인, 검증과 릴리스 흐름을 파악하기 위해.
+
+## 5분 만에 이해하는 이 패키지
+
+```md
+- `src/core/<컴포넌트>/` —— 순수 함수 논리(logic.ts / types.ts), 프레임워크 import 없음
+- `src/core/shared/`           —— 컴포넌트 횡단 공유 코어(popper / virtual / sx / keyboard …)
+- `src/theme/`                 —— 테마 TS 측: 타입 + 5개 프리셋 + 런타임 원시
+- `styles/`                    —— 컴포넌트 BEM 스타일 유일 소스 + theme/common/*.scss 토큰
+- `src/{constants,locales,types,utils}/` —— 상수 / 언어 팩 / 타입 / 유틸리티
+```
+
+다음 단계: [시작하기](/ko/guide/getting-started)에서 패키지를 설치하고 스타일을 불러오거나, [패키지 진입점과 하위 경로](/ko/guide/exports)를 바로 보고 필요에 따른 import 방법을 확인하세요.

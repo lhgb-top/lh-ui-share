@@ -1,0 +1,181 @@
+---
+title: tabs pestañas —— Navegación
+description: 'resolveActiveName con el nombre de pestaña como cadena vacía, getNameAfterRemove con la estrategia de activación tras borrar una pestaña, enlace aria doble entre tab y tabpanel'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Las pestañas son «el conmutador de contenido de una misma zona»: el «Básico / Seguridad / Notificaciones» de la página de ajustes, las pestañas del navegador. Apilan varios paneles en un mismo espacio y conmutan su visibilidad con las pestañas: ahorran espacio vertical a cambio de mostrar un único panel a la vez. `core/tabs` gestiona **la resolución del estado activo, la estrategia de activación tras borrar pestañas y la navegación con roving tabindex**.
+
+## Cuándo usarlo
+
+- Implementar `<LhTabs>` / `<LhTabPane>` en cada extremo: páginas de ajustes, secciones de páginas de detalle, conmutación de paneles de un panel de control.
+- Secciones de contenido **mutuamente excluyentes** y **del mismo nivel**.
+- **Cuándo no usarlo**: pasos secuenciales de un flujo (usar `steps`: tabs no tiene semántica de orden); navegación jerárquica (usar `menu`); cuando hace falta comparar dos paneles a la vez (usar `grid` para colocarlos en paralelo); cuando el conmutador pierda el borrador del formulario, sopesarlo (la capa UI puede mantenerlo vivo con keep-alive).
+
+## Importación
+
+```ts
+import {
+  getTabsClassNames,
+  resolveActiveName,
+  getNextActiveName,
+  getNameAfterRemove,
+  getTablistAria,
+  getTabAria,
+  getTabpanelAria,
+} from '@lh-ui/share/core/tabs'
+import type {
+  LhTabsType, LhTabsPosition, LhTabRecord, LhTabNavDirection,
+} from '@lh-ui/share/core/tabs'
+```
+
+## Intención de diseño
+
+**`!= null` en vez de un cortocircuito por valor verdadero**: `resolveActiveName` comprueba modelValue con `modelValue != null`, porque **el nombre de pestaña es un identificador de negocio y la cadena vacía es un valor válido**. Si quien usa el componente vincula explícitamente una pestaña con `name: ''`, un cortocircuito por valor verdadero (`if (modelValue && ...)`) trataría la cadena vacía como «valor no pasado», la ignoraría y activaría la primera pestaña disponible, provocando un desajuste de estado difícil de diagnosticar.
+
+**La validación de la activación incluye disabled**: si `modelValue` existe pero la pestaña correspondiente está deshabilitada, **no se activa**, sino que se retrocede a la primera pestaña disponible: que una pestaña deshabilitada no seja seleccionable es una restricción estricta, incluso ante un valor impuesto desde fuera.
+
+**`getNameAfterRemove` prioriza la derecha antes que la izquierda**: cuando se borra la pestaña activa, se elige primero **el elemento disponible más cercano a la derecha** (para conservar la posición de la mirada) y, si no lo hay, el más cercano a la izquierda. Este orden coincide con la intuición de «tras borrar, el foco se desplaza hacia la derecha». Si el elemento borrado no era el activo, se mantiene la activación actual.
+
+**`getNextActiveName` es una envoltura @deprecated**: el algoritmo de navegación se ha consolidado en `shared/keyboard.getNextListIndex`; esta función conserva la firma antigua (los nombres de dirección semánticos 'next'/'prev'/'first'/'last') y el comportamiento existente de «cuando el valor actual es desconocido o está deshabilitado, se retrocede al primero». **El código nuevo debe usar el núcleo directamente**.
+
+**roving tabindex**: el patrón estándar de navegación por teclado de la barra de pestañas es roving tabindex: todas las pestañas llevan `tabindex="-1"` y solo la pestaña activa lleva `tabindex="0"`. Las teclas de dirección mueven el foco entre las pestañas y la tecla Tab sale de la barra hacia el contenido del panel. `getNextActiveName` devuelve el nombre de la pestaña de destino y la capa UI mueve el foco y ajusta el tabindex en consecuencia.
+
+**Enlace aria doble**: la pestaña `aria-controls` → id del panel; el panel `aria-labelledby` → id de la pestaña activa. Ambos extremos deben escribirse para que el lector de pantalla pueda saltar de uno a otro desde cualquiera de los dos. `aria-selected` solo se emite al activar (false no se emite: el estado no activo es el valor por defecto).
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Acción |
+| --- | --- | --- | --- |
+| `getTabsClassNames` | `(state: { type, position }) => string[]` | Nombres de clase | Apariencia + posición |
+| `resolveActiveName` | `(records, modelValue) => string \| null` | Nombre de la pestaña activa | Validación de modelValue + retroceso |
+| `getNextActiveName` ⚠️ | `(records, currentName, direction) => string \| null` | Nombre de la pestaña de destino | Navegación por teclado |
+| `getNameAfterRemove` | `(records, removedName, currentName) => string \| null` | Activación sugerida | Derecha antes que izquierda tras borrar |
+| `getTablistAria` | `(id?) => LhAriaAttrs` | Paquete aria | role=tablist |
+| `getTabAria` | `(options: { active, disabled?, panelId?, id? }) => LhAriaAttrs` | Paquete aria | role=tab |
+| `getTabpanelAria` | `(options: { tabId?, id? }) => LhAriaAttrs` | Paquete aria | role=tabpanel |
+
+⚠️ es una envoltura de compatibilidad `@deprecated`; en el código nuevo usa `getNextListIndex` de `shared/keyboard`.
+
+## Definiciones de tipos
+
+```ts
+export type LhTabsType = 'line' | 'card'      // Apariencia subrayada / de tarjeta
+export type LhTabsPosition = 'top' | 'bottom' // Posición de las pestañas
+export type LhTabNavDirection = 'next' | 'prev' | 'first' | 'last'
+
+export interface LhTabRecord {
+  name: string       // Identificador único (clave estable, no cambia con el ciclo de vida)
+  label: string      // Título de la pestaña
+  disabled: boolean
+}
+```
+
+## Accesibilidad
+
+```ts
+getTabAria({ active: true, panelId: 'panel-1', id: 'tab-1' })
+// { role: 'tab', id: 'tab-1', 'aria-controls': 'panel-1', 'aria-selected': true }
+getTabAria({ active: false, disabled: true })
+// { role: 'tab', 'aria-disabled': true } (si no está activa no se emite aria-selected)
+
+getTabpanelAria({ tabId: 'tab-1', id: 'panel-1' })
+// { role: 'tabpanel', id: 'panel-1', 'aria-labelledby': 'tab-1' }
+```
+
+- **Convenciones de teclado de role=tab** (APG): ←/→ conmutan de pestaña (**la activación sigue al foco**: al mover el foco se conmuta, sin necesidad de pulsar Enter además); Home/End saltan a la primera/última pestaña. La tecla Tab sale de la barra de pestañas y entra en el panel actual.
+- **first/last de `getNextActiveName`**: direction admite 'first' / 'last', correspondientes a las teclas Home/End: no vuelvas a escribir tu propio tratamiento de los extremos.
+- **El panel necesita tabindex**: el propio panel suele llevar `tabindex="0"` para que las personas que usan teclado puedan entrar al contenido del panel (práctica recomendada por APG). No es responsabilidad de core: la implementa la capa UI.
+- **La forma correcta de ocultar el panel**: los paneles no activos se sacan del árbol de accesibilidad con `v-if`/`hidden`; **no dejes que el panel siga siendo enfocable por otros medios que `visibility: hidden`**. Si necesitas mantenerlo vivo (borrador de formulario), usa `display: none` + renderizado en caché.
+- **La semántica de omisión de aria-selected**: cuando no está activo, el atributo no se emite (en vez de emitir false): APG establece que el valor por defecto de aria-selected de tab es false; emitir false explícitamente es legal, pero redundante. `getTabAria` sigue la convención de omisión de valores falsos de `shared/a11y`.
+
+## Ejemplos de uso
+
+```ts
+import { resolveActiveName, getNameAfterRemove, getNextActiveName } from '@lh-ui/share/core/tabs'
+
+const records = [
+  { name: 'a', label: 'Básico', disabled: false },
+  { name: 'b', label: 'Seguridad', disabled: false },
+  { name: 'c', label: 'Notificaciones', disabled: true },
+]
+
+resolveActiveName(records, 'b')   // 'b'
+resolveActiveName(records, 'c')   // 'a' (c está deshabilitada, retrocede a la primera disponible)
+resolveActiveName(records, '')    // 'a' ('' != null pasa por la rama de validación, pero no hay pestaña con name '' → retrocede)
+resolveActiveName(records, undefined)  // 'a'
+resolveActiveName([], undefined)       // null (no hay pestañas disponibles)
+
+getNextActiveName(records, 'a', 'next')  // 'b' (saltando la c deshabilitada, desde a next da b)
+getNextActiveName(records, 'b', 'next')  // 'a' (solo están disponibles a/b, de forma circular)
+getNextActiveName(records, 'unknown', 'next')  // 'a' (desconocido, retrocede al primero)
+
+getNameAfterRemove(records, 'b', 'b')  // 'a' (se borra la activa b: no hay disponible a la derecha → el más cercano a la izquierda)
+getNameAfterRemove(records, 'a', 'b')  // 'b' (lo borrado no era la pestaña activa, se mantiene b)
+getNameAfterRemove([{ name: 'a', disabled: true }], 'a', 'a')  // null (no hay disponibles)
+```
+
+```ts
+// Activación controlada (capa UI)
+const activeName = ref<string | null>(null)
+const records = ref<LhTabRecord[]>([])
+
+function onTabClick(name: string) {
+  activeName.value = name
+}
+function onRemove(name: string) {
+  const next = getNameAfterRemove(records.value, name, activeName.value ?? '')
+  records.value = records.value.filter((r) => r.name !== name)
+  activeName.value = next
+}
+watch(records, () => {
+  activeName.value = resolveActiveName(records.value, activeName.value)
+}, { immediate: true })
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTabs v-model="activeName" type="card">
+    <LhTabPane name="basic" label="Ajustes básicos">…</LhTabPane>
+    <LhTabPane name="security" label="Ajustes de seguridad">…</LhTabPane>
+  </LhTabs>
+</template>
+```
+
+```tsx
+// React: records se registran desde los componentes TabPane hijos (useEffect + context) o se pasan
+// directamente por props; la navegación por teclado usa onKeyDown + getNextActiveName + focus()
+```
+
+```ts
+// uniapp: pestañas con <view> + scroll-view de desplazamiento horizontal;
+// el subrayado activo se posiciona con transform
+```
+
+## Estilos y tokens
+
+| Nombre de clase | Semántica |
+| --- | --- |
+| `.lh-tabs` | Contenedor raíz |
+| `.lh-tabs--{line\|card}` | Apariencia |
+| `.lh-tabs--{top\|bottom}` | Posición de las pestañas (el subrayado / el borde de la tarjeta se voltean en consecuencia) |
+| `.lh-tabs__header` / `__nav` / `__nav-wrap` | Barra de pestañas / navegación / envoltorio de desplazamiento (para barras desplazables) |
+| `.lh-tabs__item` / `--active` / `--disabled` | Pestaña |
+| `.lh-tabs__active-bar` | Subrayado activo (tipo line, posicionado con transform) |
+| `.lh-tabs__content` / `__pane` | Zona de paneles |
+
+Color del texto activo `--lh-tabs-active-color`, el subrayado del mismo color; el tipo card usa borde `--lh-border-color` + elevación del fondo del estado activo `--lh-bg-color`.
+
+## Advertencias
+
+- **El desplazamiento de la barra de pestañas**: cuando las pestañas desbordan, hacen falta botones de desplazamiento izquierdo/derecho o deslizamiento con el dedo: `overflow: hidden` del `__nav-wrap` + la traslación por transform del `__nav` es la implementación habitual; la cantidad de desplazamiento la calcula la capa UI (core no interviene).
+- **La unión de los bordes de `type: card`**: el estado activo de la pestaña de tarjeta debe eliminar el borde del lado que coincide con la zona de contenido (en la posición top, el borde inferior; en bottom, el superior), pues de lo contrario aparece un borde doble: esa es la razón de que existan las clases de posición.
+- **Pestañas dinámicas**: tras añadir o borrar, `resolveActiveName` debe volver a ejecutarse (watch records). Al borrar, `getNameAfterRemove` garantiza que el estado activo no quede en el aire.
+- **El botón de cierre dentro de la pestaña**: el botón ✕ de una pestaña `closable` necesita `@click.stop` (de lo contrario también se dispara la conmutación de la pestaña), además de un `aria-label`.
+- **keep-alive y rendimiento**: los paneles pesados de conmutación frecuente (gráficos, tablas) conviene mantenerlos vivos en vez de destruirlos y recrearlos: Vue usa `<keep-alive>`, React oculta por CSS + una estrategia de desmontaje. Core no tiene conocimiento de ello.
+- **La firma antigua de `getNextActiveName`**: direction usa nombres semánticos ('next'/'prev') y no el 1/-1 del núcleo, y **cuando el valor actual es desconocido retrocede al primero con independencia de la dirección** (no avanza según la dirección): es la conservación del comportamiento antiguo; tenlo en cuenta al migrar.
+- **La trampa del nombre de pestaña vacío**: `resolveActiveName(records, '')` busca en records una pestaña con `name === ''`; si el negocio usa la cadena vacía para significar «sin selección», entrará en conflicto con un nombre de pestaña vacío legítimo. Usa `null`, y no `''`, para representar la ausencia de selección.
+
+<FnPlayground module="tabs" fn="getNameAfterRemove" params='{"records": [{"name": "a", "label": "Básico", "disabled": false}, {"name": "b", "label": "Seguridad", "disabled": false}, {"name": "c", "label": "Notificaciones", "disabled": true}], "removedName": "b", "currentName": "b"}' />

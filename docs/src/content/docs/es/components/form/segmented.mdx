@@ -1,0 +1,173 @@
+---
+title: segmented —— Control segmentado
+description: 'normalización de opciones con normalizeSegmentedOptions, navegación por teclado con moveSegmentedIndex, bolsa de atributos semánticos de radiogroup'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El control segmentado es una **versión compacta de la selección única**: despliega las opciones como una franja de botones con resaltado y el elemento seleccionado se señala con un bloque deslizante. Frente al grupo de radios ahorra espacio vertical y tiene un aspecto más moderno; frente al select, expone todas las opciones y ahorra un clic. `core/segmented` gestiona la normalización de las dos formas de escribir las opciones, la decisión de desactivación del grupo entero, la navegación por teclado y la semántica radiogroup de APG.
+
+## Cuándo usarlo
+
+- Cada framework implementa `LhSegmented`: cambio de vista (lista / cuadrícula / tarjetas), rango temporal (día / semana / mes), ajustes de enumeración compactos.
+- Escenarios con pocas opciones (2~5) y **excluyentes**.
+- **No usarlo para**: más de 6 opciones (cámbialo a select o a un grupo de radios); selección múltiple (usa un grupo de checkboxes); textos de opción muy largos (el ajuste de línea queda feo).
+
+## Importación
+
+```ts
+import {
+  normalizeSegmentedOptions,
+  isSegmentedDisabled,
+  getSegmentedClassNames,
+  moveSegmentedIndex,
+  getSegmentedAria,
+  getSegmentedItemAria,
+} from '@lh-ui/share/core/segmented'
+import type {
+  LhSegmentedInput,
+  LhSegmentedNormalized,
+  LhSegmentedState,
+} from '@lh-ui/share/core/segmented'
+```
+
+## Intención de diseño
+
+`normalizeSegmentedOptions` acepta dos formas de escritura — `['Día', 'Semana', 'Mes']` o `[{ label: 'Día', value: 'day' }]` — y las normaliza a una forma única. Es la decisión de «entrada tolerante, interior estricto»: cuanto más tolerantes sean las props de una biblioteca de UI, menor es la carga mental del usuario; una vez normalizado internamente a `LhSegmentedNormalized`, la decisión de desactivación, la navegación y el renderizado solo trabajan con una única estructura.
+
+`isSegmentedDisabled(options, disabled)` hace la **fusión de la desactivación en dos niveles**: el `disabled` del grupo o el `disabled` de cualquiera de las opciones deja todo el grupo inutilizable — porque el bloque seleccionado del control segmentado se desliza de forma acoplada, un grupo «a medio desactivar» atascaría el deslizador.
+
+`moveSegmentedIndex` delega en `getNextListIndex` del núcleo compartido (`core/shared/keyboard`) y hace la navegación circular saltándose los elementos desactivados; con un array vacío devuelve current.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `normalizeSegmentedOptions` | `(options: LhSegmentedInput[]) => LhSegmentedNormalized[]` | opciones normalizadas | normaliza la escritura abreviada en cadenas |
+| `isSegmentedDisabled` | `(options: LhSegmentedNormalized[], disabled?: boolean) => boolean` | si está desactivado | fusión del nivel del grupo + nivel de la opción |
+| `getSegmentedClassNames` | `(state: LhSegmentedState) => string[]` | clases | disabled/block |
+| `moveSegmentedIndex` | `(options, current: number, direction: 1 \| -1) => number` | índice objetivo | circular saltando los desactivados |
+| `getSegmentedAria` | `(options?: { disabled?; label? }) => LhAriaAttrs` | bolsa de atributos aria | semántica radiogroup |
+| `getSegmentedItemAria` | `(options: { selected; disabled? }) => LhAriaAttrs` | bolsa de atributos aria | semántica radio |
+
+## Definiciones de tipos
+
+```ts
+export type LhSegmentedValue = string | number
+
+export interface LhSegmentedOption {
+  label: string
+  value: LhSegmentedValue
+  disabled?: boolean
+}
+
+/** Opción de entrada (escritura abreviada en cadena u objeto) */
+export type LhSegmentedInput = LhSegmentedValue | LhSegmentedOption
+
+export interface LhSegmentedNormalized {
+  label: string
+  value: LhSegmentedValue
+  disabled: boolean
+}
+
+export interface LhSegmentedState {
+  disabled: boolean
+  block: boolean   // ocupa toda la anchura del padre (segmentos de igual anchura)
+}
+```
+
+## Accesibilidad
+
+A nivel de accesibilidad, el control segmentado es un **grupo de selección única**: el contenedor lleva `role="radiogroup"` y cada segmento, `role="radio"` + `aria-checked`. Toda la semántica la proporcionan las dos funciones de bolsas de atributos:
+
+```ts
+getSegmentedAria({ disabled: false, label: 'Vista' })
+// { role: 'radiogroup', 'aria-label': 'Vista' }
+
+getSegmentedItemAria({ selected: true })
+// { role: 'radio', 'aria-checked': true }
+
+getSegmentedItemAria({ selected: false, disabled: true })
+// { role: 'radio', 'aria-checked': false, 'aria-disabled': true }
+```
+
+- Si el contenedor no tiene un label visible, usa el parámetro `label` para proporcionar un `aria-label` (el nombre accesible).
+- Interacción de teclado (capa UI): ←/↑ y →/↓ se mueven con `moveSegmentedIndex` y seleccionan directamente (el modo radio es «moverse es seleccionar», no el «moverse + Enter» del modo botón).
+- `roving tabindex`: solo el elemento seleccionado (o el primero) lleva `tabindex="0"` y los demás `-1`, para que Tab no se detenga en cada elemento del grupo.
+
+## Ejemplos de uso
+
+```ts
+import { normalizeSegmentedOptions, moveSegmentedIndex, isSegmentedDisabled } from '@lh-ui/share/core/segmented'
+
+normalizeSegmentedOptions(['Día', 'Semana', 'Mes'])
+// [{ label: 'Día', value: 'Día', disabled: false }, ...]
+
+normalizeSegmentedOptions([{ label: 'Día', value: 'day' }, 'Semana'])
+// [{ label: 'Día', value: 'day', disabled: false }, { label: 'Semana', value: 'Semana', disabled: false }]
+
+const opts = normalizeSegmentedOptions([
+  { label: 'Día', value: 'day' },
+  { label: 'Semana', value: 'week', disabled: true },
+  { label: 'Mes', value: 'month' },
+])
+moveSegmentedIndex(opts, 0, 1)   // 2 (salta el week desactivado)
+moveSegmentedIndex(opts, 2, 1)   // 0 (circular)
+moveSegmentedIndex([], 0, 1)     // 0 (array vacío)
+isSegmentedDisabled(opts, false) // true (week está desactivado → todo el grupo se desactiva)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSegmentedClassNames({ disabled, block })" v-bind="getSegmentedAria({ disabled, label })">
+  <div class="lh-segmented__indicator" :style="{ transform: `translateX(${index * 100}%)`, width: `${100 / normalized.length}%` }" />
+  <button
+    v-for="(opt, i) in normalized"
+    :key="String(opt.value)"
+    type="button"
+    class="lh-segmented__item"
+    :class="{ 'lh-segmented__item--active': i === index, 'lh-segmented__item--disabled': opt.disabled }"
+    :tabindex="i === index ? 0 : -1"
+    v-bind="getSegmentedItemAria({ selected: i === index, disabled: opt.disabled })"
+    @click="onSelect(i)"
+    @keydown.left.prevent="onMove(-1)"
+    @keydown.right.prevent="onMove(1)"
+  >
+    {{ opt.label }}
+  </button>
+</div>
+```
+
+```tsx
+// React: el indicador se desliza con una transición CSS; en onMove,
+// onChange(normalized[moveSegmentedIndex(normalized, index, dir)].value)
+```
+
+```ts
+// uniapp: se recorre con <view> + <view>; fuera de h5 los eventos de teclado no estánán
+// disponibles y se selecciona tocando directamente
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-segmented` | clase base (contenedor con esquinas redondeadas + relleno) |
+| `.lh-segmented--disabled` | desactivado |
+| `.lh-segmented--block` | ocupa toda la anchura del padre, segmentos de igual anchura |
+| `.lh-segmented__indicator` | bloque deslizante resaltado (posicionamiento absoluto + transform) |
+| `.lh-segmented__item` | un solo segmento |
+| `.lh-segmented__item--active` | elemento seleccionado (texto en color primario) |
+| `.lh-segmented__item--disabled` | elemento desactivado |
+
+Color de fondo del contenedor `--lh-fill-color` (hundido gris claro); el indicador, `--lh-bg-color` (blanco) + sombra; el texto seleccionado, `--lh-primary-color`.
+
+## Advertencias
+
+- **El posicionamiento del indicador**: la capa UI usa `transform: translateX(index * 100%)` + `width: 100/count%`; count debe ser la longitud **después de la normalización** (el resultado de `normalizeSegmentedOptions`), o el bloque deslizador se descolocará al añadir o quitar opciones.
+- **El value de la escritura en cadena frente a la escritura en objeto**: en la escritura en cadena, `value === label`; el `v-model` de la capa UI está atado al `value` y no al label; al mezclar ambas escrituras, cuidado con el origen del valor.
+- **El momento de decidir la desactivación del grupo**: `isSegmentedDisabled` depende de options y, cuando las opciones cambian dinámicamente, hay que recalcular, o el estado de desactivación no se actualiza.
+- **La decisión entre segmented y radio**: el bloque seleccionado del control segmentado se **desliza visualmente** y la animación depende de que el JS posicione el indicador; si la plataforma de destino no soporta animaciones con transform (algunos miniprogramas), es más seguro recaer en un grupo de radios.
+- **options vacío**: `normalizeSegmentedOptions([])` devuelve `[]` y `moveSegmentedIndex` devuelve current — la capa UI tiene que gestionar el estado vacío y no renderizar un hueco vacío.
+
+<FnPlayground module="segmented" fn="moveSegmentedIndex" params='{"options": [{"label": "Día", "value": "day", "disabled": false}, {"label": "Semana", "value": "week", "disabled": true}, {"label": "Mes", "value": "month", "disabled": false}], "current": 0, "direction": 1}' />

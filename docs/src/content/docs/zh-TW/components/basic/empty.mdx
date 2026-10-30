@@ -1,0 +1,115 @@
+---
+title: empty —— 空狀態
+description: 'getEmptyClassNames 區分自訂圖與預設水墨佔位圖，內容（標題/描述/操作）由 UI 層組合'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+空狀態是列表/表格/查詢結果的「零資料狀態」。`core/empty` 的狀態極簡——只有一個 `hasImage` 布林，因為它的核心視覺決策就是「使用者傳了圖 vs 用庫裡的預設水墨圖」，這兩者的版面配置不同（自訂圖尊重原始尺寸，預設圖是客製的通欄水墨畫）。
+
+## 何時使用
+
+- 各端實作 `LhEmpty`：表格無資料、搜尋無結果、列表清空、權限不足提示。
+- 需要複用水墨空狀態視覺的自訂場景。
+- **不該用它**：載入中狀態。那是 `LhSkeleton` 或 `LhLoading` 的職責；空狀態是「資料確定是零」，不是「還沒來」。
+
+## 匯入方式
+
+```ts
+import { getEmptyClassNames } from '@lh-ui/share/core/empty'
+import type { LhEmptyState } from '@lh-ui/share/core/empty'
+```
+
+## 設計意圖
+
+`core/empty` 之所以只有 `hasImage` 一個欄位，是因為其它一切（標題、描述、操作按鈕）都是**內容**而非**狀態**——內容由插槽/props 直接渲染，不需要計算。把內容也從 core 走一遍只會增加間接層而無收益。
+
+這個「只算狀態、不算內容」的分界是 lh-ui core 層的一般原則：core 函式的輸入應當是**會改變輸出**的東西。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getEmptyClassNames` | `(state: LhEmptyState) => string[]` | 類別名陣列 | 區分自訂圖與預設圖 |
+
+輸出範例：
+
+```ts
+getEmptyClassNames({ hasImage: true })   // ['lh-empty', 'lh-empty--custom-image']
+getEmptyClassNames({ hasImage: false })  // ['lh-empty']
+```
+
+## 類型定義
+
+```ts
+export interface LhEmptyState {
+  hasImage: boolean
+}
+```
+
+## 無障礙
+
+`core/empty` 不輸出 aria 屬性包。空狀態的無障礙要點在 UI 層：
+
+- 空狀態出現時，它前面的列表/表格應當用 `aria-live="polite"` 或在資料載入完成後主動通知，否則讀屏使用者停留在「列表有 0 項」的舊認知裡。
+- 預設水墨圖是**裝飾性**的，應 `aria-hidden="true"`（UI 層渲染時處理）。
+- 描述文字承載真正的資訊（「暫無資料，點選按鈕重新整理」），必須可讀。
+- 若空狀態含操作按鈕，按鈕本身用原生語義即可。
+
+## 使用範例
+
+```ts
+import { getEmptyClassNames } from '@lh-ui/share/core/empty'
+
+getEmptyClassNames({ hasImage: false })  // ['lh-empty']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getEmptyClassNames({ hasImage: !!image })">
+  <div class="lh-empty__image">
+    <slot name="image">
+      <InkWash />   <!-- 預設水墨佔位圖，aria-hidden -->
+    </slot>
+  </div>
+  <p class="lh-empty__description">{{ description }}</p>
+  <div class="lh-empty__actions"><slot name="actions" /></div>
+</div>
+```
+
+```tsx
+// React
+const hasImage = !!image
+return (
+  <div className={getEmptyClassNames({ hasImage }).join(' ')}>
+    <div className="lh-empty__image">{image ?? <DefaultInkWash aria-hidden="true" />}</div>
+    <p className="lh-empty__description">{description}</p>
+    <div className="lh-empty__actions">{actions}</div>
+  </div>
+)
+```
+
+```ts
+// uniapp：預設水墨圖是 svg，非 h5 端需換成圖片資源（各端 UI 層處理）
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-empty` | 基礎類：置中、縱向間距 |
+| `.lh-empty--custom-image` | 自訂圖：解除預設圖的固定尺寸約束 |
+| `.lh-empty__image` | 圖區 |
+| `.lh-empty__description` | 描述文字（次級文字色） |
+| `.lh-empty__actions` | 操作按鈕區 |
+| `.lh-empty__illustration` / `__ink-*` | 預設水墨插畫的組成元素（遠山、水墨暈、印章、畫框） |
+
+預設水墨插畫是 lh-ui 的國風簽名元素之一，由純 CSS/SVG 繪製，暗色下有專門調色。
+
+## 注意事項
+
+- `hasImage` 的判定權在 UI 層：使用者透過 `image` prop 或 `image` 插槽傳入任何內容都算「有自訂圖」。
+- 空狀態**應當出現在原本資料的位置**（表格體內、列表容器內），不要彈成全域提示——它不是回饋，是資料的一種狀態。
+- 404 / 無權限這類「不是資料為空」的場景，語義上更接近警示，用 `LhResult`（若各端有）或自訂版面配置比 `LhEmpty` 更合適。
+
+<FnPlayground module="empty" fn="getEmptyClassNames" params='{"state": {"hasImage": false}}' />

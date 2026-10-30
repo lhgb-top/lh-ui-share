@@ -1,0 +1,163 @@
+---
+title: 設計令牌
+description: '185 條明色令牌 + 118 條暗色覆蓋 + 183 個 SCSS 變數，三層令牌的取值、層級與覆蓋關係'
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+令牌（token）是設計語言的變數化：顏色、字級、間距、圓角、陰影、動畫時長都命名成 `--lh-*` CSS 變數，元件只消費名字、不寫死值。換膚就是換令牌。
+
+## 三層令牌
+
+| 層 | 位置 | 數量 | 求值時機 | 可覆蓋性 |
+| --- | --- | --- | --- | --- |
+| CSS 變數 · 明色 | `styles/theme/common/var.scss` 的 `:root` | **185 條** | 執行時 | ✅ 任意覆蓋 |
+| CSS 變數 · 暗色 | `styles/theme/common/var-dark.scss` 的 `[data-theme='dark'], .dark` | **118 條** | 執行時 | ✅ |
+| SCSS 變數 | `styles/theme/common/variables.scss` | **183 個** | **編譯期** | ⚠️ 只能改原始碼重編譯 |
+
+### 明色令牌（var.scss）
+
+```scss
+:root {
+  --lh-primary-color: #2B4C7C;
+  --lh-text-primary: rgba(0, 0, 0, 0.88);
+  --lh-bg-color: #FAF6F0;
+  --lh-border-color: #e5e6eb;
+  --lh-radius-base: 6px;
+  --lh-spacing-base: 8px;
+  // ... 185 條
+}
+```
+
+### 暗色覆蓋（var-dark.scss）
+
+```scss
+[data-theme='dark'],
+.dark {
+  --lh-bg-color: #2A2520;
+  --lh-text-primary: #E8E0D8;
+  --lh-border-color: #3A3530;
+  // ... 118 條
+}
+```
+
+暗色是**覆蓋層**而非獨立一套：只寫需要翻轉的 118 條，其餘沿用明色值。
+
+### SCSS 變數（variables.scss）
+
+```scss
+$lh-primary-color: #2B4C7C !default;
+$lh-border-radius-base: 6px !default;
+// ... 183 個
+```
+
+SCSS 變數的用途是**參與編譯期計算**：顏色混合（`mix()` / `shade()`）、陰影合成（多層 shadow 相加）這類 CSS 變數做不到的事。代價是**編譯期烤死**——暗色下不會自動翻轉。
+
+## 令牌的分層結構
+
+令牌分三檔，前兩檔在全域主題檔案、第三檔在各元件自己的樣式裡：
+
+```scss
+// 1. SCSS 變數（variables.scss，編譯期）
+$lh-primary: #2B4C7C !default;
+$lh-text-primary: #2C2C2C !default;
+
+// 2. 全域 CSS 變數（var.scss 的 :root，190 條）
+--lh-primary-color: #{$lh-primary};
+--lh-text-primary: #{$lh-text-primary};
+--lh-bg-color: #FAF6F0;
+
+// 3. 元件級變數（元件自身 scss，作用域是元件 BEM 根）
+.lh-card {
+  --lh-card-bg: var(--lh-bg-color, #FAF6F0);
+  --lh-card-border-radius: calc(var(--lh-border-radius-base, 2px) + 2px);
+}
+```
+
+關鍵機制：
+
+- **第 1、2 檔之間是編譯期內插，不是 var() 引用鏈**：`--lh-primary-color` 的值在構建時由 `$lh-primary` 烤進來，執行時改 SCSS 變數無效（得重編譯）。專案裡**沒有**「基礎調色盤」中間層——不存在 `--lh-blue-6` 這類色階變數，語義令牌直接由 SCSS 變數生成。
+- **換膚的兩個槓桿點**：改 `variables.scss` 的 SCSS 變數重編譯（影響全部語義令牌），或執行時覆蓋 `:root` 上的 CSS 變數（`ConfigProvider` 的 themeVars 走這條路，即時生效）。
+- **第 3 檔預設引用第 2 檔**：元件級變數的預設值通常是全域令牌的 `var()` 引用（帶回落），既保持主題連動，又能用 themeVars 定向覆蓋單個元件。
+
+## 語義域
+
+主要語義域（完整分組見下方令牌表）：
+
+| 域 | 典型令牌 | 用途 |
+| --- | --- | --- |
+| 主色 | `--lh-primary-color` / `-hover` / `-active` / `-bg` / `-border` | 品牌主色五件套 |
+| 文字 | `--lh-text-primary` / `-secondary` / `-tertiary` / `-disabled` | 四級文字層級 |
+| 背景 | `--lh-bg-color` / `-page` / `-secondary` / `-overlay` | 頁面 / 容器 / 遮罩 |
+| 邊框 | `--lh-border-color` / `-light` / `-dark` | 描邊 |
+| 狀態 | `--lh-success-color` / `-warning` / `-error` / `-danger` / `-info` | 五個語義色 |
+| 圓角 | `--lh-radius-small` / `-base` / `-large` / `-circle` | 四檔圓角 |
+| 間距 | `--lh-spacing-*` | 8px 基準刻度 |
+| 字級 | `--lh-font-size-*` | 字級階梯 |
+| 陰影 | `--lh-shadow-*` | 陰影層級 |
+| 動畫 | `--lh-animation-duration-*` / `-timing-function` | 過渡節奏 |
+| 裝飾 | `--lh-decoration-color` | 國風裝飾色 |
+
+## 令牌全表
+
+<TokenTable />
+
+（資料由 `scripts/gen-docs-data.mjs` 解析三個令牌檔案生成，帶數量斷言：明色 190、暗色 118、SCSS 188，不匹配即報錯。）
+
+## 覆蓋令牌
+
+### 執行時（推薦）
+
+```ts
+// ConfigProvider 的 themeVars（簡寫鍵自動補 --lh- 前綴）
+<lh-config-provider :theme-vars="{ 'primary-color': '#1677ff' }">
+```
+
+或在應用入口寫 CSS：
+
+```css
+:root {
+  --lh-primary-color: #1677ff;
+  --lh-primary-color-hover: #4096ff;
+  --lh-primary-color-active: #0958d9;
+}
+```
+
+詳見 [執行時客製](/theme/customization)。
+
+### 編譯期（SCSS 變數）
+
+```scss
+// 專案入口 scss，在 @use 之前覆蓋
+$lh-primary-color: #1677ff;
+
+@use '@lh-ui/share/styles';
+```
+
+`!default` 的語義是「已有值就不覆蓋」，所以在 `@use` 之前賦值即可。**注意**：這只影響編譯期烤死的部分，執行時的 CSS 變數仍需另外覆蓋。
+
+## 已知的令牌缺口
+
+「高度令牌專項」已落地（新增 `--lh-control-height-mini/small/medium/large/x-large`，
+button / select / input-number / cascader / tree-select / date-picker / time-picker /
+input 全部改引令牌，input 由 padding 派生改為固定高度，has-label 的非對稱
+`padding-top: 16px`、checkbox 打勾固定偏移、switch 的 `translate(-50%,-50%)` 重複
+硬編碼一併修復）。仍待處理的：
+
+1. spinner 與 icon 同名尺寸檔位不一致（small 16 vs 14、medium 24 vs 16 等）。改任一側都波及全庫（message / notification / loading / 全部圖示），觸發條件：同一槽位混用 LhIcon / LhSpinner 的視覺投訴，屆時單獨立項。
+2. size 檔位不齊：select / switch 僅 3 檔，date / time-picker 的 validator 收窄，tree-select / rate / segmented / pagination 無 size，mini 與 x-large 在 CSS 層幾乎未畫（全庫僅 avatar 有 x-large）。屬 API 層改動，與高度令牌解耦。
+
+## 注意事項
+
+- **元件不許自行宣告 `--lh-*`**：只能 `var(--lh-*, fallback)` 消費（根 AGENTS.md 紅線）。新增令牌加在 `var.scss`。
+- **fallback 必寫**：`var(--lh-primary-color, #1677ff)`——令牌缺失時仍有可接受的預設值，`verify:styles` 第 2 項（var fallback）把關。
+- **暗色完備性**：新增令牌要問「暗色下要不要翻轉」，要的話在 `var-dark.scss` 補覆蓋，`verify:styles` 第 7 項把關。
+- **值形如 `#{$lh-foo}` 的令牌是編譯期烤死的**：暗色下不自動翻轉，必須顯式重指向（詳見 [暗色模式](/theme/dark-mode#編譯期烤死陷阱)）。
+
+## 相關文件
+
+- [主題系統總覽](/theme/overview)
+- [主題預設](/theme/presets)
+- [執行時客製](/theme/customization)
+- [暗色模式](/theme/dark-mode)
+- [樣式源](/reference/styles)

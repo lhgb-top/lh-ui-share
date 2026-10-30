@@ -1,0 +1,170 @@
+---
+title: 'dropdown 드롭다운 —— 내비게이션'
+description: 'LH_DROPDOWN_PLACEMENT_DEFAULT=b-bottom-start, getDropdownMenuStyle maxHeight 스크롤, haspopup:"menu"와 popover의 "true" 구분'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+드롭다운은 "버튼 클릭으로 튀어나오는 작업 목록"입니다: 사용자 행의 "편집 / 삭제 / 비활성화", 테이블 열의 "추가 작업". `popover`와의 차이는 **의미와 콘텐츠 형태**입니다——dropdown은 **메뉴 의미**(role=menu + menuitem 목록)이고, popover는 **대화상자 의미**(role=dialog, 임의의 콘텐츠를 배치 가능)입니다. `menu`와의 차이는 **지속성**입니다——dropdown은 임시로 튀어나와 클릭하면 사라지는 작업 진입구입니다.
+
+## 사용 시기
+
+- 각 단말에서 `<LhDropdown>` / `<LhDropdownItem>` 구현: 행 작업 메뉴, "더 보기" 버튼, 일괄 작업, 명령형 바로가기 메뉴.
+- **작업 항목이 같은 레벨이고 수가 적당하며(3~10개) 복잡한 폼이 필요 없는 경우**.
+- **사용하면 안 되는 경우**: 폼이나 풍부한 콘텐츠가 필요한 팝업 층(`popover` 사용); 확인이 필요한 위험 작업(dropdown에 바로 삭제 버튼을 두면 2차 확인 없이 실행되어 위험합니다, `popconfirm` 사용); 주 내비게이션(`menu` 사용——dropdown은 새로고침하면 사라집니다).
+
+## 가져오기
+
+```ts
+import {
+  LH_DROPDOWN_PLACEMENT_DEFAULT,
+  LH_DROPDOWN_TRIGGERS,
+  getDropdownClass,
+  getDropdownItemClass,
+  getDropdownMenuStyle,
+  getDropdownTriggerAria,
+  getDropdownMenuAria,
+  getDropdownItemAria,
+} from '@lh-ui/share/core/dropdown'
+import type { LhDropdownTrigger, LhDropdownState, LhDropdownItemState } from '@lh-ui/share/core/dropdown'
+```
+
+## 설계 의도
+
+**기본 방위는 `top`이 아니라 `bottom-start`**: `LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'`——드롭다운 메뉴는 **버튼의 왼쪽 아래에서 아래로 펼쳐지며**, "드롭다운"의 멘탈 모델에 부합합니다. `popover` / `popconfirm`의 기본값인 `top`(정보 층이 위로 떠오르고 아래 콘텐츠를 가리지 않음)과 대조됩니다: 드롭다운은 작업 진입구이므로 아래로 펼치는 것이 자연스럽고, `bottom-start`(가운데가 아닌 왼쪽 정렬) 덕분에 긴 메뉴도 가로로 뷰포트를 넘지 않습니다.
+
+**트리거 방식에 focus 없음**: `LH_DROPDOWN_TRIGGERS`는 `hover / click / contextmenu`입니다——**focus가 없습니다**. `popover`의 `click / hover / focus / manual`과 대조됩니다. 이유: 드롭다운 메뉴의 트리거는 보통 버튼이며, focus 트리거는 Tab이 통과할 때 메뉴를 잘못 띄워 키보드 흐름을 방해합니다. `contextmenu`는 우클릭 메뉴 상황(브라우저 기본 우클릭 메뉴 대체)입니다.
+
+**`hideOnClick`의 의미는 UI 계층에**: state에 `hideOnClick` 필드가 있지만 core은 이것을 소비하지 않습니다——"메뉴 항목 클릭 후 닫을지" 판단은 UI 계층에 있습니다(항목 클릭 시 설정에 따라 닫을지 결정). core은 선언만 담아 데이터 구조가 완전한 의도를 표현할 수 있게 합니다(`form`의 `trigger` 필드와 같은 발상).
+
+**`getDropdownMenuStyle`에 내장된 `overflow: auto`**: maxHeight를 설정하면 자동으로 스크롤이 추가됩니다. 드롭다운 메뉴 항목이 많아도 뷰포트를 깨뜨리지 않습니다——`popover`와의 미세한 차이(popover의 너비 스타일에는 스크롤이 없고, 콘텐츠 overflow는 호출자가 관리)입니다.
+
+**`'true'`가 아니라 `haspopup: 'menu'`**: 트리거의 aria-haspopup 값은 **`'menu'`**입니다——튀어나오는 것이 메뉴임을 정확히 선언합니다. `popover`의 `'true'`(범용 팝업, dialog/menu/listbox의 일반화)과 대조됩니다. 스크린 리더는 이를 통해 팝업 콘텐츠의 상호작용 모드를 예측합니다(메뉴는 방향키 내비게이션을 지원).
+
+## 함수 표
+
+| 함수 / 상수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getDropdownClass` | `(state: { placement, popperClass? }) => string[]` | 클래스명 | 방위 + 커스텀 |
+| `getDropdownItemClass` | `(state: { disabled?, divided? }) => string[]` | 클래스명 | 비활성 + 구분선 |
+| `getDropdownMenuStyle` | `(maxHeight?: string \| number) => Record<string, string>` | 인라인 스타일 | maxHeight + overflow |
+| `getDropdownTriggerAria` | `(visible, menuId?) => LhAriaAttrs` | aria 패키지 | haspopup="menu" |
+| `getDropdownMenuAria` | `(id?) => LhAriaAttrs` | aria 패키지 | role=menu |
+| `getDropdownItemAria` | `(state: { disabled? }) => LhAriaAttrs` | aria 패키지 | role=menuitem |
+
+상수: `LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'`, `LH_DROPDOWN_TRIGGERS`(hover / click / contextmenu).
+
+## 타입 정의
+
+```ts
+export type LhDropdownTrigger = 'hover' | 'click' | 'contextmenu'
+
+export interface LhDropdownState {
+  trigger?: LhDropdownTrigger
+  placement?: LhPlacement          // 12 방위(shared/popper)
+  visible?: boolean
+  disabled?: boolean
+  hideOnClick?: boolean            // 메뉴 항목 클릭 후 닫을지(UI 계층이 소비)
+}
+
+export interface LhDropdownItemState {
+  command?: string | number        // 메뉴 항목 식별자, command 이벤트로 함께 발생
+  disabled?: boolean
+  divided?: boolean                // 상단 구분선
+}
+```
+
+## 접근성
+
+```ts
+getDropdownTriggerAria(true, 'dd-menu-1')
+// { 'aria-expanded': true, 'aria-controls': 'dd-menu-1', 'aria-haspopup': 'menu' }
+getDropdownTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'menu' }
+
+getDropdownMenuAria('dd-menu-1')  // { role: 'menu', id: 'dd-menu-1' }
+getDropdownItemAria({ disabled: true })
+// { role: 'menuitem', 'aria-disabled': true }
+```
+
+- **`aria-haspopup="menu"`의 스크린 리더 예측**: 스크린 리더는 이것을 만나면 튀어나오는 것이 메뉴임을 알고 메뉴 모드로 처리합니다(방향키 내비게이션, Enter 활성화). 범용적인 `"true"`보다 정확합니다——이것이 dropdown과 popover가 다른 값을 쓰는 이유입니다.
+- **메뉴 키보드 규약**(APG menu 패턴): 트리거 Enter/Space로 열기; 열린 뒤 포커스는 **첫 번째 사용 가능한 메뉴 항목**에; ↑/↓로 이동; Enter/Space로 활성화; Esc로 닫고 **포커스를 트리거로 되돌림**. 방향키 내비게이션 알고리즘은 `shared/keyboard.getNextListIndex`를 사용(menu / tabs와 동일).
+- **`command`의 이벤트 계약**: 메뉴 항목의 `command` 필드가 클릭 이벤트와 함께 발생(`@command="cmd => ...`), 각 항목마다 별도 handler를 작성하지 않습니다——이것은 드롭다운 메뉴의 표준 API 형태입니다. UI 계층은 switch로 분배합니다.
+- **비활성 항목은 disabled 속성이 아니라 aria-disabled**: `aria-disabled`는 요소를 접근성 트리에서 비활성으로 표시하되 포커스는 가능하게 합니다(스크린 리더가 존재와 비활성 이유를 읽어 줄 수 있음); 네이티브 `disabled`는 요소를 포커스 순서에서 제외하므로, 키보드 사용자는 왜 건너뛰었는지 모른 채 "통과"하게 됩니다.
+- **구분선은 순수 장식**: `divided`는 단순한 CSS 테두리이며 의미가 없습니다——"위험 작업 그룹"을 표현하는 데 사용하지 마세요. 위험 그룹은 `popconfirm`이나 시각적 색상(danger 텍스트 색상)으로 나타냅니다.
+- **우클릭 메뉴(contextmenu)**: 트리거에 `@contextmenu.prevent`로 브라우저 기본 메뉴를 막고, 트리거 요소를 상호작용 가능으로 표시해야 합니다——우클릭 메뉴는 키보드 사용자에게 완전히 닿지 않으므로 **동등한 버튼 진입구를 반드시 제공**해야 합니다(접근성 필수 요건).
+
+## 사용 예시
+
+```ts
+import {
+  getDropdownClass, getDropdownItemClass, getDropdownMenuStyle, LH_DROPDOWN_PLACEMENT_DEFAULT,
+} from '@lh-ui/share/core/dropdown'
+
+LH_DROPDOWN_PLACEMENT_DEFAULT  // 'bottom-start'
+
+getDropdownClass({ placement: 'bottom-start' })
+// ['lh-dropdown__menu', 'lh-dropdown__menu--bottom-start']
+getDropdownItemClass({ disabled: true, divided: true })
+// ['lh-dropdown__item', 'lh-dropdown__item--disabled', 'lh-dropdown__item--divided']
+
+getDropdownMenuStyle(200)     // { maxHeight: '200px', overflow: 'auto' }
+getDropdownMenuStyle('30vh')  // { maxHeight: '30vh', overflow: 'auto' }
+getDropdownMenuStyle(undefined)  // {}
+```
+
+```vue
+<!-- Vue3: 행 작업 메뉴 -->
+<template>
+  <LhDropdown @command="onCommand">
+    <template #default>
+      <LhButton size="small">더 보기<LhIcon name="arrow-down" /></LhButton>
+    </template>
+    <template #menu>
+      <LhDropdownItem :command="'edit'">편집</LhDropdownItem>
+      <LhDropdownItem :command="'copy'">복사</LhDropdownItem>
+      <LhDropdownItem :command="'delete'" divided danger>삭제</LhDropdownItem>
+    </template>
+  </LhDropdown>
+</template>
+
+<script setup>
+function onCommand(command: string | number) {
+  if (command === 'delete') visible.value = true  // 삭제는 popconfirm으로 2차 확인
+  else if (command === 'edit') router.push(`/edit/${id}`)
+}
+</script>
+```
+
+```tsx
+// React: 메뉴 항목을 배열 기반 렌더링 + onCommand 분배; 제어형 visible과 외부 클릭 닫기 조합
+```
+
+```ts
+// uniapp: <view> 메뉴 + catchtap; 우클릭 메뉴는 h5 외 환경에서 미지원, click 트리거만 유지
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-dropdown__menu` | 메뉴 컨테이너(popper) |
+| `.lh-dropdown__menu--{bottom-start\|top\|…}` | 방위(flip 이후의 실제 값) |
+| `.lh-dropdown__item` | 메뉴 항목 |
+| `.lh-dropdown__item--disabled` | 비활성(회색 + 반응 없음) |
+| `.lh-dropdown__item--divided` | 상단 구분선 |
+| `.lh-dropdown__item--danger` | 위험 작업(빨간 텍스트, UI 계층 규약) |
+
+배경색 `--lh-bg-color`, 그림자 `--lh-box-shadow-dropdown`, 모서리 둥글기 `--lh-border-radius-base`, 항목 안쪽 여백 `--lh-dropdown-item-padding`, z-index `--lh-z-index-dropdown`.
+
+## 주의 사항
+
+- **위험 작업은 반드시 2차 확인**: dropdown에 바로 "삭제"를 두면 한 번 클릭에 실행되어 잘못된 조작의 대가가 큽니다. 표준적인 방법은 dropdown이 `popconfirm`을 트리거하는 것("삭제 후 복구할 수 없습니다, 진행하시겠습니까?")——두 컴포넌트의 협업 연결입니다.
+- **메뉴 항목이 너무 많을 때 스크롤**: 10개를 넘으면 `maxHeight` 스크롤을 고려하거나, `select`(선택 의미)나 서랍으로 바꾸세요. 긴 메뉴의 키보드 내비게이션 경험은 좋지 않습니다(방향키를 여러 번 눌러야 함).
+- **`hover` 트리거의 모바일 문제**: 터치스크린에는 hover가 없습니다, `popover`/`tooltip`과 마찬가지입니다. 크로스플랫폼 기본값은 click을 사용하세요.
+- **`hideOnClick: false`인 상황**: 메뉴 항목이 "체크형" 토글(예: "열 X 표시")일 때, 클릭 후에도 열어 두어 사용자가 연속해서 체크하게 합니다——이 필드가 존재하는 이유입니다.
+- **중첩 dropdown**: 서브메뉴(dropdown 안의 dropdown)의 위치 지정과 포커스 관리는 매우 복잡합니다(부모/자식 팝업 층의 Esc가 각각 어느 것을 닫는가). lh-ui는 서브메뉴를 내장하지 않습니다——계층 내비게이션이 필요하면 `menu`를 사용하세요.
+- **`placement`에는 flip 이후의 실제 값을 전달**: `popover`와 마찬가지로, `getDropdownClass`가 받는 것은 popper가 반환한 실제 방위이며, 그렇지 않으면 화살표/정렬 클래스명이 시각과 맞지 않게 됩니다.
+- **`menu`와의 경계**: dropdown은 **임시 작업 진입구**(새로고침하면 사라짐)이고; menu는 **지속적 내비게이션**(딥 링크 가능, 새로고침에도 상태 유지)입니다. dropdown으로 주 내비게이션을 흉내 내면 사용자가 2차 페이지로 돌아갈 수 없게 됩니다.
+- **첫 항목 포커스**: 메뉴를 열 때 포커스는 트리거가 아니라 첫 번째 사용 가능한 항목에 놓입니다(`shared/keyboard`의 first 의미)——이것은 APG 요구 사항이며, 키보드 사용자는 연 후 바로 조작할 수 있어야 합니다.
+
+<FnPlayground module="dropdown" fn="getDropdownMenuStyle" params='{"maxHeight": 200}' />

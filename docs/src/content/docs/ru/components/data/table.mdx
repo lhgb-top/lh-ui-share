@@ -1,0 +1,271 @@
+---
+title: table —— Таблица
+description: 'sortTableRows: пустые значения в конце, buildHeaderCells разворачивает многоуровневые заголовки, getStickyOffsets смещения фиксированных столбцов, computeVisibleRange виртуальная прокрутка'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Таблица — «тяжёлая артиллерия» отображения данных: сортировка, фильтрация, многоуровневые заголовки, фиксированные столбцы, виртуальная прокрутка, перетаскивание ширины столбцов — каждая задача представляет собой отдельный алгоритмический вызов. `core/table` выделяет всё это в чистые функции — UI-слою остаётся лишь привязать результаты к DOM. Это один из самых функционально насыщенных модулей компонентов в пакете.
+
+## Когда использовать
+
+- При реализации `LhTable` на каждой платформе: списки админ-панелей, отчёты по данным, таблицы массовых операций.
+- Сценарии, где структурированным данным нужна сортировка / фильтрация / фиксированные столбцы / многоуровневые заголовки.
+- **Не следует использовать**: данных очень мало и без интерактивности (проще взять `descriptions` или написать таблицу руками); карточный поток информации (используйте раскладку `card`).
+
+## Импорт
+
+```ts
+import {
+  LH_TABLE_ROW_HEIGHT,
+  LH_TABLE_OVERSCAN,
+  LH_TABLE_MIN_COL_WIDTH,
+  computeVisibleRange,
+  cycleSortOrder,
+  sortTableRows,
+  getCellValue,
+  getColumnWidth,
+  getGridTemplate,
+  getStickyOffsets,
+  getTableClassNames,
+  getTableCellClassNames,
+  flattenLeafColumns,
+  buildHeaderCells,
+  getHeaderStickyOffsets,
+  filterTableRows,
+  clampColumnWidth,
+  getTableSortAria,
+} from '@lh-ui/share/core/table'
+import type {
+  LhTableAlign,
+  LhTableColumn,
+  LhTableFilterOption,
+  LhTableHeaderCell,
+  LhTableRow,
+  LhTableSortOrder,
+  LhTableVisibleRange,
+  LhTableCellSticky,
+} from '@lh-ui/share/core/table'
+```
+
+## Замысел
+
+**Пустые значения в конце**: `sortTableRows` обрабатывает `null` / `undefined` / `NaN` единообразно — они не участвуют в нормальном сравнении, а отправляются в конец, **и при сортировке по убыванию остаются там же**. Это осозненное продуктовое решение: строки с пустыми данными не должны из-за обратной сортировки оказываться на самом первом месте и перекрывать валидные данные.
+
+**Безопасность DAG многоуровневых заголовков**: `flattenLeafColumns` и `buildHeaderCells` используют **глобальный учёт увиденных колонок**, а не учёт по цепочке предков — потому что один и тот же объект column может разделяться по ссылкам в DAG-структуре (одна колонка в двух группах), и только глобальная проверка гарантирует, что он будет испущен ровно один раз, так что число столбцов тела совпадёт с числом листовых ячеек заголовка. `leafSpan` в `buildHeaderCells` использует «рекурсивно фактически испущенное число листьев», а не априорный подсчёт — именно затем, чтобы разделяемое поддерево не было посчитано дважды и не дало сбой числа столбцов.
+
+**Наследование sticky у групповых заголовков**: `getHeaderStickyOffsets` позволяет группе наследовать смещение первого/последнего листья, только когда **все листовые колонки интервала фиксированы с одной стороны** — групповой заголовок, пересекающий фиксированную и проточную зоны, нельзя позиционировать одним смещением, поэтому он просто не фиксируется.
+
+**Изоморфная перегрузка `clampColumnWidth`**: `число вход — число выход, строка вход — строка выход`, и вызывающему не нужно делать приведение типов для изоморфного преобразования; NaN сразу возвращает нижнюю границу (координата NaN возможна в процессе перетаскивания).
+
+**`computeVisibleRange` уже @deprecated**: алгоритм виртуальной прокрутки сведён к общему ядру `computeRange` из `core/shared/virtual` (общий источник с VirtualList), а эта функция сохранена как совместимый псевдоним для vue2 и других нижестоящих потребителей.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `computeVisibleRange` | `(scrollTop, viewportHeight, rowHeight, total, overscan?) => LhTableVisibleRange` | видимый интервал | **@deprecated**, делегирует в `computeRange` |
+| `cycleSortOrder` | `(current?) => LhTableSortOrder \| undefined` | следующее состояние сортировки | нет→asc→desc→нет |
+| `sortTableRows` | `(rows, prop, order, sorter?) => LhTableRow[]` | новый массив | пустые значения в конце |
+| `getCellValue` | `(row, column) => string` | отображаемое значение | formatter в приоритете |
+| `getColumnWidth` | `(column) => string` | `'120px'` / `'1fr'` | без ширины — равное распределение |
+| `getGridTemplate` | `(columns) => string` | шаблон grid | для раскладки на CSS grid |
+| `getStickyOffsets` | `(columns) => LhTableCellSticky[]` | смещения слева/справа | накопление фиксированных столбцов |
+| `getTableClassNames` | `(state: { stripe, border, size, virtual }) => string[]` | классы | четыре модификатора |
+| `getTableCellClassNames` | `(state) => string[]` | классы | выравнивание/фиксация/перетаскивание ширины |
+| `flattenLeafColumns` | `(columns) => LhTableColumn[]` | листовые колонки | для тела при многоуровневых заголовках |
+| `buildHeaderCells` | `(columns) => LhTableHeaderCell[]` | плоские ячейки заголовка | с rowspan/colspan |
+| `getHeaderStickyOffsets` | `(leafColumns, headerCells) => LhTableCellSticky[]` | смещения заголовка | условное наследование групповых заголовков |
+| `filterTableRows` | `(rows, filters) => LhTableRow[]` | новый массив | И между колонками, ИЛИ внутри колонки |
+| `clampColumnWidth` | `(width: number \| string) => number \| string` | ограниченная ширина | нижняя граница 40px |
+| `getTableSortAria` | `(options: { sortOrder?, sortable? }) => LhAriaAttrs` | пакет aria-атрибутов | aria-sort |
+
+Константы: `LH_TABLE_ROW_HEIGHT = 48` (высота строки по умолчанию), `LH_TABLE_OVERSCAN = 3` (буфер прокрутки в строках), `LH_TABLE_MIN_COL_WIDTH = 40` (нижняя граница ширины при перетаскивании).
+
+## Определения типов
+
+```ts
+export type LhTableAlign = 'left' | 'center' | 'right'
+export type LhTableSortOrder = 'asc' | 'desc'
+export type LhTableRow = Record<string, any>
+
+export interface LhTableColumn {
+  prop: string
+  label: string
+  width?: number | string          // число — это px
+  align?: LhTableAlign
+  fixed?: 'left' | 'right'         // требует указанного width
+  sortable?: boolean
+  slot?: string                    // имя пользовательского слота ячейки
+  formatter?: (row: LhTableRow, value: any) => string
+  children?: LhTableColumn[]       // конфигурация задаёт многоуровневый заголовок
+  filters?: LhTableFilterOption[]  // действует только для листовых колонок
+  filterMethod?: (value: string | number, row: LhTableRow) => boolean
+  filterMultiple?: boolean         // по умолчанию true
+  resizable?: boolean              // требует числового width у листовой колонки
+}
+
+export interface LhTableHeaderCell {
+  column: LhTableColumn
+  level: number          // уровень заголовка, с 0
+  leafStart: number      // начало отсчёта листевых колонок
+  leafSpan: number       // число охватываемых листьев
+  rowspan: number        // дополнение до максимальной глубины
+  colspan: number        // = leafSpan
+  isLeaf: boolean
+}
+
+export interface LhTableVisibleRange { start: number; end: number; offsetY: number; totalHeight: number }
+export interface LhTableCellSticky { left?: number; right?: number }
+```
+
+## Доступность
+
+`getTableSortAria` выводит `aria-sort`, строго выровненный с конечным автоматом `cycleSortOrder`:
+
+```ts
+getTableSortAria({ sortable: true, sortOrder: 'asc' })    // { 'aria-sort': 'ascending' }
+getTableSortAria({ sortable: true, sortOrder: 'desc' })   // { 'aria-sort': 'descending' }
+getTableSortAria({ sortable: true })                      // { 'aria-sort': 'none' }
+getTableSortAria({ sortable: false })                     // {} (для неотсортированной колонки не выводится)
+```
+
+Обратите внимание на третий случай: при отсутствии сортировки выводится `aria-sort="none"`, а не пусто — это явное требование APG, **прямое объявление «колонка сортируема, но сейчас не отсортирована»**, и скринридер подсказывает пользователю, что здесь можно отсортировать.
+
+Остальные соглашения (реализуются UI-слоем): заголовки — `<th scope="col">`; фиксированные колонки не следует снабжать `tabindex`, создавая лишние точки фокуса; блок пагинации — отдельный `nav`; чекбокс колонки выбора строк нуждается в `aria-label` (например, «Выбрать строку 3»).
+
+## Примеры использования
+
+```ts
+import { cycleSortOrder, sortTableRows, filterTableRows, buildHeaderCells } from '@lh-ui/share/core/table'
+
+cycleSortOrder(undefined)  // 'asc'
+cycleSortOrder('asc')      // 'desc'
+cycleSortOrder('desc')     // undefined (отменить сортировку)
+
+const rows = [
+  { name: 'Ван У', age: 30 },
+  { name: 'Ли Сы', age: null },
+  { name: 'Чжан Сань', age: 20 },
+]
+sortTableRows(rows, 'age', 'asc')
+// Чжан Сань 20 → Ван У 30 → Ли Сы null (пустое значение всегда в конце)
+sortTableRows(rows, 'age', 'desc')
+// Ван У 30 → Чжан Сань 20 → Ли Сы null (при обратной сортировке пустое значение всё ещё в конце)
+sortTableRows(rows, 'age', undefined)  // копия исходного порядка
+
+filterTableRows(rows, [{ column: { prop: 'name' }, values: ['Чжан Сань'] }])
+// [{ name: 'Чжан Сань', age: 20 }]
+filterTableRows(rows, [])  // полная копия (нет активных фильтров)
+
+// Многоуровневый заголовок
+const columns = [
+  { label: 'Основные сведения', children: [{ prop: 'name', label: 'Имя' }, { prop: 'age', label: 'Возраст' }] },
+  { prop: 'city', label: 'Город' },
+]
+flattenLeafColumns(columns)  // [Имя, Возраст, Город] (тело рендерится по этому массиву)
+buildHeaderCells(columns)
+// Основные сведения (level 0, leafStart 0, colspan 2), Имя (rowspan 2 дополнение),
+// Возраст (rowspan 2), Город (level 0, rowspan 2)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTableClassNames({ stripe, border, size, virtual })">
+  <div class="lh-table__wrapper">
+    <div class="lh-table__header" :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }">
+      <div
+        v-for="cell in headerCells"
+        :key="`${cell.level}-${cell.leafStart}`"
+        class="lh-table__header-cell"
+        :style="cellStyle(cell)"
+        v-bind="getTableSortAria({ sortOrder: sortState[cell.column.prop], sortable: cell.column.sortable })"
+        @click="onSort(cell.column)"
+      >
+        {{ cell.column.label }}
+        <span v-if="cell.column.sortable" class="lh-table__sort-indicator">
+          {{ sortState[cell.column.prop] === 'asc' ? '↑' : sortState[cell.column.prop] === 'desc' ? '↓' : '↕' }}
+        </span>
+      </div>
+    </div>
+    <div class="lh-table__body">
+      <div
+        v-for="row in displayRows"
+        :key="row.id"
+        class="lh-table__row"
+        :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }"
+      >
+        <div
+          v-for="column in leafColumns"
+          :key="column.prop"
+          :class="getTableCellClassNames({ align: column.align ?? 'left', fixed: column.fixed })"
+        >
+          {{ getCellValue(row, column) }}
+        </div>
+      </div>
+    </div>
+  </div>
+  <LhPagination :total="total" v-model:current="current" v-model:page-size="pageSize" />
+</div>
+```
+
+```ts
+// Обвязка сортировки (управляемая)
+function onSort(column: LhTableColumn) {
+  if (!column.sortable) return
+  const next = cycleSortOrder(sortState.value[column.prop])
+  if (next) sortState.value = { ...sortState.value, [column.prop]: next }
+  else delete sortState.value[column.prop]
+}
+
+const displayRows = computed(() =>
+  filterTableRows(
+    sortTableRows(props.data, sortProp.value, sortOrder.value),
+    activeFilters.value,
+  ),
+)
+```
+
+```tsx
+// React: виртуальная прокрутка
+// const range = computeRange(scrollTop, viewportHeight, rowHeight, rows.length, 3)
+// рендерим range.start..range.end, внешний уровень заполняем высотой totalHeight,
+// внутренний сдвигаем translateY(range.offsetY)
+```
+
+```ts
+// uniapp: <scroll-view scroll-y> + вычисление видимого интервала; CSS grid
+// поддерживается не на всех платформах, можно деградировать до flex-колонок;
+// функции core для сортировки/фильтрации/развёртки заголовков платформонезависимы,
+// используются как есть
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-table` / `--{small\|medium\|large}` | базовый класс / размерная шкала (высота строки и отступы) |
+| `.lh-table--stripe` / `--border` / `--virtual` | зебра / рамки / виртуальная прокрутка |
+| `.lh-table__header` / `__header-cell` | заголовок |
+| `.lh-table__body` / `__row` | тело |
+| `.lh-table__cell` / `--{left\|center\|right}` | ячейка / выравнивание |
+| `.lh-table__cell--fixed-left` / `--fixed-right` | фиксированная колонка (sticky) |
+| `.lh-table__cell--fixed-left-last` / `--fixed-right-first` | граница фиксированной колонки (разделитель через тень) |
+| `.lh-table__cell--resizable` | колонка с изменяемой шириной |
+| `.lh-table__empty` | пустое состояние |
+
+Высота строки по умолчанию 48px (`LH_TABLE_ROW_HEIGHT`) и должна совпадать с параметром `rowHeight` алгоритма виртуальной прокрутки, иначе окно сместится. Цвет фона заголовка `--lh-fill-color`, рамка `--lh-border-color`, строка при наведении `--lh-fill-color-light`.
+
+## Замечания
+
+- **Постоянство высоты строк — предпосылка виртуальной прокрутки**: `computeRange` предполагает равную высоту всех строк; если контент раздувает строку (длинный текст с переносами), виртуальная прокрутка рассинхронизируется — не включайте `virtual` для таблиц с нерегулярной высотой.
+- **У фиксированной колонки должна быть объявлена `width`**: `getStickyOffsets` переводит в смещение только числовые px или строку `'Npx'`; единицы вроде `'20%'` пересчитать нельзя, накопление пойдёт по 0, и фиксированные колонки наложатся друг на друга.
+- **Предпосылка `resizable`**: это должна быть **листовая колонка с числовым width**, после перетаскивания ширина ограничивается нижней границей через `clampColumnWidth` и записывается обратно в конфигурацию колонки.
+- **`prop` при сортировке и ключи данных**: `sortTableRows` берёт значение по `row[prop]`; вложенные поля (`user.name`) не поддерживаются автоматически — используйте кастомный `sorter`.
+- **ИЛИ внутри колонки при фильтрации**: несколько выбранных значений в одной колонке связаны «или», между колонками — «и»; это распространённая семантика, как и в Element.
+- **Порядок столбцов тела при многоуровневом заголовке**: тело обязано использовать `flattenLeafColumns(columns)`, а не `columns`, иначе число колонок не совпадёт с числом листовых ячеек заголовка.
+- **Разделяемые колонки DAG**: когда один и тот же объект column ссылается из двух групп, глобальный учёт гарантирует, что он будет испущен один раз — но **побочный эффект ссылки на один и тот же объект в том, что изменение в одном месте меняет оба**; если нужны «одинаковые имена, разная конфигурация», делайте глубокую копию.
+- **Сортировка больших объёмов — O(n log n)**: сортировка десятков тысяч строк каждый кадр вызовет рывки; рассмотрите серверную сортировку (`sortable: 'custom'` оговаривается UI-слоем).
+- **`aria-sort` из `getTableSortAria` вешается на `<th>`**, а не на каждую ячейку столбца.
+
+<FnPlayground module="table" fn="cycleSortOrder" params='{"current": "asc"}' />

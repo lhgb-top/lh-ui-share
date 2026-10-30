@@ -1,0 +1,170 @@
+---
+title: 'dropdown 下拉選單 —— 導航'
+description: 'LH_DROPDOWN_PLACEMENT_DEFAULT=b-bottom-start、getDropdownMenuStyle maxHeight 捲動、haspopup:"menu" 與 popover 的 "true" 區分'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+下拉選單是「按鈕點選彈出的操作列表」：使用者行的「編輯 / 刪除 / 停用」、表格列的「更多操作」。它和 `popover` 的區別是**語義與內容形態**——dropdown 是**選單語義**（role=menu + menuitem 列表），popover 是**對話框語義**（role=dialog，可放任意內容）。它和 `menu` 的區別是**持久性**——dropdown 是臨時彈出、點選即逝的操作入口。
+
+## 何時使用
+
+- 各端實作 `<LhDropdown>` / `<LhDropdownItem>`：行操作選單、「更多」按鈕、批次操作、命令式快捷選單。
+- **操作項平級、數量適中（3~10 條）、無需複雜表單**。
+- **不該用它**：需要表單或富內容的彈出層（用 `popover`）；需要確認的危險操作（dropdown 裡直接放刪除按鈕無二次確認很危險，用 `popconfirm`）；主導航（用 `menu`——dropdown 重新整理即消失）。
+
+## 匯入方式
+
+```ts
+import {
+  LH_DROPDOWN_PLACEMENT_DEFAULT,
+  LH_DROPDOWN_TRIGGERS,
+  getDropdownClass,
+  getDropdownItemClass,
+  getDropdownMenuStyle,
+  getDropdownTriggerAria,
+  getDropdownMenuAria,
+  getDropdownItemAria,
+} from '@lh-ui/share/core/dropdown'
+import type { LhDropdownTrigger, LhDropdownState, LhDropdownItemState } from '@lh-ui/share/core/dropdown'
+```
+
+## 設計意圖
+
+**預設方位是 `bottom-start` 而非 `top`**：`LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'`——下拉選單**從按鈕的左下角往下展開**，符合「下拉」的心智模型。對比 `popover` / `popconfirm` 的預設 `top`（資訊層往上浮、不遮擋下方內容）：下拉是操作入口，往下展開更自然，且 `bottom-start`（左對齊而非置中）保證長選單不橫向溢出視區。
+
+**觸發方式無 focus**：`LH_DROPDOWN_TRIGGERS` 是 `hover / click / contextmenu`——**沒有 focus**。對比 `popover` 的 `click / hover / focus / manual`。原因：下拉選單的觸發器通常是按鈕，focus 觸發會讓 Tab 穿過時誤彈選單，干擾鍵盤流。`contextmenu` 是右鍵選單場景（替代瀏覽器預設右鍵選單）。
+
+**`hideOnClick` 的語義在 UI 層**：state 裡有 `hideOnClick` 欄位但 core 不消費它——「點選選單項後是否關閉」的判斷在 UI 層（點選 item 時按設定決定關不關）。core 只承載宣告，保持資料結構可表達完整意圖（與 `form` 的 `trigger` 欄位同思路）。
+
+**`getDropdownMenuStyle` 內建 `overflow: auto`**：設了 maxHeight 就自動加捲動。下拉選單項多時不撐破視區——這是與 `popover` 的一個細微差別（popover 的寬度樣式不含捲動，內容溢出由呼叫方管）。
+
+**`haspopup: 'menu'` 而非 `'true'`**：觸發器的 aria-haspopup 值是 **`'menu'`**——精確宣告彈出的是選單。對比 `popover` 的 `'true'`（通用彈出，等價於 dialog/menu/listbox 的泛化）。讀屏軟體據此預判彈出內容的互動模式（選單支援方向鍵導航）。
+
+## 函式表
+
+| 函式 / 常數 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getDropdownClass` | `(state: { placement, popperClass? }) => string[]` | 類別名 | 方位 + 自訂 |
+| `getDropdownItemClass` | `(state: { disabled?, divided? }) => string[]` | 類別名 | 停用 + 分隔線 |
+| `getDropdownMenuStyle` | `(maxHeight?: string \| number) => Record<string, string>` | 內聯樣式 | maxHeight + overflow |
+| `getDropdownTriggerAria` | `(visible, menuId?) => LhAriaAttrs` | aria 包 | haspopup="menu" |
+| `getDropdownMenuAria` | `(id?) => LhAriaAttrs` | aria 包 | role=menu |
+| `getDropdownItemAria` | `(state: { disabled? }) => LhAriaAttrs` | aria 包 | role=menuitem |
+
+常數：`LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'`、`LH_DROPDOWN_TRIGGERS`（hover / click / contextmenu）。
+
+## 類型定義
+
+```ts
+export type LhDropdownTrigger = 'hover' | 'click' | 'contextmenu'
+
+export interface LhDropdownState {
+  trigger?: LhDropdownTrigger
+  placement?: LhPlacement          // 12 方位（shared/popper）
+  visible?: boolean
+  disabled?: boolean
+  hideOnClick?: boolean            // 點選選單項後是否關閉（UI 層消費）
+}
+
+export interface LhDropdownItemState {
+  command?: string | number        // 選單項標識，隨 command 事件拋出
+  disabled?: boolean
+  divided?: boolean                // 頂部分隔線
+}
+```
+
+## 無障礙
+
+```ts
+getDropdownTriggerAria(true, 'dd-menu-1')
+// { 'aria-expanded': true, 'aria-controls': 'dd-menu-1', 'aria-haspopup': 'menu' }
+getDropdownTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'menu' }
+
+getDropdownMenuAria('dd-menu-1')  // { role: 'menu', id: 'dd-menu-1' }
+getDropdownItemAria({ disabled: true })
+// { role: 'menuitem', 'aria-disabled': true }
+```
+
+- **`aria-haspopup="menu"` 的讀屏預判**：讀屏軟體遇到它知道彈出的是選單，會按選單模式處理（方向鍵導航、Enter 啟動）。比泛化的 `"true"` 更精確——這就是為什麼 dropdown 和 popover 用不同的值。
+- **選單鍵盤約定**（APG menu 模式）：觸發器 Enter/Space 開啟；開啟後焦點落在**第一個可用選單項**；↑/↓ 移動；Enter/Space 啟動；Esc 關閉並**焦點回到觸發器**。方向鍵導航演算法用 `shared/keyboard.getNextListIndex`（與 menu / tabs 同源）。
+- **`command` 的事件契約**：選單項的 `command` 欄位隨點選事件拋出（`@command="cmd => ..."`），而非給每個 item 寫獨立 handler——這是下拉選單的標準 API 形態。UI 層用 switch 分發。
+- **停用項的 aria-disabled 而非 disabled 屬性**：`aria-disabled` 讓元素在可存取性樹中標記為停用但仍可聚焦（讀屏軟體能播報它的存在與停用原因）；原生 `disabled` 會把它移出焦點序列，鍵盤使用者「跳過」它而不知道為什麼。
+- **分隔線是純裝飾**：`divided` 只是一條 CSS 邊框，無語義——不要用它表達「危險操作分組」，危險分組用 `popconfirm` 或視覺色（danger 文字色）。
+- **右鍵選單（contextmenu）**：觸發器要 `@contextmenu.prevent` 阻止瀏覽器預設選單，並把觸發元素標記為可互動——右鍵選單對鍵盤使用者完全不可達，**必須提供等價的按鈕入口**（無障礙硬性要求）。
+
+## 使用範例
+
+```ts
+import {
+  getDropdownClass, getDropdownItemClass, getDropdownMenuStyle, LH_DROPDOWN_PLACEMENT_DEFAULT,
+} from '@lh-ui/share/core/dropdown'
+
+LH_DROPDOWN_PLACEMENT_DEFAULT  // 'bottom-start'
+
+getDropdownClass({ placement: 'bottom-start' })
+// ['lh-dropdown__menu', 'lh-dropdown__menu--bottom-start']
+getDropdownItemClass({ disabled: true, divided: true })
+// ['lh-dropdown__item', 'lh-dropdown__item--disabled', 'lh-dropdown__item--divided']
+
+getDropdownMenuStyle(200)     // { maxHeight: '200px', overflow: 'auto' }
+getDropdownMenuStyle('30vh')  // { maxHeight: '30vh', overflow: 'auto' }
+getDropdownMenuStyle(undefined)  // {}
+```
+
+```vue
+<!-- Vue3：行操作選單 -->
+<template>
+  <LhDropdown @command="onCommand">
+    <template #default>
+      <LhButton size="small">更多<LhIcon name="arrow-down" /></LhButton>
+    </template>
+    <template #menu>
+      <LhDropdownItem :command="'edit'">编辑</LhDropdownItem>
+      <LhDropdownItem :command="'copy'">复制</LhDropdownItem>
+      <LhDropdownItem :command="'delete'" divided danger>删除</LhDropdownItem>
+    </template>
+  </LhDropdown>
+</template>
+
+<script setup>
+function onCommand(command: string | number) {
+  if (command === 'delete') visible.value = true  // 刪除走 popconfirm 二次確認
+  else if (command === 'edit') router.push(`/edit/${id}`)
+}
+</script>
+```
+
+```tsx
+// React：選單項陣列化渲染 + onCommand 分發；受控 visible 配合點選外部關閉
+```
+
+```ts
+// uniapp：<view> 選單 + catchtap；右鍵選單在非 h5 端不支援，只保留 click 觸發
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-dropdown__menu` | 選單容器（popper） |
+| `.lh-dropdown__menu--{bottom-start\|top\|…}` | 方位（flip 後的實際值） |
+| `.lh-dropdown__item` | 選單項 |
+| `.lh-dropdown__item--disabled` | 停用（灰色 + 不回應） |
+| `.lh-dropdown__item--divided` | 頂部分隔線 |
+| `.lh-dropdown__item--danger` | 危險操作（文字紅色，UI 層約定） |
+
+底色 `--lh-bg-color`、陰影 `--lh-box-shadow-dropdown`、圓角 `--lh-border-radius-base`、項內邊距 `--lh-dropdown-item-padding`、z-index `--lh-z-index-dropdown`。
+
+## 注意事項
+
+- **危險操作必須二次確認**：dropdown 裡直接放「刪除」一點就執行，誤觸代價高。標準做法是 dropdown 觸發 `popconfirm`（「刪除後不可恢復，確定？」）——這是兩個元件的協作鏈路。
+- **選單項過多時捲動**：超過 10 條考慮 `maxHeight` 捲動，或改用 `select`（選擇語義）或抽屜。長選單的鍵盤導航體驗差（要按很多次方向鍵）。
+- **`hover` 觸發的行動裝置問題**：觸控螢幕無 hover，同 `popover`/`tooltip`。跨端預設用 click。
+- **`hideOnClick: false` 的場景**：選單項是「勾選型」開關（如「顯示列 X」）時，點選後保持開啟讓使用者連續勾選——這是該欄位存在的理由。
+- **巢狀 dropdown**：子選單（dropdown 裡套 dropdown）的定位與焦點管理很複雜（父子彈出層的 Esc 分別關哪個）。lh-ui 未內建子選單——需要層級導航用 `menu`。
+- **`placement` 要傳 flip 後的真實值**：與 `popover` 同，`getDropdownClass` 吃的是 popper 傳回的實際方位，否則箭頭/對齊類別名與視覺不符。
+- **與 `menu` 的邊界**：dropdown 是**臨時操作入口**（重新整理即消失）；menu 是**持久導航**（可深鏈、可重新整理保持狀態）。用 dropdown 冒充主導航會讓使用者無法回到二級頁面。
+- **首項聚焦**：開啟選單時焦點落在第一個可用項（`shared/keyboard` 的 first 語義），不是停在觸發器——這是 APG 要求，鍵盤使用者開啟後應能直接操作。
+
+<FnPlayground module="dropdown" fn="getDropdownMenuStyle" params='{"maxHeight": 200}' />

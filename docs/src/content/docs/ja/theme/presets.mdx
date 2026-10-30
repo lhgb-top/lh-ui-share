@@ -1,0 +1,158 @@
+---
+title: テーマプリセット
+description: '青花瓷 / 松花绿 / 朱砂 / 水墨 / 藤黄の 5 つの内蔵プリセットと registerTheme によるカスタム登録'
+---
+
+import PresetPreview from '../../../../components/PresetPreview.astro'
+
+5 つの内蔵プリセットは lh-ui のデフォルトの審美主張です：それぞれが中国の伝統色から主色をひとつ取り、完全な明色 / 暗色の両方のパレットを合わせています。
+
+## プリセット概要
+
+| プリセット | `name` | 識別子 | labelEn | 説明 | 主色が浅い |
+| --- | --- | --- | --- | --- | --- |
+| 青花瓷（せいがじ） | `'cerblue'` | `LhCerblue` | Ceramic Blue | 釉下彩の青花磁器、清雅で素朴 | 否 |
+| 松花绿（しょうかりょく） | `'songhua'` | `LhSonghua` | Pine Green | 竹林が青々と生い茂り、生命力にあふれる | **是** |
+| 朱砂（しゅしゃ） | `'zhusha'` | `LhZhusha` | Vermilion | 伝統的な印泥の朱砂紅、祝祭的で厳か | 否 |
+| 水墨（すいぼく） | `'shuimo'` | `LhShuimo` | Ink Wash | 水墨画、素雅でミニマル | 否 |
+| 藤黄（とうおう） | `'golden'` | `LhGolden` | Golden Autumn | 晩秋の楓の黄、温かな黄金色 | **是** |
+
+<PresetPreview />
+
+## 各プリセットの vars
+
+### 基礎の 5 キー（すべてのプリセットにある）
+
+```ts
+{
+  '--lh-primary-color': '...',
+  '--lh-primary-color-hover': '...',
+  '--lh-primary-color-active': '...',
+  '--lh-primary-color-bg': '...',
+  '--lh-primary-color-border': '...',
+}
+```
+
+### 主色が浅いプリセットの必須追加キー
+
+`songhua`（松花绿）と `golden`（藤黄）は**主色が浅く**、白字のコントラスト比が AA に達しないため、2 つのキーを追加で与えなければなりません：
+
+| キー | 役割 |
+| --- | --- |
+| `--lh-color-on-primary` | 主色のボタン上の文字色（主色が浅い場合は墨字に切り替え） |
+| `--lh-selected-color` | 選択状態の文字色（active 色を hover の地色に乗せた選択文字にするとコントラスト比が不足するため、単独で深くする） |
+
+**なぜ必須なのか**：主色が浅いボタンに白字を合わせるとコントラスト比は 3.x:1 しかなく、AA の 4.5:1 に達しません。`verify:theme` ゲートが弾きます。
+
+松花绿を例に、ソースコードのコメントに修正理由が記録されています：
+
+- `--lh-color-on-primary`：松花は主色が浅く、白字のコントラスト比はわずか 3.93:1、墨字に切り替えて 4.73:1
+- `--lh-selected-color`：active 色を hover の地色に乗せた選択文字はわずか 3.48:1、選択状態だけ単独で深くする（ボタンの active の地色には影響しない）
+- `--lh-primary-color-active`：元の `#4B7A4A` はわずか 3.70:1 → `#4F8F4C` で 4.75:1
+
+藤黄も同様です：白字 3.25:1 → 墨字 5.31:1；選択文字 3.41:1 → `#82600A` まで引き上げ；active `#9A7208` 3.94:1 → `#A87F0A` 4.70:1。
+
+**主色が浅いプリセットを新しく作る場合のハード要件**：`--lh-color-on-primary` と `--lh-selected-color` を必ず与えなければなりません。さもないと `verify:theme` の AA 4.5:1 ゲートに失敗します。
+
+## プリセットを使う
+
+### プリセットを取得
+
+```ts
+import { LH_THEME_PRESETS, getThemePreset, getThemeVars } from '@lh-ui/share/theme'
+
+LH_THEME_PRESETS                       // 5 つすべて
+getThemePreset('cerblue')              // LhCerblue オブジェクト
+getThemePreset('not-exists')           // undefined
+getThemeVars('cerblue')?.['--lh-primary-color']
+```
+
+### プリセットを注入（UI 層）
+
+```ts
+import { buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyPreset(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+
+  const text = buildPresetStyleText(vars)
+  let style = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!style) {
+    style = document.createElement('style')
+    style.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(style)
+  }
+  style.textContent = text     // 追記ではなく置換し、テーマ切り替え時に古いカスタムスタイルを残さない
+}
+```
+
+**要点**（[テーマ総覧の注入制約](/ja/theme/overview#注入制約style-要素のみ許可)を参照）：`<style>` 要素だけを書き、`documentElement` のインライン style に書いてはなりません。さもないとダークモードの配色が歪みます。
+
+### 各 UI ライブラリの ConfigProvider
+
+```vue
+<!-- lh-ui-plus / lh-ui-vue2 -->
+<lh-config-provider theme="cerblue">
+  <App />
+</lh-config-provider>
+```
+
+`theme` prop は `LhThemePresetName` を受け取り、コンポーネント内部が上記の注入ロジックを走らせます。docs サイトのテーマカスタマイズページと ThemeStudio は `LH_THEME_PRESETS` を走査してすべてのプリセットを自動的にリストアップします——**プリセットを追加しても各ライブラリのドキュメントページを手直しする必要はありません**。
+
+## カスタムプリセット
+
+```ts
+import { registerTheme, getThemePreset } from '@lh-ui/share/theme'
+
+registerTheme({
+  name: 'my-brand',
+  label: 'ブランド色',
+  labelEn: 'Brand',
+  description: '会社のブランド主色',
+  vars: {
+    '--lh-primary-color': '#722ED1',
+    '--lh-primary-color-hover': '#9254DE',
+    '--lh-primary-color-active': '#531DAB',
+    '--lh-primary-color-bg': '#F9F0FF',
+    '--lh-primary-color-border': '#D3ADF7',
+    // 主色が浅い場合はこの 2 つも必要：
+    // '--lh-color-on-primary': '#101410',
+    // '--lh-selected-color': '#...,
+  },
+})
+
+getThemePreset('my-brand')   // 登録すればすぐ使える
+```
+
+`registerTheme` のセマンティクス：
+
+- **同名なら上書き**：`registerTheme({ name: 'cerblue', ... })` は**内蔵の青花瓷を上書き**します——これは意図的で、業務側がコンポーネントを変えずにデフォルトテーマを調整できるようにするためです。
+- **新しい名前は配列の末尾に push**：`LH_THEME_PRESETS` の順序は「内蔵の 5 つ + 登録されたもの」です。
+- **登録表はモジュールレベルの状態**：`import` すれば共有され、アプリケーション全体で 1 つです。
+
+## 内蔵プリセットの追加フロー
+
+1. `src/theme/themes/index.ts` に `LhThemePreset` を 1 つ追加する（少なくとも 5 つの `--lh-primary-*`；主色が浅いプリセットは `--lh-color-on-primary` と `--lh-selected-color` の追加が必須）。
+2. `LH_THEME_PRESETS` 配列に加え、`src/theme/index.ts` の re-export に名前を補う。
+3. `pnpm test`（`theme.spec` にプリセット一致性の回帰テストあり）+ `pnpm verify:theme`（AA 4.5:1 ゲート）。
+4. changeset を添える；各ライブラリの docs のテーマカスタマイズページが自動的に新しいプリセットをリストアップする。
+
+**注意**：vars は JS のランタイム消費にだけサービスします；コンポーネントの SCSS が使う主色は引き続き `styles/theme/common/variables.scss` にあります——**内蔵テーマの主色を上書きするときは両方を同期して変更します**（theme.spec に回帰テストがあります）。
+
+## 命名規約
+
+プリセットの**文字列値**（`name: 'cerblue'`）はユーザーが ConfigProvider の `theme` に書く設定値で、変更するとすべての下流の設定を壊します——これは[適用除外の登録](/ja/guide/naming#適用除外の登録)の 1 項目です。対応する **TS 識別子**には引き続きプレフィックスが付きます（`LhCerblue`）。
+
+## 注意事項
+
+- **未登録の名前は `undefined` を返します**：`getThemePreset` / `getThemeVars` は例外を投げないので、UI 層で null 判定を忘れないでください。
+- **`--lh-primary-color-active` と `--lh-selected-color` は別物です**：前者はボタンを押したときの地色、後者はリスト / 選択項目の**文字**色です。主色が浅いプリセットでは active 色を選択文字に使うとコントラスト比が足りないため、単独の `--lh-selected-color` が必要になります。
+- **主色が深いプリセットはダークモードで自動的に明るくされます**：`buildPresetDarkVars` が主色と暗色のページ地 `#1A1A2E` とのコントラスト比が 3 未満かを判定して明るくします（[テーマシステム概要](/ja/theme/overview#buildpresetdarkvars-の暗色導出)を参照）。
+
+## 関連ドキュメント
+
+- [テーマシステム概要](/ja/theme/overview)
+- [デザイントークン](/ja/theme/tokens)
+- [ランタイムカスタマイズ](/ja/theme/customization)
+- [ダークモード](/ja/theme/dark-mode)

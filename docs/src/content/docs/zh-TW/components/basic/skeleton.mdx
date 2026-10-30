@@ -1,0 +1,151 @@
+---
+title: skeleton —— 骨架屏
+description: 'getSkeletonRowWidths 生成末行縮短的寬度序列，getSkeletonAria 隱藏佔位並要求 UI 層配 aria-busy'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+骨架屏是「載入完成前」的佔位：用灰色塊模擬即將出現的版面配置，讓使用者對「等會兒會看到什麼」有預期。`core/skeleton` 計算文字行的寬度序列（末行縮短，像真實段落），並把「這是佔位、不是內容」的無障礙訊號準備好。
+
+## 何時使用
+
+- 各端實作 `LhSkeleton`：卡片載入、列表載入、文章載入。
+- 需要在任何區域表達「正在載入」的視覺時，骨架比 loading 轉圈更「貼合未來版面配置」。
+- **不該用它**：載入時間極短（小於 300ms）的場景——閃一下骨架反而干擾；也不該用於「資料為空」，那是 `LhEmpty`。
+
+## 匯入方式
+
+```ts
+import {
+  getSkeletonClassNames,
+  getSkeletonItemClassNames,
+  getSkeletonRowWidths,
+  getSkeletonAria,
+} from '@lh-ui/share/core/skeleton'
+import type { LhSkeletonState, LhSkeletonVariant } from '@lh-ui/share/core/skeleton'
+```
+
+## 設計意圖
+
+`getSkeletonRowWidths(rows)` 的末行 `60%` 是一個細節但重要的設計：真實文字段落的最後一行幾乎總是不滿的。全等寬的骨架看起來像「條紋桌布」而非「文字」，這個 60% 讓佔位有「文字感」。
+
+`rows > 1` 才縮短末行：只有一行時它就是完整的一行（單行縮短反而像標題被截斷）。`rows <= 0` 傳回空陣列，不拋錯。
+
+`getSkeletonAria()` 恆傳回 `{ 'aria-hidden': true }`——骨架內容零資訊量，讀屏軟體不應播報它。但**僅隱藏不夠**：原始碼註解要求 UI 層同時在外層容器掛 `aria-busy="true"`，這樣資料就緒時讀屏軟體會重新播報真實內容。這兩個屬性是一對：`aria-hidden` 摘掉噪音，`aria-busy` 標記「稍後再讀」。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getSkeletonClassNames` | `(state: LhSkeletonState) => string[]` | 類別名陣列 | 動畫、帶頭像修飾 |
+| `getSkeletonItemClassNames` | `(variant: LhSkeletonVariant, animated: boolean) => string[]` | 類別名陣列 | 佔位塊形狀與動畫 |
+| `getSkeletonRowWidths` | `(rows: number) => string[]` | 寬度序列 | 生成文字行寬度 |
+| `getSkeletonAria` | `() => LhAriaAttrs` | aria 屬性包 | 恆 `{ 'aria-hidden': true }` |
+
+輸出範例：
+
+```ts
+getSkeletonRowWidths(3)   // ['100%', '100%', '60%']
+getSkeletonRowWidths(1)   // ['100%']
+getSkeletonRowWidths(0)   // []
+getSkeletonItemClassNames('text', true)
+// ['lh-skeleton-item', 'lh-skeleton-item--text', 'lh-skeleton-item--animated']
+```
+
+## 類型定義
+
+```ts
+export type LhSkeletonVariant = 'text' | 'rect' | 'circle'
+
+export interface LhSkeletonState {
+  animated: boolean
+  avatar: boolean
+}
+```
+
+## 無障礙
+
+```ts
+// UI 層的外層容器
+const aria = { 'aria-busy': true }   // 標記「內容載入中，就緒後請重讀」
+// 骨架元素本身
+const skeletonAria = getSkeletonAria()  // { 'aria-hidden': true }
+```
+
+常見的錯誤是只做其中一件：只 `aria-hidden` 會讓讀屏使用者在資料就緒後錯過新內容（它以為讀過了）；只 `aria-busy` 會讓讀屏軟體嘗試播報骨架的空白內容。
+
+## 使用範例
+
+```ts
+import { getSkeletonRowWidths, getSkeletonItemClassNames } from '@lh-ui/share/core/skeleton'
+
+getSkeletonRowWidths(4)
+// ['100%', '100%', '100%', '60%']
+
+getSkeletonItemClassNames('circle', false)
+// ['lh-skeleton-item', 'lh-skeleton-item--circle']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSkeletonClassNames({ animated, avatar })" aria-busy="true">
+  <div v-if="avatar" class="lh-skeleton__avatar">
+    <div :class="getSkeletonItemClassNames('circle', animated)" />
+  </div>
+  <div class="lh-skeleton__content">
+    <div
+      v-for="(w, i) in getSkeletonRowWidths(rows)"
+      :key="i"
+      :class="getSkeletonItemClassNames('text', animated)"
+      :style="{ width: w }"
+      v-bind="getSkeletonAria()"
+    />
+  </div>
+</div>
+```
+
+```tsx
+// React
+const widths = getSkeletonRowWidths(rows)
+return (
+  <div className={getSkeletonClassNames({ animated, avatar }).join(' ')} aria-busy={true}>
+    <div className="lh-skeleton__content">
+      {widths.map((w, i) => (
+        <div
+          key={i}
+          className={getSkeletonItemClassNames('text', animated).join(' ')}
+          style={{ width: w }}
+          {...getSkeletonAria()}
+        />
+      ))}
+    </div>
+  </div>
+)
+```
+
+```ts
+// uniapp：動畫在非 h5 端可能不流暢，各端 UI 層可按平台降級關閉 animated
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-skeleton` | 基礎類：版面配置 |
+| `.lh-skeleton--animated` | 啟用 shimmer 掃光動畫 |
+| `.lh-skeleton--with-avatar` | 頭像 + 文字的組合版面配置（頭像左側留位） |
+| `.lh-skeleton-item` | 單個佔位塊 |
+| `.lh-skeleton-item--{text\|rect\|circle}` | 形狀：文字行 / 矩形 / 圓形 |
+| `.lh-skeleton-item--animated` | 掃光動畫 |
+| `.lh-skeleton__avatar` / `.lh-skeleton__content` | 頭像區與內容區 |
+
+佔位塊顏色用 `--lh-skeleton-*` 令牌（比背景略深的灰 + 掃光高光），暗色下自動調暗。
+
+## 注意事項
+
+- `rows` 為 0 或負數傳回空陣列，UI 層不會渲染出行——這是合法輸入，不是錯誤。
+- 骨架的**版面配置應當與真實內容一致**（同樣的卡片結構、同樣的行數），否則載入完成會有版面配置跳動。用 `LhCard` 的 `loading` 狀態比單獨放骨架更省心。
+- shimmer 動畫對部分使用者是前庭刺激源；尊重 `prefers-reduced-motion` 的責任在樣式層（`@media` 裡停用動畫），core 層不感知。
+- `aria-busy` 應掛在**資料容器**上，不是骨架自身——骨架銷毀後 `aria-busy` 要隨之移除。
+
+<FnPlayground module="skeleton" fn="getSkeletonRowWidths" params='{"rows": 3}' />

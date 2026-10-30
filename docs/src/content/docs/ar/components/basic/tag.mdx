@@ -1,0 +1,121 @@
+---
+title: tag —— وسم
+description: 'يحسب getTagClassNames معدّلات النوع/المقاس/الاستدارة/الإمكان للإغلاق/التعطيل/الحد'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+يُستخدم الوسم للوسم، والتصنيف، والاختيار. ولا يفعل `core/tag` شيئًا سوى حساب حالة الوسم إلى مصفوفة أسماء أصناف. وهو أبسط من الزر — لا حكم تفاعلي، ولا تراجع في المقاس، بل تقع كل المتغيرات البصرية مباشرةً في أسماء الأصناف.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhTag`: تُنتج أسماء الأصناف بالكامل عبر `getTagClassNames`.
+- المشاهد التي تحتاج إلى إعادة استخدام الشكل البصري للوسم دون إدخال المكوّن (مثل علامات الحالة داخل خلايا الجدول)، يمكنها استدعاء دوال core مباشرةً + أسماء أصناف `styles/tag`.
+- **لا يجب استخدامه**: المشاهد التي تحتاج إلى ضبط دقيق عبر `sx` أو ألوان مخصصة. فألوان الوسم رموز دلالية، ومن أراد التخصيص فليستخدم componentTheme في ConfigProvider بدلًا من تعديل core.
+
+## طريقة الاستيراد
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+import type { LhTagState, LhTagType } from '@lh-ui/share/core/tag'
+```
+
+## نية التصميم
+
+حالات الوسم كلها «مفاتيح بصرية» بلا أي منطق حسابي. ومبدأ `getTagClassNames` هو **الإضافة عند الصحة فقط**: عندما تكون `type` و`size` قيمتين كاذبتين لا يُنتج حتى المعدّل، ويُحكم على كلٍّ من `closable` / `disabled` / `round` / `hit` باستقلال. وهذا يضمن أن تكون مصفوفة أسماء الأصناف دائمًا «أصغر مجموعة كافية»، فلا يظهر صنف قذر مثل `lh-tag--undefined`.
+
+`hit` (الحدّ) دلالة ينفرد بها الوسم مقارنة بالزر: فالوسم يحتاج كثيرًا إلى «حضور خفيف»، ويكون الحدّ أنسب من التعبئة.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getTagClassNames` | `(state: LhTagState) => string[]` | مصفوفة أسماء الأصناف | حساب جميع أسماء أصناف الوسم |
+
+مثال على المُخرجات:
+
+```ts
+getTagClassNames({ type: 'success', size: 'small', closable: true, disabled: false, round: false, hit: true })
+// ['lh-tag', 'lh-tag--success', 'lh-tag--small', 'lh-tag--closable', 'lh-tag--hit']
+```
+
+## تعريف الأنواع
+
+```ts
+export type LhTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhTagState {
+  type: LhTagType
+  size: LhComponentSize        // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  closable: boolean            // قابل للإغلاق (يُعرض زر ×)
+  disabled: boolean            // معطّل (زر الإغلاق أيضًا لا يستجيب)
+  round: boolean               // زوايا دائرية
+  hit: boolean                 // حدّ بدلًا من التعبئة
+}
+```
+
+## إمكانية الوصول
+
+لا يُخرج `core/tag` حزمة سمات aria: فالوسم عنصر عرض صرف، ويكفي أن يُظهر محتواه النصي لقارئ الشاشة افتراضيًا. أما **زر الإغلاق** فيجب أن يُحمل على `<button>` الأصلية (أو ما يعادلها على كل طرف)، مع إعطائه `aria-label` (مثل «إزالة»)، وهذه مسؤولية الطرف البصري.
+
+ونقطة يسهل تفويتها: عندما يُستخدم الوسم شرطًا للفرز (مثل وسم الاختيار المتعدد في `LhSelect`)، يكتسب دلالة تفاعلية، وحينها يجب إضافة `role="button"` إلى منطقة النقر بالكامل — وهذا يُعالَج في الطرف البصري لكل جهة، ولا يتدخل core فيه.
+
+## أمثلة الاستخدام
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+
+getTagClassNames({ type: 'primary', size: 'medium', closable: false, disabled: false, round: false, hit: false })
+// ['lh-tag', 'lh-tag--primary', 'lh-tag--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getTagClassNames({ type, size, closable, disabled, round, hit })">
+  <slot />
+  <button v-if="closable" class="lh-tag__close" aria-label="إغلاق" @click="!disabled && emit('close')">
+    <LhIcon name="close" :size="12" />
+  </button>
+</span>
+```
+
+```tsx
+// React
+const cls = getTagClassNames({ type, size, closable, disabled, round, hit })
+return (
+  <span className={cls.join(' ')}>
+    {children}
+    {closable && <CloseButton disabled={disabled} />}
+  </span>
+)
+```
+
+```ts
+// uniapp: أسماء الأصناف واحدة؛ وزر الإغلاق يستخدم view + @tap، ويختلف دعم aria-label
+// بين الأطراف، فيمكن التراجع إلى عدم عرض دلالات قراءة الشاشة (فقدرة قراءة الشاشة
+// على الأطراف غير h5 محدودة أصلًا)
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- | --- |
+| `.lh-tag` | الصنف الأساسي: inline-flex، حشو داخلي، حجم الخط، استدارة |
+| `.lh-tag--{primary\|success\|warning\|danger\|info\|default}` | النوع الدلالي (لون الخلفية + لون النص) |
+| `.lh-tag--{mini\|small\|medium\|large\|x-large}` | درجات المقاس |
+| `.lh-tag--round` | استدارة كبيرة (شكل كبسولة) |
+| `.lh-tag--hit` | نمط الحد |
+| `.lh-tag--closable` | ترك تباعد لزر الإغلاق على جانب النهاية |
+| `.lh-tag--disabled` | حالة التعطيل: خفض العتامة + مؤشر ممنوع |
+| `.lh-tag__text` | عقدة النص (تجاوز مع حذف) |
+| `.lh-tag__close` | زر الإغلاق |
+
+تسير جميع الألوان عبر `var(--lh-*)`، ويقلبها `var-dark.scss` في الوضع الداكن.
+
+## ملاحظات
+
+- عندما تكون `type` و`size` قيمتين كاذبتين **لا يُنتج معدّل** (ولا يُتراجع إلى default)، فإذا كان الطرف البصري يعتمد على وجود `lh-tag--default`، وجب تمرير `type: 'default'` صراحةً.
+- حكم تعطيل زر الإغلاق في الطرف البصري (`disabled` يمنع click)، ولا يدير `--disabled` في core سوى الجانب البصري.
+- يمكن أن يجتمع `round` مع `hit`، فينتج «كبسولة محدودة».
+
+<FnPlayground module="tag" fn="getTagClassNames" params='{"state": {"type": "warning", "size": "small", "closable": true, "disabled": false, "round": true, "hit": false}}' />

@@ -1,0 +1,165 @@
+---
+title: popconfirm —— 確認バルーン
+description: '二次確認の軽量なソリューション：alertdialog セマンティクス、warning のデフォルトトーン、確認／キャンセルボタンのイベント契約'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+削除、送信、公開——こうした「やったら元に戻しにくい」操作にはユーザーの再確認が 1 度必要です。`dialog` は重すぎ（モーダル、フォーカスを奪う、マスク）で、`popconfirm` はその場で小さなバルーンを出します：一文 + 2 つのボタンで、確認したら即座に消えます。**インタラクションの重さがちょうど tooltip と dialog の間に位置する**コンポーネントです。
+
+## いつ使うか
+
+- 各端末で `<LhPopconfirm>` を実装：行の削除、操作の取り消し、データのクリア、注文の送信。
+- **軽量、その場、取り消しの余地が小さい**二次確認。
+- **使うべきでないケース**：ユーザーが全神経を集中する必要があるほど重大な結果（`dialog` を使う——モーダルマスクが強制的にフォーカス）；単なる情報提示（`tooltip` / `message` を使う）；理由の記入やチェック項目を伴う確認（フォーム付きの `dialog` を使う）。
+
+## インポート方法
+
+```ts
+import {
+  LH_POPCONFIRM_TYPE_DEFAULT,
+  LH_POPCONFIRM_PLACEMENT_DEFAULT,
+  getPopconfirmIconName,
+  getPopconfirmClass,
+  getPopconfirmTriggerAria,
+  getPopconfirmPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popconfirm'
+import type { LhPopconfirmType, LhPopconfirmTrigger, LhPopconfirmState } from '@lh-ui/share/core/popconfirm'
+```
+
+## 設計意図
+
+**デフォルトのトーンは info ではなく warning**：`LH_POPCONFIRM_TYPE_DEFAULT = 'warning'`——確認ボックスが現れるということは基本的に「リスクがある」を意味し、デフォルトは警告トーンであるべきです。info は純粋な通知的な確認（「既読にマークしますか？」）に、danger は不可逆な操作（「削除すると元に戻せません」）に残します。
+
+**3 つのトーン、3 つのアイコン**：info → `info`、warning → `warning`、danger → `error`（アイコン名は danger ではなく error——アイコンライブラリの命名が error であるため、これがクロス命名のマッピングです）。未知の type は warning にフォールバックします。
+
+**popover の `"dialog"` ではなく `role="alertdialog"`**：alertdialog は ARIA における「ユーザーの即時の応答を必要とするダイアログ」です——スクリーンリーダーは**優先的に読み上げ**（alert の割り込み性に似ているが、ユーザーに選択を求める）。これが「お前の決定待ち」のセマンティクスに、dialog よりも丁度合致します。
+
+**確認／キャンセルのイベント契約は UI 層にある**：core はクラス名、アイコン、aria、遅延だけを出力します；`onConfirm` / `onCancel` イベント、ボタンの文案、loading 状態はすべて UI 層にあります——それらはコンポーネントツリー間の通信（emit）に関わり、core はフレームワーク API に触れないためです。
+
+**遅延は popover に従う**：`getDefaultDelay` のデフォルトは 200/100 で、popover と同じです——確認バルーンも同様に hover トリガーを許可し、ポインタが中に入れるようにします。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getPopconfirmIconName` | `(type: LhPopconfirmType) => string` | アイコン名 | 未知の type は warning にフォールバック |
+| `getPopconfirmClass` | `(state: { type, placement, popperClass? }) => string[]` | クラス名 | トーン + 方位 |
+| `getPopconfirmTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | aria バッグ | expanded/controls/haspopup |
+| `getPopconfirmPopperAria` | `(id?) => LhAriaAttrs` | aria バッグ | role=alertdialog |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | 遅延 | デフォルト 200 / 100 |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | 許可するか | disabled 時にインターセプト |
+
+定数：`LH_POPCONFIRM_TYPE_DEFAULT = 'warning'`、`LH_POPCONFIRM_PLACEMENT_DEFAULT = 'top'`。
+
+## 型定義
+
+```ts
+export type LhPopconfirmType = 'info' | 'warning' | 'danger'
+export type LhPopconfirmTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopconfirmState {
+  type?: LhPopconfirmType
+  trigger?: LhPopconfirmTrigger
+  placement?: LhPlacement
+  visible?: boolean
+  disabled?: boolean
+  showIcon?: boolean             // デフォルト true
+}
+```
+
+## アクセシビリティ
+
+```ts
+getPopconfirmPopperAria('pc-1')
+// { role: 'alertdialog', id: 'pc-1' }
+getPopconfirmTriggerAria(true, 'pc-1')
+// { 'aria-expanded': true, 'aria-controls': 'pc-1', 'aria-haspopup': 'true' }
+```
+
+- **alertdialog の読み上げ**：スクリーンリーダーは alertdialog に遭遇するとその内容（aria-labelledby または内部テキスト）を即座に読み上げます。**ユーザーが自発的に読みに行く必要はありません**——これが dialog よりも強制力が強い点で、「確認待ち」の意図に合致します。
+- **ボタンには明確な文案を**：「OK / NO」やアイコンボタンよりも「確定 / キャンセル」が優れます。`danger` トーンでは確認ボタンの文案に結果を明記することを推奨します（「確定」ではなく「削除」）。
+- **キャンセルが安全な方向**：Enter はデフォルトで**確認**と**キャンセル**のどちらをトリガーするべきか？ 一般的な做法は初期フォーカスを**キャンセル**ボタンに置くことです（Tab + Enter で安全に脱出できる）——破壊的操作ではフォーカスを確認ボタンに置かないでください。これは UI 層の决定で、core は関与しません。
+- **Esc = キャンセル**：`canCloseOnEscape` が許可する場合、Esc は単に閉じるのではなく onCancel をトリガーするべきです——セマンティクス上「確認ボックスを閉じる」は「確認しない」だからです。
+- **アイコンの aria-hidden**：セマンティックアイコン（warning/error）は文案で伝達済みで、アイコン自体は装飾化し、スクリーンリーダーが「警告」と二重に読み上げるのを避けます。
+
+## 使用例
+
+```ts
+import { getPopconfirmIconName, getPopconfirmClass, LH_POPCONFIRM_TYPE_DEFAULT } from '@lh-ui/share/core/popconfirm'
+
+getPopconfirmIconName('info')     // 'info'
+getPopconfirmIconName('warning')  // 'warning'
+getPopconfirmIconName('danger')   // 'error'
+getPopconfirmIconName('other' as never)  // 'warning'（フォールバック）
+
+getPopconfirmClass({ type: 'danger', placement: 'top' })
+// ['lh-popconfirm__popper', 'lh-popconfirm__popper--danger', 'lh-popconfirm__popper--top']
+
+LH_POPCONFIRM_TYPE_DEFAULT  // 'warning'
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopconfirm
+    title="削除すると元に戻せません。この行を削除しますか？"
+    type="danger"
+    confirm-text="削除"
+    cancel-text="キャンセル"
+    @confirm="remove(row)"
+  >
+    <template #reference>
+      <LhButton type="danger" size="small">削除</LhButton>
+    </template>
+  </LhPopconfirm>
+</template>
+
+<script setup>
+async function remove(row) {
+  // onConfirm がトリガー；コンポーネント内部は confirmLoading をサポート可能：非同期完了後にバルーンを閉じる
+  await api.delete(row.id)
+  LhMessage.success('削除しました')
+}
+</script>
+```
+
+```ts
+// 非同期確認：confirm 中はボタンを無効化 + loading を表示、失敗時はバルーンを開いたままにする
+// これは UI 層のロジック：core は非同期状態を保持しない
+```
+
+```tsx
+// React：onConfirm/onCancel は props として渡す；非同期確認には visible の制御を併用
+```
+
+```ts
+// uniapp：<view> のバルーン；ボタンのタッチ状態は hover-class；イベント契約は同モデル
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-popconfirm__popper` | バルーンコンテナ |
+| `.lh-popconfirm__popper--{info\|warning\|danger}` | トーン（アイコン色 + 確認ボタン色） |
+| `.lh-popconfirm__popper--{top\|bottom\|…}` | 方位 |
+| `.lh-popconfirm__icon` | トーンアイコン |
+| `.lh-popconfirm__title` | タイトル文案 |
+| `.lh-popconfirm__actions` | ボタン領域（右揃え） |
+
+確認ボタンの色はトーンに従う：danger は `--lh-danger-color`、warning は `--lh-warning-color`、info は `--lh-primary-color`。
+
+## 注意事項
+
+- **タイトルには結果を明記する**：「削除しますか？」は悪い文案（結果を言っていない）；「削除すると元に戻せません。この行を削除しますか？」は良い文案です。これが popconfirm の体験の核心です。
+- **ネストしない**：popconfirm の中にさらに popconfirm を入れると、ユーザーは今どの階層を確認しているのか困惑します。多段階の確認には dialog を使ってください。
+- **トリガーが無効化されたボタンの場合**：`disabled` のボタンはイベントをトリガーせず（ブラウザの制限）、popconfirm が開けません——業務層で自行処理してください（無効化されていない要素で包むか、無効化時にレンダリングしない）。
+- **非同期確認のクローズタイミング**：confirm の処理中は 2 つのボタンを無効化 + マスクで重複クリックを防止し、失敗時は**バルーンを開いたままにして**エラーを提示し、成功したら閉じます。onConfirm の中で同期的にバルーンを閉じるのはよくあるバグです。
+- **message との連携**：確認完了後に `message` で成功フィードバック（「削除しました」）を与える——两者は「確認 → 実行 → フィードバック」の標準的な流れです。
+- **モバイルでの hover トリガー**：popover と同様、タッチスクリーンに hover はありません。クロス端末ではデフォルトで click トリガーを使ってください。
+- **`role="alertdialog"` はボタンの暗黙のセマンティクスを含まない**：ボタン領域は本物の `<button>` としてレンダリングしなければ（div + onclick ではなく）、キーボードのユーザーが操作できません。
+
+<FnPlayground module="popconfirm" fn="getPopconfirmIconName" params='{"type": "danger"}' />

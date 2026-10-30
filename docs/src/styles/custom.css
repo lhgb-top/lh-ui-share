@@ -7,9 +7,27 @@
  *
  * 注意：这里只改 Starlight 自身变量；lh 组件演示块另由 LhDemoShell 组件
  * 引 @lh-ui/share 的 scss 源，两套令牌（--sl-* 与 --lh-*）互不污染。
+ *
+ * 级联陷阱：Starlight 的 --sl-* 令牌全部声明在 @layer starlight.base 内，
+ * 而本文件不进任何 layer。未分层声明在级联中恒胜过分层声明，所以写在
+ * :root 里的值在暗色下也会盖过 Starlight 的 [data-theme=dark] 令牌 ——
+ * 这就是暗色模式整页仍是白底的原因。因此明色专属令牌（背景 / 文本 /
+ * 分割线）一律放到 :root[data-theme='light']，暗色回落 Starlight 默认盘；
+ * 只有与主题无关的令牌（主色、圆角、字体）才留在 :root。
  */
 
+/* 与主题无关：明暗两色各自在下方声明，或本就不随主题变化 */
 :root {
+  /* 圆角与字体细节 */
+  --sl-radius: 8px;
+  --sl-font: 'Noto Sans SC', 'Inter', system-ui, -apple-system, 'Segoe UI',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --sl-font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', 'Menlo',
+    'Consolas', monospace;
+}
+
+/* 明色：青花瓷主色 + 宣纸底 + 水墨文本（暗色下不得生效，见上方注释） */
+:root[data-theme='light'] {
   /* 主色：青花瓷之蓝 */
   --sl-color-primary: #2b4c7c;
   --sl-color-primary-text: #ffffff;
@@ -27,16 +45,9 @@
   --sl-color-heading: #1a1a1a;
   --sl-color-text-muted: #595959;
   --sl-color-hairline: #ddd6c9;
-
-  /* 圆角与字体细节 */
-  --sl-radius: 8px;
-  --sl-font: 'Noto Sans SC', 'Inter', system-ui, -apple-system, 'Segoe UI',
-    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  --sl-font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', 'Menlo',
-    'Consolas', monospace;
 }
 
-/* 暗色下回归 Starlight 默认令牌，避免手工配色在暗色失准 */
+/* 暗色：夜青花 + 夜金辉，背景与文本回落 Starlight 默认暗色盘 */
 :root[data-theme='dark'] {
   --sl-color-primary: #5b87bd;
   --sl-color-primary-text: #0e1a2b;

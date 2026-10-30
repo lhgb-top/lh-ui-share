@@ -1,0 +1,135 @@
+---
+title: radio —— Радиокнопка
+description: 'определение через Object.is равенства modelValue и value в isRadioChecked, модификаторы типа в getRadioClassNames'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Семантика радиокнопки — «в группе действует только одна». `core/radio` абстрагирует её до простейшей проверки: **равно ли текущее значение группы `modelValue` моему `value`**. В отличие от множественных операций checkbox, radio — это сравнение одного значения.
+
+## Когда использовать
+
+- В каждой платформе реализованы `LhRadio` и `LhRadioGroup` (group хранит `modelValue`, а item определяет собственное состояние выбранности).
+- Взаимоисключающий выбор: пол, способ оплаты, ветвление формы в стиле вкладок.
+- **Не использовать для**: множественного выбора — `checkbox`; переключателя — `switch`; сегментированного переключения — `segmented` (визуально легче).
+
+## Импорт
+
+```ts
+import { isRadioChecked, getRadioClassNames } from '@lh-ui/share/core/radio'
+import type { LhRadioState } from '@lh-ui/share/core/radio'
+```
+
+## Замысел дизайна
+
+В `isRadioChecked` используется `Object.is(modelValue, value)`, а не `===` — по той же причине, что и в checkbox: согласованность множественной семантики для NaN / -0 и возможность «использовать в качестве ключа радиокнопки значение любого типа».
+
+Для radio не нужна функция toggle — выбор это **присваивание** (`modelValue = value`), и в этом математическое отличие одиночного выбора от множественного (присваивание одной переменной против добавления/удаления в множестве).
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `isRadioChecked` | `(state: LhRadioState) => boolean` | логическое значение | `Object.is(modelValue, value)` |
+| `getRadioClassNames` | `(type: string) => string[]` | массив имён классов | `lh-radio` + модификатор типа |
+
+```ts
+getRadioClassNames('primary')  // ['lh-radio', 'lh-radio--primary']
+getRadioClassNames('')         // ['lh-radio']
+```
+
+## Определения типов
+
+```ts
+export interface LhRadioState {
+  modelValue: unknown   // текущее значение группы
+  value: unknown        // значение данной radio
+  checked: boolean
+}
+```
+
+## Доступность
+
+Как и в случае с checkbox: **используйте нативный `<input type="radio">`** — семантика, работа с клавиатурой и отправка формы достаются бесплатно. Ключевую роль играет атрибут name — радиокнопки одной группы должны иметь общий name, и навигация браузера стрелками (перемещение между радиокнопками одной группы) зависит от него.
+
+```ts
+// Программа чтения экрана зачитывает текст label + состояние «выбрано / не выбрано»,
+// нативный radio покрывает всё это
+```
+
+## Примеры использования
+
+```ts
+import { isRadioChecked, getRadioClassNames } from '@lh-ui/share/core/radio'
+
+isRadioChecked({ modelValue: 'b', value: 'b', checked: false })  // true
+isRadioChecked({ modelValue: 'b', value: 'a', checked: false })  // false
+```
+
+```vue
+<!-- Vue3 -->
+<div class="lh-radio-group" :class="`lh-radio-group--${size}`">
+  <label
+    v-for="opt in options"
+    :key="String(opt.value)"
+    :class="getRadioClassNames(type)"
+    :class-mod="{ 'lh-radio--checked': isRadioChecked({ modelValue, value: opt.value, checked: false }) }"
+  >
+    <span class="lh-radio__box">
+      <input
+        class="lh-radio__input"
+        type="radio"
+        :name="groupName"
+        :checked="modelValue === opt.value"
+        @change="emit('update:modelValue', opt.value)"
+      />
+    </span>
+    <span class="lh-radio__label">{{ opt.label }}</span>
+  </label>
+</div>
+```
+
+```tsx
+// React
+const [value, setValue] = useState('a')
+return options.map((opt) => (
+  <label key={opt.value} className="lh-radio">
+    <input
+      type="radio"
+      name={groupName}
+      checked={value === opt.value}
+      onChange={() => setValue(opt.value)}
+    />
+    <span className="lh-radio__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp: <radio-group> + <radio> — встроенные компоненты, событие change
+// сразу отдаёт value выбранного элемента; учитывайте, что value radio в uniapp
+// поддерживает только строки
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-radio` | базовый класс |
+| `.lh-radio--checked` / `--disabled` | состояния |
+| `.lh-radio--{small\|large}` | размерная сетка |
+| `.lh-radio__box` | кастомный кружок радиокнопки (перекрывает нативный вид) |
+| `.lh-radio__input` | нативный input (визуально скрыт, семантика сохранена) |
+| `.lh-radio__label` | текст |
+| `.lh-radio-group` / `--{small\|large}` | контейнер группы |
+
+Внутренняя точка в выбранном состоянии использует `var(--lh-primary-color)`, в отключённом — `--lh-text-disabled`.
+
+## Замечания
+
+- **Параметр `type` и размер checkbox-group — разные вещи**: `getRadioClassNames(type)` у radio выводит модификатор **типа** (например, primary), а модификатор размера находится на group (`lh-radio-group--{size}`).
+- **name должен быть одинаковым в пределах группы**: иначе навигация браузера с клавиатуры (перемещение стрелками внутри группы) перестанет работать, а при отправке формы будут отправлены несколько значений.
+- **Начальное значение `modelValue`**: должно быть значением одного из вариантов или `undefined` (ничего не выбрано). Указание значения, которого нет среди вариантов, оставит все радиокнопки невыбранными, и восстановить выбор через UI будет невозможно.
+- И radio, и segmented могут осуществлять взаимоисключающее переключение: radio имеет семантику «элемента формы» (нативный, можно отправить), а segmented — семантику «переключения представления» (легче, больше похож на группу кнопок).
+
+<FnPlayground module="radio" fn="getRadioClassNames" params='{"type": "primary"}' />

@@ -1,0 +1,128 @@
+---
+title: badge —— شارة
+description: 'يحسب getBadgeClassNames معدّلات الحالة الثلاث: المخفي، والنقطة، والقيمة الصفرية، بينما يُحسب count في الطرف البصري قبل تمريره'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الشارة هي الحامل البصري لـ «عدد الإشعارات»: نقطة حمراء صغيرة في الزاوية، أو رقم، أو عنصر نائب مخفي. يُطوي النموذج الحالي لـ `core/badge` **دلالة القيمة** إلى ثلاث قيم منطقية — يتولّى الطرف البصري حساب «هل القيمة 0، وهل يجب العرض»، بينما لا يفعل core سوى تعيين هذه القيم المنطقية الثلاث إلى أسماء أصناف.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhBadge`: تُنتج أسماء الأصناف عبر `getBadgeClassNames`.
+- عند إعادة استخدام الشكل البصري للشارة على عناصر مخصصة (مثل شارة `LhAvatar`، وشارة عناصر `LhMenu`)، تُستدعى دوال core مباشرة.
+- **لا يجب استخدامه**: لمنطق الاقتطاع «99+» والرسوم المتحركة — تلك مسؤوليات props في الطرف البصري، ولا يقوم core بمعالجة القيم.
+
+## طريقة الاستيراد
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+import type { LhBadgeState, LhBadgeType } from '@lh-ui/share/core/badge'
+```
+
+## نية التصميم
+
+أبرز ما في حالة الشارة هو الحالات البصرية الثلاث المنفصلة `isHidden` / `isDot` / `isZero`:
+
+- `isDot`: لا يُعرض رقم، بل نقطة واحدة فقط (تنبيه قوي، عندما يكون الرقم مجهولًا أو غير ضروري).
+- `isZero`: القيمة 0. تختار كثير من التصاميم «إخفاء الصفر أيضًا غير مرحّب به» (ليرى المستخدم بوضوح «لا شيء» بدلًا من «لم يُحمّل بعد»)، مع معالجة أضعف بصريًا.
+- `isHidden`: إخفاء تام (`display: none`)، يُستخدم عند «عدم وجود رسائل جديدة».
+
+المنطق الذي يُحكم على هذه الثلاثة (مثل `value === 0` وprop المسمى `hidden`) يتولّاه الطرف البصري، ولا يتلقّى core سوى النتيجة. وهكذا يمكن للأطراف المختلفة أن تتبنّى استراتيجيات مختلفة لـ «متى نُخفي» مع بقاء التعبير البصري متسقًا.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getBadgeClassNames` | `(state: LhBadgeState) => string[]` | مصفوفة أسماء الأصناف | حساب جميع أسماء أصناف الشارة |
+
+مثال على المُخرجات:
+
+```ts
+getBadgeClassNames({ type: 'danger', size: 'small', isHidden: false, isDot: true, isZero: false })
+// ['lh-badge', 'lh-badge--danger', 'lh-badge--small', 'lh-badge--dot']
+```
+
+## تعريف الأنواع
+
+```ts
+export type LhBadgeType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhBadgeState {
+  type: LhBadgeType
+  size: LhComponentSize
+  isHidden: boolean
+  isDot: boolean
+  isZero: boolean
+}
+```
+
+## إمكانية الوصول
+
+لا يُخرج `core/badge` حزمة سمات aria، لكن **معالجة إمكانية وصول الشارة في الطرف البصري بالغة الأهمية** وكثيرًا ما تُنفّذ بشكل خاطئ:
+
+- الشارة **تأكيد بصري زخرفي**، وينبغي أن يحمل المحتوى نفسه (مثل «3 رسائل غير مقروءة») نصًا دلاليًا. وإضافة `aria-hidden="true"` إلى الشارة هي القيمة الافتراضية الآمنة.
+- إذا كانت الشارة هي المصدر الوحيد للمعلومة (مثل شارة زاوية بلا نص)، وجب توفير `aria-label` أو التصريح بها على العنصر الأب، وإلا فلن يدرك مستخدم قارئ الشاشة «توجد رسائل جديدة» على الإطلاق.
+- يجب ألا يُجعل قارئ الشاشة ينطق الشارات الرقمية رقمًا رقمًا («9» و«9» ستُنطق «تسعة تسعة»)، بل يُنسَّق على هيئة «99 زائد» أو يُترك لـ `aria-label` في الطرف البصري.
+
+## أمثلة الاستخدام
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+
+getBadgeClassNames({ type: 'primary', size: 'medium', isHidden: false, isDot: false, isZero: false })
+// ['lh-badge', 'lh-badge--primary', 'lh-badge--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span class="lh-badge-wrapper">
+  <slot />
+  <sup
+    v-if="!hidden"
+    :class="getBadgeClassNames({ type, size, isHidden: hidden, isDot, isZero: value === 0 })"
+    aria-hidden="true"
+  >
+    {{ isDot ? '' : displayValue }}
+  </sup>
+</span>
+```
+
+```tsx
+// React
+const cls = getBadgeClassNames({ type, size, isHidden, isDot, isZero })
+return (
+  <span className="lh-badge-wrapper">
+    {children}
+    {!isHidden && <sup className={cls.join(' ')} aria-hidden="true">{isDot ? '' : value}</sup>}
+  </span>
+)
+```
+
+```ts
+// uniapp: تُستخدم عادةً view بتموضع مطلق للشارة على الأطراف غير h5؛
+// والاقتطاع (99+) يتولّاه props في الطرف البصري
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- | --- |
+| `.lh-badge` | الصنف الأساسي: شارة زاوية بتموضع مطلق، استدارة، حجم الخط، لون النص |
+| `.lh-badge--{primary\|success\|warning\|danger\|info\|default}` | النوع الدلالي (لون الخلفية) |
+| `.lh-badge--{small\|medium\|large}` | درجات الحجم (تشمل `.lh-badge--mini` / `--x-large`) |
+| `.lh-badge--dot` | شكل النقطة (دائرة صغيرة ثابتة، لا يُعرض محتوى) |
+| `.lh-badge--zero` | إضعاف القيمة الصفرية (العتامة، ووزن بصري أقل) |
+| `.lh-badge--hidden` | إخفاء تام |
+| `.lh-badge__content` | عقدة المحتوى |
+| `.lh-badge-zoom-enter-active` / `.lh-badge-zoom-leave-active` | انتقال التكبير عند الظهور/الاختفاء |
+
+يعتمد موضع الشارة على توفير العنصر الخارجي `.lh-badge-wrapper` لـ `position: relative` (يضمنه الطرف البصري لكل جهة).
+
+## ملاحظات
+
+- عند صحّة `isDot` و`isZero` معًا، تتقدّم `--dot` في الأنماط (شكل النقطة لا يعرض محتوى، فمعدّل القيمة الصفرية بلا معنى) — على الطرف البصري تجنُّب هذا الجمع.
+- يوجد `'default'` في `LhBadgeType`، لكن الأكثر شيوعًا للشارات هو `'danger'` (النقطة الحمراء)، و`'default'` هي رمادي محايد.
+- أسماء أصناف الانتقال `lh-badge-zoom-*` هي على نمط Vue3 `-enter-active` / `-leave-active`، ويستخدم طرف Vue2 mixin المسمى `lh-enter-both` للمحاذاة (راجع [mixin الانتقال](/ar/reference/transition-mixins)).
+
+<FnPlayground module="badge" fn="getBadgeClassNames" params='{"state": {"type": "danger", "size": "small", "isHidden": false, "isDot": true, "isZero": false}}' />

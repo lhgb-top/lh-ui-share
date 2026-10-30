@@ -1,0 +1,231 @@
+---
+title: upload —— アップロード
+description: 'createUploadUid の一意識別、isFileRejected の accept 3 種類ルールの検証、LhUploadRequest の外部リクエスト関数、ステートマシンの 4 状態'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+アップロードは UI ライブラリで**唯一、副作用を呼び出し側に委ねなければならない**コントロールです：ファイル転送は HTTP クライアントに依存しますが、core 層は axios や fetch の特定のラッパーに依存できないからです。そのため `core/upload` の設計は純粪です——検証、ステートマシン、ファイルリストのイミュータブルな更新を管理し、**「どう送るか」をインターフェースとして残します**（`LhUploadRequest`）。各端や各プロジェクトが自分で実装します。
+
+## いつ使うか
+
+- 各端の `LhUpload` 実装：アバターアップロード、添付ファイルのアップロード、画像の一括アップロード、ドラッグ & ドロップのアップロード。
+- 進捗、成功 / 失敗状態、再試行を表示したいシーン。
+- **使うべきでない**：単にユーザーにファイルのパスを選ばせるだけならネイティブの input を使います；分割アップロード / レジュームアップロードなどの複雑なロジックが必要な場合、core のステートマシンは引き続き使えますが、リクエスト関数は自作する必要があります。
+
+## インポート方法
+
+```ts
+import {
+  LH_UPLOAD_MAX_SIZE,
+  createUploadUid,
+  formatFileSize,
+  createUploadFile,
+  exceedsMaxSize,
+  exceedsMaxCount,
+  normalizeUploadAccept,
+  isFileRejected,
+  patchUploadFile,
+  removeUploadFile,
+  getUploadClassNames,
+  getUploadFileClassNames,
+  getUploadFileAria,
+  getUploadDropzoneAria,
+} from '@lh-ui/share/core/upload'
+import type {
+  LhUploadFile,
+  LhUploadFileStatus,
+  LhUploadRequest,
+} from '@lh-ui/share/core/upload'
+```
+
+## 設計意図
+
+**`createUploadUid` が auto increment のシードを使わない理由**：初期の実装はモジュールレベルのインクリメントカウンター + `Date.now()` を使っていましたが、share は 3 つの UI ライブラリでそれぞれバンドルされるため、**同一ミリ秒内に異なるライブラリのインスタンスが同じ番号の uid を生成する**ことがありました（タイムスタンプが同じ + シードがそれぞれ 0 から始まる）。`crypto.randomUUID()` に切り替え、この API がない環境（一部の uniapp ランタイム）ではタイムスタンプ + 乱数にフォールバックします。これは実際にあった並行衝突バグの修正です。
+
+**`isFileRejected` の 3 種類の accept ルール**：`.png` 拡張子は**ファイル名**と照合し、`image/*` ワイルドカードは**実際の MIME**（`file.type`）と照合し、`image/png` のような具体 MIME は `file.type` と照合します。コメントに 1 つの重要な制約が書かれています：**ネイティブの `<input accept>` はあくまで提案的なフィルタ**であり（ユーザーはファイルピッカーで「すべてのファイル」に切り替えられる）、ゆえに core 層の検証が最後の防線となり、ワイルドカードルールに対して恒真で通すわけにはいきません——さもなくば、ユーザーがピッカーを迂回して押し込んだ `.exe` が画像として扱われてしまいます。
+
+**`exceedsMaxSize` の `Number.isFinite` ガード**：`maxSize` が有限数でない場合は無制限とみなして false を返します。これにより「サイズ制限なし」を `Infinity` で表現でき、0 や -1 のような「合法値」と混同しやすいセンチネルを使う必要がありません。
+
+**イミュータブルな更新**：`patchUploadFile` / `removeUploadFile` は新しい配列を返し、そのままリアクティブな状態に渡せます。手動の splice がもたらす可変性の問題を回避します。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `createUploadUid` | `(prefix?) => string` | uid | crypto.randomUUID を優先 |
+| `formatFileSize` | `(bytes: number) => string` | `'1.5 MB'` | 人間が読めるサイズ |
+| `createUploadFile` | `(file: File, uid?) => LhUploadFile` | アップロード項目 | status ready / percent 0 |
+| `exceedsMaxSize` | `(file: File, maxSize: number) => boolean` | 超過しているか | 非有限数は無制限とみなす |
+| `exceedsMaxCount` | `(current: number, limit: number) => boolean` | 個数超過か | limit ≤ 0 は無制限 |
+| `normalizeUploadAccept` | `(accept?: string \| string[] \| null) => string[]` | ルール配列 | 文字列はカンマで分割 |
+| `isFileRejected` | `(file: { name, type }, accept: string[]) => boolean` | 拒否されたか | 3 種類のルール |
+| `patchUploadFile` | `(files, uid, patch) => LhUploadFile[]` | 新しい配列 | イミュータブルな更新 |
+| `removeUploadFile` | `(files, uid) => LhUploadFile[]` | 新しい配列 | イミュータブルな削除 |
+| `getUploadClassNames` | `(state: { dragOver, disabled }) => string[]` | クラス名 | ドラッグホバー / 無効 |
+| `getUploadFileClassNames` | `(status) => string[]` | クラス名 | 4 状態の修飾 |
+| `getUploadFileAria` | `(statusId?) => LhAriaAttrs` | aria 属性パック | aria-describedby |
+| `getUploadDropzoneAria` | `(disabled?) => LhAriaAttrs` | aria 属性パック | role=button |
+
+## 型定義
+
+```ts
+export type LhUploadFileStatus = 'ready' | 'uploading' | 'success' | 'fail'
+
+export interface LhUploadFile {
+  uid: string
+  name: string
+  size: number
+  status: LhUploadFileStatus
+  percent: number        // 0-100
+  url?: string           // 成功時にサーバーが返す
+  error?: string         // 失敗理由
+  raw?: File             // 元の File オブジェクト
+}
+
+export const LH_UPLOAD_MAX_SIZE = 5 * 1024 * 1024  // デフォルト 5MB
+
+/** アップロードリクエスト関数のシグネチャ（利用者が提供し、ライブラリは HTTP クライアントを内蔵しない） */
+export type LhUploadRequest = (options: {
+  file: File
+  onProgress: (percent: number) => void
+}) => Promise<{ url?: string }>
+```
+
+## アクセシビリティ
+
+```ts
+getUploadFileAria('lh-upload-status-1')
+// { 'aria-describedby': 'lh-upload-status-1' }
+
+getUploadDropzoneAria(false)
+// { role: 'button' }
+
+getUploadDropzoneAria(true)
+// { role: 'button', 'aria-disabled': true }
+```
+
+- ファイル項目は `aria-describedby` で状態の説明要素（「アップロード中 45%」「アップロード失敗：ネットワークタイムアウト」）に関連付けられ、スクリーンリーダーが非同期状態を読み上げます——これが非同期コントロールのアクセシビリティの中核となる手段です。
+- ドロップゾーンは `role="button"` です（クリックしてファイルピッカーを開けるほか、ドロップも受け付ける）。キーボードでは Enter / Space で選択を発火します。
+- **進捗の読み上げ**：純粋に視覚的なプログレスバーはスクリーンリーダーから見えないため、`aria-describedby` が指すテキスト要素は percent の変化に合わせてメッセージを更新します（UI 層がスロットリングし、1% ごとに読み上げられるのを防ぐ）。
+- 失敗項目の再試行 / 削除ボタンには `aria-label` が必要です（アイコンボタンにはテキストがないため）。
+
+## 使用例
+
+```ts
+import {
+  createUploadFile, exceedsMaxSize, isFileRejected, normalizeUploadAccept, patchUploadFile,
+} from '@lh-ui/share/core/upload'
+
+normalizeUploadAccept('image/png, .jpg , image/gif')
+// ['image/png', '.jpg', 'image/gif']
+normalizeUploadAccept(['.pdf'])      // ['.pdf']
+normalizeUploadAccept(null)          // []
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['.png'])          // false
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['image/*'])       // false
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['image/gif'])     // true
+isFileRejected({ name: 'a.exe', type: '' }, ['image/*'])                // true（MIME がない場合は通さない）
+isFileRejected({ name: 'a.png', type: 'image/png' }, [])                // false（空ルールは制限しない）
+exceedsMaxSize(new File([], 'a.png'), 1024)       // true（空ファイルの size 0 は 1024 を超えないが、この例は実際の size 次第）
+exceedsMaxSize(file, Infinity)                    // false
+formatFileSize(512)       // '512 B'
+formatFileSize(1536)      // '1.5 KB'
+formatFileSize(5 * 1024 * 1024)  // '5.0 MB'
+```
+
+```ts
+// 検証チェーン（UI 層は onBeforeUpload で順番に実行する）
+function validate(file: File, accept: string, maxSize: number): string | undefined {
+  const rules = normalizeUploadAccept(accept)
+  if (isFileRejected(file, rules)) return 'ファイル形式は許可されていません'
+  if (exceedsMaxSize(file, maxSize)) return `ファイルサイズは ${formatFileSize(maxSize)} を超えられません`
+}
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getUploadClassNames({ dragOver, disabled })">
+  <div
+    class="lh-upload__dropzone"
+    v-bind="getUploadDropzoneAria(disabled)"
+    tabindex="0"
+    @click="openPicker"
+    @dragover.prevent="dragOver = true"
+    @dragleave.prevent="dragOver = false"
+    @drop.prevent="onDrop"
+  >
+    <input ref="inputRef" type="file" :accept="accept" multiple hidden @change="onChange" />
+    <span class="lh-upload__hint">クリックするか、ファイルをここにドラッグしてアップロード</span>
+  </div>
+  <ul class="lh-upload__file-list">
+    <li
+      v-for="f in files"
+      :key="f.uid"
+      :class="getUploadFileClassNames(f.status)"
+      v-bind="getUploadFileAria(`lh-upload-status-${f.uid}`)"
+    >
+      <span class="lh-upload__file-name">{{ f.name }}</span>
+      <span class="lh-upload__file-size">{{ formatFileSize(f.size) }}</span>
+      <div class="lh-upload__progress"><div :style="{ width: f.percent + '%' }" /></div>
+      <span :id="`lh-upload-status-${f.uid}`" class="lh-upload__status">
+        {{ statusText(f) }}
+      </span>
+      <button v-if="f.status === 'fail'" type="button" aria-label="再試行" @click="retry(f)">↻</button>
+      <button type="button" aria-label="削除" @click="files = removeUploadFile(files, f.uid)">✕</button>
+    </li>
+  </ul>
+</div>
+```
+
+```ts
+// アップロードの実行（リクエスト関数はプロジェクトが提供する）
+async function run(file: LhUploadFile) {
+  files = patchUploadFile(files, file.uid, { status: 'uploading', percent: 0 })
+  try {
+    const { url } = await httpRequest({
+      file: file.raw!,
+      onProgress: (percent) => { files = patchUploadFile(files, file.uid, { percent }) },
+    })
+    files = patchUploadFile(files, file.uid, { status: 'success', percent: 100, url })
+  } catch (error) {
+    files = patchUploadFile(files, file.uid, { status: 'fail', error: String(error) })
+  }
+}
+```
+
+```tsx
+// React：files は useState を使い、patchUploadFile の戻り値をそのまま setFiles に渡す
+```
+
+```ts
+// uniapp：<button open-type="chooseFile> または uni.chooseImage；
+// core の検証とステートマシンはそのまま使い、HTTP には uni.uploadFile（onProgressUpdate 付き）を使う
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-upload` | 基底クラス |
+| `.lh-upload--dragover` | ドラッグホバー（ハイライトボーダー） |
+| `.lh-upload--disabled` | 無効 |
+| `.lh-upload__dropzone` | ドラッグ / クリック領域 |
+| `.lh-upload__hint` | ガイドのメッセージ |
+| `.lh-upload__file-list` / `__file` | ファイルリスト / ファイル項目 |
+| `.lh-upload__file--{ready\|uploading\|success\|fail}` | 4 状態の修飾 |
+| `.lh-upload__file-name` / `__file-size` / `__status` | ファイル情報 |
+| `.lh-upload__progress` | プログレスバーのトラック（内側の div が充填） |
+
+成功色は `--lh-success-color`、失敗は `--lh-danger-color`、プログレスの充填は `--lh-primary-color` です。
+
+## 注意事項
+
+- **accept のワイルドカードルールは実際の MIME に依存する**：`file.type` はブラウザが拡張子から推測したもので、**一部の環境では空文字列になる可能性があります**（標準的でない拡張子など）。`isFileRejected` は MIME が空のファイルをワイルドカードルールの下で**拒否します**（通さない）。これは意図的な安全上の取舍です——誤って拒否しても、誤って通すよりはマシです。もし業務で拡張子のみを信用するなら、独自に `.png` 系のルールに切り替えてください。
+- **`exceedsMaxCount` の境界**：`current >= limit` で判定し、limit ≤ 0 は無制限です——渡すのは「現在すでにある数量」であって「あと何個送れるか」ではない点に注意してください。
+- **並行アップロードの uid**：同一ファイルを同時に 2 回アップロードしてはならず、`status === 'uploading'` で再試行ボタンをブロックします；uid は `createUploadUid()` でライブラリを跨ぐ一意性を保証します。
+- **再送時の raw の保持**：`createUploadFile` は `raw` を保存し、失敗時の再試行は `raw` を使ってリクエスト関数をもう一度呼びます；File オブジェクトを保持する必要がない業務（メモリに敏感な場合）は保存しなくてもかまいません。
+- **`LhUploadRequest` の戻り値**：`{ url? }` だけを約束します。サーバーが別の構造（`{ data: { url } }` など）を返す場合は、リクエスト関数の中で変換してから resolve し、core に様々なバックエンドフォーマットを適応させないでください。
+- **進捗メッセージのスロットリング**：`onProgress` の発火頻度はかなり高くなる可能性があり（大きなファイルではチャックごとに 1 回）、`aria-describedby` が指すテキストの更新はスロットリングします（10% ごとなど）。さもなくばスクリーンリーダーが読み上げで溢れます。
+- **input の value をクリアする**：連続して同じファイルを選ぶと、`change` イベントは 2 回目に発火しません——選んだ後に `input.value = ''` をリセットしてください。
+
+<FnPlayground module="upload" fn="isFileRejected" params='{"file": {"name": "photo.png", "type": "image/png"}, "accept": ["image/*", ".pdf"]}' />

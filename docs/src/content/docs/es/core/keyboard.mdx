@@ -1,0 +1,233 @@
+---
+title: keyboard —— algoritmos de navegación por teclado
+description: 'Las constantes de teclas LH_KEYS, tres algoritmos de navegación (lista / cuadrícula / range) y type-ahead, compartidos por select / menu / tree / tabs'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+La interacción por teclado de los componentes accesibles tiene respuestas estándar (los patrones listbox / menu / grid de APG), pero el cálculo de «a qué elemento debe saltar la flecha arriba» acaba escrito (y errado) una y otra vez en select / menu / tree / tabs / segmented. `shared/keyboard` lo convierte en funciones puras: entra «la lista + el índice actual + la dirección» y sale «el índice de destino».
+
+**La capa de core no escucha ninguna tecla**: la escucha de eventos de teclado pertenece a la capa UI (el `@keydown` de Vue3, el `onKeyDown` de React). Este módulo solo proporciona el juicio y el cálculo.
+
+## Importación
+
+```ts
+import {
+  LH_KEYS,
+  isActivationKey,
+  getNextListIndex,
+  getNextGridCell,
+  getNextRangeValue,
+  findTypeAheadIndex,
+  getRovingTabIndex,
+  type LhListNavigationOptions,
+} from '@lh-ui/share/core/shared/keyboard'
+```
+
+## Constantes y tipos
+
+```ts
+// Constantes de nombres de tecla (KeyboardEvent.key), la capa UI no debe volver a escribir literales de cadena
+export const LH_KEYS = {
+  Escape: 'Escape',
+  Enter: 'Enter',
+  Space: ' ',          // Atención: el valor es un espacio
+  ArrowUp: 'ArrowUp',
+  ArrowDown: 'ArrowDown',
+  ArrowLeft: 'ArrowLeft',
+  ArrowRight: 'ArrowRight',
+  Home: 'Home',
+  End: 'End',
+  Tab: 'Tab',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
+} as const
+
+// Acepta tanto eventos reales como valores de key sueltos (lo necesitan las pruebas de funciones puras)
+export type LhKeyEvent = KeyboardEvent | { key: string }
+
+// Dirección de navegación: desplazamiento numérico o centinelas de primero/último
+export type LhListDirection = 1 | -1 | 'first' | 'last'
+
+// Restricción mínima de los elementos de la lista: solo hace falta la marca de deshabilitado;
+// la forma concreta la proporciona quien llama
+export interface LhListItem {
+  disabled?: boolean
+}
+
+export interface LhListNavigationOptions<T = unknown> {
+  loop?: boolean                    // Circular entre el primero y el último, por defecto true
+  skipDisabled?: boolean            // Saltar los elementos deshabilitados, por defecto true
+  isDisabled?: (item: T) => boolean // Validación de deshabilitado personalizada, por defecto lee item.disabled
+}
+
+export interface LhGridNavOptions {
+  cols: number                      // Número de columnas por fila
+  total: number                     // Número total de casillas de la cuadrícula
+  loop?: boolean                    // Circular dentro de la fila / en el conjunto, por defecto false
+                                    // (al llegar al borde devuelve null y la capa UI pagina)
+}
+
+export interface LhRangeNavOptions {
+  min: number
+  max: number
+  step: number                      // Paso de las teclas de dirección; si no es finito o ≤ 0, se degrada a 1
+                                    // y solo se aplica clamp en los extremos
+  pageStep?: number                 // Paso de PageUp / PageDown, por defecto max(step, (max-min)/10)
+}
+```
+
+## Tabla de funciones
+
+### Juicio de teclas
+
+| Función | Firma | Acción |
+| --- | --- | --- |
+| `isActivationKey` | `(e: LhKeyEvent) => boolean` | Enter o Space |
+| `isArrowKey` | `(e: LhKeyEvent) => boolean` | Las cuatro flechas de dirección |
+| `isEscapeKey` | `(e: LhKeyEvent) => boolean` | Escape (cierre de capas flotantes) |
+| `isHomeOrEndKey` | `(e: LhKeyEvent) => boolean` | Home / End (salto a los extremos de la lista) |
+| `isSpaceKey` | `(e: LhKeyEvent) => boolean` | Espacio (escenarios en los que hay que distinguirlo de Enter, como el paginado dentro de un contenedor desplazable) |
+| `isHorizontalArrowKey` | `(e: LhKeyEvent) => boolean` | Flechas horizontales |
+| `isVerticalArrowKey` | `(e: LhKeyEvent) => boolean` | Flechas verticales |
+
+`isHorizontalArrowKey` / `isVerticalArrowKey` **juzgan únicamente la tecla física**: en una maquetación RTL, que «izquierda» signifique «anterior» o «siguiente» es semántica de la capa UI; el algoritmo no la invierte por ti.
+
+### Cálculo de navegación
+
+| Función | Firma | Acción |
+| --- | --- | --- |
+| `getNextListIndex` | `<T>(items, current, direction, options?) => number` | Navegación general de lista; devuelve el índice de destino |
+| `findTypeAheadIndex` | `(labels: string[], query: string, startIndex?) => number` | type-ahead: coincidencia por el primer carácter |
+| `getRovingTabIndex` | `<T>(items, activeIndex) => number` | roving tabindex: devuelve el índice que debe llevar tabindex 0 |
+| `getNextGridCell` | `(current, key, opts: LhGridNavOptions) => number \| null` | Navegación por cuadrícula bidimensional (cuadrícula de días, de meses) |
+| `getNextRangeValue` | `(current, key, opts: LhRangeNavOptions) => number` | Navegación de controles range (el escalonado por teclado del slider) |
+
+### La semántica del valor de retorno de getNextListIndex
+
+Es la parte más fácil de usar mal, de modo que se explica aparte:
+
+| Situación | Valor de retorno |
+| --- | --- |
+| `'first'` / `'last'` | Va directamente al primer / último elemento **habilitado** |
+| Desplazamiento normal | El índice de destino |
+| Sin circulares y ya en el borde | **Se queda en el borde** (devuelve el índice del borde, no -1) |
+| Lista vacía / todo deshabilitado y `skipDisabled` | `-1` (no hay elementos disponibles) |
+| Solo los elementos del borde están deshabilitados y ya se está en el borde | `-1` |
+| `current` fuera de rango o `-1` | Se trata como «sin selección»: en sentido positivo, el primer elemento; en sentido negativo, el último |
+
+**Cuando no hay circulares, nunca devuelve -1 para indicar «se ha llegado al extremo»**: devuelve el índice del borde, dejando el foco en ese elemento. La capa UI decide entonces si hacer `preventDefault`; -1 solo significa «de verdad no hay ningún elemento seleccionable».
+
+### getRovingTabIndex devuelve un índice
+
+El nombre de la función induce a error: **devuelve «el índice del elemento que debería tener tabindex 0»**, no el valor del tabindex en sí. Quien llama aplica el valor en consecuencia:
+
+```ts
+const activeIndex = getRovingTabIndex(items, selectedIndex)
+items.forEach((item, i) => (item.tabindex = i === activeIndex ? 0 : -1))
+```
+
+Así se garantiza que en todo el grupo **siempre haya un anclaje al que se puede entrar con Tab**; si `activeIndex` no tiene elementos disponibles, retrocede al primer elemento habilitado y nunca queda todo el grupo a -1, inaccesible para el teclado.
+
+### Las reglas de coincidencia de findTypeAheadIndex
+
+- La etiqueta del elemento coincide si **empieza por la cadena de consulta** (sin distinguir mayúsculas de minúsculas).
+- La búsqueda es circular a partir de `startIndex` (por defecto `-1`, desde el principio).
+- Admite la acumulación de varios caracteres: al escribir `es` rápidamente, la capa UI acumula la cadena de consulta durante 500 ms y, al expirar el plazo, la vacía.
+- Sin coincidencia / `query` vacío / `labels` vacío → `-1`.
+
+### El flujo entre filas de getNextGridCell
+
+ArrowRight en el **final de la fila fluye hacia el principio de la siguiente** (desplazamiento continuo dentro de la vista; solo devuelve `null` al cruzar el borde de la cuadrícula completa); ArrowDown / ArrowUp se desplazan verticalmente `±cols`; Home / End son el **principio / el final de la fila** (cuando la última fila no completa `cols`, el final se recoge en `total` y no salta fuera de la cuadrícula).
+
+Teclas no de navegación, fuera de rango sin circulares, `current` fuera de rango, `cols` / `total` ≤ 0 → `null`.
+
+Que `loop` sea `false` por defecto es deliberado: en un panel de fechas, «salir por la derecha» suele significar **cambiar al mes siguiente**, decisión que toma la capa UI, y el algoritmo solo dice «se ha llegado al extremo».
+
+### getNextRangeValue solo aplica clamp, sin redondeo
+
+```ts
+getNextRangeValue(25, 'ArrowUp', { min: 0, max: 100, step: 10 })
+// 25 + 10 = 35 (sin alinear al step)
+```
+
+**Por qué no redondea**: si el valor actual es 25 (un valor sin alinear que ha arrastrado quien lo usa), un algoritmo de redondeo saltaría primero a 30 y luego a 40, como si diera dos saltos. Aplicar solo clamp + paso y dejar el alineamiento para la capa del componente al escribir el localValue (el snap a la marca al soltar el arrastre).
+
+Las teclas que no son de navegación **devuelven `current` tal cual**: quien llama lo usa para decidir «¿necesito procesar esta pulsación?» y si hacer `preventDefault`.
+
+## Ejemplos de uso
+
+### La navegación por teclado de select (roving tabindex + list nav)
+
+```ts
+function onKeydown(e: KeyboardEvent) {
+  if (isArrowKey(e)) {
+    e.preventDefault()
+    const next = getNextListIndex(
+      options.value,
+      selectedIndex.value,
+      e.key === LH_KEYS.ArrowDown ? 1 : -1,
+      { loop: true },
+    )
+    if (next !== -1) selectedIndex.value = next
+  } else if (isHomeOrEndKey(e)) {
+    selectedIndex.value = getNextListIndex(
+      options.value,
+      -1,
+      e.key === LH_KEYS.Home ? 'first' : 'last',
+    )
+  } else if (isActivationKey(e)) {
+    open.value = !open.value
+  } else if (isEscapeKey(e)) {
+    open.value = false
+  }
+}
+```
+
+### La cuadrícula de fechas de date-picker
+
+```ts
+const next = getNextGridCell(focusedIndex.value, e.key, {
+  cols: 7,                    // 7 días por semana
+  total: daysInMonth.value,   // Días del mes en curso
+})
+if (next === null) {
+  // Fuera de rango → cambiar al mes anterior / siguiente (lo decide la capa UI)
+  switchMonth(e.key === LH_KEYS.ArrowRight ? 1 : -1)
+} else {
+  focusedIndex.value = next
+}
+```
+
+### El escalonado por teclado del slider
+
+```ts
+if (isArrowKey(e) || isHomeOrEndKey(e) || e.key === LH_KEYS.PageUp || e.key === LH_KEYS.PageDown) {
+  e.preventDefault()
+  modelValue.value = getNextRangeValue(modelValue.value, e.key, {
+    min: props.min,
+    max: props.max,
+    step: props.step,
+  })
+}
+```
+
+### Navegación por entrada de caracteres
+
+```ts
+// Acumula la cadena de consulta (la capa UI mantiene el plazo de 500 ms)
+typeAheadBuffer.value += e.key
+const idx = findTypeAheadIndex(labels, typeAheadBuffer.value, selectedIndex.value)
+if (idx !== -1) selectedIndex.value = idx
+```
+
+## Advertencias
+
+- **La escucha vive en la capa UI**: el cableado de `onKeydown`, el momento de `preventDefault` y la llamada a `focus()` tras el cambio de foco son responsabilidad de los componentes de cada marco; core solo entrega el resultado del cálculo.
+- **Maquetación RTL**: la inversión semántica de las flechas izquierda/derecha la realiza la capa UI invirtiendo `direction` antes de la llamada; el algoritmo conserva por sí mismo la semántica de la tecla física.
+- **El valor por defecto de `isDisabled`**: lee `item.disabled` y, si no lo encuentra, lo considera no deshabilitado: al pasar elementos de tipo `{}`, todos son navegables.
+- **Seguridad con lista vacía**: todas las funciones de navegación devuelven `-1` / `null` ante una lista vacía; a la capa UI le basta con comprobarlo, no se lanza ningún error.
+
+<FnPlayground module="keyboard" fn="getNextListIndex" params='{"items": [{"disabled": false}, {"disabled": true}, {"disabled": false}, {"disabled": false}], "current": 0, "direction": 1, "options": {"loop": true}}' />

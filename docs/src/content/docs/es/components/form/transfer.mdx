@@ -1,0 +1,180 @@
+---
+title: transfer —— Transferencia
+description: 'particionado inmutable con partitionTransferData, limpieza de claves fantasma con moveTransferKeys, tres estados con getTransferCheckAllState, fuente de datos única con sourceKeys'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La transferencia resuelve el **movimiento bidireccional de una selección múltiple**: la columna izquierda es «por elegir», la derecha «elegida», y dos botones de flecha en el medio trasladan de un lado a otro. Es más adecuada que un grupo de checkboxes para muchas opciones (paginación + búsqueda), y más intuitiva que varios select (ambos lados son visibles). `core/transfer` modeliza con una **fuente de datos única `sourceKeys`** — la columna izquierda es «los elementos que no están en sourceKeys», la derecha es «los que sí están», y todas las operaciones consisten en transformar ese único array.
+
+## Cuándo usarlo
+
+- Todos los extremos implementan `LhTransfer`: asignación de permisos, selección de miembros de un rol, filtrado de etiquetas, marcado de campos de datos.
+- Escenarios con muchas opciones (>10), que necesitan filtrado por búsqueda y en los que se quiere ver a la vez ambos lados, «elegidos / por elegir».
+- **No usarlo**: menos de 6 opciones (un grupo de checkboxes o segmented ocupa menos); en una selección unidireccional donde no hace falta «devolverlos» (un select es más adecuado).
+
+## Importación
+
+```ts
+import {
+  partitionTransferData,
+  toggleTransferChecked,
+  toggleTransferCheckAll,
+  moveTransferKeys,
+  getTransferCheckAllState,
+  filterTransferItems,
+  getTransferClassNames,
+  getTransferPanelClassNames,
+} from '@lh-ui/share/core/transfer'
+import type { LhTransferItem, LhTransferSide } from '@lh-ui/share/core/transfer'
+```
+
+## Intención de diseño
+
+**Fuente de datos única `sourceKeys`**: el «valor» del componente es el array de claves de la columna derecha. La columna izquierda no guarda estado por su cuenta — `partitionTransferData(data, sourceKeys)` corta cada vez a partir de los datos completos. Esto evita el bug clásico de «la columna izquierda y la derecha no están sincronizadas»: cualquier traslado solo modifica un array y ambas vistas se recalculan solas.
+
+**La limpieza de claves fantasma de `moveTransferKeys`**: en `checked` pueden aparecer claves que no están en `data` (restos de selecciones antiguas tras una actualización de los datos, las llamamos **claves fantasma**). No se pueden trasladar, y tampoco deberían quedar en la zona de origen contaminando el siguiente renderizado — por eso la función, tras el traslado, **también filtra las claves fantasma de la zona de origen**. Los comentarios del código explican los dos niveles de razonamiento de esta decisión.
+
+**`toggleTransferCheckAll` salta los elementos deshabilitados**: seleccionar todo solo marca los «elegibles» (`!disabled`), y deseleccionar todo solo limpia esos — el estado de marcado de los elementos deshabilitados se mantiene intacto, de acuerdo con la intuición de «deshabilitado = no operable».
+
+**Los tres estados de `getTransferCheckAllState`**: `all` / `some` / `none` controlan el estado `indeterminate` de la casilla de seleccionar todo — es la interacción estándar de la casilla general (con selección parcial muestra una línea horizontal).
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `partitionTransferData` | `(data, sourceKeys) => { left, right }` | listas de ambos lados | corta según el keySet |
+| `toggleTransferChecked` | `(checked, key) => Array` | nuevo array de selección | si coincide lo elimina, si no lo añade |
+| `toggleTransferCheckAll` | `(checked, sideItems) => Array` | nuevo array de selección | seleccionar/deseleccionar todo (salta los deshabilitados) |
+| `moveTransferKeys` | `(sourceKeys, data, checked, direction) => Array` | nuevo sourceKeys | traslada y limpia las claves fantasma |
+| `getTransferCheckAllState` | `(checked, sideItems) => 'all' \| 'some' \| 'none'` | tres estados | controla indeterminate |
+| `filterTransferItems` | `(items, query) => LhTransferItem[]` | lista filtrada | insensible a mayúsculas y minúsculas |
+| `getTransferClassNames` | `(state: { disabled }) => string[]` | clases | deshabilitado |
+| `getTransferPanelClassNames` | `(side) => string[]` | clases | lado del panel |
+
+## Definiciones de tipos
+
+```ts
+export interface LhTransferItem {
+  key: string | number
+  label?: string       // el contrato en tiempo de ejecución permite que falte (la capa UI muestra el key como respaldo)
+  disabled?: boolean   // deshabilitado (no se puede mover, ni participa en seleccionar todo)
+}
+
+export type LhTransferSide = 'left' | 'right'
+```
+
+## Accesibilidad
+
+La estructura de accesibilidad de la transferencia la monta la capa UI; el core no proporciona funciones de bolsas de atributos (no hay capa flotante ni semántica compleja): cada uno de los dos paneles es un `role="listbox"`, los elementos de la lista son `role="option"` + `aria-selected`; los botones de traslado del medio son `<button>` normales, con un `aria-label` que indica la dirección (por ejemplo, «Mover 3 elementos a la derecha»); la casilla de seleccionar todo usa semántica de checkbox, y el estado `indeterminate` se dispara como atributo DOM cuando `getTransferCheckAllState` devuelve `some`.
+
+Convención de teclado: tras enfocar un elemento de la lista, la barra espaciadora lo marca y ↑/↓ se mueven; tras enfocar un botón de traslado, Enter lo ejecuta.
+
+## Ejemplos de uso
+
+```ts
+import {
+  partitionTransferData, moveTransferKeys, getTransferCheckAllState, filterTransferItems,
+} from '@lh-ui/share/core/transfer'
+
+const data = [
+  { key: 'a', label: 'Manzana' },
+  { key: 'b', label: 'Plátano', disabled: true },
+  { key: 'c', label: 'Cereza' },
+]
+
+partitionTransferData(data, ['c'])
+// { left: [Manzana, Plátano], right: [Cereza] }
+
+moveTransferKeys(['c'], data, ['a', 'b'], 'left-to-right')
+// ['c', 'a']  —— b está deshabilitado y no se traslada; a pasa de la izquierda a la derecha
+
+moveTransferKeys(['c'], data, ['a', 'ghost'], 'left-to-right')
+// ['c', 'a']  —— la clave fantasma 'ghost' se descarta y no se mantiene en el resultado
+
+getTransferCheckAllState(['a'], [{ key: 'a' }, { key: 'b', disabled: true }, { key: 'c' }])
+// 'some' (los elementos elegibles son a y c, y solo se ha marcado a → parcial; b, deshabilitado, no cuenta)
+
+filterTransferItems(data, 'cere')   // [{ key: 'c', label: 'Cereza' }]
+filterTransferItems(data, '')       // el array original (query vacío, sin filtrado)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTransferClassNames({ disabled })">
+  <transfer-panel
+    side="left"
+    :items="partition.left"
+    :checked="leftChecked"
+    @toggle="onToggle"
+    @check-all="onCheckAll"
+  />
+  <div class="lh-transfer__buttons">
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="leftChecked.length === 0"
+      :aria-label="`Mover ${leftChecked.length} elementos a la derecha`"
+      @click="move('left-to-right')"
+    >→</button>
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="rightChecked.length === 0"
+      :aria-label="`Mover ${rightChecked.length} elementos a la izquierda`"
+      @click="move('right-to-left')"
+    >←</button>
+  </div>
+  <transfer-panel side="right" :items="partition.right" :checked="rightChecked" />
+</div>
+```
+
+```ts
+// Cableado de estado (la partición es calculada; checked es el estado de marcado local)
+const partition = computed(() => partitionTransferData(props.data, props.modelValue))
+const leftChecked = computed(() => state.checked.filter((k) => !props.modelValue.includes(k)))
+const rightChecked = computed(() => state.checked.filter((k) => props.modelValue.includes(k)))
+
+function move(direction) {
+  const checked = direction === 'left-to-right' ? leftChecked.value : rightChecked.value
+  emit('update:modelValue', moveTransferKeys(props.modelValue, props.data, checked, direction))
+  state.checked = state.checked.filter((k) => !checked.includes(k))  // limpia el marcado de lo ya trasladado
+}
+```
+
+```tsx
+// React: sourceKeys es el valor controlado; el marcado es un useState local y, tras el traslado, se limpia el correspondiente
+```
+
+```ts
+// uniapp: dos columnas de <view> + <scroll-view> para el desplazamiento; el filtrado del campo de búsqueda usa filterTransferItems
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-transfer` | clase base (layout flexible horizontal) |
+| `.lh-transfer--disabled` | deshabilitado |
+| `.lh-transfer-panel` | panel de un lado |
+| `.lh-transfer-panel--left` / `--right` | lado |
+| `.lh-transfer-panel__header` | cabecera del panel (casilla de seleccionar todo + contador) |
+| `.lh-transfer-panel__search` | campo de búsqueda |
+| `.lh-transfer-panel__body` | zona de la lista |
+| `.lh-transfer-panel__item` | elemento de la lista |
+| `.lh-transfer-panel__item--disabled` | elemento deshabilitado |
+| `.lh-transfer-panel__footer` | pie de página (estado vacío / contador) |
+| `.lh-transfer__buttons` / `__button` | grupo de botones central |
+
+El estado `indeterminate` de la casilla de la cabecera del panel lo controla `getTransferCheckAllState`.
+
+## Advertencias
+
+- **`checked` y `sourceKeys` son dos estados independientes**: `checked` es «qué hay marcado ahora mismo» (puede abarcar ambos lados), y `sourceKeys` es «qué hay en la columna derecha» (el valor del componente). Tras un traslado hay que eliminar manualmente del `checked` las claves ya trasladadas; de lo contrario se quedarán residenciando en el estado de marcado (`moveTransferKeys` no te modifica checked).
+- **El origen de las claves fantasma**: cuando los datos se cargan de forma asíncrona, el usuario marca primero varios elementos y luego la actualización de los datos hace que algunas claves desaparezcan — esas claves que se quedan en `checked` son claves fantasma. `moveTransferKeys` las limpia, pero el recuento de «seleccionar todo» de `toggleTransferCheckAll` (`getTransferCheckAllState`) también puede verse afectado; a la hora de renderizar el estado de marcado, la capa UI puede filtrar con `byKey.has(key)` para mayor seguridad.
+- **El límite de los elementos deshabilitados**: un elemento con `disabled: true` **no se puede trasladar, no participa en seleccionar todo y tampoco lo limpia deseleccionar todo** — mantiene su estado de marcado. Si el negocio necesita «los elementos deshabilitados no pueden estar marcados», manéjalo en la capa de datos, sin depender del core.
+- **`label` puede faltar**: en los tipos `label?` es opcional, y la capa UI debe mostrar `key` como respaldo (`item.label ?? item.key`).
+- **Rendimiento con muchos datos**: `partitionTransferData` recorre completo data en cada llamada; `filterTransferItems` se ejecuta cada vez que cambia query. Con miles de elementos valora el desplazamiento virtual (`core/shared/virtual`); las funciones de partición del core son O(n) de por sí y no son el cuello de botella.
+- **El orden de aplicación de la búsqueda y la partición**: primero `partitionTransferData` y luego, para cada lado, `filterTransferItems` — si se invierte el orden, el campo de búsqueda filtrará los datos completos sin particionar.
+
+<FnPlayground module="transfer" fn="moveTransferKeys" params='{"sourceKeys": ["c"], "data": [{"key": "a", "label": "Manzana"}, {"key": "b", "label": "Plátano", "disabled": true}, {"key": "c", "label": "Cereza"}], "checked": ["a", "b"], "direction": "left-to-right"}' />

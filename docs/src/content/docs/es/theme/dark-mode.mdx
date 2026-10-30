@@ -1,0 +1,203 @@
+---
+title: Modo oscuro
+description: 'El mecanismo de conmutación con data-theme=dark, la trampa del horneado en tiempo de compilación y el gate de accesibilidad del modo oscuro, verificación 7 de verify:styles'
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+Todos los componentes de lh-ui **soportan por defecto los modos claro y oscuro**. No es un tema añadido a
+posteriori, sino una premisa del diseño del sistema de tokens.
+
+## El mecanismo de conmutación
+
+El interruptor del modo oscuro es un selector CSS, no JS:
+
+```scss
+// styles/theme/common/var-dark.scss
+[data-theme='dark'],
+.dark {
+  --lh-bg-color: #2A2520;
+  --lh-text-primary: #E8E0D8;
+  // ... 118 sobrescrituras
+}
+```
+
+Dos formas de dispararlo:
+
+```html
+<!-- forma uno: el atributo data (recomendado, la semántica es clara) -->
+<html data-theme="dark">
+
+<!-- forma dos: la clase (compatible con código antiguo / bibliotecas de conmutación terceras) -->
+<body class="dark">
+```
+
+La capa UI (el ConfigProvider de cada biblioteca o el código de la aplicación) solo tiene que cambiar este
+atributo / nombre de clase y **todos los componentes cambian de color de inmediato** — las variables CSS se
+evalúan en tiempo de ejecución, sin coste de re-render.
+
+```ts
+function toggleDark(isDark: boolean) {
+  document.documentElement.dataset.theme = isDark ? 'dark' : 'light'
+}
+```
+
+## El modo oscuro es una capa de sobrescritura
+
+El archivo oscuro solo lleva **118 entradas**, no un conjunto completo de 185. Solo se sobrescriben los tokens
+que necesitan invertirse; el resto sigue utilizando los valores claros.
+
+El principio de diseño es la **reorientación de los tokens semánticos, no la reescritura componente a
+componente**:
+
+```scss
+// ✅ buena práctica: en el modo oscuro, apuntar a un token semántico oscuro
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);
+  --lh-table-cell-color: var(--lh-text-primary);
+}
+
+// ❌ mala práctica: codificar de forma rígida un color concreto dentro del bloque oscuro
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: rgba(255, 255, 255, 0.85);   // se desacopla de text-primary; el próximo ajuste de paleta obliga a cambiar dos sitios
+}
+```
+
+## La trampa del horneado en tiempo de compilación
+
+Este es el **hoyo más fácil de pisar** del modo oscuro, y la razón de que exista la verificación 7 de
+`verify:styles`.
+
+### El principio del hoyo
+
+Los tokens de `var.scss` cuyo valor tiene la forma `#{$lh-foo}`:
+
+```scss
+// var.scss
+:root {
+  --lh-menu-item-color: #{$lh-menu-item-color};   // la variable SCSS se sustituye en tiempo de compilación por un valor claro concreto
+}
+```
+
+La variable SCSS **se hornea en tiempo de compilación a un valor literal**, lo que equivale a:
+
+```scss
+:root {
+  --lh-menu-item-color: rgba(0, 0, 0, 0.88);   // ¡en modo oscuro no se invierte automáticamente!
+}
+```
+
+El resultado: en modo oscuro, el texto de menús / tablas / timelines seguía usando los valores claros, **negro
+sobre negro, invisible**. Huecos de este tipo han ocurrido de verdad; el registro de la reparación está en el
+changeset de 0.4.0.
+
+### La solución
+
+Reorientar explícitamente, en `var-dark.scss`, a un token semántico oscuro:
+
+```scss
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);
+}
+```
+
+### La cadena de respaldo se evalúa en tiempo de ejecución y es segura
+
+La cadena de respaldo encadenada del SCSS de los componentes:
+
+```scss
+.lh-button {
+  color: var(--lh-foo, var(--lh-bar, #333));
+}
+```
+
+El respaldo de `var()` **se evalúa en tiempo de ejecución**: siempre que algún token de la cadena tenga
+sobrescritura oscura, la cadena entera sigue la inversión. **No hace falta repetir la declaración**.
+
+Tabla comparativa:
+
+| Forma de escribirlo | Momento de evaluación | Comportamiento en modo oscuro |
+| --- | --- | --- |
+| `var(--lh-foo, fallback)` | Tiempo de ejecución | ✅ Si algún token de la cadena tiene sobrescritura oscura, se invierte |
+| `#{$lh-foo}` (interpolación SCSS) | Tiempo de compilación | ❌ Se hornea con el valor claro; hay que reorientar explícitamente en var-dark |
+| Funciones SCSS como `mix($lh-a, $lh-b)` | Tiempo de compilación | ❌ Ídem |
+
+## El aclarado en modo oscuro de los presets de color principal profundo
+
+De los cinco presets integrados, los de color principal profundo (青花瓷 (porcelana azul) / 朱砂 (cinabrio) /
+水墨 (tinta china)) hacen que, en modo oscuro, el color principal se «hunda» en el fondo de la página.
+`buildPresetDarkVars` lo trata automáticamente:
+
+La regla de decisión: si el contraste de `--lh-primary-color` frente al fondo de página oscura `#1A1A2E`
+(`DARK_PAGE_BG`) es menor que 3 (`DARK_PRIMARY_CONTRAST_THRESHOLD`), se considera un color principal profundo y
+entonces:
+
+```css
+[data-theme='dark'],
+.dark {
+  --lh-primary-color: color-mix(in srgb, <valor literal> 55%, #fff);   /* aclarado al 55% */
+  --lh-primary-color-hover: color-mix(in srgb, var(--lh-primary-color) 70%, #fff);
+  --lh-primary-color-active: color-mix(in srgb, var(--lh-primary-color) 85%, #000);
+  --lh-color-on-primary: #101410;   /* tras el aclarado, el texto blanco baja del contraste; se cambia a texto color tinta */
+  --lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent);
+  --lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff);
+}
+```
+
+**Por qué el aclarado del color principal usa el valor literal y no `var()`**: `color-mix(in srgb,
+var(--lh-primary-color) 55%, #fff)` formaría un ciclo de auto-referencia CSS (el valor de `--lh-primary-color`
+se estaría referenciando a sí mismo). Por eso esta regla **sustituye el valor literal**, mientras que las demás
+usan `var()` y siguen el color principal vigente.
+
+Los presets de color principal claro (松花绿 (verde pino) / 藤黄 (amarillo herbáceo)) no necesitan aclarado, pero
+también reciben la redefinición oscura de `--lh-primary-color-bg` y `--lh-selected-color`.
+
+## La semántica de orden de la inyección de presets
+
+El texto que genera `buildPresetStyleText` lleva primero el bloque `:root { ... }` y después el bloque
+`[data-theme='dark'], .dark { ... }`. **A igualdad de especificidad vence el segundo**, de modo que el valor
+claro de `--lh-selected-color` que el preset de color principal claro declara en `:root` no se filtra dentro del
+modo oscuro.
+
+Esta es también la causa raíz de «solo se puede escribir `<style>`, nunca inline style»: la especificidad del
+inline style, 1,0,0,0, se impone a todo el bloque de variables oscuras de `var-dark.scss` y el modo oscuro
+directamente deja de funcionar (véase [Resumen del sistema de temas](/es/theme/overview#restricción-de-inyección-solo-se-puede-escribir-style-nunca-inline-style)).
+
+## La tabla de tokens del modo oscuro
+
+<TokenTable />
+
+## Cómo verificar la completitud del modo oscuro
+
+Tres medios, de menor a mayor fuerza:
+
+1. **La verificación 7 de `pnpm verify:styles` (accesibilidad del modo oscuro)**: un escaneo estático, que
+   encuentra los tokens «horneados en claro pero sin sobrescritura en var-dark». Es el gate de CI.
+2. **`pnpm verify:theme` (AA 4.5:1)**: lee los artefactos de `es/` y calcula el contraste de los presets de tema
+   en ambos modos, claro y oscuro. Necesita un `pnpm build` previo. CI no lo ejecuta; es el guardián manual.
+3. **Inspección visual**: cambiar al modo oscuro en el sitio docs / el playground de cada biblioteca y revisar
+   componente a componente.
+
+La lista de autochequeo al añadir un token nuevo:
+
+- [ ] ¿Este token necesita invertirse en el modo oscuro?
+- [ ] Si lo necesita, ¿se ha añadido la sobrescritura en `var-dark.scss`?
+- [ ] ¿Su valor es una interpolación `#{$lh-*}`? (si es así → es obligatorio añadir la sobrescritura oscura)
+- [ ] ¿Lo que lo consume en el componente es una cadena `var(--lh-x, fallback)`?
+
+## Lo que queda pendiente
+
+La completitud del modo oscuro recibió un replanteo sistemático de los huecos en 0.4.0 (el problema del texto
+invisible de menús / tablas / timelines, véase el changeset). Los que siguen se conocen y están a la espera de
+un tratamiento posterior junto con el «especial de tokens de altura».
+
+## Documentos relacionados
+
+- [Resumen del sistema de temas](/es/theme/overview)
+- [Tokens de diseño](/es/theme/tokens)
+- [Presets de tema](/es/theme/presets)
+- [Fuente de estilos](/es/reference/styles)
+- [Las seis verificaciones de verify:styles](/es/development/verification)

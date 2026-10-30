@@ -19,9 +19,9 @@ import TokenTable from '../../../components/TokenTable.astro'
 
 ```scss
 :root {
-  --lh-primary-color: #2B5FA6;
+  --lh-primary-color: #2B4C7C;
   --lh-text-primary: rgba(0, 0, 0, 0.88);
-  --lh-bg-color: #ffffff;
+  --lh-bg-color: #FAF6F0;
   --lh-border-color: #e5e6eb;
   --lh-radius-base: 6px;
   --lh-spacing-base: 8px;
@@ -34,9 +34,9 @@ import TokenTable from '../../../components/TokenTable.astro'
 ```scss
 [data-theme='dark'],
 .dark {
-  --lh-bg-color: #14141F;
-  --lh-text-primary: rgba(255, 255, 255, 0.85);
-  --lh-border-color: #3A3A4A;
+  --lh-bg-color: #2A2520;
+  --lh-text-primary: #E8E0D8;
+  --lh-border-color: #3A3530;
   // ... 118 条
 }
 ```
@@ -46,7 +46,7 @@ import TokenTable from '../../../components/TokenTable.astro'
 ### SCSS 变量（variables.scss）
 
 ```scss
-$lh-primary-color: #2B5FA6 !default;
+$lh-primary-color: #2B4C7C !default;
 $lh-border-radius-base: 6px !default;
 // ... 183 个
 ```
@@ -55,25 +55,30 @@ SCSS 变量的用途是**参与编译期计算**：颜色混合（`mix()` / `sha
 
 ## 令牌的分层结构
 
-令牌按语义分三档：
+令牌分三档，前两档在全局主题文件、第三档在各组件自己的样式里：
 
 ```scss
-// 1. 基础调色板（最底层，不直接被组件用）
---lh-blue-6: #2B5FA6;
---lh-red-6: #F5222D;
+// 1. SCSS 变量（variables.scss，编译期）
+$lh-primary: #2B4C7C !default;
+$lh-text-primary: #2C2C2C !default;
 
-// 2. 语义令牌（组件消费这一层）
---lh-primary-color: var(--lh-blue-6);
---lh-error-color: var(--lh-red-6);
---lh-text-primary: rgba(0, 0, 0, 0.88);
---lh-bg-color: #ffffff;
+// 2. 全局 CSS 变量（var.scss 的 :root，190 条）
+--lh-primary-color: #{$lh-primary};
+--lh-text-primary: #{$lh-text-primary};
+--lh-bg-color: #FAF6F0;
 
-// 3. 组件令牌（个别组件的特化值）
---lh-button-radius: var(--lh-radius-base);
---lh-switch-knob-color: #fff;
+// 3. 组件级变量（组件自身 scss，作用域是组件 BEM 根）
+.lh-card {
+  --lh-card-bg: var(--lh-bg-color, #FAF6F0);
+  --lh-card-border-radius: calc(var(--lh-border-radius-base, 2px) + 2px);
+}
 ```
 
-**组件只消费第 2、3 层**。改调色板（第 1 层）会级联影响所有语义令牌——这是换肤的杠杆点。
+关键机制：
+
+- **第 1、2 档之间是编译期插值，不是 var() 引用链**：`--lh-primary-color` 的值在构建时由 `$lh-primary` 烤进来，运行时改 SCSS 变量无效（得重编译）。项目里**没有**「基础调色板」中间层——不存在 `--lh-blue-6` 这类色阶变量，语义令牌直接由 SCSS 变量生成。
+- **换肤的两个杠杆点**：改 `variables.scss` 的 SCSS 变量重编译（影响全部语义令牌），或运行时覆盖 `:root` 上的 CSS 变量（`ConfigProvider` 的 themeVars 走这条路，即时生效）。
+- **第 3 档默认引用第 2 档**：组件级变量的默认值通常是全局令牌的 `var()` 引用（带回落），既保持主题联动，又能用 themeVars 定向覆盖单个组件。
 
 ## 语义域
 

@@ -1,0 +1,209 @@
+---
+title: image —— صورة
+description: 'تكبير/تدوير عبر stepZoom/stepRotate، وتراجع قائمة المعاينة عبر normalizePreviewList، وتبديل دائري للصور عبر stepViewerIndex، ودلالة dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+جوهر مكوّن الصورة ليس العرض (يكفي `<img>``)، بل **المعاينة**: النقر للتكبير، والتكبير بعجلة الفأرة، والتدوير، وتبديل الصور المتعددة. ويتولّى `core/image` حسابات حالة العارض — خطوات التكبير وتقييدها، وتطبيع التدوير، والتبديل الدائري لقائمة الصور.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhImage`: صور المنتجات، ومعاينة الصور الرمزية، وصور الهويات، ومعارض الصور.
+- المشاهد التي تحتاج إلى النقر للتكبير (تكبير/تدوير/تبديل بين صور متعددة).
+- **لا يجب استخدامه**: الصور الزخرفية الصرفة (يكفي `<img>` أو صورة الخلفية، دون تكلفة المكوّن)؛ والاقتصاص/التحرير المعقد (فذلك شأن image-cropper).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getImageClassNames,
+  normalizePreviewList,
+  stepZoom,
+  stepRotate,
+  stepViewerIndex,
+  getViewerImageStyle,
+  getImageViewerAria,
+} from '@lh-ui/share/core/image'
+import {
+  LH_IMAGE_ZOOM_MIN,
+  LH_IMAGE_ZOOM_MAX,
+  LH_IMAGE_ZOOM_STEP,
+} from '@lh-ui/share/core/image'
+import type { LhImageFit, LhImageState, LhImageViewerState } from '@lh-ui/share/core/image'
+```
+
+## نية التصميم
+
+**تقييد الفاصلة العائمة في التكبير**: يُضيف `stepZoom` في كل مرة `LH_IMAGE_ZOOM_STEP` (0.25)، ثم يُطبَّق `Math.round(next * 100) / 100` قبل التقييد إلى `[0.25, 4]`. ويضمن التقريض أن يكون `zoom` دائمًا عددًا عشريًا نظيفًا (0.25 / 0.5 / 0.75 …)، لا `1.0000000000000002` — لأن الأخير يجعل `scale()` يُنتج ت сне-notchًا واضحًا للعين.
+
+**تصحيح modulo السالب في التدوير**: `(((rotate + 90) % 360) + 360) % 360` — فإن `%` في JS يُعيد قيمة سالبة للأعداد السالبة (`-90 % 360 === -90`)، والطبقة الخارجية `+360) % 360` تُطبِّعها إلى `[0, 360)`. ورغم أن هذه الدالة لا تجمع إلا +90 ولا تصبح سالبة، فهذا التصحيح دفاعي (إذا مرَّر المستدعي قيمة زاوية سالبة ابتدائية).
+
+**التبديل الدائري في `stepViewerIndex`**: `(index + delta + total) % total` — فالضغط على «السابق» في الصورة الأولى يقفز إلى الأخيرة. وعند `total <= 0` تُعاد القيمة 0 (دفاع عن القائمة الفارغة).
+
+**تراجع `normalizePreviewList`**: عند عدم تمرير `previewSrcList` يُتراجع إلى `[src]` — فيستخدم معاينان الصورة المفردة والصور المتعددة المنطق نفسه، مع اختلاف `total` بأنه 1، فتُخفى أزرار التبديل تلقائيًا.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getImageClassNames` | `(state: LhImageState) => string[]` | أسماء الأصناف | error / previewable |
+| `normalizePreviewList` | `(src, previewSrcList?) => string[]` | قائمة | عند عدم التمرير يُتراجع إلى [src] |
+| `stepZoom` | `(zoom, direction: 1 \| -1) => number` | تكبير جديد | خطوة + تقييد |
+| `stepRotate` | `(rotate: number) => number` | زاوية جديدة | +90°، وتطبيع إلى [0,360) |
+| `stepViewerIndex` | `(index, total, delta) => number` | فهرس جديد | تبديل دائري |
+| `getViewerImageStyle` | `(state: LhImageViewerState) => Record<string, string>` | أنماط | transform |
+| `getImageViewerAria` | `(options?: { id?, label? }) => LhAriaAttrs` | حزمة سمات aria | دلالة dialog |
+
+الثوابت: `LH_IMAGE_ZOOM_MIN = 0.25`، `LH_IMAGE_ZOOM_MAX = 4`، `LH_IMAGE_ZOOM_STEP = 0.25`.
+
+## تعريف الأنواع
+
+```ts
+export type LhImageFit = 'contain' | 'cover' | 'fill' | 'none' | 'scale-down'  // object-fit الأصلية
+
+export interface LhImageState {
+  fit: LhImageFit
+  error: boolean
+  loaded: boolean
+  preview: boolean    // هل قابلة للمعاينة (يحدد ما إذا كان يستجيب للنقر + عرض قناع تلميحي)
+}
+
+export interface LhImageViewerState {
+  zoom: number
+  rotate: number
+  index: number
+  total: number
+}
+
+export const LH_IMAGE_ZOOM_MIN = 0.25
+export const LH_IMAGE_ZOOM_MAX = 4
+export const LH_IMAGE_ZOOM_STEP = 0.25
+```
+
+## إمكانية الوصول
+
+يظهر العارض بصيغة **dialog**، ويُصرَّح بـ `aria-modal`:
+
+```ts
+getImageViewerAria({ id: 'lh-viewer', label: 'الصورة 2 من 5' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-viewer', 'aria-label': 'الصورة 2 من 5' }
+
+getImageViewerAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- يُخبر `aria-modal: true` قارئ الشاشة أن الخلفية غير قابلة للوصول — بالاقتران مع `core/shared/focus-trap` لحصر التركيز، والإغلاق عبر Esc.
+- **قيمة `label` الحامل للترقيم ثمينة**: فعند معاينة صور متعددة ينطق قارئ الشاشة «الصورة 2 من 5»، فيعرف المستخدم كم تبقى من صور؛ وعند صورة واحدة يكفي إعطاء «معاينة الصورة».
+- يجب أن تحمل الصورة المصغَّرة `alt` (أو `role="img" aria-label`) — فهي المعلومة النصية الوحيدة عندما تتعذر رؤية الصورة. والصور الزخرفية تستخدم `alt=""`.
+- أزرار شريط الأدوات (تكبير/تدوير/سابق/تالي) هي أزرار أيقونية، فيجب إعطاؤها `aria-label`.
+- **تنبيه إمكانية الوصول عند فشل التحميل**: صورة العنصر النائب لحالة `error` يجب أن تحمل `role="img"` + `aria-label="فشل تحميل الصورة"`، وإلا لن يعرف مستخدم قارئ الشاشة أن هناك صورة أصلًا.
+
+## أمثلة الاستخدام
+
+```ts
+import { stepZoom, stepRotate, stepViewerIndex, normalizePreviewList } from '@lh-ui/share/core/image'
+
+stepZoom(1, 1)      // 1.25
+stepZoom(4, 1)      // 4 (عند الذروة لا يزيد)
+stepZoom(0.25, -1)  // 0.25 (عند الحضيض لا ينقص)
+stepRotate(0)       // 90
+stepRotate(270)     // 0 (تطبيع إلى [0, 360))
+stepRotate(-90)     // 0 (تصحيح modulo السالب)
+stepViewerIndex(0, 5, -1)   // 4 (تبديل دائري إلى الأخيرة)
+stepViewerIndex(4, 5, 1)    // 0 (تبديل دائري إلى الأولى)
+stepViewerIndex(0, 0, 1)    // 0 (قائمة فارغة)
+normalizePreviewList('a.jpg', ['b.jpg', 'c.jpg'])  // ['b.jpg', 'c.jpg']
+normalizePreviewList('a.jpg', undefined)          // ['a.jpg']
+normalizePreviewList('a.jpg', [])                 // ['a.jpg'] (المصفوفة الفارغة تُتراجع كذلك)
+getViewerImageStyle({ zoom: 1.5, rotate: 90, index: 0, total: 1 })
+// { transform: 'scale(1.5) rotate(90deg)' }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getImageClassNames({ fit, error, loaded, preview })">
+  <img
+    v-if="!error"
+    class="lh-image__img"
+    :src="src"
+    :alt="alt"
+    :style="{ objectFit: fit }"
+    @load="loaded = true"
+    @error="error = true"
+    @click="preview && openViewer()"
+  />
+  <div v-else class="lh-image__error" role="img" aria-label="فشل تحميل الصورة">
+    <LhIcon name="image" />
+  </div>
+  <div v-if="preview && loaded" class="lh-image__mask">
+    <LhIcon name="zoom-in" /> <span>انقر للمعاينة</span>
+  </div>
+</div>
+
+<Teleport to="body">
+  <div v-if="visible" class="lh-image-viewer" v-bind="getImageViewerAria({ id: viewerId, label: viewerLabel })">
+    <div class="lh-image-viewer__mask" @click="close" />
+    <img
+      class="lh-image-viewer__img"
+      :src="list[index]"
+      :style="getViewerImageStyle({ zoom, rotate, index, total: list.length })"
+    />
+    <div class="lh-image-viewer__toolbar">
+      <button type="button" aria-label="تصغير" @click="zoom = stepZoom(zoom, -1)">−</button>
+      <span class="lh-image-viewer__zoom">{{ Math.round(zoom * 100) }}%</span>
+      <button type="button" aria-label="تكبير" @click="zoom = stepZoom(zoom, 1)">+</button>
+      <button type="button" aria-label="تدوير" @click="rotate = stepRotate(rotate)">⟳</button>
+      <template v-if="list.length > 1">
+        <button type="button" aria-label="السابقة" @click="index = stepViewerIndex(index, list.length, -1)">‹</button>
+        <button type="button" aria-label="التالية" @click="index = stepViewerIndex(index, list.length, 1)">›</button>
+      </template>
+    </div>
+  </div>
+</Teleport>
+```
+
+```ts
+const list = computed(() => normalizePreviewList(props.src, props.previewSrcList))
+const viewerLabel = computed(() => `الصورة ${index.value + 1} من ${list.value.length}`)
+```
+
+```tsx
+// React: التكبير بعجلة الفأرة (تعليق onWheel على viewer)
+// const next = stepZoom(zoom, e.deltaY < 0 ? 1 : -1); setZoom(next)
+```
+
+```ts
+// uniapp: <image> مكوّن داخلي (تقابل خاصية mode قيمة object-fit: widthFix / aspectFill وغيرها)؛
+// والعارض يستخدم <view> + <image>، أو يستدعي uni.previewImage (على مستوى النظام، بلا تدوير)
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-image` | الصنف الأساسي |
+| `.lh-image--error` | فشل التحميل |
+| `.lh-image--previewable` | قابلة للمعاينة (قناع عند hover) |
+| `.lh-image__img` | الصورة نفسها |
+| `.lh-image__error` | عنصر نائب للفشل |
+| `.lh-image__mask` | قناع hover |
+| `.lh-image-viewer` | عارض ملء الشاشة (تموضع ثابت) |
+| `.lh-image-viewer__mask` | قناع أسود |
+| `.lh-image-viewer__img` | الصورة الكبيرة (حركة transform) |
+| `.lh-image-viewer__toolbar` / `__zoom` | شريط الأدوات / نسبة التكبير |
+
+لون القناع `rgba(0, 0, 0, 0.5)`؛ وأزرار شريط الأدوات بخلفية داكنة شبه شفافة؛ وانتقال الصورة على `transform` (تكبير وتدوير سلسان).
+
+## ملاحظات
+
+- **علاقة `previewSrcList` بـ `src`**: `previewSrcList` هي قائمة الصور الكبيرة المستخدمة عند المعاينة، وقد تختلف عن `src` للصورة المصغَّرة على الصفحة (المصغَّرة صغيرة لتوفير البيانات، والمعاينة بالأصلية). وعند عدم تمريرها يُتراجع إلى `[src]` — وحينها تُعاين الصورة المصغَّرة نفسها، فالتكبير قد يكون ضبابيًا.
+- **`zoom` عند الحدود لا يتغير**: إذ يُقيَّد `stepZoom` إلى [0.25, 4]، فيمكن للأزرار أن تُعطَّل أو تُعطى تغذية راجعة بصرية، تفاديًا للنقر بلا استجابة.
+- **ترتيب التدوير والتكبير**: `transform: scale(zoom) rotate(rotate)` — تكبير أولًا ثم تدوير. وعكس الترتيب يجعل التدوير يحمل إزاحة التكبير (والفرق طفيف عند الدوران حول المركز، لكنه واضح في تراكيب الإزاحة).
+- **إدارة التركيز**: عند فتح العارض يجب أن يدخل التركيز شريط الأدوات، وعند الإغلاق يعود إلى الصورة المصغَّرة — عالج ذلك بـ `core/shared/focus-trap`، وإلا سيهرب Tab إلى خلف الصفحة.
+- **إعادة المحاولة في حالة `error`**: لا يوفّر core دالة إعادة محاولة؛ ويمكن للطرف البصري تغيير `src` مع إضافة معامل استعلام (`?t=Date.now()`) لفرض إعادة التحميل، لكن بعد تصفير حالة `error` أولًا.
+- **استخدامات `loaded`**: قبل اكتمال التحميل يمكن عرض هيكل عظمي (`skeleton`) أو صورة نائبة ضبابية منخفضة الجودة (LQIP).
+- **الحساسية للذاكرة**: عند معاينة قائمة صور كبيرة، لا يُحمَّل فعلًا من `previewSrcList` سوى ما جاور `index` (المتصفح حسب الحاجة)، لكن لا تعرض عشرات `<img>` دفعة واحدة — فلا يدير core عدد العرض، بل الطرف البصري يحدّه.
+- **ترجمة `fit` في uniapp**: القيم الخمس لـ `object-fit` تقابل قيمًا مختلفة لخاصية `<image mode>` على طرف التطبيقات الصغيرة (لا مقابل مباشر لـ `scale-down`، فيُستخدم عادة `aspectFit` تقريبًا)، وهذا التعيين من شأن الطرف البصري.
+
+<FnPlayground module="image" fn="stepZoom" params='{"zoom": 1, "direction": 1}' />

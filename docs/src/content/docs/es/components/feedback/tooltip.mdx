@@ -1,0 +1,200 @@
+---
+title: tooltip —— Pista de texto
+description: 'retardos de muestra y ocultación con getDefaultDelay (mostrar 200 / ocultar 0), convenio de emparejamiento entre role=tooltip y aria-describedby'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Tooltip es «la explicación complementaria que solo se ve al pasar el cursor»: un icono de botón que no se entiende, un texto de enlace truncado, una celda de tabla que no cabe. `core/tooltip` es muy fino: el posicionamiento lo aporta `shared/popper` y los retardos, `shared/delay`; aquí solo se declara **el ritmo por defecto de este componente** y el **convenio de emparejamiento de aria**.
+
+## Cuándo usarlo
+
+- Cada framework implementa `<LhTooltip>`: añadir una breve explicación de una línea al elemento que lo dispara.
+- Mostrar el contenido completo de un texto truncado (ellipsis).
+- Explicar la semántica de un botón de icono.
+- **No usarlo para**: contenido que requiere interacción (usa `popover` — dentro de un tooltip no hay botones); operaciones de confirmación (usa `popconfirm`); retroalimentación de errores (usa `message`); **móvil** (sin hover, un tooltip en pantalla táctil es casi imposible de disparar; usa un popover con disparo por click o una pulsación larga).
+
+## Importación
+
+```ts
+import {
+  getPopperClassNames,
+  getPopperStyle,
+  getDefaultDelay,
+  getTooltipPopperAria,
+  getTooltipTriggerAria,
+} from '@lh-ui/share/core/tooltip'
+import type {
+  LhTooltipPlacementCore,
+  LhTooltipTriggerCore,
+  LhTooltipEffectCore,
+  LhTooltipState,
+} from '@lh-ui/share/core/tooltip'
+```
+
+## Intención de diseño
+
+**La asimetría de los retardos por defecto**: mostrar 200 ms, ocultar 0 ms — **mostrar despacio, ocultar rápido**. El retardo de muestra evita disparos por error (un ratón que barre una fila de botones no debería abrir la pista de cada uno); el de ocultación, 0 ms, garantiza que al salir del elemento desaparezca de inmediato, sin arrastrarse. Compáralo con los 100 ms de ocultación de `popover` (más abajo): la diferencia de ritmo entre ambos refleja el peso de la interacción.
+
+**El convenio de emparejamiento de aria**: el disparador lleva `aria-describedby` apuntando al id de la capa flotante y esta lleva `role="tooltip"`. Es la práctica estándar de WAI-ARIA: al enfocar el disparador, el lector de pantalla lee también el contenido de la pista y **el usuario no necesita pasar el cursor para obtener la información** — es el punto de accesibilidad más fácilmente olvidado: un tooltip puramente visual es completamente invisible para los usuarios de teclado.
+
+**El tratamiento de los alias `@deprecated`**: `getPopperClass` / `getPopperStyle` son los nombres antiguos, aún usados por el repo vue2 downstream; se mantienen por compatibilidad pero marcados como obsoletos, y el código nuevo debe usar `getPopperClassNames` (el convenio getXxxClassNames). **No se pueden borrar** — downstream todavía los importa; un renombrado obliga a cambiar downstream al unísono.
+
+**`getPopperStyle` solo gestiona maxWidth**: número → px, cadena tal cual. Las coordenadas de posicionamiento las calcula `computePosition` de `shared/popper`; el transform y el desplazamiento de la capa flotante son el resultado de que la capa UI enlace el estado del popper.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `getPopperClassNames` | `(state: { effect, placement }) => string[]` | clases | efecto de tema + posición |
+| `getPopperStyle` ⚠️ | `(state: { maxWidth }) => Record<string, string>` | estilos inline | normalización de maxWidth |
+| `getDefaultDelay` | `(show?, hide?) => { show, hide }` | retardos | por defecto 200 / 0 |
+| `getTooltipPopperAria` | `(id?) => LhAriaAttrs` | bolsa aria | role="tooltip" |
+| `getTooltipTriggerAria` | `(tooltipId?) => LhAriaAttrs` | bolsa aria | aria-describedby |
+
+Las marcadas con ⚠️ son alias de compatibilidad `@deprecated`; el código nuevo usa los nombres nuevos.
+
+Constantes (tipos): `LhTooltipPlacementCore` 12 posiciones, `LhTooltipTriggerCore` y `LhTooltipEffectCore = 'dark' | 'light'`.
+
+## Definiciones de tipos
+
+```ts
+export type LhTooltipPlacementCore =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhTooltipTriggerCore = 'hover' | 'focus' | 'click' | 'contextmenu'
+export type LhTooltipEffectCore = 'dark' | 'light'
+
+export interface LhTooltipState {
+  visible: boolean
+  effect: LhTooltipEffectCore
+  placement: LhTooltipPlacementCore
+  maxWidth?: number | string
+  showDelay?: number
+  hideDelay?: number
+}
+```
+
+## Accesibilidad
+
+```ts
+getTooltipPopperAria('tip-1')
+// { role: 'tooltip', id: 'tip-1' }
+getTooltipTriggerAria('tip-1')
+// { 'aria-describedby': 'tip-1' }
+getTooltipTriggerAria()  // {} (sin id no se emite; en ese caso se debe usar un aria-label de respaldo)
+```
+
+- **El id debe coincidir en ambos extremos**: el valor de `aria-describedby` del disparador debe ser igual al id real de la capa flotante ya renderizada. En el render del lado servidor el id puede estar vacío — si no se pasa id, la función devuelve un objeto vacío y la capa UI debería usar un `aria-label` de respaldo; nunca dejes que `aria-describedby` apunte a un elemento inexistente (el lector de pantalla anuncia «el elemento referenciado no existe»).
+- **El disparo por focus cubre a los usuarios de teclado**: con `trigger: 'focus'`, al enfocar con Tab se muestra — es el comportamiento accesible por defecto recomendado; un hover-only es completamente invisible para los usuarios de teclado.
+- **Las restricciones de contenido de role="tooltip"**: WAI-ARIA establece que un tooltip **no debe contener elementos interactivos** (botones, enlaces) — si necesitas interacción, usa `popover` (role=dialog). Esta restricción también se refleja en los estilos: el tooltip suele tener pointer-events: none.
+- **Texto largo**: `maxWidth` limita la anchura del ajuste de línea, pero un tooltip no debería alojar párrafos — si superas una frase, valora un popover.
+
+## Ejemplos de uso
+
+```ts
+import { getDefaultDelay, getPopperClassNames, getPopperStyle } from '@lh-ui/share/core/tooltip'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 0 }
+getDefaultDelay(0, 500)                // { show: 0, hide: 500 } (el valor explícito prevalece)
+
+getPopperClassNames({ effect: 'dark', placement: 'top' })
+// ['lh-tooltip__popper', 'lh-tooltip__popper--dark', 'lh-tooltip__popper--top']
+
+getPopperStyle({ maxWidth: 200 })    // { maxWidth: '200px' }
+getPopperStyle({ maxWidth: '30em' }) // { maxWidth: '30em' }
+getPopperStyle({})                   // {}
+```
+
+```ts
+// Máquina de estados de muestra/ocultación (capa UI): los retardos los normaliza
+// resolveDelay de shared/delay
+const state = reactive<LhTooltipState>({
+  visible: false, effect: 'dark', placement: 'top',
+})
+
+let showTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleShow() {
+  clearTimeout(showTimer)
+  const { show } = getDefaultDelay(props.showDelay, props.hideDelay)
+  showTimer = setTimeout(() => { state.visible = true }, show)
+}
+function scheduleHide() {
+  clearTimeout(showTimer)
+  const { hide } = getDefaultDelay(props.showDelay, props.hideDelay)
+  setTimeout(() => { state.visible = false }, hide)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTooltip content="Tras borrar no se puede recuperar" placement="top">
+    <button type="button" aria-label="Eliminar"><LhIcon name="delete" /></button>
+  </LhTooltip>
+</template>
+
+<!-- Dentro del componente: disparador y capa flotante -->
+<template>
+  <span
+    class="lh-tooltip__trigger"
+    v-bind="getTooltipTriggerAria(popperId)"
+    @mouseenter="scheduleShow" @mouseleave="scheduleHide"
+    @focus="scheduleShow" @blur="scheduleHide"
+  >
+    <slot />
+  </span>
+  <teleport to="body">
+    <transition name="lh-tooltip-fade">
+      <div
+        v-if="state.visible"
+        :id="popperId"
+        :class="getPopperClassNames({ effect: state.effect, placement: state.placement })"
+        :style="{ ...getPopperStyle({ maxWidth: props.maxWidth }), ...popperStyle }"
+        v-bind="getTooltipPopperAria(popperId)"
+        role="tooltip"
+      >
+        <slot name="content">{{ props.content }}</slot>
+      </div>
+    </transition>
+  </teleport>
+</template>
+```
+
+```tsx
+// React: el elemento trigger clona los children para inyectarles eventos y aria
+// (React.cloneElement); la capa flotante usa createPortal + useFloating
+// (@floating-ui o un popper propio)
+```
+
+```ts
+// uniapp: <view> + catchtouchstart; hover no existe en la plataforma de miniprogramas,
+// el tooltip sirve principalmente en h5; en escenarios de miniprograma se debería
+// sustituir por un popover con disparo por click
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-tooltip__trigger` | envoltura del disparador (inline) |
+| `.lh-tooltip__popper` | capa flotante |
+| `.lh-tooltip__popper--{dark\|light}` | efecto de tema |
+| `.lh-tooltip__popper--{top\|top-start\|…}` | 12 posiciones (incluida la dirección de la flecha) |
+
+Efecto dark: `--lh-tooltip-bg-dark` (casi negro) + texto blanco; efecto light: `--lh-bg-color` + `--lh-text-primary`. Esquinas redondeadas `--lh-border-radius-small`, relleno `--lh-tooltip-padding`, tamaño de fuente `--lh-font-size-small`.
+
+## Advertencias
+
+- **La limpieza bidireccional de los temporizadores**: si el puntero sale antes de que el temporizador de muestra se dispare, hay que clearTimeout; si no, la pista aparece cuando el ratón ya se ha ido. La máquina de estados del ejemplo de arriba solo limpia showTimer; una implementación completa debe limpiar en ambos sentidos.
+- **Entrar en la propia capa flotante**: el `pointer-events` del tooltip suele ser none, así que no existe «entrar en la capa flotante» — pero popover sí lo permite, y de ahí viene la diferencia en los retardos de ocultación de ambos.
+- **Controlado y no controlado**: en el modo controlado con `v-model:visible`, el cambio de visible desde fuera debe sincronizar el state interno; los temporizadores deben resetearse con el estado controlado.
+- **Varios tooltip coexistiendo**: el popperId de cada instancia debe ser único (useId o un contador autoincremental), o el aria-describedby apuntará al elemento equivocado.
+- **`getPopperClass` / `getPopperStyle` son alias deprecated**: el código nuevo usa `getPopperClassNames`; los nombres antiguos todavía son referenciados por el repo vue2 downstream, así que antes de eliminarlos hay que cambiar downstream (el orden de publicación de la línea roja 5).
+- **El tratamiento del contenido vacío**: si `content` está vacío no se debería mostrar una capa flotante vacía — la capa UI omite la muestra cuando el contenido está vacío (`v-if="content"`); no es responsabilidad de core.
+- **El elemento disparador desactivado**: un botón nativo `disabled` no dispara los eventos mouseenter/focus y el tooltip deja de funcionar. La práctica habitual es envolver el disparador en un elemento no desactivado (el span `.lh-tooltip__trigger`) que reciba los eventos — esta es una de las razones de que exista la clase trigger.
+
+<FnPlayground module="tooltip" fn="getDefaultDelay" params='{"showDelay": null, "hideDelay": null}' />

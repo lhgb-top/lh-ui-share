@@ -1,0 +1,194 @@
+---
+title: pagination —— ページネーション
+description: 'getPaginationRange のウィンドウ収縮アルゴリズム（先頭末尾常駐 + 両側省略記号）、clampPage の範囲外 正規化、aria-current=page'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ページネーションは「データ量が 1 画面を超える」ときの標準的なナビゲーションです。中核の難しさはページをめくることではなく、**ページ番号区間の表示**にあります：100 ページあれば 100 個のボタンをすべて描くわけにはいきません。先頭末尾ページ + 現在のウィンドウ + 省略記号で位置を表しつつ素早いジャンプも提供する方法は、ライブラリごとにアルゴリズムが異なります。`core/pagination` が実装するのは広く普及した「ウィンドウ収縮」アルゴリズムで、各種の不正入力も正規化します。
+
+## いつ使うか
+
+- 各端末で `LhPagination` を実装するケース：テーブル下部のページネーション、検索結果のページ割り、アルバムのページ割り。
+- データがページ分割可能で、ユーザーが明示的にページ番号を制御する必要があるシーン。
+- **使うべきでないケース**：無限スクロール読み込み（`virtual-list` かスクロール監視を使う）；データ量が 1 画面に収まる（ページ分割しない方がシンプル）。
+
+## インポート方法
+
+```ts
+import {
+  getPageCount,
+  clampPage,
+  getPaginationRange,
+  getPaginationItemAria,
+  formatMessage,
+} from '@lh-ui/share/core/pagination'
+import type {
+  LhPaginationRangeItem,
+  LhPaginationRangeState,
+  LhPaginationMessageParams,
+} from '@lh-ui/share/core/pagination'
+```
+
+## 設計意図
+
+**`getPageCount` の 2 引数サニタイズ**：`total` と `pageSize` はどちらも `shared/sanitize.sanitizeNumber` を経由します——NaN / Infinity が NaN ページとして入り込むことはありません。この防御は無駄ではありません：`total` はしばしば非同期の API から来て、読み込み中は undefined かもしれません。`Math.ceil(undefined / 10)` は NaN で、NaN は `clampPage` や区間アルゴリズムをすべて失效させます。
+
+**`clampPage` の NaN と Infinity への区別対応**：NaN は不正とみなして先頭ページにフォールバックします；**±Infinity はクランプに委ねます**——`Infinity` は末尾ページ、`-Infinity` は先頭ページに落ちます。この区別には実用的な意味があります：受控モードで外部から渡された不正値（NaN）は安全な位置に戻るべきですが、「末尾へジャンプ」を Infinity で表現するのは正当な使い方です。
+
+**区間アルゴリズムの吸着ロジック**：`getPaginationRange` の `current` はまず `clampPage` で正規化されます——コメントに実際のシーンが記録されています：UI 層が透過する `innerCurrent` は一時的に範囲を超えることがあります（受控モードで外部値と内部値が同期していない、あるいは総数が減ったあと current が同期されていない）。クランプしないと、現在のページが表示ウィンドウの外に落ち、省略記号の判定が反転してしまいます。
+
+**省略記号は真に隙間が生じるときだけ出力**：`showLeftEllipsis = leftSibling > 2` であり `> 1` ではありません——ウィンドウが先頭ページに接しているとき（例：current=3、siblingCount=1）、左側の「2」は 1 つだけ省略されることになります。このとき 1,2,3,4,5 と連続して表示する方が、省略記号を差し込むより明確です。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getPageCount` | `(total, pageSize) => number` | 総ページ数（最小 1） | 2 引数サニタイズ |
+| `clampPage` | `(page, pageCount) => number` | クランプされたページ番号 | NaN→1、Infinity→末尾ページ |
+| `getPaginationRange` | `(state: LhPaginationRangeState) => LhPaginationRangeItem[]` | 区間項目配列 | ウィンドウ収縮アルゴリズム |
+| `getPaginationItemAria` | `(options: { page, current, labelTemplate? }) => LhAriaAttrs` | aria 属性バッグ | aria-current / aria-label |
+| `formatMessage` | `shared/format` からの再エクスポート | 補間テキスト | 既存のインポートパスを維持 |
+
+## 型定義
+
+```ts
+export type LhPaginationRangeItemType = 'page' | 'ellipsis'
+
+export interface LhPaginationRangeItem {
+  type: LhPaginationRangeItemType
+  page: number    // ellipsis 項目は常に 0、位置がすなわち意味
+}
+
+export interface LhPaginationRangeState {
+  current: number       // 現在のページ（1 から開始）
+  pageCount: number
+  siblingCount?: number // 現在ページの両側のページ数、デフォルト 1
+}
+
+export type LhPaginationMessageParams = Record<string, string | number>
+```
+
+## アクセシビリティ
+
+```ts
+getPaginationItemAria({ page: 3, current: 3, labelTemplate: '{page} ページ' })
+// { 'aria-current': 'page', 'aria-label': '3 ページ' }
+
+getPaginationItemAria({ page: 5, current: 3, labelTemplate: '{page} ページ' })
+// { 'aria-label': '5 ページ' }
+
+getPaginationItemAria({ page: 5, current: 3 })
+// {}（テンプレートがない場合は aria-label を出力しない；ボタン内の数字自体が読める）
+```
+
+- 現在ページは `aria-current="page"` を出力します——これはページネーションの APG 標準の慣例で、スクリーンリーダーはページ番号を普通のリンクとしてではなく「現在のページ」として読み上げます。
+- **省略記号ボタン**には `aria-label`（例：「5 ページ先へジャンプ」）か `disabled` が必要です——素の `…` テキストはスクリーンリーダーにとって情報量ゼロです。これはページネーションのアクセシビリティ缺陷として最もよくあるものです。
+- ページネーション全体は `<nav aria-label="ページネーション">` で包み、ページの他のナビゲーションと区別します。
+- `labelTemplate` は言語パック（`pagination.page` など）から来て、`{page}` プレースホルダーをこの関数が置き換えます。
+
+## 使用例
+
+```ts
+import { getPageCount, clampPage, getPaginationRange } from '@lh-ui/share/core/pagination'
+
+getPageCount(100, 10)    // 10
+getPageCount(105, 10)    // 11
+getPageCount(0, 10)      // 1（最小 1 ページ）
+getPageCount(NaN, 10)    // 1（total は 0 にサニタイズされ、その後 Math.max(1, …) で 1 に引き上げられる）
+getPageCount(100, NaN)   // 100（pageSize はデフォルト値 1 にサニタイズ、つまり 1 ページあたり 1 件）
+
+clampPage(5, 10)    // 5
+clampPage(0, 10)    // 1
+clampPage(15, 10)   // 10
+clampPage(NaN, 10)  // 1
+clampPage(Infinity, 10)  // 10（Infinity は末尾ページへ）
+
+// siblingCount のデフォルトは 1、総スロット = 1*2 + 5 = 7
+getPaginationRange({ current: 1, pageCount: 10 })
+// [1, 2, 3, …, 10]
+getPaginationRange({ current: 5, pageCount: 10 })
+// [1, …, 4, 5, 6, …, 10]
+getPaginationRange({ current: 10, pageCount: 10 })
+// [1, …, 8, 9, 10]
+getPaginationRange({ current: 5, pageCount: 5 })
+// [1, 2, 3, 4, 5]（ページ数がスロットより少ないので全表示、省略記号なし）
+getPaginationRange({ current: 99, pageCount: 10 })
+// [1, …, 8, 9, 10]（範囲外の current はクランプされる）
+```
+
+```vue
+<!-- Vue3 -->
+<nav class="lh-pagination" aria-label="ページネーション">
+  <button type="button" class="lh-pagination__prev" :disabled="current <= 1" @click="go(current - 1)">
+    前のページ
+  </button>
+  <template v-for="(item, i) in range" :key="i">
+    <span v-if="item.type === 'ellipsis'" class="lh-pagination__ellipsis">…</span>
+    <button
+      v-else
+      type="button"
+      class="lh-pagination__item"
+      :class="{ 'is-active': item.page === current }"
+      v-bind="getPaginationItemAria({ page: item.page, current, labelTemplate: t('pagination.page') })"
+      @click="go(item.page)"
+    >
+      {{ item.page }}
+    </button>
+  </template>
+  <button type="button" class="lh-pagination__next" :disabled="current >= pageCount" @click="go(current + 1)">
+    次のページ
+  </button>
+  <select v-model="pageSize" class="lh-pagination__sizes">
+    <option :value="10">10 件/ページ</option>
+    <option :value="20">20 件/ページ</option>
+    <option :value="50">50 件/ページ</option>
+  </select>
+  <span class="lh-pagination__total">全 {{ total }} 件</span>
+</nav>
+```
+
+```ts
+const pageCount = computed(() => getPageCount(props.total, pageSize.value))
+const range = computed(() =>
+  getPaginationRange({ current: current.value, pageCount: pageCount.value }),
+)
+function go(page: number) {
+  const next = clampPage(page, pageCount.value)
+  if (next !== current.value) emit('update:current', next)
+}
+```
+
+```tsx
+// React：受控ページネーション。current は親コンポーネントが保持し、go で clampPage してからコールバック
+```
+
+```ts
+// uniapp：<view> + <view> で区間項目を列挙；ページジャンプは <input type="number"> + ジャンプボタン
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-pagination` | 基本クラス（flex 中央揃え） |
+| `.lh-pagination__prev` / `__next` | 前 / 次ページボタン |
+| `.lh-pagination__item` | ページ番号ボタン |
+| `.lh-pagination__item.is-active` | 現在ページ（主色の背景） |
+| `.lh-pagination__ellipsis` | 省略記号 |
+| `.lh-pagination__sizes` | 1 ページあたりの件数セレクター |
+| `.lh-pagination__total` / `__jump` | 合計件数テキスト / ジャンプ入力 |
+
+現在ページは `--lh-primary-color` の背景 + `--lh-color-on-primary` の文字；無効ボタン `--lh-text-disabled`；ボタン間隔は `--lh-gap-small` で制御します。
+
+## 注意事項
+
+- **ページ番号は 1 から**：`current`、`page`、`pageCount` はすべて 1 から始まります。`table` の行添字（0 から）とは異なり、混同しやすいポイントです。
+- **`pageCount` と `total` の関係**：UI 層は通常 `getPageCount(total, pageSize)` で算出しますが、`pageCount` を直接渡すこともできます（サーバー側で総ページ数が分かっている場合）。2 つの来源を同時に使わないでください。不整合が生じます。
+- **`pageSize` 変化時の `current` の収束**：50 件/ページから 10 件/ページに切り替えると、現在のページが新しい `pageCount` を超える可能性があります——`watch(pageSize)` の中で `clampPage` を一度呼んでください。そうしないと空のページが表示されます。
+- **省略記号のインタラクション**：省略記号のクリックは通常 5 ページジャンプします（`current ± 5`）；core はこの挙動を内蔵せず、UI 層が実装して省略記号ボタンに `aria-label` を付けます。
+- **`siblingCount` とスロット**：`totalSlots = siblingCount * 2 + 5`（先頭末尾ページ + 現在ページ + 2 つの省略記号枠 + 両側の兄弟）。`pageCount <= totalSlots` のときは省略記号なしの全表示になります——`siblingCount: 2` に設定すると敷居は 9 ページです。
+- **受控モードの一時的な範囲外**：`getPaginationRange` の内部で `current` はすでにクランプされているため、レンダリングは壊れません；ただし `aria-current` はクランプ後のページに付きます。外部の状態が同期されれば自然に一致します。
+- **`formatMessage` の再エクスポート**：このモジュールは `shared/format` から同じバインディングで `formatMessage` を再エクスポートしています。これは下流の既存のインポートパス（`pagination.total` のような `{total}` プレースホルダーを含むテキストの補間）を維持するためだけのものです。新規コードは `core/shared/format` から直接インポートしてください。
+
+<FnPlayground module="pagination" fn="getPaginationRange" params='{"state": {"current": 5, "pageCount": 20, "siblingCount": 1}}' />

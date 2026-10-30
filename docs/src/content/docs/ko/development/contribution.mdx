@@ -1,0 +1,137 @@
+---
+title: 기여 가이드
+description: '6개의 레드라인, 명명 규범, 커밋 메시지 관례와 PR 전 자점검 체크리스트'
+---
+
+@lh-ui/share에 보내는 모든 기여를 환영합니다. 이 문서는 협업에 참여하기 위한 **굳은 제약**입니다——대부분의 관례는 취향의 문제가 아니라, 네 개의 UI 라이브러리가 정상 동작하기 위한 전제입니다.
+
+## 6개의 레드라인
+
+### 1. `src/`에 어떤 프레임워크 의존도 금지
+
+```ts
+// ❌ 절대 금지
+import { ref } from 'vue'
+import { useState } from 'react'
+import { ... } from '@dcloudio/uniapp'
+
+// ✅ 순수 함수와 타입만 허용
+export function computeSomething(input: Foo): Bar { ... }
+```
+
+**왜**: share는 가족의 **유일한 프레임워크 무관 공유층**입니다. 한 곳의 `import 'vue'`가 React 판과 uniapp 판을 망가뜨립니다. CI에 grep 게이트가 있습니다.
+
+반응형 배선은 각 UI 계층의 몫입니다(`ref()` / `useState()` / `useSyncExternalStore()`), core는 순수 데이터만 내보냅니다. [lhlocale의 설계](/ko/reference/locales#각-단말이-version을-구독하는-방법)를 참조하세요: 순수 이벤트 이미터이고, 각 단말이 스스로 재렌더링 신호로 바꿉니다.
+
+### 2. `styles/`가 컴포넌트 스타일의 유일한 원본
+
+- 어느 UI 라이브러리에든 스타일을 복사해 손대는 것을 금지합니다.
+- **모든 스타일 변경은 이 저장소에서만 일어납니다**.
+
+크로스 플랫폼 전환 클래스명 차이는 [세 개의 transition mixin](/ko/reference/transition-mixins)이 흡수하고, **컴포넌트 스타일은 다시 두 벌로 직접 적는 것을 금지**하며, 모두 `@include`로 씁니다. 상태를 자손 노드에 걸어야 할 때는 두 번째 인수를 넘깁니다.
+
+### 3. core 단위 테스트는 유일한 한 벌
+
+`tests/unit/`은 **세 라이브러리가 공유하는** 테스트 결과입니다. UI 라이브러리는 이 저장소의 core 단위 테스트를 복사해서는 안 됩니다.
+
+### 4. ~~1px 얇은 테두리에는 반드시 `/* hairline */` 표기~~ —— **폐지됨**
+
+uniapp v3는 px를 직접 내보내고 더는 rpx로 변환하지 않아 hairline 표기가 쓸모를 잃었습니다(`docs/bugfix-log.md` D-02 참조). `styles/` 안의 기존 65곳 역사 표기는 평범한 주석으로 남겨두고, **새로 추가하는 1px 테두리에는 표기가 필요 없습니다**. 구조적 테두리(2px / 3px)는 원래 표기하지 않았습니다.
+
+### 5. 버전 릴리스 순서: share 먼저, UI 라이브러리 뒤
+
+share 변경 → changeset → 릴리스 → 각 라이브러리가 `pnpm up @lh-ui/share`로 회귀. **건너뛸 수 없습니다**——UI 라이브러리의 릴리스는 이미 릴리스된 share tarball에 의존합니다.
+
+### 6. 자체 개발 기호에는 반드시 LH 저두사
+
+새로운 상수 / 타입 / 인터페이스를 추가할 때 **즉시 지키고**, 나중에 일괄 수정으로 미뤄지지 않게 합니다(역사적 이름 변경은 `lh-prefix-naming` changeset을 보세요).
+
+## 명명 규범
+
+plus 저장소의 `docs/project/development-guide.md`에 정렬하고, 온 가족이 통일합니다:
+
+| 계층 | 규범 | 예 |
+| --- | --- | --- |
+| 역도메인 뿌리 | `top.lhgb`(`www.lhgb.top`을 뒤집음) | 가족의 모든 저장소 이름의 뿌리; `package.json`의 homepage / repository / author는 `lhgb.top` 사용 |
+| JS / npm 패키지명 | `@lh-ui/*` scope | npm 패키지명에는 마침표가 허용되지 않아, 역도메인은 메타정보 계층으로 |
+| 상수 | `LH_XXX`, `LH_<모듈>_<개념>` | `LH_SIZE_DEFAULT`, `LH_THEME_PRESETS` |
+| 기본값 상수 | `DEFAULT` 접미사 | `LH_DRAWER_DIRECTION_DEFAULT` |
+| 타입 / 인터페이스 | `LhXxx` | `LhThemePreset`, `LhSxProps` |
+| 모듈 수준 단일체 / 소문자 객체 | `lhXxx` | `lhlocale` |
+| BEM 클래스명 | `lh-xxx` | `lh-button__text--disabled` |
+| 컴포넌트 name | `LhXxx` | `name: 'LhButton'` |
+
+### 면제 등록
+
+관례적으로 굳어져 접두사를 강제하지 않는 것들(변경 전에 여기에 이유를 등록):
+
+- **언어 팩 내보내기 `zhCN` / `enUS`** —— 표준 locale 명명이고, 세 개의 UI 라이브러리가 공개 API로 다시 내보내므로, 이름 변경의 파괴 면이 너무 큽니다.
+- **테마 사전 설정 이름의 문자열 값**(`name: 'cerblue'` 등) —— 사용자가 ConfigProvider의 `theme`에 적는 설정값이므로, 바꾸면 모든 하류 사용자의 설정이 깨집니다; 대응하는 **TS 식별자에는 여전히 접두사**가 붙습니다(`LhCerblue`).
+- **제삼자 의존의 내보내는 기호**는 강제하지 않습니다.
+
+## 디렉터리 책임
+
+| 디렉터리 | 책임 |
+| --- | --- |
+| `src/core/<name>/` | 컴포넌트 순수 함수 로직(`logic.ts` / `types.ts` / `index.ts`), 프레임워크 가져오기 없음 |
+| `src/core/shared/` | 컴포넌트 간 공유 코어(12개 모듈, [총관](/ko/core/overview) 참조) |
+| `src/theme/` | theme TS 측(타입과 다섯 개의 사전 설정) |
+| `src/constants/` / `src/locales/` / `src/types/` / `src/utils/` | 상수 / 언어 팩 / 타입 / 순수 도구 |
+| `styles/` | 컴포넌트 BEM 스타일의 유일한 원본(`<name>/index.scss` + `theme/common/*.scss`) |
+| `tests/unit/` | core 단위 테스트 유일한 한 벌 |
+| `scripts/` | 빌드와 검증 스크립트 |
+| `docs/` | 문서 사이트(Astro Starlight), **npm 산물에 들어가지 않음** |
+
+## 커밋 메시지 관례
+
+- **주석과 커밋 메시지는 한국어로**.
+- **커밋 메시지는 markdown으로 아주 상세하게**: 제목 행 + 범위 설명 + 새로 만든 / 수정한 파일 목록 + 설계 요점 표 + 검증 상태.
+- Prettier 설정: 홑따옴표, 세미콜론 없음, 2칸 들여쓰기, printWidth 100. `pnpm format`은 설정 파일만 덮고, 나머지는 손으로 맞춥니다.
+
+## 새 core 컴포넌트 추가 목록
+
+1. `src/core/<name>/{logic,types,index}.ts` 세 벌의 세트
+2. `tests/unit/core/<name>.spec.ts`
+3. `src/core/index.ts`에 내보내기 추가
+4. `styles/<name>/index.scss`(없으면 어느 단말에서 스타일 산물 없이 조용히 건너뛰어짐)
+5. changeset(minor)
+
+그리고 다음을 실행:
+
+```bash
+pnpm test && pnpm lint && pnpm typecheck
+pnpm build                    # sync:exports가 새 exports 키를 생성
+pnpm verify:dts && pnpm verify:styles
+```
+
+## PR 전 자점검 체크리스트
+
+- [ ] `src/` 안에 `import 'vue' | 'react' | '@dcloudio/*'`가 전혀 없음(레드라인 1)
+- [ ] 스타일 변경은 `styles/`에만(레드라인 2)
+- [ ] 색은 모두 `var(--lh-*, fallback)`, 새로 하드코딩된 색 값 없음
+- [ ] 새로 추가한 전환 클래스명은 mixin을 사용, `-enter-from` / `-leave-from`을 직접 적지 않음
+- [ ] 새로 추가한 토큰은 `var.scss`에; 값이 `#{$lh-*}` 보간이라면 `var-dark.scss`에 대응하는 덮어쓰기가 있음
+- [ ] 새로 추가한 기호에 `LH` / `Lh` 접두사(레드라인 6)
+- [ ] `pnpm test` / `pnpm lint` / `pnpm typecheck` 통과
+- [ ] `pnpm build` 뒤 `pnpm verify:dts` / `pnpm verify:styles` 통과
+- [ ] changeset이 있고, 단계가 올바름
+- [ ] 새 컴포넌트에 `styles/<name>/index.scss`가 있고 `tests/unit/core/<name>.spec.ts`가 존재(레드라인 3)
+- [ ] 토큰 / 클래스명 / 아이콘을 바꾸었다면 `pnpm docs:data`를 돌려 문서 데이터를 새로고침함
+
+## 알려진 할 일(뒤이은 changeset으로 기록, 인계 환영)
+
+「높이 토큰 특별 조사」:
+
+1. 각 컨트롤의 높이가 통일되지 않음(input 37 / select 32 / cascader 27→32 / date-time 33 / input-number 32), 근원은 `var.scss`에 `--lh-control-height-*` 토큰이 없다는 것
+2. input `--has-label`의 비대칭 `padding-top: 16px`
+3. spinner와 icon의 같은 이름 크기 단계가 일치하지 않음(small 16 vs 14)
+4. checkbox 체크 표시가 `top:2/left:5`로 고정되어 50% 가운데 정렬이 아님(16px 박스에서는 올바르나, 크기를 바꾸면 어긋남)
+5. switch의 `translate(-50%,-50%)`가 base와 keyframes에 중복으로 하드코딩됨
+
+## 관련 문서
+
+- [프로젝트 소개](/ko/guide/introduction) —— 가족 안에서 share의 위치
+- [명명 관례](/ko/guide/naming) —— 명명 규범의 완전판
+- [각 단말 스타일 주입 전략](/ko/guide/injection) —— 레드라인 2의 실행 메커니즘
+- [검증 체계](/ko/development/verification) —— PR 전에 돌려야 할 검증
+- [릴리스 절차](/ko/development/release) —— 레드라인 5의 완전한 흐름

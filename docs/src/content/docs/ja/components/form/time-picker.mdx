@@ -1,0 +1,223 @@
+---
+title: time-picker —— 時刻選択
+description: 'parseTime / formatTime の固定幅トークンの解析、generateTimeColumn のステップ列、wrapTimeValueInRange のラップアラウンド、dialog セマンティクス'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+時刻選択は**3 列のリール**（時 / 分 / 秒）のインタラクションです：ユーザーは 1 つの入力フィールドに数字を打ち込むのではなく、それぞれの列を回します。`core/time-picker` が管理するのは固定幅フォーマット文字列の解析と逆解析、ステップ幅による列の生成、選択可能な値域のフィルタとラップアラウンド、そして APG の dialog + listbox セマンティクスです。`time`（純粋な時刻）と `date-time`（日付 + 時刻）の 2 つのモードをサポートします。
+
+## いつ使うか
+
+- 各端の `LhTimePicker` 実装：予約時刻、定時タスク、営業時間の設定。
+- 値が「時刻」で、粒度が分または秒のシーン。
+- **使うべきでない**：日付だけで時刻が不要なら `date-picker`；時間の幅が必要なら 2 つの time-picker か区間モード `isRange` を使います。
+
+## インポート方法
+
+```ts
+import {
+  padNumber,
+  formatTime,
+  parseTime,
+  extractTime,
+  generateTimeColumn,
+  createDateTime,
+  isValidTime,
+  formatDateToTimeString,
+  getHourStep,
+  getMinuteStep,
+  getSecondStep,
+  getDisabledHours,
+  getDisabledMinutes,
+  getDisabledSeconds,
+  getHourRange,
+  filterTimeColumnByRange,
+  wrapTimeValueInRange,
+  clampTimeValue,
+  getTimePickerClassNames,
+  getTimePickerTriggerAria,
+  getTimePickerPanelAria,
+  getTimePickerColumnAria,
+} from '@lh-ui/share/core/time-picker'
+import type {
+  LhTimeData,
+  LhTimeColumn,
+  LhTimePickerState,
+  LhTimePickerOptions,
+  LhTimeColumnType,
+  LhTimePickerMode,
+  LhTimeSelectEventData,
+} from '@lh-ui/share/core/time-picker'
+```
+
+## 設計意図
+
+`parseTime` / `formatTime` が汎用の日付ライブラリではなく**固定幅トークン**（`HH` / `mm` / `ss` がそれぞれ 2 桁）を使うのは、意図的な取舍です：時刻は 3 つの成分しかなく、`substring(idx, idx+2)` の位置ベースの解析は正規表現や moment よりはるかに軽く、しかも `formatTime` と厳密に対称です——書いたものをそのまま読み戻せます。解析失敗は一律に null を返し、部分的なダーティーデータは返しません。
+
+`generateTimeColumn` の `step` には防御があります：正でない値は 1 に正規化し（`step: 0` は `for` ループを無限ループにさせます）、小数は切り捨てます（`step: 2.5` は 2 に）。`wrapTimeValueInRange` は**範囲が全値域をカバーするとき元の値を返します**——これは旧挙動との互換のためです：たとえば時刻列の範囲が [0,23] のとき、スクロールがはみ出せば反対側へ回るのではなく境界で止まるべきです；明示的に部分区間（[9, 18] など）が限定されたときのみ回ります。`clampTimeValue` はその逆で、常に値を区間内にクランプし、既存の選択値を合法な区間へ収束させるのに使います。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `padNumber` | `(n: number) => string` | `'09'` | 2 桁のゼロ埋め |
+| `formatTime` | `(hours, minutes, seconds, format?) => string` | `'09:30:00'` | format に従って結合 |
+| `parseTime` | `(timeStr, format?) => LhTimeData \| null` | 時刻データ \| null | 位置ベースの解析 |
+| `extractTime` | `(date: Date) => LhTimeData` | 時分秒 | Date から抽出 |
+| `generateTimeColumn` | `(type, step?, disabledValues?) => LhTimeColumn[]` | 列のオプション | isDisabled を含む |
+| `createDateTime` | `(baseDate, hours, minutes, seconds) => Date` | 新しい Date | 日付を保持して時刻を差し替え |
+| `isValidTime` | `(hours, minutes, seconds) => boolean` | 合法かどうか | 値域の検証 |
+| `formatDateToTimeString` | `(date: Date, format: string) => string` | 文字列 | Date → 表示テキスト |
+| `getHourStep` / `getMinuteStep` / `getSecondStep` | `(options?) => number` | ステップ幅 | 省略時のフォールバックは 1 |
+| `getDisabledHours` / `getDisabledMinutes` / `getDisabledSeconds` | `(options?, …) => number[]` | 無効な値 | 呼び出し側のコールバック |
+| `getHourRange` | `(start, end) => { start, end }` | 収束した区間 | [0,23] にクランプ |
+| `filterTimeColumnByRange` | `(columns, start, end) => LhTimeColumn[]` | フィルタされた列 | 区間内のみ残す |
+| `wrapTimeValueInRange` | `(value, start, end) => number` | ラップした値 | 境界を越えたら反対側へ |
+| `clampTimeValue` | `(value, start, end) => number` | クランプ値 | 境界を越えたら境界に |
+| `getTimePickerClassNames` | `(state: { size, disabled, visible }) => string[]` | クラス名 | サイズ / 無効 / 展開 |
+| `getTimePickerTriggerAria` | `(visible, panelId?) => LhAriaAttrs` | aria 属性パック | haspopup dialog |
+| `getTimePickerPanelAria` | `(id?) => LhAriaAttrs` | aria 属性パック | role=dialog |
+| `getTimePickerColumnAria` | `(label?) => LhAriaAttrs` | aria 属性パック | role=listbox |
+
+## 型定義
+
+```ts
+export type LhTimePickerMode = 'time' | 'date-time'
+export type LhTimeColumnType = 'hour' | 'minute' | 'second'
+
+export interface LhTimeData {
+  hours: number
+  minutes: number
+  seconds: number
+}
+
+export interface LhTimeColumn {
+  value: number
+  text: string
+  isSelected: boolean
+  isDisabled: boolean
+}
+
+export interface LhTimePickerOptions {
+  hours?:   { step?: number; disabledHours?:   () => number[] }
+  minutes?: { step?: number; disabledMinutes?: (hour: number) => number[] }
+  seconds?: { step?: number; disabledSeconds?: (hour: number, minute: number) => number[] }
+}
+
+export interface LhTimeSelectEventData {
+  column: LhTimeColumnType
+  value: number
+}
+```
+
+## アクセシビリティ
+
+時刻パネルは **dialog** としてポップアップし（トリガーは `aria-haspopup="dialog"`）、パネル内の 3 列はそれぞれ **listbox** です。このセマンティクスは共有コアの `getPopupTriggerAria` 由来です：
+
+```ts
+getTimePickerTriggerAria(true, 'lh-time-panel')
+// { 'aria-expanded': true, 'aria-haspopup': 'dialog', 'aria-controls': 'lh-time-panel' }
+
+getTimePickerPanelAria('lh-time-panel')
+// { role: 'dialog', id: 'lh-time-panel' }
+
+getTimePickerColumnAria('時間')
+// { role: 'listbox', 'aria-label': '時間' }
+```
+
+- 列内のオプションには `role="option"` + `aria-selected`（UI 層が `LhTimeColumn.isSelected` をレンダリング）+ `aria-disabled`（`isDisabled`）を持たせます。
+- キーボード：列にフォーカスした後 ↑/↓ で**無効でない**オプション間を移動して選択します；Esc でパネルを閉じます。
+- dialog セマンティクスは、パネル展開時にフォーカストラップ（`core/shared/focus-trap`）を行い、フォーカスがパネルの外へ逃げないことを意味します。
+
+## 使用例
+
+```ts
+import {
+  parseTime, formatTime, generateTimeColumn, isValidTime, createDateTime,
+} from '@lh-ui/share/core/time-picker'
+
+formatTime(9, 30, 5)                    // '09:30:05'
+formatTime(9, 30, 5, 'HH:mm')           // '09:30'
+parseTime('09:30:05')                   // { hours: 9, minutes: 30, seconds: 5 }
+parseTime('09:30:05', 'HH:mm')          // { hours: 9, minutes: 30, seconds: 0 }（ss がない場合は 0 補完）
+parseTime('99:99:99')                   // null（値域が不正）
+parseTime('abc', 'HH:mm:ss')            // null（NaN）
+parseTime('09:30', 'YYYY-MM-DD')        // null（format に時刻トークンがない）
+generateTimeColumn('hour', 1)           // 24 項目：00..23
+generateTimeColumn('minute', 15)        // 4 項目：00 15 30 45
+generateTimeColumn('minute', 0)         // 60 項目（step 0 は 1 に正規化）
+generateTimeColumn('hour', 1, [0, 1, 2])// 最初の 3 項目が isDisabled: true
+isValidTime(23, 59, 59)                 // true
+isValidTime(24, 0, 0)                   // false
+createDateTime(new Date('2026-10-12'), 9, 30, 0)  // 2026-10-12 09:30:00
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTimePickerClassNames({ size, disabled, visible })">
+  <input
+    class="lh-time-picker__input"
+    :value="formatDateToTimeString(value, format)"
+    v-bind="getTimePickerTriggerAria(visible, panelId)"
+    @click="open"
+  />
+  <div v-if="visible" class="lh-time-picker__panel" v-bind="getTimePickerPanelAria(panelId)">
+    <div
+      v-for="col in columns"
+      :key="col.type"
+      class="lh-time-picker__column"
+      v-bind="getTimePickerColumnAria(col.label)"
+    >
+      <div
+        v-for="opt in col.items"
+        :key="opt.value"
+        class="lh-time-picker__option"
+        :class="{ 'is-selected': opt.isSelected, 'is-disabled': opt.isDisabled }"
+        role="option"
+        :aria-selected="opt.isSelected"
+        @click="onSelect(col.type, opt.value)"
+      >
+        {{ opt.text }}
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+```tsx
+// React：列の生成
+// const hours = generateTimeColumn('hour', getHourStep(options), getDisabledHours(options))
+// 分列は選択済みの時刻に依存する：getDisabledMinutes(options, selectedHour)
+```
+
+```ts
+// uniapp：<picker mode="time"> は内蔵コンポーネント（values は 'HH:mm' 形式）；
+// カスタムのリール列には <picker-view> + <picker-view-column> が必要；core の列生成関数はそのまま使用
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-time-picker` | 基底クラス |
+| `.lh-time-picker--{small\|large}` | サイズのバリエーション |
+| `.lh-time-picker--disabled` | 無効 |
+| `.lh-time-picker__input` | トリガーの入力フィールド |
+| `.lh-time-picker__panel` | ポップアップパネル |
+| `.lh-time-picker__column` | 1 列のリール |
+| `.lh-time-picker__option` | 列内のオプション |
+| `.lh-time-picker__footer` | 確認 / キャンセルバー（date-time モード） |
+
+既知の問題（「高度トークン専用」に記録）：time-picker 関連コントロールの高さは 33px で、input（37）/ select（32）と統一されておらず、根本原因は `--lh-control-height-*` トークンの欠落です。
+
+## 注意事項
+
+- **format のトークン順序は任意**：`formatTime` も `parseTime` も format 内のトークンの位置で値を取るため、`'mm:HH'` でも正しく往復できます。ただしトークン以外の文字（`'HH時mm分'` など）を混ぜた場合、`parseTime` は引き続き固定 2 桁幅で切り取るため、中国語は影響しません（トークンではないので）が、**数字の区切り文字がずれます**——`'09点30'` の `mm` の位置は `'点3'` を切り取り、NaN となって null を返します。format はトークンと数字以外の区切り文字のみで構成してください。
+- **`parseTime` の耐性**：例外を投げず null を返すため、UI 層は入力フィールドのフォーカスが外れたときに null を処理する必要があります（通常は元の値を保持してヒントを出します）。
+- **ステップ幅と無効化の相互作用**：`disabledValues` は無効をマークするだけでフィルタしません——UI 層のキーボードナビゲーションは自身で `isDisabled` の項目をスキップします。
+- **`date-time` モード**：日付部分は `date-picker` が担い、時刻部分はこのモジュールを再利用します；パネルでは通常、先に日付を選んでから時刻を選び、`createDateTime(baseDate, …)` が両者をマージします。`baseDate` が null のときは**現在時刻**の日付を取る点に注意してください。
+- **区間モード `isRange`**：`rangeStart` / `rangeEnd` は 2 つの `LhTimeData` で、2 列目の無効値は 1 列目の選択に依存します（終了時刻は開始より遅くなければならないなど）。UI 層が `getDisabledMinutes` などのコールバックで動的に計算します。
+- **`SS` は大文字でも秒ではない**：小文字の `ss` のみが秒です。`HH` が大文字、`mm` / `ss` が小文字というのは固定の書き方で、day.js などのライブラリの規約と一致します。
+
+<FnPlayground module="time-picker" fn="generateTimeColumn" params='{"type": "minute", "step": 15}' />

@@ -1,0 +1,210 @@
+---
+title: image —— Imagen
+description: 'stepZoom/stepRotate para zoom y rotación, normalizePreviewList para la degradación de la lista de previsualización, stepViewerIndex para el cambio circular de imágenes, semántica dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El núcleo del componente de imagen no es mostrarla (para eso basta con `<img>`), sino la **previsualización**: clic para ampliar, rueda del ratón para hacer zoom, rotación y cambio entre varias imágenes. `core/image` gestiona los cálculos de estado del visor: el escalonado y la limitación del zoom, la normalización de la rotación y el cambio circular de la lista de imágenes.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhImage`: imágenes de producto, previsualización de avatares, documentos de identidad, galerías de fotos.
+- Escenarios que necesitan hacer clic para ampliar (zoom, rotación, cambio entre varias imágenes).
+- **No usarlo para**: imágenes puramente decorativas (basta con `<img>` o una imagen de fondo, sin la sobrecarga de un componente); el recortado o la edición compleja (responsabilidad de image-cropper).
+
+## Importación
+
+```ts
+import {
+  getImageClassNames,
+  normalizePreviewList,
+  stepZoom,
+  stepRotate,
+  stepViewerIndex,
+  getViewerImageStyle,
+  getImageViewerAria,
+} from '@lh-ui/share/core/image'
+import {
+  LH_IMAGE_ZOOM_MIN,
+  LH_IMAGE_ZOOM_MAX,
+  LH_IMAGE_ZOOM_STEP,
+} from '@lh-ui/share/core/image'
+import type { LhImageFit, LhImageState, LhImageViewerState } from '@lh-ui/share/core/image'
+```
+
+## Intención de diseño
+
+**La limitación de coma flotante del zoom**: `stepZoom` acumula en cada paso `LH_IMAGE_ZOOM_STEP` (0,25) y, tras `Math.round(next * 100) / 100`, lo limita a `[0.25, 4]`. El redondeo garantiza que `zoom` sea siempre un decimal limpio (0,25 / 0,5 / 0,75...), y no algo como `1.0000000000000002`, que haría que `scale()` produjera un aliasing visible a simple vista.
+
+**La corrección del módulo de negativos en la rotación**: `(((rotate + 90) % 360) + 360) % 360`: el `%` de JS devuelve valores negativos para números negativos (`-90 % 360 === -90`), y el `+360) % 360` exterior lo normaliza a `[0, 360)`. Aunque esta función solo suma 90 y nunca producirá un negativo, la corrección es defensiva (por si quien llama pasa un ángulo inicial negativo).
+
+**El cambio circular de `stepViewerIndex`**: `(index + delta + total) % total`: al pulsar «anterior» desde la primera imagen se salta a la última. Si `total <= 0`, devuelve 0 (defensivo para listas vacías).
+
+**La degradación de `normalizePreviewList`**: cuando no se pasa `previewSrcList`, se degrada a `[src]`: la previsualización de una sola imagen y la de varias usan la misma lógica, solo que `total` es 1 y los botones de cambio se ocultan automáticamente.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `getImageClassNames` | `(state: LhImageState) => string[]` | nombres de clase | error / previewable |
+| `normalizePreviewList` | `(src, previewSrcList?) => string[]` | lista | si no se pasa, se degrada a [src] |
+| `stepZoom` | `(zoom, direction: 1 \| -1) => number` | nuevo zoom | escalón + limitación |
+| `stepRotate` | `(rotate: number) => number` | nuevo ángulo | +90°, normalizado a [0,360) |
+| `stepViewerIndex` | `(index, total, delta) => number` | nuevo índice | circular |
+| `getViewerImageStyle` | `(state: LhImageViewerState) => Record<string, string>` | estilos | transform |
+| `getImageViewerAria` | `(options?: { id?, label? }) => LhAriaAttrs` | paquete de atributos aria | semántica dialog |
+
+Constantes: `LH_IMAGE_ZOOM_MIN = 0.25`, `LH_IMAGE_ZOOM_MAX = 4`, `LH_IMAGE_ZOOM_STEP = 0.25`.
+
+## Definiciones de tipos
+
+```ts
+export type LhImageFit = 'contain' | 'cover' | 'fill' | 'none' | 'scale-down'  // object-fit nativo
+
+export interface LhImageState {
+  fit: LhImageFit
+  error: boolean
+  loaded: boolean
+  preview: boolean    // si se puede previsualizar (decide si responde al clic y muestra la superposición)
+}
+
+export interface LhImageViewerState {
+  zoom: number
+  rotate: number
+  index: number
+  total: number
+}
+
+export const LH_IMAGE_ZOOM_MIN = 0.25
+export const LH_IMAGE_ZOOM_MAX = 4
+export const LH_IMAGE_ZOOM_STEP = 0.25
+```
+
+## Accesibilidad
+
+El visor se presenta como un **dialog** y declara `aria-modal`:
+
+```ts
+getImageViewerAria({ id: 'lh-viewer', label: 'Imagen 2 de 5' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-viewer', 'aria-label': 'Imagen 2 de 5' }
+
+getImageViewerAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true` informa al lector de pantalla de que el fondo no es accesible; se combina con `core/shared/focus-trap` para atrapar el foco, y Esc cierra.
+- **Que el `label` lleve un número de posición es muy valioso**: en la previsualización de varias imágenes, el lector de pantalla anuncia «Imagen 2 de 5» y el usuario sabe cuántas puede ver; con una sola imagen, basta con «Previsualización de imagen».
+- La miniatura en sí debe tener `alt` (o `role="img" aria-label`): cuando la imagen no es visible, es la única información de texto. Las imágenes decorativas usan `alt=""`.
+- Los botones de la barra de herramientas (ampliar, rotar, anterior, siguiente) son botones de icono y es obligatorio que lleven `aria-label`.
+- **El aviso de accesibilidad del fallo de carga**: la imagen de marcador del estado `error` debe tener `role="img"` + `aria-label="Error al cargar la imagen"`, o el usuario del lector de pantalla no sabrá que aquí había una imagen.
+
+## Ejemplos de uso
+
+```ts
+import { stepZoom, stepRotate, stepViewerIndex, normalizePreviewList } from '@lh-ui/share/core/image'
+
+stepZoom(1, 1)      // 1.25
+stepZoom(4, 1)      // 4 (en el límite, no sube más)
+stepZoom(0.25, -1)  // 0.25 (en el límite, no baja más)
+stepRotate(0)       // 90
+stepRotate(270)     // 0 (normalizado a [0, 360))
+stepRotate(-90)     // 0 (corrección del módulo de negativos)
+stepViewerIndex(0, 5, -1)   // 4 (salta a la última)
+stepViewerIndex(4, 5, 1)    // 0 (salta a la primera)
+stepViewerIndex(0, 0, 1)    // 0 (lista vacía)
+normalizePreviewList('a.jpg', ['b.jpg', 'c.jpg'])  // ['b.jpg', 'c.jpg']
+normalizePreviewList('a.jpg', undefined)          // ['a.jpg']
+normalizePreviewList('a.jpg', [])                 // ['a.jpg'] (la matriz vacía también se degrada)
+getViewerImageStyle({ zoom: 1.5, rotate: 90, index: 0, total: 1 })
+// { transform: 'scale(1.5) rotate(90deg)' }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getImageClassNames({ fit, error, loaded, preview })">
+  <img
+    v-if="!error"
+    class="lh-image__img"
+    :src="src"
+    :alt="alt"
+    :style="{ objectFit: fit }"
+    @load="loaded = true"
+    @error="error = true"
+    @click="preview && openViewer()"
+  />
+  <div v-else class="lh-image__error" role="img" aria-label="Error al cargar la imagen">
+    <LhIcon name="image" />
+  </div>
+  <div v-if="preview && loaded" class="lh-image__mask">
+    <LhIcon name="zoom-in" /> <span>Clic para previsualizar</span>
+  </div>
+</div>
+
+<Teleport to="body">
+  <div v-if="visible" class="lh-image-viewer" v-bind="getImageViewerAria({ id: viewerId, label: viewerLabel })">
+    <div class="lh-image-viewer__mask" @click="close" />
+    <img
+      class="lh-image-viewer__img"
+      :src="list[index]"
+      :style="getViewerImageStyle({ zoom, rotate, index, total: list.length })"
+    />
+    <div class="lh-image-viewer__toolbar">
+      <button type="button" aria-label="Alejar" @click="zoom = stepZoom(zoom, -1)">−</button>
+      <span class="lh-image-viewer__zoom">{{ Math.round(zoom * 100) }}%</span>
+      <button type="button" aria-label="Ampliar" @click="zoom = stepZoom(zoom, 1)">+</button>
+      <button type="button" aria-label="Rotar" @click="rotate = stepRotate(rotate)">⟳</button>
+      <template v-if="list.length > 1">
+        <button type="button" aria-label="Anterior" @click="index = stepViewerIndex(index, list.length, -1)">‹</button>
+        <button type="button" aria-label="Siguiente" @click="index = stepViewerIndex(index, list.length, 1)">›</button>
+      </template>
+    </div>
+  </div>
+</Teleport>
+```
+
+```ts
+const list = computed(() => normalizePreviewList(props.src, props.previewSrcList))
+const viewerLabel = computed(() => `Imagen ${index.value + 1} de ${list.value.length}`)
+```
+
+```tsx
+// React: zoom con la rueda del ratón (se monta onWheel en el viewer)
+// const next = stepZoom(zoom, e.deltaY < 0 ? 1 : -1); setZoom(next)
+```
+
+```ts
+// uniapp: <image> es un componente integrado (el atributo mode corresponde a object-fit:
+// widthFix / aspectFill, etc.); el visor se construye con <view> + <image>, o se llama a
+// uni.previewImage (a nivel de sistema y sin función de rotación)
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-image` | clase base |
+| `.lh-image--error` | fallo de carga |
+| `.lh-image--previewable` | previsualizable (muestra la superposición al pasar el cursor) |
+| `.lh-image__img` | la propia imagen |
+| `.lh-image__error` | marcador de error |
+| `.lh-image__mask` | superposición al pasar el cursor |
+| `.lh-image-viewer` | visor a pantalla completa (posición fixed) |
+| `.lh-image-viewer__mask` | superposición negra |
+| `.lh-image-viewer__img` | imagen grande (animación de transform) |
+| `.lh-image-viewer__toolbar` / `__zoom` | barra de herramientas / porcentaje de zoom |
+
+El color de la superposición es `rgba(0, 0, 0, 0.5)`; los botones de la barra de herramientas tienen un fondo oscuro semitransparente; la transición de la imagen está en `transform` (zoom y rotación fluidos).
+
+## Notas
+
+- **La relación entre `previewSrcList` y `src`**: `previewSrcList` es la lista de imágenes grandes que se usa al previsualizar y puede ser distinta de las miniaturas `src` de la página (la miniatura usa una imagen pequeña para ahorrar tráfico y la previsualización, la original). Si no se pasa, se degrada a `[src]`: en ese caso se previsualiza la miniatura y, al ampliar, puede verse borrosa.
+- **`zoom` no cambia al llegar al límite**: `stepZoom` lo limita a [0.25, 4]; los botones pueden desactivarse o dar feedback visual en consecuencia, para evitar pulsaciones sin respuesta.
+- **El orden de rotación y zoom**: `transform: scale(zoom) rotate(rotate)`: primero se escala y luego se rota. Si se invierte el orden, la rotación arrastra el desplazamiento del zoom (la diferencia es pequeña centrando en el punto medio, pero resulta evidente al combinar desplazamientos).
+- **Gestión del foco**: al abrir el visor, el foco debería entrar en la barra de herramientas y, al cerrar, volver a la miniatura: gestiónalo con `core/shared/focus-trap`, o Tab se escapará hacia detrás de la página.
+- **El reintento del estado `error`**: core no proporciona una función de reintento; la capa UI puede cambiar el `src` añadiendo un parámetro de consulta (`?t=Date.now()`) para forzar la recarga, pero antes debe limpiar el estado `error`.
+- **El uso de `loaded`**: antes de que termine la carga se puede mostrar un esqueleto (`skeleton`) o una imagen de marcador de baja difuminación (LQIP).
+- **Sensibilidad de memoria**: en la previsualización de una lista de imágenes grandes, de `previewSrcList` solo se cargan de verdad las próximas a `index` (el navegador lo hace bajo demanda), pero no renderices decenas de `<img>` de golpe: core no controla la cantidad de renderizado; la capa UI se auto-limita.
+- **El mapeo de `fit` en uniapp**: los cinco valores de `object-fit` se corresponden, en el lado de los miniprogramas, con distintos valores del `<image mode>` (`scale-down` no tiene correspondencia directa y normalmente se aproxima con `aspectFit`); el mapeo lo hace la capa UI.
+
+<FnPlayground module="image" fn="stepZoom" params='{"zoom": 1, "direction": 1}' />

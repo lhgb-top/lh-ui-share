@@ -1,0 +1,229 @@
+---
+title: cascader —— 級聯選擇器
+description: 'findNode/findPathByValues 樹查找與路徑還原，normalizeCascaderNodes 一次性歸一化，searchNodes 攜祖先鏈搜尋'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+級聯選擇器處理「省 > 市 > 區」這類**逐層選擇**的資料：選了上一層，下一層才出現。`core/cascader` 是 share 裡最重的 core 模組之一——樹狀資料的查找、路徑還原、面板生成、搜尋、歸一化全是純函式，UI 層只管把面板項渲染成列。
+
+## 何時使用
+
+- 各端實作 `LhCascader`：多級分類、地區選擇、組織架構。
+- 資料是樹（或可歸一化成樹），每層互斥選擇。
+- **不該用它**：單層選擇用 `select`；需要勾選父也勾選子的級聯勾選用 `tree`（有 `checkStrictly` 語義）。
+
+## 匯入方式
+
+```ts
+import {
+  findNode,
+  findPathByValues,
+  getField,
+  getChildren,
+  getPanelItems,
+  searchNodes,
+  getSelectedLabelPath,
+  getCascaderClassNames,
+  getPanelClassNames,
+  expandLastValue,
+  isLeafNode,
+  normalizeCascaderNodes,
+  flattenNodes,
+  getCascaderTriggerAria,
+  getCascaderColumnAria,
+  getCascaderItemAria,
+} from '@lh-ui/share/core/cascader'
+import type {
+  LhCascaderNode,
+  LhCascaderPath,
+  LhCascaderPanelItem,
+  LhCascaderState,
+  LhCascaderSearchResult,
+  LhCascaderItemConfig,
+} from '@lh-ui/share/core/cascader'
+```
+
+## 設計意圖
+
+幾個關鍵設計：
+
+- **祖先鏈判重而非全域 visited**：樹操作普遍需要防循環參照保護。這裡用「祖先鏈」判重（`ancestors` 參數逐層傳遞），而不是模組級或全域 Set——代價是保護**只在單次呼叫內有效**，好處是 DAG 裡合法共享的子樹不會被誤跳過，且無跨實例狀態洩漏。
+- **`getField` 讓欄位別名真正生效**：後端資料常不叫 `value`/`label`/`children`（可能是 `id`/`name`/`subList`）。`LhCascaderItemConfig` 宣告別名映射，所有樹操作都經 `getField` 讀取。
+- **歸一化一次，處處用標準結構**：`normalizeCascaderNodes` 把任意欄位結構的原始樹轉成 `LhCascaderNode[]`，之後所有函式面對標準結構。也可以不歸一化直接傳 itemConfig，兩種路徑等價（但歸一化後效能更好，不用每層都查別名）。
+- **搜尋結果攜帶完整祖先鏈**：`searchNodes` 傳回的每條結果含 `path`（值陣列）、`nodes`（節點陣列）、`pathLabels`（標籤陣列），UI 直接渲染「浙江 / 杭州 / 西湖」一行，不需要再回查。
+- **程式化回顯不過濾停用項**：`findPathByValues` 刻意**不過濾停用子節點**——停用是 UI 層的點選約束，程式化回顯（如 `v-model` 初始值）應當能還原任意路徑，否則「先停用後回顯」會丟值。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `findNode` | `(nodes, value, strict?, ancestors?, itemConfig?) => { node, path } \| null` | 節點 + 祖先鏈 | 遞迴查找 |
+| `getField` | `<T>(node, standard: string, configKey?: string) => T` | 欄位值 | 按別名讀取節點屬性 |
+| `findPathByValues` | `(nodes, values, itemConfig?) => LhCascaderPath \| null` | 路徑 | 按值陣列逐層還原 |
+| `getChildren` | `(node, itemConfig?) => LhCascaderNode[]` | 子陣列 | 髒資料兜底傳回 `[]` |
+| `getPanelItems` | `(nodes, expandedValues?, itemConfig?) => LhCascaderPanelItem[]` | 面板項 | 樹 → 面板項映射 |
+| `searchNodes` | `(nodes, keyword, results?, itemConfig?, maxResults?) => LhCascaderSearchResult[]` | 搜尋結果 | 大小寫不敏感，預設上限 50 |
+| `getSelectedLabelPath` | `(nodes, values, itemConfig?) => string` | `"浙江 / 杭州"` | 選取標籤字串 |
+| `expandLastValue` | `(nodes, value, itemConfig?) => (string\|number)[] \| null` | 路徑陣列 | `emitPath: false` 時由單值還原路徑 |
+| `isLeafNode` | `(node, itemConfig?) => boolean` | 布林 | 顯式 `leaf` 優先，否則按 children 判 |
+| `normalizeCascaderNodes` | `(nodes: readonly unknown[], itemConfig?) => LhCascaderNode[]` | 標準樹 | 一次性歸一化 |
+| `flattenNodes` | `(nodes, itemConfig?) => {node, path, pathValues}[]` | 扁平化清單 | 每項攜帶路徑 |
+| `getCascaderClassNames` | `(state) => string[]` | 類別名 | 容器 |
+| `getPanelClassNames` | `(state) => string[]` | 類別名 | 面板（`--hover-mode`） |
+
+## 類型定義
+
+```ts
+export interface LhCascaderNode {
+  value: string | number
+  label: string
+  disabled?: boolean
+  leaf?: boolean
+  children?: LhCascaderNode[]
+}
+
+export interface LhCascaderPath {
+  path: (string | number)[]      // 選取值陣列
+  nodes: LhCascaderNode[]        // 對應節點陣列
+}
+
+export interface LhCascaderPanelItem {
+  value: string | number
+  label: string
+  isDisabled: boolean
+  isExpanded: boolean
+  hasChildren: boolean
+}
+
+export interface LhCascaderSearchResult {
+  path: (string | number)[]
+  nodes: LhCascaderNode[]
+  pathLabels: string[]
+}
+
+export interface LhCascaderItemConfig {
+  value?: string    // value 欄位的別名
+  label?: string
+  children?: string
+  disabled?: string
+  leaf?: string
+}
+
+export interface LhCascaderState {
+  options: LhCascaderNode[]
+  size: LhComponentSize
+  disabled: boolean
+  clearable: boolean
+  placeholder: string
+  visible: boolean
+  checkStrictly: boolean   // 父子不關聯（可選任意層級）
+  emitPath: boolean        // true 值是路徑陣列，false 只給末級值
+  multiple: boolean
+  cascading: boolean
+  value: (string | number)[]
+  selectedValue: (string | number)[] | null
+}
+```
+
+## 無障礙
+
+三層屬性包：
+
+```ts
+// 觸發器：以 listbox 語義彈出
+getCascaderTriggerAria(true, 'my-panel')
+// { 'aria-expanded': true, 'aria-controls': 'my-panel', 'aria-haspopup': 'listbox' }
+
+// 每列：role="listbox" + aria-level 標註深度（從 1 起）
+getCascaderColumnAria('col-2', 2)  // { role: 'listbox', id: 'col-2', 'aria-level': 2 }
+
+// 項：role="option" + 按需 aria-expanded/selected/disabled
+getCascaderItemAria({ selected: true, expanded: true, hasChildren: true })
+// { role: 'option', 'aria-expanded': true, 'aria-selected': true }
+```
+
+注意 `getCascaderItemAria` 在**無子級時不輸出 `aria-expanded`**——對葉子選項宣告 `aria-expanded="false"` 是 APG 允許但多餘的，且會讓螢幕閱讀器誤以為「可展開只是現在沒展開」。
+
+## 使用範例
+
+```ts
+import { findPathByValues, getSelectedLabelPath, getPanelItems } from '@lh-ui/share/core/cascader'
+
+const tree = [
+  {
+    value: 'zj', label: '浙江', children: [
+      { value: 'hz', label: '杭州', children: [{ value: 'xh', label: '西湖' }] },
+    ],
+  },
+]
+
+findPathByValues(tree, ['zj', 'hz', 'xh'])
+// { path: ['zj','hz','xh'], nodes: [浙江, 杭州, 西湖] }
+
+getSelectedLabelPath(tree, ['zj', 'hz', 'xh'])  // '浙江 / 杭州 / 西湖'
+getSelectedLabelPath(tree, ['nope'])            // ''（找不到傳回空串）
+
+getPanelItems(tree, new Set(['zj']))
+// [{ value:'zj', label:'浙江', isExpanded:true, hasChildren:true },
+//  { value:'hz', label:'杭州', isExpanded:false, hasChildren:true }]
+```
+
+欄位別名：
+
+```ts
+const raw = [{ id: 'zj', name: '浙江', subList: [{ id: 'hz', name: '杭州' }] }]
+const cfg = { value: 'id', label: 'name', children: 'subList' }
+const standard = normalizeCascaderNodes(raw, cfg)
+// [{ value:'zj', label:'浙江', children:[{ value:'hz', label:'杭州' }] }]
+findPathByValues(standard, ['zj', 'hz'])  // 正常工作
+```
+
+```vue
+<!-- Vue3：每列渲染一層 panelItems -->
+<div :class="getCascaderClassNames({ size, disabled, visible, readonly })">
+  <button class="lh-cascader__input" v-bind="getCascaderTriggerAria(visible, panelId)">
+    {{ getSelectedLabelPath(options, value) || placeholder }}
+  </button>
+  <div v-if="visible" class="lh-cascader-panel" :class="getPanelClassNames({ hoverMode })">
+    <div
+      v-for="(col, ci) in columns"
+      :key="ci"
+      class="lh-cascader-panel__column"
+      v-bind="getCascaderColumnAria(`col-${ci}`, ci + 1)"
+    >
+      <div
+        v-for="item in col"
+        class="lh-cascader-panel__item"
+        v-bind="getCascaderItemAria({ selected: ..., expanded: item.isExpanded, disabled: item.isDisabled, hasChildren: item.hasChildren })"
+        @click="select(item, ci)"
+      >{{ item.label }}</div>
+    </div>
+  </div>
+</div>
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-cascader` / `--disabled` / `--visible` | 容器 |
+| `.lh-cascader__input` / `__input-inner` | 觸發器輸入區 |
+| `.lh-cascader__tags` / `__tag` / `__tag-more` | 多選標籤（溢位收起） |
+| `.lh-cascader__clear` | 清除按鈕 |
+| `.lh-cascader-panel` / `--hover-mode` | 面板（hover 模式：懸停即展開下一層） |
+| `.lh-cascader-panel__column` / `__column-header` | 列與列頭 |
+| `.lh-cascader-panel__item` / `--active` / `--disabled` | 列項 |
+| `.lh-cascader-panel__search` / `__search-item` | 搜尋結果區 |
+| `.lh-cascader-panel__empty` | 無結果佔位 |
+| `.lh-cascader-panel-*` 過渡類 | 面板出入動畫 |
+
+## 注意事項
+
+- **`searchNodes` 預設上限 50**：大樹 + 高頻輸入時每次擊鍵 O(全量節點) 會卡頓，上限是效能保險；需要更多結果由 UI 層提示「結果過多，請細化關鍵字」。
+- **循環參照保護的作用域**：祖先鏈判重只在單次呼叫內有效，**跨呼叫不快取**。不要試圖把 `findNode` 的結果快取複用——樹變了要重算。
+- **`expandLastValue` 只用於 `emitPath: false`**：該模式下 `v-model` 只給末級值，回顯時需由單值還原完整展開路徑。
+- **`getChildren` 的髒資料兜底**：null 節點、非物件節點、children 非陣列都傳回 `[]`，不拋 TypeError。這讓級聯能吞下後端的髒資料（空 children 寫成 null 是常見情形）。
+- **`checkStrictly` 與 `emitPath` 的組合**：`checkStrictly` 允許選任意層級，此時常配 `emitPath: false`（只要末級值），兩者是正交的。
+
+<FnPlayground module="cascader" fn="getSelectedLabelPath" params='{"nodes": [{"value": "zj", "label": "浙江", "children": [{"value": "hz", "label": "杭州"}]}], "values": ["zj", "hz"]}' />

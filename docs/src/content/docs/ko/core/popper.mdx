@@ -1,0 +1,154 @@
+---
+title: popper —— 팝업 층 위치 지정 엔진
+description: 'computePosition이 12 방위 배치, 주축 뒤집기, 교차축 클램프를 구현, 순수 rect 입력으로 바로 단위 테스트 가능'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+tooltip, popover, popconfirm, dropdown, select의 드롭다운, cascader의 패널, date-picker의 달력——lh-ui에서 "트리거 옆에 떠 있는 것"은 전부 이 함수 하나가 위치를 계산합니다.
+
+## 왜 floating-ui / popper.js를 쓰지 않는가
+
+패밀리의 네 단말(Vue3 / Vue2 / React / uniapp)이 모두 이 패키지를 끌어와야 하므로, 서드파티 위치 지정 라이브러리의 크기와 업데이트 리듬이 네 배의 부담이 됩니다. share의 위치 지정 엔진은 패밀리가 실제로 사용하는 부분집합만 다룹니다: 12 방위, 주축 뒤집기, 교차축 클램프, 화살표 오프셋, 약 300줄, 의존성 없음, 순수한 입력과 출력——**DOM을 생성하지 않고, 이벤트를 감시하지 않고, requestAnimationFrame을 돌리지 않습니다**. 스케줄링과 렌더링은 각 UI 계층이 직접 결정합니다(Vue3은 `watchEffect`, React는 `useLayoutEffect`, uniapp은 페이지 스크롤 이벤트).
+
+## 가져오기
+
+```ts
+import {
+  computePosition,
+  parsePlacement,
+  getWindowViewport,
+  type LhPlacement,
+  type LhComputePositionOptions,
+} from '@lh-ui/share/core/shared/popper'
+```
+
+## 타입과 상수
+
+```ts
+// 12 방위 = 4 방향 × 3 정렬(center는 접미사 생략 가능)
+export type LhPlacement =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhPlacementDir = 'top' | 'bottom' | 'left' | 'right'
+export type LhPlacementAlign = 'start' | 'center' | 'end'
+
+// DOMRect와 동형인 최소 구조——테스트 시 리터럴을 직접 생성
+export interface LhDOMRectLike {
+  top: number
+  left: number
+  width: number
+  height: number
+  right: number
+  bottom: number
+}
+
+export interface LhComputePositionOptions {
+  placement?: LhPlacement       // 기본 'bottom'
+  gap?: number                  // 트리거와의 간격, 기본 8
+  padding?: number              // 뷰포트 안전 여백, 기본 8
+  flip?: boolean                // 주축 오버플로우 뒤집기, 기본 true
+  shift?: boolean               // 교차축 클램프, 기본 true
+}
+
+export interface LhPopperPosition {
+  top: number
+  left: number
+  placement: LhPlacement        // 뒤집기 이후 실제로 적용된 방위
+  arrowOffset: number           // 화살표의 교차축 오프셋(px, 플로팅 층의 교차축 시작점 기준)
+}
+```
+
+## 함수 표
+
+| 함수 | 시그니처 | 역할 |
+| --- | --- | --- |
+| `parsePlacement` | `(placement: LhPlacement) => { dir, align }` | 방위를 "방향 + 정렬"로 분해, 잘못된 방향은 `bottom`으로, 잘못된 정렬은 `center`로 폴백 |
+| `buildPlacement` | `(dir: LhPlacementDir, align: LhPlacementAlign) => LhPlacement` | 방향과 정렬로 방위 재구성(`center`일 때 접미사 생략) |
+| `flipDir` | `(dir: LhPlacementDir) => LhPlacementDir` | 주축 뒤집기: top↔bottom, left↔right |
+| `basePosition` | `(dir, align, trigger, popper, gap) => { top, left }` | 방위별 기본 배치(**뷰포트 제약 미고려**) |
+| `fitsInViewport` | `(dir, trigger, popper, viewport, gap, padding) => boolean` | 지정한 방향에서 플로팅 층이 온전히 뷰포트 안에 들어가는지(주축 판정) |
+| `computePosition` | `(trigger, popper, viewport, options?) => LhPopperPosition` | **주 진입점**: 완전한 위치 계산 |
+| `getWindowViewport` | `() => LhDOMRectLike` | 브라우저 창으로 뷰포트 rect 구성; SSR 가드, `window`가 없으면 너비와 높이가 0 |
+| `isOutsideViewport` | `(rect, viewport) => boolean` | rect가 뷰포트를 완전히 벗어났는지(스크롤 시 트리거가 보이지 않으면 플로팅 층을 닫아야 함) |
+
+## computePosition의 계산 흐름
+
+```
+flip(주축 뒤집기)
+  → 뒤집은 방향에 놓을 수 있을 때만 뒤집기(뒤집어서 더 나빠지는 것을 방지)
+  → 방위별 배치(basePosition)
+  → shift 교차축 클램프(padding 안전 여백을 따라)
+  → 주축 클램프(flip 활성 + 양쪽 모두 놓을 수 없을 때만, 붙일 수 있는 쪽에 밀착)
+  → 하위측 클램프 안전망(폴백, 음수 좌표가 나오지 않도록 보장)
+```
+
+핵심 설계:
+
+- **뒤집기는 조건부입니다**. 흔한 잘못된 구현은 "오버플로우하면 뒤집기"인데, 트리거가 뷰포트 한가운데 있고 플로팅 층이 아주 클 때 뒤집으면 오히려 더 놓지 못하게 됩니다. `computePosition`은 먼저 `fitsInViewport`로 "뒤집으면 놓을 수 있는가"를 묻고, 놓을 수 없으면 뒤집지 않고 주축 클램프로 갑니다.
+- **실제로 적용된 `placement`를 반환합니다**. 뒤집기 뒤에 `placement` 필드가 새로운 방위가 되며, UI 계층은 이에 따라 화살표 클래스명(`is-top` / `is-bottom`)을 전환합니다——화살표 방향이 실제 방위와 일치해야 하며, 그렇지 않으면 시각적으로 화살표가 플로팅 층에서 떨어져 보입니다.
+- **화살표는 항상 트리거 중앙을 가리키며**, `arrowOffset`은 교차축의 오프셋량으로 플로팅 층 경계 안에 클램프됩니다; `padding`의 상한은 플로팅 층의 절반이며, 상하한이 역전되는 것(화살표가 플로팅 층 밖으로 나가는 것)을 막습니다.
+
+## 사용 예시
+
+### 순수 함수(바로 단위 테스트 가능)
+
+```ts
+const trigger = { top: 100, left: 50, width: 80, height: 32, right: 130, bottom: 132 }
+const popper = { top: 0, left: 0, width: 200, height: 120, right: 200, bottom: 120 }
+const viewport = { top: 0, left: 0, width: 375, height: 667, right: 375, bottom: 667 }
+
+computePosition(trigger, popper, viewport, { placement: 'top' })
+// 트리거 위쪽에 놓을 수 있음:
+// { top: 132 - 8 - 120, left: ..., placement: 'top', arrowOffset: ... }
+```
+
+### Vue3 연결
+
+```ts
+// 플로팅 층 컴포넌트 내부
+function update() {
+  if (!triggerEl.value || !popperEl.value) return
+  const pos = computePosition(
+    triggerEl.value.getBoundingClientRect(),
+    popperEl.value.getBoundingClientRect(),
+    getWindowViewport(),
+    { placement: placementRef.value, gap: 8 },
+  )
+  popperEl.value.style.top = `${pos.top}px`
+  popperEl.value.style.left = `${pos.left}px`
+  actualPlacement.value = pos.placement
+}
+
+onMounted(() => {
+  watchEffect(update)          // 반응형 의존이 변할 때 재계산
+  window.addEventListener('scroll', update, true)
+})
+```
+
+### React 연결
+
+```tsx
+useLayoutEffect(() => {
+  if (!triggerRef.current || !popperRef.current) return
+  const pos = computePosition(/* ... */)
+  setPos(pos)
+}, [open, placement])
+```
+
+### uniapp 연결
+
+uniapp의 `getBoundingClientRect`는 단말별로 구현이 다릅니다(미니프로그램은 `uni.createSelectorQuery` 필요). UI 계층이 rect를 측정한 뒤 동일한 `computePosition`을 호출하며, 알고리즘 자체는 완전히 동일합니다.
+
+## 주의 사항
+
+- **매개변수를 먼저 필드 단위로 정제**: 유한하지 않은 필드(NaN / Infinity)는 0으로 처리되며, 잘못된 rect가 기하학 계산에 흘러가지 않습니다.
+- **SSR 안전**: `getWindowViewport()`는 `window`가 없는 환경에서 너비와 높이가 0인 rect를 반환합니다; `computePosition` 자체는 DOM을 건드리지 않으므로 서버에서도 위치를 한 번 예산할 수 있습니다.
+- **`flip: false`의 의미**: 호출자가 주축 오버플로우를 직접 감수하며, 이때 주축에는 하위측 클램프만 유지됩니다(플로팅 층이 음수 좌표로 밀리지 않음). `select` / `cascader` 같은 "방향 고정" 상황에서 사용합니다.
+- **Resize / Scroll 감시는 하지 않음**: 스케줄링은 UI 계층의 일입니다; share는 "입력이 주어지면 출력이 결정된다"만 보장합니다.
+- `LhPosition`(`'top-left'` / `'bottom-right'` 세트, [types](/ko/core/types) 참조)과는 **두 가지 방위 모델**입니다: `LhPosition`은 affix / backtop 같은 "가장자리 밀착" 의미에 쓰이며 `-start` / `-end` 정렬 접미사가 없습니다; 혼용하지 마세요.
+
+<FnPlayground module="popper" fn="computePosition" params='{"trigger": {"top": 100, "left": 50, "width": 80, "height": 32, "right": 130, "bottom": 132}, "popper": {"top": 0, "left": 0, "width": 200, "height": 120, "right": 200, "bottom": 120}, "viewport": {"top": 0, "left": 0, "width": 375, "height": 667, "right": 375, "bottom": 667}, "options": {"placement": "top"}}' />

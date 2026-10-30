@@ -1,0 +1,147 @@
+---
+title: alert —— Alerte
+description: 'Barre d’\’’information persistante dans la page : double rôle alert/status via getAlertRole, classes de quatre états closable/showIcon/plain'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Alert est « un message cloué dans la page » : la raison d'un échec d'enregistrement, l'arrivée à échéance d'un compte, le mode lecture seule en cours. Ce qui la distingue de `message` est sa **persistance** — message disparaît au bout de quelques secondes, alert reste en place et l'utilisateur peut la lire quand il le souhaite. `core/alert` est extrêmement fin, le cœur est **la correspondance entre la sémantique et le rôle de live region**.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `<LhAlert>` : récapitulatif de validation de formulaire, annonce au niveau de la page, retour d'opération persistant, explication guidante.
+- Scénarios où le contenu nécessite une **lecture active de l'utilisateur** et ne disparaît pas avec le temps.
+- **À ne pas utiliser pour** : un retour d'opération instantané (utilisez `message`, la disparition automatique est plus sobre) ; les notifications asynchrones au niveau du système (utilisez `notification`, ancrée dans l'angle et hors du flux du document) ; les opérations nécessitant une confirmation (utilisez `popconfirm` / `dialog`).
+
+## Importation
+
+```ts
+import {
+  getAlertClassNames,
+  getAlertRole,
+  getAlertIconName,
+} from '@lh-ui/share/core/alert'
+import type { LhAlertType, LhAlertState, LhAlertRole } from '@lh-ui/share/core/alert'
+```
+
+## Intentions de conception
+
+**La correspondance en deux rôles** : `warning` / `danger` → `role="alert"` (annonce interrompante immédiate), `info` / `success` → `role="status"` (annonce en file d'attente, plus douce). Cette dichotomie est fondée : les APG (ARIA Authoring Practices) réservent explicitement alert aux contenus « importants et sensibles au temps ». Une erreur lue 5 secondes trop tard peut avoir entraîné une opération répétée, tandis qu'un succès annoncé avec quelques secondes de retard est inoffensif.
+
+**Les quatre états booléens deviennent des classes indépendantes** : `closable` / `showIcon` / `plain` / `withTitle` ont chacun une classe modificateur — parce qu'elles affectent la **disposition** (l'icône nécessite de la place à gauche, un titre augmente le remplissage, un bouton de fermeture nécessite de l'espace à droite) et pas simplement la couleur. L'éclatement en classes indépendantes permet au SCSS de composer la disposition par combinaison.
+
+**`plain` est le mode sobre** : il supprime la couleur de fond et la bordure, ne conservant que la couleur de l'icône et celle du texte — pour les scénarios « pas trop voyant mais devant rester en place » (comme une notice grise en haut de la page). Ce qui le distingue du mode par défaut est le poids visuel, pas la sémantique.
+
+**La correspondance d'icônes consomme le jeu d'icônes existant** : success → `check` (et non `success` — il n'y a pas d'icône success dans le jeu d'icônes, la coche exprime le succès), danger → `error`. C'est une couche de correspondance « sémantique → icône concrète », la couche UI n'a pas à se soucier de ce que contient précisément le jeu d'icônes.
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getAlertClassNames` | `(state: LhAlertState) => string[]` | Classes | Type + 4 booléens |
+| `getAlertRole` | `(type: LhAlertType) => LhAlertRole` | 'alert' \| 'status' | Rôle de live region |
+| `getAlertIconName` | `(type: LhAlertType) => string` | Nom de l'icône | Quatre icônes sémantiques |
+
+## Définitions de types
+
+```ts
+export type LhAlertType = 'info' | 'success' | 'warning' | 'danger'
+export type LhAlertRole = 'alert' | 'status'
+
+export interface LhAlertState {
+  type: LhAlertType
+  closable: boolean      // Afficher le bouton de fermeture
+  showIcon: boolean      // Afficher l'icône sémantique
+  plain: boolean         // Mode sobre (ni fond ni bordure)
+  withTitle: boolean     // Avec titre (structure en deux parties titre + description)
+}
+```
+
+## Accessibilité
+
+```ts
+getAlertRole('info')     // 'status'
+getAlertRole('success')  // 'status'
+getAlertRole('warning')  // 'alert'
+getAlertRole('danger')   // 'alert'
+```
+
+- **Le rôle se place sur l'élément racine de l'alerte** : `<div class="lh-alert lh-alert--danger" role="alert">`. Une alerte déjà présente au chargement de la page est immédiatement annoncée ; une alerte insérée dynamiquement est plus robuste combinée à `aria-live` (certains lecteurs d'écran réagissent de manière incohérente à un role=alert inséré dynamiquement).
+- **L'icône en aria-hidden** : la sémantique est déjà transmise par le texte, répéter l'annonce « attention » est du bruit. ne l'exposez que si l'icône porte une information absente du texte.
+- **L'accessibilité du bouton de fermeture** : `aria-label="Fermer"`, et au clic l'alerte est retirée du DOM — le retrait lui-même ne nécessite pas de notification supplémentaire (résultat direct d'une action volontaire de l'utilisateur).
+- **La hiérarchie entre le titre et la description** : en présence d'un titre, celui-ci utilise `<div class="lh-alert__title" role="heading">` (ou directement `<h4>`), la description formant un paragraphe distinct. Le lecteur d'écran traite cela selon le flux du document.
+- **N'utilisez pas alert pour les erreurs de validation de formulaire** : les erreurs au niveau du champ doivent être accolées au champ (`aria-describedby` + `aria-invalid` dans `form`) ; alert sert au récapitulatif du formulaire entier.
+
+## Exemples d'utilisation
+
+```ts
+import { getAlertClassNames, getAlertRole, getAlertIconName } from '@lh-ui/share/core/alert'
+
+getAlertClassNames({ type: 'warning', closable: true, showIcon: true, plain: false, withTitle: false })
+// ['lh-alert', 'lh-alert--warning', 'lh-alert--closable', 'lh-alert--show-icon']
+
+getAlertRole('danger')     // 'alert'
+getAlertIconName('success')  // 'check'
+```
+
+```vue
+<!-- Vue3 : usage de base -->
+<template>
+  <LhAlert type="warning" :closable="true" show-icon title="Attention">
+    Une fenêtre de maintenance est en cours, certaines fonctionnalités peuvent être indisponibles.
+  </LhAlert>
+</template>
+```
+
+```vue
+<!-- Récapitulatif de validation de formulaire : rendu seulement si failedRules est non vide -->
+<template>
+  <LhAlert
+    v-if="failedRules.length"
+    type="danger"
+    show-icon
+    :closable="false"
+    title="Le formulaire comporte N corrections à apporter"
+  >
+    <ul>
+      <li v-for="rule in failedRules" :key="rule.field">{{ rule.message }}</li>
+    </ul>
+  </LhAlert>
+</template>
+```
+
+```tsx
+// React : affichage/masquage contrôlé (state visible + bouton de fermeture passant à false) ;
+// le contenu de l'alerte reste dans le DOM, ce qui est meilleur pour le SEO et le repli,
+// on bascule via CSS display plutôt qu'en démontant le composant
+```
+
+```ts
+// uniapp : <view> + icône sémantique via <image> ou une police d'icônes ;
+// closable utilise catchtap côté mini-programme
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-alert` | Conteneur racine |
+| `.lh-alert--{info\|success\|warning\|danger}` | Type sémantique (fond + bordure + couleur d'icône) |
+| `.lh-alert--closable` | Avec bouton de fermeture (espace réservé à droite) |
+| `.lh-alert--show-icon` | Avec icône (espace réservé à gauche) |
+| `.lh-alert--plain` | Mode sobre (fond transparent, sans bordure) |
+| `.lh-alert--with-title` | Structure en deux parties (espacement vertical accru) |
+| `.lh-alert__icon` / `__title` / `__content` / `__close` | Icône / titre / description / bouton de fermeture |
+
+Couleurs sémantiques : `--lh-info-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color` ; le fond clair est obtenu par mélange à faible opacité de la couleur sémantique (un jeu pour le clair et un pour le sombre) ; arrondi `--lh-border-radius-base`.
+
+## Remarques
+
+- **L'alerte fait partie du flux du document** : elle occupe de l'espace dans la disposition et repousse le contenu. Une alerte persistante en haut de la page décale l'ensemble du contenu — c'est à la couche UI de décider du positionnement fixe (`position: sticky`), core n'intervient pas.
+- **Le caractère interruptif de `role="alert"` est à double tranchant** : plusieurs alertes danger simultanées dans une page enchaînent les interruptions d'annonce, ce qui est une très mauvaise expérience. Pour un scénario de récapitulatif d'erreurs, il est préférable d'utiliser une seule alerte listant tous les problèmes plutôt qu'une alerte par erreur.
+- **Les alertes insérées dynamiquement** : role=alert exige que l'élément **soit déjà présent dans le DOM** au moment de l'annonce ; celles insérées par JS doivent s'accompagner d'un repli `aria-live="assertive"` (alert) ou `"polite"` (status). Cela relève de la couche UI.
+- **`closable` et la persistance de l'état** : une alerte fermée par l'utilisateur ressuscite après rafraîchissement. S'il faut « ne plus réapparaître après fermeture » (comme une annonce déjà lue), la couche métier doit la persister dans localStorage.
+- **La sémantique du mode `plain` ne change pas** : le mode sobre ne modifie que le rendu visuel, le rôle et la couleur de l'icône déterminés par `type` s'appliquent comme d'habitude — ne la rétrogradez pas de danger à info pour la rendre « discrète », ce serait un rétrogradage sémantique.
+- **Pas de bouton interactif à l'intérieur d'une alerte** : lorsqu'il faut « Réessayer » ou « Voir les détails », placer le bouton dans `__content` ne pose aucun problème (le rôle d'alerte n'interdit pas l'interaction), mais **n'utilisez pas alert pour simuler une boîte de dialogue**.
+
+<FnPlayground module="alert" fn="getAlertRole" params='{"type": "warning"}' />

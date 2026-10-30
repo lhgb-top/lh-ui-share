@@ -1,0 +1,126 @@
+---
+title: Primeros pasos
+description: 'Instalar @lh-ui/share, importar funciones puras a demanda y las cuatro formas de importar los estilos'
+---
+
+# Primeros pasos
+
+## Instalación
+
+```bash
+pnpm add @lh-ui/share
+# o npm i @lh-ui/share / yarn add @lh-ui/share
+```
+
+Este paquete usa `external: []`: **no tiene ninguna dependencia en tiempo de ejecución**, se puede usar nada más instalarlo, sin necesidad de peer-instalar un framework antes.
+
+## Importar la lógica (JS / TS)
+
+### Import directo: todo
+
+```ts
+import { lhlocale, createNamespace, LH_THEME_PRESETS } from '@lh-ui/share'
+```
+
+La entrada completa es `./es/index.js` (CJS va por `./lib/index.js`). El `sideEffects` de este paquete solo declara
+`**/*.css` y `**/*.scss`, de modo que los módulos JS puros son tree-shakeables: un import completo no mete código de más.
+
+### Import por subruta: por componente (recomendado)
+
+```ts
+import { getButtonClasses, getButtonAria } from '@lh-ui/share/core/button'
+import { sxToStyle } from '@lh-ui/share/core/shared/sx'
+import { lhlocale } from '@lh-ui/share/locales'
+import { LH_THEME_PRESETS, buildPresetStyleText } from '@lh-ui/share/theme'
+```
+
+Cada subruta tiene sus propias tres condiciones de exportación (types / import / require): un import a demanda
+solo mete las funciones puras de ese componente. La tabla completa de claves está en [Entradas del paquete y subrutas](/es/guide/exports).
+
+## Importar estilos (cuatro formas)
+
+El campo `files` de este paquete solo publica los cuatro directorios `es / lib / dist / styles`; los estilos se pueden importar por dos caminos:
+
+### 1. Tema completo (lo más fácil)
+
+```ts
+// Solo tokens, sin ningún estilo de componente; el tamaño mínimo
+import '@lh-ui/share/theme.css'       // tokens claros de :root
+import '@lh-ui/share/theme-dark.css'  // sobrescritura oscura de [data-theme='dark']
+```
+
+Ideal para proyectos que «solo quieren los tokens de diseño y escriben los estilos de los componentes por su cuenta».
+
+### 2. Tema completo + todos los estilos de componentes
+
+```ts
+import '@lh-ui/share/styles.css'      // dist/styles/index.css: tokens + los 58 conjuntos de componentes
+```
+
+`dist/index.css` es el artefacto final agregado en tiempo de compilación: un solo import obtiene el aspecto completo.
+
+### 3. SCSS fuente a demanda (requiere un empaquetador que compile SCSS)
+
+```scss
+// Agregado completo (tokens de tema + todos los componentes)
+@use '@lh-ui/share/styles/index.scss';
+
+// Un solo componente: se compila solo este conjunto, el artefacto es el más pequeño
+@use '@lh-ui/share/styles/button';
+```
+
+El directorio `styles/` se publica como **código fuente**, compilable en tiempo real por el sass loader de
+vite / webpack, para poder `@use` los tokens y personalizarlos dentro del proyecto.
+
+### 4. Importar solo los tokens para personalización profunda
+
+```scss
+@use '@lh-ui/share/styles/theme/common/var.scss' as *;
+
+.my-panel {
+  color: $lh-text-primary;
+  border: 1px solid $lh-border-color;
+}
+```
+
+`styles/theme/common/` expone 183 variables SCSS `$lh-*` y 6 mixins de patrones chinos;
+véanse [Tokens de diseño](/es/theme/tokens) y [Sistema de patrones](/es/theme/patterns).
+
+## TypeScript
+
+Todas las subrutas llevan la condición `types`, sin necesidad de paquetes `@types` adicionales:
+
+```ts
+import type { LhThemePreset, LhThemeVars } from '@lh-ui/share/theme'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+```
+
+Las exportaciones de tipos van aparte por `./es/**/*.d.ts`: `import type` no mete implementación en el artefacto.
+
+## Ejecutar una función pura
+
+No hace falta ningún framework, se puede ejecutar en Node:
+
+```ts
+import { getButtonClasses } from '@lh-ui/share/core/button'
+
+getButtonClasses({ size: 'small', type: 'primary', disabled: true })
+// => 'lh-button lh-button--small lh-button--primary is-disabled'
+```
+
+¿Quieres probar de forma interactiva? Cada página de componente del sitio de documentación incluye un panel de
+**prueba de funciones**: cambia los parámetros y ve la salida en tiempo real —
+por ejemplo, la [prueba de funciones de steps](/es/components/navigation/steps).
+
+## Modo oscuro
+
+Los componentes de este paquete no activan el modo oscuro por su cuenta, solo reconocen variables CSS.
+Añade el atributo al nodo raíz y toda la página se invierte:
+
+```html
+<html data-theme="dark">
+  <!-- o <body class="dark">; var-dark.scss cubre ambos selectores -->
+</html>
+```
+
+El mecanismo y la trampa del «horneado en tiempo de compilación» se explican en [Modo oscuro](/es/theme/dark-mode).

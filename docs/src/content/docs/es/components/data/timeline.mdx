@@ -1,0 +1,161 @@
+---
+title: timeline —— Línea de tiempo
+description: 'getTimelineSide para la alternancia izquierda/derecha, cuatro tipos de nodos semánticos, layout de dos columnas alternate'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La línea de tiempo visualiza «eventos ordenados en el tiempo»: una línea vertical une varios nodos, cada uno con hora, título y contenido. Es habitual en los seguimientos logísticos, los registros de operaciones y las notas de versión. `core/timeline` es muy ligero: su trabajo principal es el cálculo de la alternancia izquierda/derecha del lado del layout y el ensamblaje de los nombres de clase.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhTimeline`: seguimientos logísticos, registros de aprobación, notas de actualización de versión, flujos de auditoría de operaciones.
+- Escenarios donde los eventos están **ordenados en el tiempo** y se quiere realzar la sensación de eje temporal.
+- **No usarlo para**: pasos sin dimensión temporal (usa `steps`, que enfatiza el progreso y no el tiempo); eventos que necesitan filtrado o búsqueda (usa una lista con filtros).
+
+## Importación
+
+```ts
+import {
+  getTimelineItemClassNames,
+  getTimelineClassNames,
+  getTimelineSide,
+} from '@lh-ui/share/core/timeline'
+import type { LhTimelineMode, LhTimelineType, LhTimelineItemState } from '@lh-ui/share/core/timeline'
+```
+
+## Intención de diseño
+
+**Dos modos de layout**:
+
+- `left` (por defecto): la línea vertical está en el extremo izquierdo y todo el contenido se dispone en una sola columna a la derecha. Sencillo y con alta densidad de información.
+- `alternate`: la línea vertical está centrada y el contenido **se alterna a izquierda y derecha**; `getTimelineSide(index)` usa `index % 2` para decidir el lado (los pares a la izquierda, los impares a la derecha). Este modo es visualmente más simétrico y encaja cuando los bloques de contenido son grandes y la línea de tiempo es el cuerpo principal de la página.
+
+**Por qué `getTimelineSide` está en el core y no en los estilos**: el lado no solo determina la clase CSS, sino también **el orden de los subcomponentes de contenido** (cuando la marca de tiempo va en la columna izquierda debe preceder al contenido, y cuando va en la columna derecha debe ir detrás). Al calcularlo con una función pura, la lógica de renderizado es idéntica en todas las plataformas y no aparece la divergencia de «en Vue se alterna, en React todo a la izquierda».
+
+**Cuatro tipos semánticos**: `primary` / `success` / `warning` / `danger`, que corresponden al color del punto del nodo. La semántica la asigna quien llama según la naturaleza del evento (una operación con éxito, `success`; una alerta, `warning`); el core solo hace el mapeo a nombres de clase y no interpreta el significado de negocio.
+
+**La utilidad de `isLast`**: el último nodo **no dibuja la línea vertical** (la clase `--last` elimina el segmento de `::before`); de lo contrario, el eje sobresaldría un trecho por debajo del último nodo.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `getTimelineItemClassNames` | `(state: LhTimelineItemState) => string[]` | nombres de clase | tipo/hueco/lado/último elemento |
+| `getTimelineClassNames` | `(mode: LhTimelineMode) => string[]` | nombres de clase | modificador alternate |
+| `getTimelineSide` | `(index: number) => 'left' \| 'right'` | lado | los pares a la izquierda, los impares a la derecha |
+
+## Definiciones de tipos
+
+```ts
+export type LhTimelineMode = 'left' | 'alternate'
+export type LhTimelineType = 'primary' | 'success' | 'warning' | 'danger'
+
+export interface LhTimelineItemState {
+  type: LhTimelineType | undefined
+  hollow: boolean       // nodo hueco (solo el borde, para eventos «aún no alcanzados»)
+  side: 'left' | 'right'  // el lado en el modo alternate
+  isLast: boolean
+}
+```
+
+## Accesibilidad
+
+La línea de tiempo es un **componente puramente expositivo**, sin un rol de interacción APG. El contenido en sí tiene semántica de lista ordenada; se recomienda envolverlo con `<ol>`:
+
+```html
+<ol class="lh-timeline">
+  <li class="lh-timeline__item">
+    <time datetime="2026-10-12T10:00">10:00</time> Pedido entregado
+  </li>
+</ol>
+```
+
+- El elemento `<time>` permite que los lectores de pantalla y los buscadores reconozcan la hora; el atributo `datetime` usa el formato ISO 8601.
+- Los puntos de los nodos son puramente decorativos: marcales `aria-hidden="true"` o impleméntalos con pseudoelementos (los pseudoelementos, por su naturaleza, no están en el árbol de accesibilidad).
+- Si la línea de tiempo expresa un **progreso** (como «actualmente en el paso 3»), valora usar `steps` con `aria-current`.
+
+## Ejemplos de uso
+
+```ts
+import { getTimelineSide, getTimelineClassNames } from '@lh-ui/share/core/timeline'
+
+getTimelineSide(0)  // 'left'
+getTimelineSide(1)  // 'right'
+getTimelineSide(2)  // 'left'
+getTimelineClassNames('alternate')  // ['lh-timeline', 'lh-timeline--alternate']
+getTimelineClassNames('left')       // ['lh-timeline']
+```
+
+```vue
+<!-- Vue3: modo alternate -->
+<ol :class="getTimelineClassNames(mode)">
+  <li
+    v-for="(item, index) in items"
+    :key="item.id"
+    :class="getTimelineItemClassNames({
+      type: item.type,
+      hollow: item.hollow,
+      side: getTimelineSide(index),
+      isLast: index === items.length - 1,
+    })"
+  >
+    <template v-if="mode === 'alternate'">
+      <!-- Columna izquierda -->
+      <div v-if="getTimelineSide(index) === 'left'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+        <p class="lh-timeline__desc">{{ item.desc }}</p>
+      </div>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <!-- Columna derecha -->
+      <div v-if="getTimelineSide(index) === 'right'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+    <template v-else>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <div class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+  </li>
+</ol>
+```
+
+```tsx
+// React: en el modo alternate el lado decide el orden de renderizado; ramifica con getTimelineSide(index)
+```
+
+```ts
+// uniapp: iteración con <view>; el layout de dos columnas de alternate usa posicionamiento absoluto + 50 %/50 %
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-timeline` | clase base (restablecimiento del `<ol>`) |
+| `.lh-timeline--alternate` | modo alternado (eje centrado) |
+| `.lh-timeline__item` | un elemento de nodo |
+| `.lh-timeline__item--{primary\|success\|warning\|danger}` | tipo semántico (color del punto) |
+| `.lh-timeline__item--hollow` | punto hueco (no alcanzado) |
+| `.lh-timeline__item--right` | columna derecha en alternate |
+| `.lh-timeline__item--last` | último elemento (no dibuja el segmento inferior del eje) |
+| `.lh-timeline__dot` | punto (el `::before` dibuja el eje) |
+| `.lh-timeline__content` / `__time` / `__title` / `__desc` | zona de contenido |
+
+El color del eje es `--lh-border-color`; los cuatro colores de los puntos son `--lh-primary-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`; los nodos huecos usan borde + fondo transparente.
+
+## Notas
+
+- **`isLast` es obligatorio pasarlo**: sin él, el eje sobresale del último nodo y, visualmente, parece una barra de progreso truncada.
+- **El orden de los datos en el modo `alternate`**: la alternancia izquierda/derecha es **por index**, coherente con el orden temporal de los datos; no recalcules el lado tras ordenar en la capa UI, o el lado quedará desplazado.
+- **La semántica del nodo hueco `hollow`**: indica «este evento aún no se ha alcanzado» (como el «pendiente de entrega» de la logística). Es ortogonal a `type`: hueco + warning significa «no alcanzado y con riesgo».
+- **El desbordamiento del contenido**: en el modo alternate cada columna solo tiene la mitad del ancho y los textos largos se ajustan en muchas líneas; cuando hay mucho contenido usa el modo `left` o ponle a la zona de contenido un `max-height` con expansión.
+- **El formato de la hora**: el core no formatea horas; la capa UI usa `core/shared/date.formatDate` o lo gestiona por su cuenta; el `<time datetime>` debe ir en formato ISO para que las máquinas puedan analizarlo.
+- **La línea de tiempo invertida**: en algunos escenarios se quiere el evento más reciente arriba; basta con invertir los datos en la capa de datos, el core no es consciente de la dirección.
+
+<FnPlayground module="timeline" fn="getTimelineSide" params='{"index": 3}' />

@@ -1,0 +1,212 @@
+---
+title: utils —— الأدوات العامة
+description: 'createNamespace / deepMerge / debounce / throttle / cssVars، و15 دالة أخرى مستقلة عن إطار العمل'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`src/utils/` هي أدلة الأدوات العامة في القاع: حتى core لا يعتمد عليها (فـ core تستخدم
+المجموعة الأكثر تخصصًا من الخوارزميات في `core/shared/`)، بل هي تخدم تطبيقات
+المكوّنات في مكتبات واجهة المستخدم وجانب العمل.
+
+## طريقة الاستيراد
+
+```ts
+import { createNamespace, deepMerge, debounce, generateId } from '@lh-ui/share/utils'
+```
+
+## جدول الدوال
+
+| الدالة | التوقيع | الدور |
+| --- | --- | --- |
+| `generateId` | `(prefix = 'lh') => string` | توليد معرّف فريد (`${prefix}_${Date.now()}_${counter}`) |
+| `generateRandomId` | `() => string` | توليد معرّف عشوائي (7 أحرف base36) |
+| `isEmpty` | `(val: unknown) => boolean` | هل القيمة فارغة (فقط `null` / `undefined` / `''`) |
+| `isString` | `(val: unknown) => val is string` | حارس نوع: سلسلة نصية |
+| `isNumber` | `(val: unknown) => val is number` | حارس نوع: رقم (يُعيد `false` لـ `NaN`) |
+| `isPlainObject` | `(val: unknown) => val is Record<string, unknown>` | حارس نوع: كائن عادي |
+| `debounce` | `<T>(fn: T, delay = 300) => LhDebounced<T>` | مثبِّط (مع `cancel` / `flush`) |
+| `throttle` | `<T>(fn: T, delay = 300) => LhThrottled<T>` | مُحدِّد (تنفيذ فوري على الحدّة الأمامية + تنفيذ مُلحق على الحدّة الخلفية) |
+| `deepMerge` | `<T>(target: T, ...sources: Partial<T>[]) => T` | دمج عميق للكائنات |
+| `getScrollbarWidth` | `() => number` | جلب عرض شريط التمرير (النتيجة مُخزَّنة) |
+| `toggleClass` | `(el, className, force?) => void` | إضافة / إزالة صنف CSS |
+| `getEventValue` | `(e: Event) => string` | جلب قيمة الهدف من الحدث |
+
+تصدير الوحدات الفرعية (تُعاد تصديرها في نهاية `@lh-ui/share/utils`):
+
+| الدالة | التوقيع | الدور |
+| --- | --- | --- |
+| `createNamespace` | `(block: string) => LhNamespace` | أداة نطاق تسمية BEM |
+| `toCssVarName` | `(key: string) => string` | توليد اسم متغير CSS (**مُساواة تمامًا (idempotent)**: يُعاد كما هو إذا كان يحمل بادئة `--lh-`) |
+| `cssVars` | `(vars: Record<string, string>) => Record<string, string>` | يحوّل أزواج مفاتيح/قيم themeVars إلى كائن متغيرات CSS قابل للربط مع `:style` |
+| `stripCssVarName` | `(key: string) => string` | يزيل البادئة `--lh-` ويعيد مفتاح prop في themeVars |
+
+## createNamespace —— نطاق تسمية BEM
+
+```ts
+const ns = createNamespace('button')
+
+ns.b()              // 'lh-button'
+ns.e('text')        // 'lh-button__text'
+ns.m('primary')     // 'lh-button--primary'
+ns.em('text', 'disabled')  // 'lh-button__text--disabled'
+ns.is('loading', true)     // 'is-loading'
+ns.is('loading', false)    // '' (سلسلة فارغة، يتجاهلها إطار العمل)
+```
+
+تُولَّد جميع أسماء أصناف مكوّنات lh-ui عبرها، لضمان اتساق بنية BEM وعدم تسريب البادئة
+`lh-`. وأصناف الحالة من `is()` **لا تحمل بادئة النطاق** (`is-loading` وليس
+`lh-button--is-loading`)، وهذه اتفاقية العائلة.
+
+الأنواع:
+
+```ts
+export interface LhNamespace {
+  b: () => string                       // Block
+  e: (element: string) => string        // Element
+  m: (modifier: string) => string       // Modifier
+  em: (element: string, modifier: string) => string  // Element + Modifier
+  is: (name: string, state?: boolean | string) => string  // صنف الحالة
+}
+```
+
+## debounce / throttle
+
+### debounce —— تنفيذ آخر استدعاء فقط خلال فترة الصمت
+
+```ts
+const debounced = debounce((q: string) => search(q), 300)
+input.addEventListener('input', (e) => debounced(e.target.value))
+
+debounced.cancel()   // إلغاء الاستدعاءات المعلَّقة عند الفصل
+debounced.flush()    // تنفيذ الاستدعاء المعلَّق فورًا (عملية فارغة إن لم يوجد)
+```
+
+ليس `cancel` / `flush` تزيينًا اختياريًا: فعدم تنظيف المؤقّت عند فصل المكوّن يؤدي إلى
+استدعاء سياق مُدمَّر؛ كما يحتاج زر «البحث الفوري» إلى `flush()` لتنفيذ الاستعلامات
+التي لم تُطلَق بعد على الفور.
+
+### throttle —— تنفيذ فوري على الحدّة الأمامية + تنفيذ مُلحق على الحدّة الخلفية
+
+```ts
+const throttled = throttle(onScroll, 100)
+window.addEventListener('scroll', throttled)
+```
+
+**تنفيذ فوري في بداية** النافذة الزمنية (الحدّة الأمامية)، ويُنفَّذ آخر استدعاء داخل
+النافذة عند نهايتها (الحدّة الخلفية). والمُحدِّد البسيط يفقد الإطار الأخير من التمرير
+السريع —— بينما لحظة توقُّف التمرير هي الأشدُّ حاجةً إلى التحديث (تحديد موضع sticky /
+affix).
+
+يملك `throttle` `cancel` فقط (تنظيف مؤقِّت الحدّة الخلفية + إعادة ضبط `lastTime`)، ولا
+يملك `flush` (فدلالة الحدّة الخلفية هي «التنفيذ لاحقًا» أصلاً).
+
+الأنواع:
+
+```ts
+export interface LhDebounced<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+  flush(): void
+}
+
+export interface LhThrottled<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+}
+```
+
+## ثلاثية cssVars
+
+تستخدم خاصية `themeVars` في ConfigProvider **مفاتيح مختصرة** (`'primary-color'`)،
+بينما ما يستهلكه المكوّن هو متغير CSS (`--lh-primary-color`). وتقوم هذه الدوال الثلاث
+بالتحويل في الاتجاهين:
+
+```ts
+cssVars({ 'primary-color': '#1677ff' })
+// { '--lh-primary-color': '#1677ff' }   ← قابل للربط مباشرةً مع :style
+
+toCssVarName('primary-color')      // '--lh-primary-color'
+toCssVarName('--lh-primary-color') // '--lh-primary-color' (مُساواة تمامًا)
+
+stripCssVarName('--lh-primary-color')  // 'primary-color'
+```
+
+**خاصية التساوي التام (idempotence) في `toCssVarName` مهمة**: فهي تمنع أن تُعالَج
+المفاتيح التي تحمل البادئة بالفعل على بعض المسارات مرتين فتصبح
+`--lh---lh-primary-color` —— وهو مفتاح يفشل بصمت (لا وجود لمتغير CSS كهذا)،
+فيبدو تبديل السمة وكأنه «لا يستجيب».
+
+## deepMerge
+
+```ts
+deepMerge({ a: 1, nested: { x: 1 } }, { nested: { y: 2 } })
+// { a: 1, nested: { x: 1, y: 2 } }
+```
+
+- الدمج العودي فقط عندما **يكون الطرفان كائنات عادية**.
+- لا يُكتَب فوق القيمة إلا عندما تكون `sourceVal !== undefined` (تمرير `undefined` صراحةً
+  لا يكتب فوقه).
+- **يُعدِّل target في مكانها ويُعيدها** — وهذا موضع انتباه، فإذا كنت لا تريد تلويث
+  الكائن الأصلي فانسخه سطحياً أولًا بطبقة `{ ...target }`.
+
+## getScrollbarWidth
+
+```ts
+getScrollbarWidth()   // مثال: 15 (Windows) / 0 (macOS بلا شريط تمرير)
+```
+
+تُخزَّن النتيجة في متغير الوحدة `_scrollbarWidth`. **حارس SSR**: يُعيد `0` عندما يكون
+`typeof document === 'undefined'`.
+
+الاستخدام: عند فتح dialog / drawer يُقفل تمرير body، وتختفي من الحافة عرض شريط
+التمرير، فيُضاف `padding-right` للتعويض، وإلا ارتجّ محتوى الصفحة أفقيًا.
+
+## أمثلة استخدام
+
+### BEM + دمج الأصناف داخل المكوّن
+
+```ts
+const ns = createNamespace('dialog')
+
+const headerClass = computed(() => [
+  ns.e('header'),
+  ns.is('centered', props.centered),
+  // صنف مرَّره المستخدم
+  ...(typeof attrs.class === 'string' ? attrs.class.split(' ') : []),
+])
+```
+
+### حقن متغيرات السمة عبر ConfigProvider
+
+```ts
+const styleVars = computed(() => cssVars(props.themeVars))
+// <div :style="styleVars">
+```
+
+### تقييد مستمع التمرير
+
+```ts
+onMounted(() => {
+  const onScroll = throttle(updateAffixPosition, 100)
+  window.addEventListener('scroll', onScroll, true)
+  onUnmounted(() => {
+    window.removeEventListener('scroll', onScroll, true)
+    onScroll.cancel()
+  })
+})
+```
+
+## ملاحظات
+
+- **يحكم `isEmpty` في ثلاث حالات فقط**: `null` / `undefined` / `''`. أما `0` / `false` /
+  `[]` **فليست فارغة**. وللحكم على «مصفوفة فارغة / كائن فارغ» اكتب المنطق بنفسك.
+- **`isNumber(NaN)` يُعيد `false`**: فقد استُبعد NaN عمدًا.
+- **يُعدِّل `deepMerge` target في مكانها**: وهو المصدر الأكثر شيوعًا لسوء الاستخدام.
+- **`generateId` ليست دالة خالصة**: عدّاد الوحدة في تزايد، فتختلف النتائج بين الاستدعاءات
+  المتعددة في العملية نفسها (ويجب أن يتطابق الترتيب في SSR / CSR، انظر
+  [شرح generateAriaId في a11y](/ar/core/a11y#generateariaid)).
+- **دوال useLhSize وغيرها من composables ليست هنا**: فما يعتمد على الواجهة التركيبية
+  لـ Vue يعود إلى طبقة واجهة كل إطار، ولا تُصدِّره share.
+
+<FnPlayground module="utils" fn="createNamespace" params='{"block": "button"}' />

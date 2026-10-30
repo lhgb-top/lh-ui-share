@@ -1,0 +1,93 @@
+---
+title: delay —— 表示遅延の正規化
+description: 'resolveDelay は undefined をコンポーネントのデフォルトの表示 / 非表示のテンポへフォールバックさせる。tooltip / popover / popconfirm が共用'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+tooltip は「マウスを乗せるとすぐに表示し、離れたあと少しだけ待ってから消える」必要があります（通り過ぎるときのちらつきを避けるため）；popconfirm は「クリックするとすぐに現れる」必要があります。各浮遊層コンポーネントには独自の表示 / 非表示のテンポがありますが、「ユーザーが渡さなかったときにどのデフォルト値を使うか」は共通の事柄です。
+
+## いつ使うか
+
+- tooltip / popover / popconfirm などのホバー系浮遊層。props は `show-delay` / `hide-delay` を公開する。
+- すべての「ユーザーが上書きできるが、合理的なデフォルトがある」タイミングパラメータ。
+
+**使うべきでない**：固定タイミングのケース（message の 3 秒自動閉じ）は直接定数を書き、正規化を経る必要はない。
+
+## インポート方法
+
+```ts
+import { resolveDelay, type LhDefaultDelay } from '@lh-ui/share/core/shared/delay'
+```
+
+## 型と関数
+
+```ts
+export interface LhDefaultDelay {
+  show: number
+  hide: number
+}
+```
+
+| 関数 | シグネチャ | 役割 |
+| --- | --- | --- |
+| `resolveDelay` | `(showDelay: number \| undefined, hideDelay: number \| undefined, defaults: LhDefaultDelay) => LhDefaultDelay` | 表示 / 非表示遅延の正規化 |
+
+```ts
+resolveDelay(undefined, undefined, { show: 0, hide: 150 })
+// { show: 0, hide: 150 }   —— ユーザーが渡さなかったため、コンポーネントのデフォルトを使う
+
+resolveDelay(200, undefined, { show: 0, hide: 150 })
+// { show: 200, hide: 150 } —— show だけ上書きした
+```
+
+実装は 2 つの `??` です：`showDelay ?? defaults.show`、`hideDelay ?? defaults.hide`。`null` は同じパスを進みます（`??` は `null` と `undefined` の両方を処理する）。
+
+## なぜ単独の関数として抽出するのか
+
+3 つのコンポーネントでデフォルト値は異なりますが、正規化ロジックは同じです：
+
+| コンポーネント | デフォルト show | デフォルト hide | 理由 |
+| --- | --- | --- | --- |
+| tooltip | 0 | 150 | すぐ現れることで「通り過ぎても反応がない」を避ける；遅れて消えることでターゲットへ移動するときのちらつきを避ける |
+| popover | 0 | 150 | 同上だが、内容はインタラクティブで hide はより長い（UI 層が定める） |
+| popconfirm | 0 | 0 | クリックで起動し、ホバーのセマンティクスはない |
+
+抽出した後、新しい浮遊層コンポーネントは独自の `defaults` を渡すだけで済み、「undefined のフォールバック」をもう一度書く必要はありません。
+
+## debounce との違い
+
+混同しやすい 2 つのもの：
+
+| | `resolveDelay` | `debounce`（utils） |
+| --- | --- | --- |
+| セマンティクス | 「今回の表示 / 非表示の前にどれくらい待つか」の**パラメータ正規化** | 高頻度の呼び出しを一度の実行に**収束**させる調流ツール |
+| 用途 | 遅延値を計算する | 遅延値を使って本当のタイマーを包む |
+
+典型的なチェーンは直列に繋がります：`const { hide } = resolveDelay(props.hideDelay, undefined, DEFAULTS)` → `hideTimer = debounce(actualHide, hide)`。
+
+## 使用例
+
+```ts
+// popover コンポーネントの内部
+const DEFAULT_DELAY: LhDefaultDelay = { show: 0, hide: 150 }
+
+const delay = computed(() =>
+  resolveDelay(props.showDelay, props.hideDelay, DEFAULT_DELAY),
+)
+
+function onShow() {
+  setTimeout(open, delay.value.show)
+}
+function onHide() {
+  setTimeout(close, delay.value.hide)
+}
+```
+
+## 注意事項
+
+- **フォールバックだけでクランプはしない**：負の遅延を渡すとそのまま返されます。各 UI 層で「遅延は非負でなければならない」必要があれば、`setTimeout(fn, Math.max(0, ms))` で独自に処理してください（`setTimeout` は負数を 0 として扱うため、実際には問題は起きません）。
+- **`show` / `hide` は独立**：正規化された後も独立した 2 つの数値であり、コンポーネントはそれぞれを 2 つのタイマーに使います。
+- **新しいオブジェクトを返す**：呼び出しごとに新しい `{ show, hide }` を返すため、安全にリアクティブに包めます。
+
+<FnPlayground module="delay" fn="resolveDelay" params='{"showDelay": null, "hideDelay": 300, "defaults": {"show": 0, "hide": 150}}' />

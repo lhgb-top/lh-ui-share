@@ -1,0 +1,182 @@
+---
+title: grid 欄格 —— 版面配置
+description: '24 列 CSS Grid 欄格：resolveBreakpoint 斷點判定、resolveResponsiveSize 向下回退、span/offset/push/pull 到 grid-column 的鉗制映射'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+欄格是版面配置的骨架：把頁面切成 24 列，內容按列寬比例排佈、按斷點響應式變化。lh-ui 的欄格基於 **CSS Grid**（不是 flex 的百分比寬度），定位精度更高、支援顯式起點定位。`core/grid` 管的是**斷點判定、響應式回退、列定位的鉗制計算**——CSS 本身算不了「向下回退」和「越界鉗制」。
+
+## 何時使用
+
+- 各端實作 `<LhRow>` / `<LhCol>`：頁面主版面配置、表單兩列 / 三列排佈、卡片牆、儀表板。
+- 需要**響應式**列寬（PC 三列、平板兩列、手機一列）。
+- **不該用它**：簡單兩元素左右對齊（用 flex 或 `space` 更直接）；不定寬的流式版面配置（grid 列寬固定比例反而彆扭）。
+
+## 匯入方式
+
+```ts
+import {
+  LH_GRID_COLUMNS,
+  LH_GRID_BREAKPOINTS,
+  LH_GRID_BREAKPOINT_ORDER,
+  resolveBreakpoint,
+  resolveResponsiveSize,
+  getGridRowClassNames,
+  normalizeColSize,
+  clampSpan,
+  getColStyle,
+  getGridColClassNames,
+} from '@lh-ui/share/core/grid'
+import type {
+  LhGridBreakpoint, LhGridSpan, LhColSize, LhBreakpointSizes,
+} from '@lh-ui/share/core/grid'
+```
+
+## 設計意圖
+
+**CSS Grid 而非 flex 百分比**：flex 欄格的每個 col 都是 `width: x/24`，行內換行靠 flex-wrap，列間距用負 margin 抵消——一堆 hack。CSS Grid 直接 `grid-template-columns: repeat(24, 1fr)`，間距用 `gap`，col 用 `grid-column` 定位，語義乾淨。代價是 IE 不支援——lh-ui 的目標端（現代瀏覽器 + 小程序 webview）都已覆蓋。
+
+**斷點向下回退**：`resolveResponsiveSize(sizes, 'md')` 從 md 檔開始往小找，命中第一個**已宣告**的檔位。使用者只寫了 `{ xs: 24, lg: 12 }`，在 md（768~1024）寬度下會回退到 xs 的 24——**不是 undefined**。這是響應式 API 的核心體驗：使用者只宣告關鍵斷點，中間檔位自動沿用小螢幕設定。
+
+**`span = 0` 是哨兵而非 bug**：`span: 0, offset: 6` 表示「不佔列、只把後面內容推 6 列」。此時 `getColStyle` 輸出 `7 / 25`（延伸到末列）而非 `7 / span 0`——後者會讓元素塌縮成零寬度。
+
+**起點鉗制防撐破容器**：`offset 21 + span 8` 算出起點 22，越界。`getColStyle` 把起點鉗到 `24 + 1 - 8 = 17`——元素整體左移到能放下為止。註解寫了原因：越界的 `grid-column` 會讓 Grid 生成**隱式軌道**，把容器寬度撐破。
+
+**auto-placement 與顯式定位的分水嶺**：純 span 用 `span N`（不指定起點，Grid 自動排列）；帶 offset/push/pull 用 `start / span N`（顯式起點，打斷自動排列）。註解記錄了一個真實陷阱：純 span 若寫成 `1 / span N`，同行所有 Col 都從列 1 開始，Grid 只能把後面的推到下一行——視覺上變成「直排版」。
+
+**類別名映射表而非直接拼接**：`justify="center"` 和 `align="center"` 如果直接拼類別名會撞出兩個 `lh-row--center`（justify 走 justify-items、align 走 align-items，是兩個不同的 CSS 屬性）。用顯式映射表後：justify 的 center → `lh-row--center`，align 的 center → `lh-row--middle`（center 作 middle 的相容別名，對齊主流庫 API 習慣）。附帶好處：未知值不產出髒類別名。
+
+## 函式表
+
+| 函式 / 常數 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `resolveBreakpoint` | `(width: number) => LhGridBreakpoint` | 斷點 | 視區寬度 → 檔位 |
+| `resolveResponsiveSize` | `(sizes, breakpoint) => LhColSize \| undefined` | 生效尺寸 | 向下回退到最近已宣告檔 |
+| `getGridRowClassNames` | `(state: { justify?, align?, wrap? }) => string[]` | 類別名 | 對齊 / 換行 |
+| `normalizeColSize` | `(size?: LhColSize) => LhGridSpan` | 描述物件 | 數字 → `{ span }` |
+| `clampSpan` | `(span?: number) => number` | [0, 24] 整數 | 非有限值歸 0 |
+| `getColStyle` | `(size?: LhColSize) => Record<string, string>` | 內聯樣式 | grid-column 定位 |
+| `getGridColClassNames` | `(size?: LhColSize) => string[]` | 類別名 | span / offset |
+
+常數：`LH_GRID_COLUMNS = 24`、`LH_GRID_BREAKPOINTS`（xs 0 / sm 640 / md 768 / lg 1024 / xl 1280）、`LH_GRID_BREAKPOINT_ORDER`（從大到小）。
+
+## 類型定義
+
+```ts
+export type LhGridBreakpoint = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+
+export interface LhGridSpan {
+  span?: number        // 佔據列數（0 = 不佔列，僅用於 offset 定位）
+  offset?: number      // 左側空出列數
+  push?: number        // 起點右移
+  pull?: number        // 起點左移
+}
+
+export type LhColSize = number | LhGridSpan
+export type LhBreakpointSizes = Partial<Record<LhGridBreakpoint, LhColSize>>
+```
+
+## 無障礙
+
+欄格是純版面配置原語，**本身沒有無障礙語義**——不要給 Row / Col 加 role。內容語義由內部的元件提供。一條相關原則：
+
+- **版面配置變化不得改變 DOM 順序**：響應式重排時 Col 在 DOM 裡的順序固定，只是視覺列數變化。若需要不同斷點下內容順序不同（「主內容在 PC 左側、行動裝置頂部」），用原始碼順序 + `order` 樣式，不要切換 DOM 順序——讀屏軟體按 DOM 序播報，視覺與播報順序不一致會造成混亂。
+
+## 使用範例
+
+```ts
+import {
+  resolveBreakpoint, resolveResponsiveSize, getColStyle, clampSpan,
+} from '@lh-ui/share/core/grid'
+
+resolveBreakpoint(800)   // 'md'
+resolveBreakpoint(600)   // 'xs'（< 640）
+resolveBreakpoint(1300)  // 'xl'
+
+// 向下回退：md 檔未宣告 → 取 xs
+resolveResponsiveSize({ xs: 24, lg: 12 }, 'md')  // 24
+resolveResponsiveSize({ xs: 24, lg: 12 }, 'lg')  // 12
+resolveResponsiveSize({ xs: 24 }, 'xl')          // 24
+resolveResponsiveSize(undefined, 'md')           // undefined（無宣告）
+```
+
+```ts
+getColStyle(8)             // { gridColumn: 'span 8' }（auto-placement）
+getColStyle({ span: 8, offset: 4 })
+// { gridColumn: '5 / span 8' }（起點 = offset+1，鉗制後未越界）
+getColStyle({ span: 0, offset: 6 })
+// { gridColumn: '7 / 25' }（哨兵：不佔列、延伸到末列）
+getColStyle({ span: 8, offset: 21 })
+// { gridColumn: '17 / span 8' }（越界鉗制：起點 22 → 17）
+getColStyle({ span: 8, push: 4 })
+// { gridColumn: '5 / span 8' }（push 4 = 起點右移 4）
+getColStyle({ span: 8, pull: 4 })
+// { gridColumn: '1 / span 8' }（起點 5-4=1，鉗制下限 1）
+getColStyle({})            // { gridColumn: 'span 24' }（無聲明佔滿）
+
+clampSpan(8)    // 8
+clampSpan(30)   // 24（鉗到上限）
+clampSpan(-5)   // 0
+clampSpan(NaN)  // 0（非有限值歸 0）
+```
+
+```vue
+<!-- Vue3：響應式三列 → 兩列 → 一列 -->
+<template>
+  <LhRow :gutter="16">
+    <LhCol v-for="item in list" :key="item.id" :xs="24" :sm="12" :lg="8">
+      <LhCard>{{ item.title }}</LhCard>
+    </LhCol>
+  </LhRow>
+</template>
+```
+
+```vue
+<!-- 表單兩列布局 + offset 定位按鈕 -->
+<template>
+  <LhRow :gutter="20">
+    <LhCol :span="12"><LhFormItem label="姓名" prop="name" /></LhCol>
+    <LhCol :span="12"><LhFormItem label="邮箱" prop="email" /></LhCol>
+    <LhCol :span="12" :offset="12">
+      <LhButton type="primary" @click="submit">提交</LhButton>
+    </LhCol>
+  </LhRow>
+</template>
+```
+
+```tsx
+// React：斷點監聽由 UI 層用 resize 監聽或 useMediaQuery 驅動 state；
+// getColStyle 在 render 中純函數調用
+```
+
+```ts
+// uniapp：<view> + grid；小程序端無 window，斷點由 UI 層用 uni.getSystemInfoSync()
+// 的 safeArea/windowWidth 或 res.rpx 換算驅動，core 的 resolveBreakpoint 照用
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-row` | 行容器（`display: grid; grid-template-columns: repeat(24, 1fr)`） |
+| `.lh-row--{end\|center\|space-between\|space-around}` | 水平對齊（justify-items） |
+| `.lh-row--{middle\|bottom}` | 垂直對齊（align-items） |
+| `.lh-row--nowrap` | 不換行 |
+| `.lh-col` | 列容器 |
+| `.lh-col--{1..24}` | span 列數 |
+| `.lh-col--offset-{1..24}` | 左側偏移列數 |
+
+間距令牌 `--lh-row-gutter`（行間距，由 `gutter` prop 覆蓋）；列間透過 grid `gap` 實作。
+
+## 注意事項
+
+- **`gutter` 與 grid gap**：Grid 的 gap 是行列**同時**生效的；只想要列間距不要行間距時，行容器要單獨覆蓋 `row-gap: 0`。
+- **響應式斷點需 UI 層監聽**：`resolveBreakpoint` 是純函式，UI 層要自己監聽 resize（或用 `matchMedia`）把寬度餵進來。SSR 首屏無 window，預設渲染 xs 檔、用戶端激活後糾正。
+- **不要混用 auto 與顯式定位**：同行裡一個 Col 用純 span、另一個用 offset，顯式定位的那個會打斷 auto-placement——行內排列結果可能不直觀。要嘛全純 span，要嘛全顯式。
+- **`push` / `pull` 與 `offset` 的區別**：三者都改起點，但語義不同——`offset` 是「左側留空」（佔位語義），`push/pull` 是「平移」（視覺排序）。實作在 `getColStyle` 裡都是改起點，**類別名層面只有 offset 有對應類**（push / pull 只走內聯樣式）。
+- **24 列座標系統是硬約束**：`span 25` 會被鉗到 24；`offset 24 + span 1` 起點鉗到 24。業務側若需要超過 24 的細粒度，改用 `LhRow` 巢狀而非加大列數。
+- **巢狀欄格**：`LhCol` 裡再放 `LhRow`，內層重新從 24 列開始算——子欄格不繼承父級的 span 上下文。這是 CSS Grid 的天然行為。
+- **類別名 span 與內聯樣式並存**：`getGridColClassNames` 出的 `lh-col--8` 與 `getColStyle` 的 `grid-column` 是兩套機制（類別名供 SCSS 媒體查詢、內聯供 JS 響應式）。**UI 層二選一**，兩者同時寫會互相覆蓋（內聯樣式贏）。
+
+<FnPlayground module="grid" fn="getColStyle" params='{"size": {"span": 8, "offset": 4}}' />

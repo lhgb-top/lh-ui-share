@@ -1,0 +1,146 @@
+---
+title: rate —— 評分
+description: 'clampRate 鉗制、stepRate 半星步進、getStarFill 逐星填充檔位、slider 語義屬性包'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+評分把「打分」變成了**離散的星級選擇**：使用者點亮星星而不是輸入數字。`core/rate` 管的是逐星填充檔位（全星/半星/空）、半星步進與浮點累積、以及 APG slider 語義——評分控制項在無障礙層面是滑桿，不是單選群組。
+
+## 何時使用
+
+- 各端實作 `LhRate`：商品/服務評價、難度標注、滿意度調查。
+- 值域為 1~N 的整數（或允許半星的 0.5 步進）的場景。
+- **不該用它**：需要精確小數或任意範圍的連續值（用 `slider` 或 `input-number`）；唯讀展示且無互動需求時仍可用 rate，但應切到 `readonly` 態。
+
+## 匯入方式
+
+```ts
+import {
+  LH_RATE_MAX_DEFAULT,
+  clampRate,
+  stepRate,
+  getStarFill,
+  getRateAriaText,
+  getRateClassNames,
+  getRateAria,
+} from '@lh-ui/share/core/rate'
+import type { LhRateState } from '@lh-ui/share/core/rate'
+```
+
+## 設計意圖
+
+`stepRate` 在加減後做 `Math.round(next * 10) / 10`——這不是多餘，是**浮點累積的防禦**：0.5 步進在 JS 裡是 `0.5 → 1.0 → 1.5` 沒問題，但 `0.1 + 0.2 !== 0.3` 這類陷阱在其它步進值下會出現，統一保留一位小數把結果釘回乾淨的小數。`getStarFill` 的判定順序是 `full → half → empty`：先判整星，再判半星，保證 `value=2.5` 時第 3 顆是 `half` 而非 `empty`。
+
+`getRateAriaText` 用 `formatMessage` 插值 `{n}`，文案模板來自語言包（`rate.ariaText`），數值先做同樣的 round 再轉字串——aria 文案與視覺填充必須基於同一個規範化後的值。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `clampRate` | `(value: number \| undefined, max: number) => number` | 鉗制值 | 非數值歸 0，上限由 max |
+| `stepRate` | `(value, direction: 1 \| -1, allowHalf, max) => number` | 步進值 | 半星 0.5 步進，一位小數 |
+| `getStarFill` | `(value, index, allowHalf) => 'full' \| 'half' \| 'empty'` | 填充檔位 | 第 index 顆星（1 起） |
+| `getRateAriaText` | `(value, template: string) => string` | aria 文案 | 插值 `{n}` 星 |
+| `getRateClassNames` | `(state: LhRateState & { readonly, disabled }) => string[]` | 類別名 | 唯讀/停用修飾 |
+| `getRateAria` | `(options: { value, max, disabled?, ariaValueText? }) => LhAriaAttrs` | aria 屬性包 | slider 語義 |
+
+## 類型定義
+
+```ts
+export interface LhRateState {
+  max: number
+  value: number
+  allowHalf: boolean
+}
+
+export const LH_RATE_MAX_DEFAULT = 5
+```
+
+## 無障礙
+
+`getRateAria` 輸出 **slider 語義**（不是 radiogroup）：評分的值是連續可調的（尤其半星模式），APG 的 rating 模式常以 slider 實作。鍵盤互動按 slider 規約：←/→ 減/增一步。
+
+```ts
+getRateAria({ value: 4.5, max: 5 })
+// { role: 'slider', 'aria-valuenow': 4.5, 'aria-valuemin': 0, 'aria-valuemax': 5 }
+
+getRateAria({ value: 0, max: 5, disabled: true, ariaValueText: '0 星' })
+// { role: 'slider', 'aria-valuenow': 0, 'aria-valuemin': 0, 'aria-valuemax': 5,
+//   'aria-disabled': true, 'aria-valuetext': '0 星' }
+```
+
+`aria-valuetext` **優先於 valuenow 播報**——螢幕閱讀器會唸「4 星半」而不是「4.5」。每顆星按鈕另需 `aria-label`（UI 層用 `getRateAriaText(value, t('rate.ariaText'))` 生成）。
+
+## 使用範例
+
+```ts
+import { getStarFill, stepRate, clampRate } from '@lh-ui/share/core/rate'
+
+getStarFill(3.5, 3, true)   // 'full'
+getStarFill(3.5, 4, true)   // 'half'
+getStarFill(3.5, 4, false)  // 'empty'（整星模式下 3.5 的第 4 顆是空）
+getStarFill(3.5, 5, true)   // 'empty'
+stepRate(3, 1, true, 5)     // 3.5
+stepRate(3.5, 1, true, 5)   // 4
+stepRate(0, -1, true, 5)    // 0（鉗制）
+clampRate(undefined, 5)     // 0
+clampRate(9, 5)             // 5
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getRateClassNames({ max, value, allowHalf, readonly, disabled })">
+  <div
+    class="lh-rate__star-list"
+    v-bind="getRateAria({ value, max, disabled, ariaValueText: getRateAriaText(value, t('rate.ariaText')) })"
+    tabindex="0"
+    @keydown.left="onStep(-1)"
+    @keydown.right="onStep(1)"
+  >
+    <button
+      v-for="i in max"
+      :key="i"
+      type="button"
+      class="lh-rate__star"
+      :class="`lh-rate__star--${getStarFill(value, i, allowHalf)}`"
+      @click="onSelect(i)"
+    >
+      <LhIcon :name="getStarFill(value, i, allowHalf) === 'empty' ? 'star' : 'star-fill'" />
+    </button>
+  </div>
+</div>
+```
+
+```tsx
+// React：半星模式用 hover 態決定 value，移動端用點選整星
+// 步進：const next = stepRate(value, dir, allowHalf, max); onChange(clampRate(next, max))
+```
+
+```ts
+// uniapp：<view> 遍歷 max 顆星；非 h5 端 aria 支援有限，getRateAria 的 undefined 屬性會被忽略
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-rate` | 基礎類 |
+| `.lh-rate--readonly` | 唯讀（隱藏 hover 高亮、停用指標） |
+| `.lh-rate--disabled` | 停用 |
+| `.lh-rate__star-list` | 星群組容器（tabindex 與鍵盤事件掛這裡） |
+| `.lh-rate__star` | 單顆星按鈕 |
+| `.lh-rate__star--full` / `--half` / `--empty` | 填充檔位（半星用半遮擋疊加） |
+| `.lh-rate__text` | 分數文案（如「3.5 分」） |
+
+星色 `--lh-warning-color`（黃），空星 `--lh-fill-color` / `--lh-border-color`。
+
+## 注意事項
+
+- **`getStarFill` 的 index 從 1 起**，遍歷用 `v-for="i in max"`（含 max）而非 `v-for="i in max - 1"`。
+- **半星與整星的一致性**：`allowHalf` 改變後，`stepRate` 與 `getStarFill` 必須傳同一個值，否則點選與鍵盤步進的檔位對不上。
+- **唯讀態的語義**：`readonly` 只切類別名（視覺停用互動），`getRateAria` 不輸出 `aria-disabled`——唯讀評分仍應被螢幕閱讀器識別為可理解的評分值（靠 `aria-valuetext`），這與 disabled 有區別。
+- **`max` 的邊界**：`LH_RATE_MAX_DEFAULT` 是 5；UI 層允許改 max，但星過多（如 20）在窄螢幕會溢位，需自行換行。
+- **value 為小數但 allowHalf 為 false**：core 不驗證這個組合，`getStarFill` 會把 3.5 當作「3 顆 full + 第 4 顆 empty」——屬於呼叫方的設定錯誤，視覺上表現為截斷。
+
+<FnPlayground module="rate" fn="getStarFill" params='{"value": 3.5, "index": 4, "allowHalf": true}' />

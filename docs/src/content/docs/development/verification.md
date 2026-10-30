@@ -31,7 +31,7 @@ pnpm verify:styles
 
 ### 1. EP 调色板
 
-查颜色令牌是否落在家族调色板的合法色阶上，不出现游离的「野生颜色」。设计意图是让所有界面的颜色**可解释**（这个蓝是 blue-6，不是随手挑的）。
+黑名单检查：EP（Element Plus）遗留的 9 个色值（`#409eff`、`#e6a23c`、`#f56c6c`、`#67c23a`、`#909399`、`#606266`、`#303133`、`#ebeef5`、`#c0c4cc`）出现在 `styles/` 的 scss 文件里即失败。这是 D2 清洗后的回归护栏，防止旧体系颜色回潮——lh-ui 的颜色一律来自 `styles/theme/common/variables.scss` 的令牌定义。
 
 ### 2. var fallback
 

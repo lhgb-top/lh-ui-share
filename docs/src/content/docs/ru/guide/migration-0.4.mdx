@@ -1,0 +1,124 @@
+---
+title: Руководство по миграции на 0.4.0
+description: 'Таблица соответствий переименования с префиксом LH — механическая замена типов, констант и идентификаторов пресетов'
+---
+
+# Руководство по миграции на 0.4.0
+
+В версии 0.4.0 все публичные символы этого репозитория, не относящиеся к сторонним библиотекам, получили единый префикс `LH`; это согласуется с семейными
+соглашениями об именовании из `docs/project/development-guide.md` репозитория plus (предпосылки — в [Соглашениях об именовании](/ru/guide/naming)).
+
+**Везде производится механическая замена на уровне идентификаторов**: поведение не меняется, пути экспорта не меняются. UI-библиотеки (plus / vue2 / uniapp)
+уже переименованы синхронно; самостоятельным пользователям нужно изменить import-ы в соответствии с таблицей ниже.
+
+## Типы / интерфейсы: `LhXxx`
+
+| Было | Стало | Модуль |
+| --- | --- | --- |
+| `ThemePreset` | `LhThemePreset` | `theme` |
+| `ThemePresetName` | `LhThemePresetName` | `theme` |
+| `ThemeVars` | `LhThemeVars` | `theme` |
+| `SxProps` | `LhSxProps` | `core/shared/sx` |
+| `DOMRectLike` | `LhDOMRectLike` | `core/shared/popper` |
+| `ComputePositionOptions` | `LhComputePositionOptions` | `core/shared/popper` |
+| `PopperPosition` | `LhPopperPosition` | `core/shared/popper` |
+| `PtAttrs` | `LhPtAttrs` | `core/shared/pt` |
+| `SanitizeNumberOptions` | `LhSanitizeNumberOptions` | `core/shared/sanitize` |
+| `VirtualRange` | `LhVirtualRange` | `core/shared/virtual` |
+| `AxisRange` | `LhAxisRange` | `core/shared` |
+| `LocalePath` | `LhLocalePath` | `locales` |
+| `Leaves` | `LhLeaves` | `types/locale` |
+| `LocaleOptions` | `LhLocaleOptions` | `types/locale` |
+
+## Константы: `LH_<модуль>_<понятие>`
+
+| Было | Стало | Модуль |
+| --- | --- | --- |
+| `DEFAULT_THEME` | `LH_THEME_DEFAULT` | `core/config` |
+| `DEFAULT_DRAWER_DIRECTION` | `LH_DRAWER_DIRECTION_DEFAULT` | `core/drawer` |
+| `DEFAULT_DRAWER_SIZE` | `LH_DRAWER_SIZE_DEFAULT` | `core/drawer` |
+| `DEFAULT_DROPDOWN_PLACEMENT` | `LH_DROPDOWN_PLACEMENT_DEFAULT` | `core/dropdown` |
+| `DROPDOWN_TRIGGERS` | `LH_DROPDOWN_TRIGGERS` | `core/dropdown` |
+| `DEFAULT_POPCONFIRM_TYPE` | `LH_POPCONFIRM_TYPE_DEFAULT` | `core/popconfirm` |
+| `DEFAULT_POPCONFIRM_PLACEMENT` | `LH_POPCONFIRM_PLACEMENT_DEFAULT` | `core/popconfirm` |
+| `POPOVER_TRIGGERS` | `LH_POPOVER_TRIGGERS` | `core/popover` |
+| `DEFAULT_POPOVER_PLACEMENT` | `LH_POPOVER_PLACEMENT_DEFAULT` | `core/popover` |
+| `THEME_PRESETS` | `LH_THEME_PRESETS` | `theme` |
+| `PRESET_THEME_STYLE_ID` | `LH_PRESET_THEME_STYLE_ID` | `theme` |
+
+Обратите внимание: константа со значением по умолчанию имеет вид **`LH_<модуль>_<понятие>_DEFAULT`** (суффикс DEFAULT — **в конце**),
+а не `LH_DEFAULT_<...>`.
+
+## Объекты пресетов темы: lowercase → `LhXxx`
+
+| Было | Стало |
+| --- | --- |
+| `cerblue` | `LhCerblue` |
+| `songhua` | `LhSonghua` |
+| `zhusha` | `LhZhusha` |
+| `shuimo` | `LhShuimo` |
+| `golden` | `LhGolden` |
+
+## Что не меняется (исключения)
+
+Следующие символы **сохраняют прежние имена**; при миграции их трогать не нужно:
+
+| Символ | Причина |
+| --- | --- |
+| `zhCN` / `enUS` | Стандартные имена locale, к тому же реэкспортируются как публичный API трёх UI-библиотек |
+| **Строковые значения** имён пресетов (`name: 'cerblue'` и др.) | Это конфигурационные значения, которые пользователи пишут в `theme` ConfigProvider; изменение сломает все downstream-конфигурации |
+| Имена функций (`getThemeVars` / `sxToStyle` и др.) | В этот раз унифицировались только константы / типы / интерфейсы / классы |
+
+```ts
+// ✅ После миграции
+import { LH_THEME_PRESETS, LhCerblue, getThemeVars } from '@lh-ui/share/theme'
+import type { LhThemePreset, LhSxProps } from '@lh-ui/share/core/shared/sx'
+
+const preset: LhThemePreset = LhCerblue
+getThemeVars('cerblue')          // Строковое значение не меняется
+```
+
+## Пример автоматической замены
+
+```ts
+// до
+import { THEME_PRESETS, PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+import type { SxProps, ThemeVars } from '@lh-ui/share'
+
+// после
+import { LH_THEME_PRESETS, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+import type { LhSxProps, LhThemeVars } from '@lh-ui/share'
+```
+
+## Другое содержание этого релиза
+
+Помимо переименования, в 0.4.0 вошли следующие готовые к публикации changeset-ы:
+
+- **Локальная линковка и наведение порядка в стилях** (minor) — механизм alias-ов для семейной раскладки, шесть проверок `verify:styles`
+- **Исправления по результатам аудита трёх репозиториев** (minor)
+- **Специальный выпуск по токенам высоты** (minor) — добавлены токены `--lh-control-height-*`, унифицирующие внешнюю высоту контролов,
+  **содержит визуально деструктивное изменение**: см. ниже «Изменение высоты контролов»
+- **Текст в вертикальном делителе** (minor) — вертикальный разделитель поддерживает текст стандартного слота,
+  `aria-orientation="vertical"` становится доступным
+- **Пакет исправлений регрессий, найденных через GUI** (patch) — приоритет текста обязательного поля в Form (пользовательский `message` больше не
+  поглощается правилами синтеза), осветление тёмной темы для пресетов с тёмным основным цветом (основная кнопка в пресетах вроде 水墨 (тушь) в тёмной теме больше не оказывается почти невидимой) и др.
+- **Разбор циклической зависимости в date-picker** (patch) — `formatDate` / `parseDate` перенесены на уровень
+  `core/shared/date`, бинарный цикл `logic ↔ adapter` разорван в однонаправленную зависимость
+- **Стиль рамки делителя и unit-тесты** (patch)
+- **Исправление центрирования элементов формы** (patch)
+- **Перенос и сворачивание заголовков в steps** (patch)
+- **Отмена правила маркировки hairline** (patch) — uniapp v3 напрямую отдаёт px, поэтому новым границам в 1px больше не нужна
+  метка `/* hairline */` (исторические 65 меток сохранены как обычные комментарии)
+- **Сайт документации** (minor) — тот самый сайт, который вы сейчас читаете
+
+## Изменение высоты контролов (визуально деструктивное)
+
+Добавлены токены `--lh-control-height-{mini,small,medium,large,x-large}` (семантика — **внешняя высота контролов border-box**), и все элементы форм стали ссылаться на эти токены. Ранее большинство контролов не объявляло `box-sizing: border-box`; после выравнивания по единой внешней высоте фактическая высота отрисовки следующих контролов **уменьшилась**:
+
+| Контрол | Изменение |
+| --- | --- |
+| input | Вместо производной от padding — фиксированная высота: mini 28→20, small 32→24, medium 39→32, large 50→40 |
+| Остальные элементы форм | Приведены к тому же набору значений высоты; при смешивании в одной форме вертикальный центр и базовая линия выровнены |
+
+Это разрушение на **визуальном** уровне (структура DOM и API не меняются). Если в проекте есть snapshot-тесты по старым пиксельным значениям или
+жёстко заданная высота в раскладке, потребуется проверить регрессию.

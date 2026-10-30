@@ -1,0 +1,146 @@
+---
+title: input-number —— 数値入力フィールド
+description: 'incrementValue / decrementValue のステップと精度のサニタイズ、shouldDisableIncrement のボタン無効化判定、spinbutton セマンティクスの属性パック'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+数値入力フィールドは入力フィールドの上に 3 つのものを加えます：**ステップ**（step で加減）、**クランプ**（min / max を超えない）、**精度**（小数位）。`core/input-number` はこの 3 つの純粋な計算を切り出し、UI 層は加減ボタンのイベントを接続するだけです。
+
+## いつ使うか
+
+- 各端の `LhInputNumber` 実装：数量選択、金額入力、ページサイズ。
+- **使うべきでない**：純粋なテキストの数値（`core/input` を使います。ユーザーは「約 10 個」のような厳密でない数値を入力したいかもしれません）、スライダー式の選択（`core/slider` のほうが直感的です）。
+
+## インポート方法
+
+```ts
+import {
+  incrementValue,
+  decrementValue,
+  shouldDisableIncrement,
+  shouldDisableDecrement,
+  getDisplayValue,
+  getInputNumberAria,
+} from '@lh-ui/share/core/input-number'
+import type { LhInputNumberState } from '@lh-ui/share/core/input-number'
+```
+
+## 設計意図
+
+`incrementValue` / `decrementValue` の 3 つの防線：
+
+1. **null の開始値**：`value === null` のとき加算は `step`、減算は `-step` から始めます。0 からではなく——ユーザーがまだ値を入力していない状態で + ボタンを押したなら、「0」ではなく「1 ステップ分」に落ちるべきです。
+2. **精度のサニタイズ**：`precision` は `shared/sanitize` の `safePrecision` で `[0, 100]` の整数にサニタイズされ、`toFixed(101)` が RangeError を投げるのを防ぎます。この防線は `core/statistic` と共用です。
+3. **非有限な結果のフォールバック**：内部の `clampSafe` は結果が NaN のとき `clamp(0, min, max)` にフォールバックします——ダーティーな props（`step: NaN`）が値を NaN にしてビューに伝播することはありません。
+
+`shouldDisableIncrement` の判定は `value !== null && value >= max` です：null のときは無効にせず（押せば step になります）、上界に達して初めて無効にします。この `!== null` は省略できません。さもなくば空入力の + ボタンがグレーアウトします。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `incrementValue` | `(value: number \| null, step: number, min: number, max: number, precision?: number) => number` | 新しい値 | ステップを加算 |
+| `decrementValue` | `(value: number \| null, step: number, min: number, max: number, precision?: number) => number` | 新しい値 | ステップを減算 |
+| `shouldDisableIncrement` | `(state: LhInputNumberState) => boolean` | 真偽値 | disabled または上界に到達 |
+| `shouldDisableDecrement` | `(state: LhInputNumberState) => boolean` | 真偽値 | disabled または下界に到達 |
+| `getDisplayValue` | `(value: number \| null, _placeholder: string) => string` | 表示文字列 | 値があれば String 化、null なら空文字列 |
+| `clampValue` | `shared/sanitize.clamp` と同じ | クランプ値 | 互換性のためのエイリアスの再エクスポート |
+
+`getDisplayValue` の第 2 パラメータ `_placeholder` はアンダースコア接頭辞が付き、関数本体では使われない点に注意してください——プレースホルダーのレンダリングは UI 層の責務です（placeholder は「値がないときのヒント」であり、「値の表示」とは別のものです）。
+
+## 型定義
+
+```ts
+export interface LhInputNumberState {
+  value: number | null
+  min: number
+  max: number
+  step: number
+  disabled: boolean
+  size: LhComponentSize
+  controls: boolean       // 加減ボタンを表示するかどうか
+  precision: number | undefined
+  placeholder: string
+}
+```
+
+## アクセシビリティ
+
+`getInputNumberAria` は APG の **spinbutton** セマンティクスを出力します：
+
+```ts
+getInputNumberAria({ value: 5, min: 0, max: 10, step: 1 })
+// { role: 'spinbutton', 'aria-valuemin': 0, 'aria-valuemax': 10, 'aria-valuenow': 5 }
+
+getInputNumberAria({ value: null, min: 0, max: 10, step: 1 })
+// { role: 'spinbutton', 'aria-valuemin': 0, 'aria-valuemax': 10 }  —— null には valuenow を掛けない
+```
+
+- `value != null` のときのみ `aria-valuenow` を掛けます；空値に `aria-valuenow="NaN"` を掛けるとスクリーンリーダーが異常を読み上げます。
+- `disabled` には `aria-disabled` を掛けます（一部の端はカスタムコントロールを使うため、ネイティブの disabled に依存しません）。
+- `ariaValueText` は `aria-valuetext` に掛けます——数値そのものがセマンティクスを表すのに不十分な場合（「3」ではなく「3 日」など）に使い、**valuenow より優先して読み上げ**られます。
+
+## 使用例
+
+```ts
+import { incrementValue, shouldDisableIncrement } from '@lh-ui/share/core/input-number'
+
+incrementValue(4, 1, 0, 10)      // 5
+incrementValue(null, 2, 0, 10)   // 2（null 開始は step に従う）
+incrementValue(9, 1, 0, 10)      // 10（max にクランプ）
+incrementValue(9, 1, 0, 10, 2)   // 10、かつ toFixed(2) の後に Number 化
+decrementValue(null, 2, 0, 10)   // -2（クランプ前は -2、その後 clamp で 0 に）
+
+shouldDisableIncrement({ value: 10, max: 10, min: 0, step: 1, disabled: false, ... })  // true
+shouldDisableIncrement({ value: null, max: 10, ... })                                   // false
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-input-number', `lh-input-number--${size}`]">
+  <button
+    v-if="controls"
+    class="lh-input-number__decrease"
+    :disabled="shouldDisableDecrement(state)"
+    aria-label="減少"
+    @click="emit('update:modelValue', decrementValue(modelValue, step, min, max, precision))"
+  >−</button>
+  <input
+    class="lh-input-number__input"
+    v-bind="getInputNumberAria({ value: modelValue, min, max, step, disabled })"
+  />
+  <button v-if="controls" class="lh-input-number__increase" :disabled="shouldDisableIncrement(state)">+</button>
+</div>
+```
+
+```tsx
+// React
+const next = incrementValue(value, step, min, max, precision)
+return <button onClick={() => onChange(next)} disabled={shouldDisableIncrement(state)}>+</button>
+```
+
+```ts
+// uniapp：加減ボタンには view + @tap を使用；ステップ値の変化後に制御付きで書き戻し、キーボード入力とボタンの競合に注意
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-input-number` | 基底クラス |
+| `.lh-input-number--{small\|large}` | サイズのバリエーション（medium がデフォルト、修飾クラスなし） |
+| `.lh-input-number--disabled` | 無効状態 |
+| `.lh-input-number__input` | 中央の入力領域 |
+| `.lh-input-number__increase` / `__decrease` | 加減ボタン |
+
+高さは 32px（input の 37px、select の 32px とともに「高度トークン専用」の不統一リストに掲載されています）。
+
+## 注意事項
+
+- **`step` が 0 または負数**：`incrementValue` は step の妥当性を検証せず、`step: 0` は値を不変にします；UI 層は step を正に保証すべきです。
+- **精度と step の関係**：`precision` は表示桁数のみを管理し、step に自動で合わせません。`step: 0.5` で `precision: 0` のとき、`incrementValue(0, 0.5, ...)` は `1` と表示されます（計算後に丸めるため）。
+- **空値のセマンティクス**：`value === null` と `value === 0` は別物で、前者は「未入力」です。`getDisplayValue(null)` は `'0'` ではなく空文字列を返します。
+- 浮動小数点の蓄積：`0.1 + 0.2` の古典的な問題はステップ操作において現実に起こります；`precision` の `toFixed` パスが唯一の防線で、precision を設定すれば安定し、設定しなければ漂う可能性があります。
+
+<FnPlayground module="input-number" fn="incrementValue" params='{"value": 4, "step": 1, "min": 0, "max": 10, "precision": 2}' />

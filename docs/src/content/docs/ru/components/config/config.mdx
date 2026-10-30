@@ -1,0 +1,166 @@
+---
+title: 'config глобальная настройка —— Настройка'
+description: 'mergeConfig: трёхуровневое слияние, LH_THEME_DEFAULT=cerblue, цепочка получения значений getEffectiveXxx (core возвращает только имя пресета, инъекция в DOM — задача UI-слоя)'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ConfigProvider — это «единая точка входа глобальных переключателей»: приложение оборачивается в `<LhConfigProvider :size="..." :theme="..." :locale="...">`, и все компоненты внутри меняют размер по умолчанию, тему, язык и базу z-index единым образом. Он ничего не отрисовывает, предоставляя лишь **контекст конфигурации**. `core/config` ведает слиянием конфигурации и цепочкой получения значений — конкретные механизмы применения (инъекция CSS-переменных, предоставление экземпляра locale) находятся в UI-слое.
+
+## Когда использовать
+
+- При реализации `<LhConfigProvider>` на каждой платформе: оборачивание корня приложения, переключение темы, переключение локализации, глобальная подстройка размера.
+- Сценарии, где нужно **унифицировать значения по умолчанию для компонентов** и **переключать их во время выполнения**.
+- **Не следует использовать**: размер/тема отдельного компонента (достаточно передать props этому компоненту; ConfigProvider — это слой «значений по умолчанию»).
+
+## Импорт
+
+```ts
+import {
+  mergeConfig,
+  getEffectiveSize,
+  getEffectiveZIndex,
+  getEffectiveTheme,
+} from '@lh-ui/share/core/config'
+import {
+  LH_THEME_DEFAULT,
+  createDefaultConfig,
+} from '@lh-ui/share/core/config'
+import type { LhConfigState } from '@lh-ui/share/core/config'
+```
+
+## Замысел
+
+**Приоритет трёхуровневого слияния**: `mergeConfig(defaults, global, local)` сливает с послойным перекрытием — последующий перекрывает предыдущий: `значение по умолчанию < глобальное (ConfigProvider) < локальное (props компонента)`. `createDefaultConfig()` задаёт основу, гарантируя, что у каждого поля есть значение (в конфигурации по умолчанию не будет undefined, из-за которого деструктуризация на нижестоящем уровне сломается).
+
+**Значение `size` по умолчанию — undefined, а не 'medium'**: это сделано намеренно — undefined означает «не настроено, используй значение токенов SCSS по умолчанию». Если бы core задал 'medium', произошёл бы отрыв от шкалы по умолчанию `--lh-control-height-medium` из `styles/`, и смена токенной шкалы по умолчанию перестала бы действовать. **undefined — это сигнал «откатиться к слою стилей»**.
+
+**`getEffectiveTheme` возвращает только имя пресета**: возвращается строка вроде `'cerblue'`, **не vars-объект и без обращения к DOM**. Получив имя, UI-слой вызывает `getThemeVars(name)` для получения vars, а затем `buildPresetStyleText(vars)` генерирует текст `<style>` для инъекции. Это разделение сохраняет core нулевым относительно DOM (красная линия 1) и оставляет UI-слою контроль над моментом и местом инъекции.
+
+**Двойная синхронизация источников `LH_THEME_DEFAULT = 'cerblue'`**: имя пресета по умолчанию и основной цвет по умолчанию из `styles/theme/common/variables.scss` (`$lh-primary`) должны быть одного источника — этому соответствуют регрессионные тесты в `theme.spec.ts`. Меняя тему по умолчанию, меняйте обе стороны, иначе пресет, инъецируемый со стороны JS, и цвет по умолчанию, скомпилированный из SCSS, разойдутся.
+
+**База zIndex — 2000**: компоненты-попапы (dialog/drawer/popover/dropdown…) инкрементируются от этой базы. Глобальное повышение базы решает конфликты, когда «на бизнес-странице есть элементы с бóльшим z-index» — одна из классических причин существования ConfigProvider.
+
+## Таблица функций
+
+| Функция / константа | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `createDefaultConfig` | `() => LhConfigState` | конфигурация по умолчанию | значения-основа |
+| `mergeConfig` | `(defaults, global, local) => LhConfigState` | слитая конфигурация | по умолчанию < глобальное < локальное |
+| `getEffectiveSize` | `(localSize?, globalSize?) => LhComponentSize \| undefined` | действительный размер | undefined — откат к слою стилей |
+| `getEffectiveZIndex` | `(localZIndex?, globalZIndex) => number` | действительный z-index | локальный ?? глобальный |
+| `getEffectiveTheme` | `(localTheme?, globalTheme?) => LhThemePresetName` | действительное имя пресета | только имя, без DOM |
+
+Константа: `LH_THEME_DEFAULT = 'cerblue'`.
+
+## Определения типов
+
+```ts
+export interface LhConfigState {
+  size: LhComponentSize | undefined    // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  zIndex: number                       // база для попапов
+  locale: LhComponentLanguage          // 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR' | 'de-DE' | 'fr-FR'
+  theme: LhThemePresetName             // имя пресета (зарегистрированные через registerTheme
+                                       // пользовательские имена тоже допустимы)
+}
+```
+
+Пять ступеней `size` берутся из `LH_SIZE_CONST` (`src/constants`), где `old: 'x-large'` — семантический псевдоним **ступени для пожилых пользователей** (крупный шрифт и крупные элементы управления), значение совпадает с `x-large`; это даёт повододоступному сценарию семантическую точку входа в конфигурацию.
+
+Шесть языков `locale` берутся из `LH_LANGUAGE_CONST`, по умолчанию `LH_LANGUAGE_DEFAULT = 'zh-CN'`.
+
+## Доступность
+
+Прямая связь ConfigProvider с доступностью всего одна: **переключение locale меняет язык встроенных текстов компонентов** (например, «该字段为必填项» формы / «This field is required»). Это доносится через экземпляр `lhlocale` из `locales` — см. страницу `core/locales` и `reference/locales`.
+
+- **Область действия переключения языка**: locale передаётся вниз через context в ConfigProvider, **уже отрисованные компоненты реагируют немедленно** (реактивное обновление). В сценариях SSG язык первого экрана определяется на этапе сборки, а после гидратации переключается по пользовательским настройкам.
+- **Переключение темы не требует повторного рендеринга**: тема применяется через инъекцию CSS-переменных, а стили компонентов потребляют `var(--lh-*)` — смена темы лишь заменяет содержимое элемента style, DOM компонентов не меняется. Это ключевое архитектурное развязка.
+
+## Примеры использования
+
+```ts
+import {
+  mergeConfig, getEffectiveSize, getEffectiveZIndex, getEffectiveTheme, createDefaultConfig,
+} from '@lh-ui/share/core/config'
+
+createDefaultConfig()  // { size: undefined, zIndex: 2000, locale: 'zh-CN', theme: 'cerblue' }
+
+mergeConfig(
+  {},                       // defaults уровня компонента (обычно пусто)
+  { size: 'small', theme: 'ink' },  // глобальный ConfigProvider
+  { size: 'large' },        // локальные props
+)
+// { size: 'large', zIndex: 2000, locale: 'zh-CN', theme: 'ink' }
+
+getEffectiveSize('large', 'small')   // 'large'
+getEffectiveSize(undefined, 'small') // 'small'
+getEffectiveSize(undefined, undefined)  // undefined (откат к шкале SCSS по умолчанию)
+
+getEffectiveZIndex(3000, 2000)  // 3000
+getEffectiveZIndex(undefined, 2500)  // 2500
+
+getEffectiveTheme('ink', 'cerblue')   // 'ink'
+getEffectiveTheme(undefined, 'cerblue')  // 'cerblue'
+getEffectiveTheme(undefined, undefined)  // 'cerblue' (откат через LH_THEME_DEFAULT)
+```
+
+```ts
+// UI-слой: инъекция темы (пишем только в элемент <style>, не в инлайновый style documentElement —
+// специфичность инлайнового style выше блока тёмных переменных var-dark.scss,
+// что приведёт к искажению тёмной палитры)
+import { getThemeVars, buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyTheme(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+  const styleText = buildPresetStyleText(vars)
+  let el = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!el) {
+    el = document.createElement('style')
+    el.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(el)
+  }
+  el.textContent = styleText
+}
+```
+
+```vue
+<!-- Vue3: оборачивание корня -->
+<template>
+  <LhConfigProvider :size="size" :theme="theme" :locale="locale">
+    <App />
+  </LhConfigProvider>
+</template>
+```
+
+```tsx
+// React: createContext + useContext для передачи вниз; переключение темы — в effect через applyTheme
+```
+
+```ts
+// uniapp: глобальная конфигурация хранится в globalData или store; инъекция темы по той же
+// модели (на h5 пишем <style>, в мини-программе передаём CSS-переменные по одной
+// через style страницы — мини-программы не поддерживают инъекцию <style>)
+```
+
+## Стили и токены
+
+У ConfigProvider нет собственных стилей. Токены, на которые он влияет:
+
+| Конфигурация | Затрагиваемые токены |
+| --- | --- |
+| `size` | `--lh-control-height-mini/small/medium/large/x-large` (через size-классы компонентов) |
+| `theme` | весь набор токенов `--lh-*` (`buildPresetStyleText` генерирует блок `:root`) |
+| `zIndex` | база для `--lh-z-index-{dialog/drawer/popover/...}` |
+
+## Замечания
+
+- **`size: undefined` — это особенность, а не упущение**: оно означает «откат к шкале по умолчанию в слое стилей». `getEffectiveSize` каскадно откатывается к undefined, а не к хардкоду 'medium' — достаточно изменить шкалу по умолчанию в SCSS, и изменится глобальный размер по умолчанию.
+- **Тему можно писать только в элемент `<style>`**: комментарий в `buildPresetStyleText` прямо предупреждает — запись в инлайновый style `documentElement` из-за более высокой специфичности перекроет целый блок тёмных переменных `var-dark.scss` и исказит палитру тёмной темы.
+- **`theme` принимает пользовательские имена, зарегистрированные через registerTheme**: после `registerTheme(preset)` в theme ConfigProvider можно передать пользовательское имя — `getThemeVars` его найдёт. Пресеты не ограничены пятью встроенными.
+- **Вложенные ConfigProvider**: локальное перекрывает глобальное, внутреннее — внешнее. Типичный пример: область, где нужен больший размер (например, сенсорная панель управления), оборачивается отдельно.
+- **Механизмы применения locale и theme различаются**: locale идёт через context (реактивный поток данных), theme — через инъекцию CSS-переменных (работа с DOM). Переключение locale выполняется вызовом `lhlocale.setLocale()` в UI-слое; переключение темы — вызовом `applyTheme` в UI-слое; не смешивайте их в одном effect.
+- **Мерцание темы при SSR**: сервер не знает тему пользователя (она в cookie/localStorage), первый экран рендерится с темой по умолчанию, а после гидратции переключение даёт вспышку. Распространённое решение — встроить синхронный скрипт в `<head>`, который заранее читает localStorage и инъецирует `data-theme`; это задача слоя развёртывания, core в ней не участвует.
+- **Смысл базы zIndex 2000**: бизнес-слою остаётся пространство 0–1999 (навигация, кастомные оверлеи). Если у вас есть элемент с z-index 9999, перекрывающий попапы, поднимайте глобальную базу, а не меняйте каждый компонент по отдельности.
+
+<FnPlayground module="config" fn="mergeConfig" params='{"defaults": {}, "global": {"size": "small", "theme": "ink"}, "local": {"size": "large"}}' />

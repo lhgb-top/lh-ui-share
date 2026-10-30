@@ -1,0 +1,174 @@
+---
+title: backtop —— Retour en haut
+description: 'resolveScrollTarget pour la résolution de la racine de défilement, repli prefers-reduced-motion, détection de la fonctionnalité scrollend et repli anti-rebonds'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+L'utilisateur qui descend tout en bas d'une longue page ne peut remonter qu'en faisant tourner frénétiquement la molette. `backtop` est un bouton flottant en bas à droite : il n'apparaît qu'après une certaine distance de défilement, et un clic ramène en haut en douceur. La logique n'est pas compliquée, mais **les pièges de compatibilité des API de défilement sont nombreux** — quelle est la racine de défilement, comment dégrader le défilement fluide, comment détecter la fin du défilement — `core/backtop` rassemble tout cela.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `<LhBackTop>` : entrée de retour en haut des longues listes, longs documents, tableaux de données d'administration.
+- Il ne vaut la peine d'apparaître que lorsque la page dépasse nettement la hauteur d'un écran (généralement 2 à 3 écrans ou plus).
+- **À ne pas utiliser pour** : les pages courtes (moins d'un écran, le bouton n'apparaît jamais et coûte du code) ; les pages natives sur mobile où la molette/les gestes permettent déjà de remonter rapidement (les gestes système mobile couvrent le besoin ; les pages web intégrées, au cas par cas).
+
+## Importation
+
+```ts
+import {
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  LH_BACKTOP_SCROLLEND_DELAY,
+  getBackTopClassNames,
+  resolveScrollTarget,
+  getScrollTop,
+  backToTop,
+  isBackTopVisible,
+  supportsScrollEnd,
+} from '@lh-ui/share/core/backtop'
+```
+
+## Intentions de conception
+
+**La priorité de la racine de défilement** : `document.scrollingElement` est prioritaire sur `document.documentElement`. Ce n'est pas un caprice — sur certaines pages (qui utilisent `body { overflow }`), c'est réellement le body qui défile, `documentElement.scrollTop` reste constamment à 0 et la détection de visibilité est totalement hors service. `scrollingElement` est la propriété standard inventée par le W3C pour unifier ce chaos.
+
+**`getScrollTop` utilise `instanceof HTMLElement` et non `instanceof Window`** : le commentaire indique « sécurité inter-royaumes (cross realm) » — si la page contient une iframe, l'objet Window transmis par l'iframe **n'est pas identique** au constructeur `Window` du royaume courant, et `x instanceof Window` est fautivement évalué à false. Le test sur HTMLElement (les éléments ne posent pas ce problème) permet de l'éviter. C'est très pointu, mais c'est un vrai piège.
+
+**Les deux niveaux de repli du défilement fluide** : ① lorsque `prefers-reduced-motion` est activé, repli sur `auto` (sans animation) — les utilisateurs souffrant de troubles vestibulaires sont pris de vertiges face à un défilement continu, c'est une exigence forte d'accessibilité ; ② lorsque l'élément cible n'a pas de méthode `scrollTo` (jsdom ancien et autres environnements), on écrit directement `scrollTop = 0`.
+
+**La détection de fonctionnalité de `supportsScrollEnd`** : l'événement `scrollend` n'existe que depuis Chromium 114+ / Safari 18.2+ — l'utiliser permet de rafraîchir précisément l'état de visibilité lorsque le défilement **est réellement immobilisé** (lire scrollTop pendant le défilement a un coût). En l'absence de support, l'appelant replie sur l'événement `scroll` + une résolution anti-rebonds de `LH_BACKTOP_SCROLLEND_DELAY` (150 ms).
+
+**La visibilité est une fonction pure** : `isBackTopVisible(scrollTop, height)` ne fait que comparer des valeurs — la couche UI écoute elle-même le défilement et stocke scrollTop, core ne détient aucun état réactif. Cela permet aussi aux tests unitaires d'affirmer directement les bornes numériques.
+
+## Table des fonctions
+
+| Fonction / Constante | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getBackTopClassNames` | `(state: { visible }) => string[]` | Classes | L'état de visibilité pilote l'animation d'affichage/masquage |
+| `resolveScrollTarget` | `(target?: string \| HTMLElement) => HTMLElement \| Window` | Cible de défilement | Sélecteur sans correspondance : repli sur window |
+| `getScrollTop` | `(target) => number` | Distance de défilement | Auto-adaptatif conteneur/viewport |
+| `backToTop` | `(target, smooth) => void` | Rien | Retour en haut en douceur (avec repli) |
+| `isBackTopVisible` | `(scrollTop, visibilityHeight) => boolean` | Visible ou non | Comparaison au seuil |
+| `supportsScrollEnd` | `(target) => boolean` | Supporté ou non | Détection de fonctionnalité |
+
+Constantes : `LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT = 200`, `LH_BACKTOP_SCROLLEND_DELAY = 150`.
+
+## Définitions de types
+
+```ts
+export interface LhBackTopState {
+  visible: boolean      // Actuellement visible ou non (pilote les classes d'affichage)
+  target?: string | HTMLElement
+  visibilityHeight?: number
+  smooth?: boolean      // Défilement fluide ou non (true par défaut)
+}
+```
+
+## Accessibilité
+
+```ts
+// Les attributs d'accessibilité du bouton sont assemblés par la couche UI :
+const aria = {
+  type: 'button',
+  'aria-label': 'Retour en haut',   // Un bouton à icône sans texte doit avoir une étiquette
+}
+```
+
+- **`type="button"`** : si le bouton de retour en haut se trouve dans un `<form>`, le `type="submit"` par défaut déclencherait la soumission du formulaire — c'est le petit bug le plus courant.
+- **`aria-label` obligatoire** : un bouton à icône seule (flèche vers le haut) est anonyme pour le lecteur d'écran, `aria-label="Retour en haut"` le rend annonçable.
+- **`aria-hidden` synchronisé avec la visibilité** : lorsqu'il est invisible, retirez-le de l'arbre d'accessibilité (`aria-hidden="true"` ou démontage direct par `v-if`), pour éviter que le lecteur d'écran ne navigue jusqu'à un bouton invisible.
+- **Atteignable au clavier** : le bouton est un `<button>` natif, focus Tab + déclenchement Enter/Space, support naturel. Ne le transformez pas en `<div @click>`.
+- **La double portée de prefers-reduced-motion** : c'est à la fois une exigence d'accessibilité (sécurité vestibulaire) et un moyen d'éviter les saccades du défilement fluide sur les appareils d'entrée de gamme. C'est déjà géré à l'intérieur de `backToTop`, la couche UI n'a pas à tester la préférence.
+
+## Exemples d'utilisation
+
+```ts
+import {
+  resolveScrollTarget, getScrollTop, isBackTopVisible, backToTop, supportsScrollEnd,
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT, LH_BACKTOP_SCROLLEND_DELAY,
+} from '@lh-ui/share/core/backtop'
+
+isBackTopVisible(200, 200)  // true (>= seuil)
+isBackTopVisible(199, 200)  // false
+isBackTopVisible(0, 200)    // false
+
+supportsScrollEnd(window)         // true dans les navigateurs modernes
+supportsScrollEnd(someEl)         // true seulement à partir de Chromium 114+ / Safari 18.2+
+```
+
+```ts
+// Stratégie d'écoute : si scrollend est supporté, on ne teste qu'à l'immobilisation,
+// sinon scroll + anti-rebonds
+const target = resolveScrollTarget(props.target)
+let visible = ref(false)
+
+function refresh() {
+  visible.value = isBackTopVisible(
+    getScrollTop(target),
+    props.visibilityHeight ?? LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  )
+}
+
+if (supportsScrollEnd(target)) {
+  target.addEventListener('scrollend', refresh)
+} else {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  target.addEventListener('scroll', () => {
+    clearTimeout(timer)
+    timer = setTimeout(refresh, LH_BACKTOP_SCROLLEND_DELAY)
+  })
+}
+
+function onClick() {
+  backToTop(target, props.smooth ?? true)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <button
+    type="button"
+    class="lh-backtop"
+    :class="getBackTopClassNames({ visible })"
+    aria-label="Retour en haut"
+    :aria-hidden="!visible"
+    @click="backToTop(target, true)"
+  >
+    <LhIcon name="arrow-up" />
+  </button>
+</template>
+```
+
+```tsx
+// React : enregistrement/annulation des écouteurs de défilement dans useEffect
+// (dépend de target et de visibilityHeight) ;
+// smooth est piloté par props, reduced-motion est géré en interne par core
+```
+
+```ts
+// uniapp : <button open-type?> ne convient pas ; utilisez <view> + @tap ;
+// côté mini-programme, le défilement de page utilise onPageScroll
+// (intégré à uniapp), le défilement d'élément utilise l'événement scroll du scroll-view
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-backtop` | Conteneur du bouton (fixed, bas à droite) |
+| `.lh-backtop--visible` | Visible (pilote l'animation d'entrée en fondu/glissement vers le haut) |
+
+Le masquage par défaut est `opacity: 0; visibility: hidden` (visibility plutôt que display, pour préserver l'animation de transition) ; bouton circulaire `--lh-backtop-size` (par exemple 40 px) ; couleur de fond `--lh-bg-color` + ombre `--lh-box-shadow-base` ; z-index `--lh-z-index-backtop`.
+
+## Remarques
+
+- **Les écouteurs de défilement doivent être annulés** : au destruction du composant, `removeEventListener`, sans quoi la référence à un DOM déjà retiré provoque une fuite de mémoire. `onUnmounted` côté Vue, fonction de nettoyage du useEffect côté React.
+- **La spécificité de l'écoute de `window`** : l'événement `scroll` sur window est passif et à haute fréquence, il faut obligatoirement un anti-rebonds ou scrollend ; lire `getScrollTop` à chaque occurrence sur des pages très longues provoque des ralentissements.
+- **Le scénario où l'élément cible défile lui-même** : pour un tableau qui défile en interne (et non la page), `target` doit pointer vers le conteneur du tableau — sinon la visibilité du bouton suit le défilement de la page et n'a aucun rapport avec le conteneur qu'il faudrait réellement remonter.
+- **Le défilement fluide écrasé par le CSS** : si la page déclare `html { scroll-behavior: smooth }`, `scrollTo({ behavior: 'auto' })` est écrasé par le CSS — le repli reduced-motion de `backToTop` devient inopérant. Lorsque le repli doit être strict, la couche UI doit retirer temporairement ce CSS.
+- **L'inertie du défilement sur iOS Safari** : le défilement iOS a une inertie, scrollend ne se déclenche qu'à la fin de l'inertie ; le repli anti-rebonds de 150 ms peut rafraîchir l'état de visibilité trop tôt lors d'un glissement rapide (le bouton clignote un instant). C'est un compromis connu.
+- **La signification du seuil de visibilidadé 200** : environ la moitié de la hauteur d'un écran (selon la hauteur du viewport). Les pages documentaires peuvent le diminuer (100), les pages utilitaires l'augmenter (500) — c'est précisément à cela que sert la prop `visibilityHeight`.
+- **Le bouton ne doit pas masquer le contenu** : en position fixed et bas à droite, sur mobile il faut éviter la barre de navigation inférieure (réserver la hauteur de la zone de sécurité).
+
+<FnPlayground module="backtop" fn="isBackTopVisible" params='{"scrollTop": 300, "visibilityHeight": 200}' />

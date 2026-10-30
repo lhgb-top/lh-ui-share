@@ -1,0 +1,116 @@
+---
+title: styles —— スタイルソース
+description: 'styles/ ディレクトリ構造、BEM 規約、トークンの 3 層（var.scss 明色 / var-dark.scss 暗色 / variables.scss SCSS 変数）'
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+`styles/` はファミリー全体のコンポーネント BEM スタイルの**唯一ソース**です（[レッドライン 2](/ja/development/contribution#6-つのレッドライン)）：58 個のコンポーネントディレクトリ + `theme/common/` トークン層。どの UI ライブラリもスタイルをコピーして手直ししてはなりません。
+
+## ディレクトリ構造
+
+```
+styles/
+├── index.scss                  # 全量集約（トークン + 全コンポーネント）、1 行で読み込み
+├── theme/
+│   ├── common/
+│   │   ├── var.scss            # 明色トークン（:root、185 個の CSS 変数）
+│   │   ├── var-dark.scss       # 暗色上書き（[data-theme='dark'], .dark、118 個）
+│   │   ├── variables.scss      # SCSS 変数層（183 個の $lh-*、コンパイル期定数）
+│   │   ├── patterns.scss       # 中華風紋様システム（6 つのテクスチャ）
+│   │   ├── transition.scss     # クロスフレームワークのトランジションクラス名の単一ソース（3 つの mixin）
+│   │   └── …                   # mixin / function の共通層
+│   └── index.scss              # テーマ集約エントリ
+├── button/index.scss           # コンポーネントスタイル（58 個のディレクトリ）
+├── dialog/index.scss
+└── …
+```
+
+**各コンポーネントのディレクトリは `index.scss` 1 つ**で、`@lh-ui/share/styles/<name>` でインポートします（vite がディレクトリを index に解決します）。
+
+## 読み込み方
+
+```ts
+// 4 つの読み込み方（詳細はクイックスタート）
+import '@lh-ui/share/styles/button'        // 個別コンポーネント
+import '@lh-ui/share/styles'                // 全量（styles/index.scss）
+import '@lh-ui/share/styles/theme'          // テーマトークンのみ
+import '@lh-ui/share/styles/theme/common/var-dark'  // 個別ファイルまで指定
+```
+
+各 UI ライブラリで注入戦略が異なります：plus はライブラリエントリで全量を注入し、vue2 はユーザーがオンデマンドで読み込みます（[注入戦略](/ja/guide/injection)を参照）。
+
+## BEM 規約
+
+クラス名は常に `lh-` プレフィックス + BEM の 3 層です：
+
+```scss
+.lh-button {                    // Block
+  &__text { }                   // Element
+  &--primary { }                // Modifier
+  &__text--disabled { }         // Element + Modifier
+  &.is-loading { }              // 状態クラス（is- プレフィックス、名前空間なし）
+}
+```
+
+- 命名は [createNamespace](/ja/reference/utils#createnamespace--bem-名前空間) が生成し、ファミリー全体で一貫性を保ちます。
+- **状態クラスは `is-` プレフィックス**（`is-loading` / `is-disabled` / `is-open`）で、BEM の修飾子ではありません。
+- クラス名を追加したら `docs/src/data/classes.json` を同期してください（`scripts/gen-docs-data.mjs` が `styles/*/index.scss` を走査して生成します）。
+
+## トークンの 3 層
+
+| 層 | ファイル | 数 | 特徴 |
+| --- | --- | --- | --- |
+| CSS 変数（明色） | `var.scss` | 185 個 | `:root { --lh-*: ... }`、ランタイムで上書き可能 |
+| CSS 変数（暗色） | `var-dark.scss` | 118 個 | `[data-theme='dark'], .dark { ... }` が明色を上書き |
+| SCSS 変数 | `variables.scss` | 183 個 | `$lh-*`、**コンパイル期にベイクされ固定** |
+
+### コンポーネントが消費できるのは CSS 変数だけ
+
+```scss
+// ✅ 正しい：var() のチェーンフォールバック、ランタイム評価
+.lh-button--primary {
+  color: var(--lh-color-on-primary, #fff);
+  background: var(--lh-primary-color, #1677ff);
+}
+
+// ❌ 誤り：SCSS 変数を直接参照、暗色でも反転しない
+.lh-button--primary {
+  background: #{$lh-primary-color};
+}
+```
+
+### コンパイル期にベイクされる罠
+
+`var.scss` で値が `#{$lh-foo}` の形をしているトークンは、SCSS 変数が**コンパイル期に具体的な明色の値に置き換えられ**、暗色になっても自動的には反転しません。この種のトークンは `var-dark.scss` で明示的に暗色のセマンティックトークンに再指向しなければなりません：
+
+```scss
+// var-dark.scss
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);   // ← 明示的な再指向
+}
+```
+
+この手の抜けが原因で、かつて暗色でメニュー / テーブル / タイムラインの文字が明色の値のままになり、見えなくなったことがあります。`pnpm verify:styles` の第 7 項（ダークモードカバレッジ）が専らこの点を把守します。対照的に、コンポーネント内の `var(--lh-foo, var(--lh-bar, #x))` の**チェーンフォールバックはランタイム評価**で、チェーン上のトークンに暗色上書きがあれば安全なので、重複して宣言する必要はありません。詳細は[ダークモード](/ja/theme/dark-mode)を参照。
+
+## `styles/index.scss` は生成物
+
+全量集約ファイルは `scripts/build-styles.mjs` が**コンポーネントディレクトリを走査して生成**し、`verify:styles` が一致性を検証します——**手書きで変更しないでください**。コンポーネントのディレクトリを追加すると自動的に集約に取り込まれます。
+
+## 廃止された hairline マーカー
+
+~~1px の細枠宣言には `/* hairline */` の行レベルマーカーが必須~~ —— このレッドラインは**廃止されました**（uniapp v3 は px をそのまま出力し、rpx に変換しなくなったためマーカーの用途が消えた；`docs/bugfix-log.md` D-02 を参照）。`styles/` 内に既存の 65 か所の履歴マーカーは通常のコメントとして残されますが、**新規の 1px 枠にマーカーは不要**です。構造的な枠（2px / 3px）はもともとマーカーなしでした。
+
+## テーマトークン全表
+
+<TokenTable />
+
+（トークンデータは `scripts/gen-docs-data.mjs` が `var.scss` / `var-dark.scss` / `variables.scss` を解析して生成し、数量のアサーションを伴います。）
+
+## 注意事項
+
+- **スタイルを変更するのは本リポジトリのみ**：どの UI ライブラリもコンポーネント scss のコピーを持ってはなりません。クロスフレームワークのトランジションクラス名の差異は [transition mixin](/ja/reference/transition-mixins) で収束させます。
+- **色は常に `var(--lh-*, fallback)`** で、ハードコードされた色値を新たに加えないでください（verify:styles の var fallback の項が把守します）。
+- **新規コンポーネントには必ず `styles/<name>/index.scss` が必要**：さもないとそのコンポーネントはいずれかの端でスタイル成果物を持ちません（ビルドスクリプトはサイレントスキップし、エラーを出しません）。
+- **暗色の完全性はハード要件**：すべてのコンポーネントはデフォルトで明色 / 暗色の両方をサポートし、暗色の抜けは verify:styles の第 7 項が弾きます。

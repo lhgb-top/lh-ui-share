@@ -1,6 +1,6 @@
 ---
 title: locales —— 国际化
-description: 'lhlocale 单例的 t / tm / use / add / setLocale / subscribe，38 个顶层文案键与六门语言'
+description: 'lhlocale 单例的 t / tm / use / add / setLocale / subscribe，38 个顶层文案键与十门语言'
 ---
 
 import LocaleInspector from '../../../components/LocaleInspector.astro'
@@ -105,17 +105,18 @@ useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)
 
 | 文件 | 状态 |
 | --- | --- |
-| `zh-CN.ts` | ✅ 默认语言（`as const`，`LhLocalePath` 的推导来源） |
-| `en-US.ts` | ✅ 已启用 |
-| `ja-JP.ts` / `ko-KR.ts` / `de-DE.ts` / `fr-FR.ts` | 预留语言骨架，**以英文兜底翻译**，可直接 `setLocale` 切换 |
+| `zh-CN.ts` | ✅ 默认语言（`as const`，`LhLocalePath` 的推导来源），真源 |
+| `zh-TW.ts` / `en-US.ts` / `ja-JP.ts` / `ko-KR.ts` / `es.ts` / `ar.ts`（RTL）/ `fr-FR.ts` / `ru.ts` | ✅ 完整（九语言，与各文档站一致，术语按家族 `docs/i18n/glossary.md`） |
+| `de-DE.ts` | ✅ 完整（**运行时扩展**语言包：仅组件库运行时提供，各文档站无德语内容） |
 
-子路径导入：`@lh-ui/share/locales/lang/zh-CN`。
+子路径导入：`@lh-ui/share/locales/lang/zh-CN`。各语言包的键结构与 `zh-CN.ts`
+完全一致（`tests/unit/locales.spec.ts` 镜像用例强制校验），可直接 `setLocale` 切换。
 
 ### 38 个顶层键
 
 `common` / `input` / `datepicker` / `timepicker` / `cascader` / `tag` / `badge` / `select` / `form` / `switch` / `slider` / `progress` / `avatar` / `descriptions` / `empty` / `alert` / `dialog` / `message` / `breadcrumb` / `pagination` / `tabs` / `steps` / `popconfirm` / `drawer` / `notification` / `loading` / `collapse` / `rate` / `backtop` / `image` / `menu` / `table` / `tree` / `treeSelect` / `transfer` / `upload` / `anchor` / `ariaLabels`
 
-六个语言文件的顶层键数量一致（各 38 个），结构对齐。其中 `ariaLabels` 是无障碍文案键（约 40 条），各组件读它生成 aria-label。
+十个语言文件的顶层键数量一致（各 38 个），结构对齐。其中 `ariaLabels` 是无障碍文案键（约 40 条），各组件读它生成 aria-label。
 
 典型的插值文案：
 

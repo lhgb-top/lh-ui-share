@@ -1,0 +1,110 @@
+---
+title: types —— 共享聯合類型
+description: 'LhComponentSize / LhComponentLanguage / LhComponentType / LhPosition，由 constants 常數推導'
+---
+
+core 元件共用的四個聯合類型。它們的取值不是手寫的字面值聯合，而是**從 `src/constants/` 的 `as const` 常數推導**出來的——加一種尺寸 / 一門語言，只改常數，類型自動跟著變。
+
+## 匯入方式
+
+```ts
+import type {
+  LhComponentSize,
+  LhComponentLanguage,
+  LhComponentType,
+  LhPosition,
+} from '@lh-ui/share/core/shared/types'
+```
+
+## 四個類型
+
+| 類型 | 定義 | 實際取值 |
+| --- | --- | --- |
+| `LhComponentSize` | `(typeof LH_SIZE_CONST)[keyof typeof LH_SIZE_CONST]` | `'small' \| 'medium' \| 'large' \| 'mini' \| 'x-large'` |
+| `LhComponentLanguage` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | `'zh-CN' \| 'en-US' \| 'ja-JP' \| 'ko-KR' \| 'de-DE' \| 'fr-FR'` |
+| `LhComponentType` | `(typeof LH_TYPES_CONST)[keyof typeof LH_TYPES_CONST] \| 'default' \| 'primary'` | `'success' \| 'warning' \| 'error' \| 'info' \| 'danger' \| 'default' \| 'primary'` |
+| `LhPosition` | 字面值聯合 | `'top' \| 'top-left' \| 'top-right' \| 'bottom' \| 'bottom-left' \| 'bottom-right' \| 'left' \| 'right'` |
+
+### LhComponentSize 的 `'x-large'`
+
+這是**老年人專用尺寸**（大字級、大觸控區）。注意常數裡的結構：
+
+```ts
+// src/constants/index.ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',
+  large: 'large',
+  mini: 'mini',
+  old: 'x-large',   // 鍵名 old，值 'x-large'；// 老年人專用
+} as const
+```
+
+**鍵名與值不一致**（`old` ↔ `'x-large'`），類型聯合裡出現的是**值** `'x-large'`。而元件 props 裡開老年人模式的開關是另一個布林欄位 `old?: boolean`（見 [LhBaseProps](/reference/types)——尺寸列舉值與開關 prop 是兩回事，別混。
+
+### LhComponentType 的兩個基礎色
+
+`'default'` / `'primary'` 不在 `LH_TYPES_CONST` 裡（那是五個**語義色**：成功 / 警告 / 錯誤 / 資訊 / 危險），而是在類型層面 `| 'default' | 'primary'` 補上去的。它們不是「狀態語義」，是按鈕等元件的基礎外觀色。
+
+### LhPosition 與 LhPlacement 是兩套模型
+
+| | `LhPosition` | `LhPlacement`（[popper](/core/popper)） |
+| --- | --- | --- |
+| 用途 | 貼邊定位（affix / backtop） | 浮層定位（tooltip / popover） |
+| 取值 | `'top'` / `'top-left'` / `'top-right'` / `'bottom'` / `'bottom-left'` / `'bottom-right'` / `'left'` / `'right'` | `'top'` / `'top-start'` / `'top-end'` / `'bottom'` / `'bottom-start'` / `'bottom-end'` / `'left'` / `'left-start'` / `'left-end'` / `'right'` / `'right-start'` / `'right-end'` |
+| 對齊後綴 | `-left` / `-right`（只有兩端） | `-start` / `-end`（語義化對齊，支援 RTL 翻轉） |
+
+`LhPosition` 的 `-left` / `-right` 是**物理方向**，`LhPlacement` 的 `-start` / `-end` 是**邏輯方向**（RTL 版面配置下自動翻轉）。不要互相轉換著用。
+
+## 為什麼從常數推導
+
+```ts
+// 反例：手寫聯合，加語言要改兩處
+type LhComponentLanguage = 'zh-CN' | 'en-US'  // ← 容易和常數不同步
+
+// 本倉做法：常數是唯一來源
+type LhComponentLanguage = (typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]
+```
+
+加一門語言只需在 `LH_LANGUAGE_CONST` 加一行，類型、`LhLocaleType`、`setLocale` 的參數驗證全部自動更新。這是 [命名規範](/guide/naming) 裡「常數 `LH_XXX`、類型 `LhXxx`」分層的一個具體落點。
+
+## 使用範例
+
+### 元件 props
+
+```ts
+import type { LhComponentSize, LhComponentType } from '@lh-ui/share/core/shared/types'
+
+interface LhButtonProps {
+  type?: LhComponentType   // 自動補全 'primary' | 'success' | …
+  size?: LhComponentSize   // 自動補全 'small' | 'medium' | …
+}
+```
+
+### 帶業務擴展的泛型版本
+
+業務側常常需要「元件類型 + 我們自己的幾個類型」，`src/types/components/base.ts` 提供了泛型版本（見 [types 參考](/reference/types)）：
+
+```ts
+import type { LhTypes } from '@lh-ui/share/types'
+
+type MyButtonType = LhTypes<'brand' | 'dangerous'>
+// → LhComponentType | 'brand' | 'dangerous'
+```
+
+### 執行時驗證
+
+類型本身不做執行時驗證。元件內部用常數做值檢查：
+
+```ts
+import { LH_SIZE_CONST } from '@lh-ui/share/constants'
+
+const isValidSize = (v: string): v is LhComponentSize =>
+  Object.values(LH_SIZE_CONST).includes(v as LhComponentSize)
+```
+
+## 注意事項
+
+- **只匯出類型**：這個模組 `import type` 引常數，編譯後不產生任何執行時程式碼（除常數本身）。純類型匯入不會影響套件體積。
+- **`'mini'` 與 `'x-large'` 是擴展檔**：`small / medium / large` 是常規三檔；`mini` 用於內聯緊湊場景（表格內的操作按鈕），`x-large` 是無障礙老年人檔。不是所有元件都支援全部五檔，以各元件文件為準。
+- **`LhPosition` 未被 `src/types` 公共匯出面引入**：它在 `core/shared/types` 裡，需要從 `@lh-ui/share/core/shared/types` 匯入，`@lh-ui/share/types` 裡沒有。

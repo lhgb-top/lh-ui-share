@@ -1,0 +1,161 @@
+---
+title: timeline —— 타임라인
+description: 'getTimelineSide 좌우 교대, 네 가지 의미 노드 유형, alternate 2단 레이아웃'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+타임라인은 '시간순으로 정렬된 이벤트'를 시각화합니다: 세로 선이 여러 노드를 꿰고, 각 노드는 시간, 제목, 내용을 가집니다. 물류 궤적, 작업 로그, 버전 업데이트 기록에서 흔히 봅니다. `core/timeline`은 가볍습니다. 주요 작업은 레이아웃의 좌우 교대 계산과 클래스명 조립입니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhTimeline`을 구현할 때: 물류 궤적, 결제 기록, 버전 업데이트 로그, 작업 감사 흐름.
+- 이벤트가 **시간순**이고, 시간축의 느낌을 강조해야 하는 장면.
+- **사용하면 안 되는 곳**: 시간 차원이 없는 단계(`steps` 사용. 그것은 시간이 아니라 진행을 강조); 이벤트에 거르기/검색이 필요한 경우(목록 + 거르기 사용).
+
+## 가져오기
+
+```ts
+import {
+  getTimelineItemClassNames,
+  getTimelineClassNames,
+  getTimelineSide,
+} from '@lh-ui/share/core/timeline'
+import type { LhTimelineMode, LhTimelineType, LhTimelineItemState } from '@lh-ui/share/core/timeline'
+```
+
+## 설계 의도
+
+**두 가지 레이아웃 모드**:
+
+- `left`(기본): 세로 선이 가장 왼쪽에 있고, 모든 콘텐츠가 오른쪽 한 단으로 나열됩니다. 단순하고 정보 밀도가 높습니다.
+- `alternate`: 세로 선이 가운데에 있고 콘텐츠가 **좌우로 교대**합니다. `getTimelineSide(index)`가 `index % 2`로 쪽을 정합니다(짝수 왼쪽, 홀수 오른쪽). 이 모드는 시각적으로 더 대칭적이며, 콘텐츠 블록이 크고 타임라인이 페이지의 주체일 때 어울립니다.
+
+**`getTimelineSide`가 스타일이 아니라 core에 있는 이유**: 쪽은 CSS 클래스명만 결정하는 것이 아니라 **콘텐츠 하위 컴포넌트의 나열 순서**도 결정합니다(타임스탬프가 왼쪽 단일 때는 콘텐츠 앞에, 오른쪽 단일 때는 콘텐츠 뒤에). 순수 함수가 계산해 내어 양 단말의 렌더링 논리가 일치하며, 'Vue 쪽에서는 좌우 교대인데 React 쪽에서는 모두 왼쪽'인 불일치가 생기지 않습니다.
+
+**네 가지 의미 유형**: `primary` / `success` / `warning` / `danger`이고, 노드 점의 색에 대응합니다. 의미는 호출 쪽이 이벤트의 성질에 따라 부여하고(성공 작업 success, 경고 warning), core는 클래스명 매핑만 할 뿐 비즈니스 의미를 해석하지 않습니다.
+
+**`isLast`의 용도**: 마지막 노드는 **세로 선을 그리지 않습니다**(`--last` 클래스명이 `::before` 선분을 제거). 그렇지 않으면 축선이 마지막 노드를 한 뼘 넘어갑니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getTimelineItemClassNames` | `(state: LhTimelineItemState) => string[]` | 클래스명 | 유형/속 빈 항/쪽/마지막 항 |
+| `getTimelineClassNames` | `(mode: LhTimelineMode) => string[]` | 클래스명 | alternate 수정자 |
+| `getTimelineSide` | `(index: number) => 'left' \| 'right'` | 쪽 | 짝수 왼쪽, 홀수 오른쪽 |
+
+## 타입 정의
+
+```ts
+export type LhTimelineMode = 'left' | 'alternate'
+export type LhTimelineType = 'primary' | 'success' | 'warning' | 'danger'
+
+export interface LhTimelineItemState {
+  type: LhTimelineType | undefined
+  hollow: boolean       // 속 빈 노드(테두리만, '아직 도달하지 않은' 이벤트에 사용)
+  side: 'left' | 'right'  // alternate 모드에서의 쪽
+  isLast: boolean
+}
+```
+
+## 접근성
+
+timeline은 **순수 표시용 컴포넌트**로 APG 상호작용 역할이 없습니다. 콘텐츠 자체가 순서 목록의 의미이므로 `<ol>`로 감싸는 것을 권장합니다:
+
+```html
+<ol class="lh-timeline">
+  <li class="lh-timeline__item">
+    <time datetime="2026-10-12T10:00">10:00</time> 주문 수령 완료
+  </li>
+</ol>
+```
+
+- `<time>` 요소는 스크린 리더와 검색 엔진이 시간을 인식하게 합니다; `datetime` 속성은 ISO 8601 형식을 씁니다.
+- 노드 점은 순수 장식이므로 `aria-hidden="true"`를 주거나 가상 요소로 구현하세요(가상 요소는 자연스럽게 접근성 트리에 없습니다).
+- timeline이 나타내는 것이 **진행**이라면('현재 3단계까지 진행 중' 등), `steps`로 바꾸고 `aria-current`를 주는 것을 고려하세요.
+
+## 사용 예
+
+```ts
+import { getTimelineSide, getTimelineClassNames } from '@lh-ui/share/core/timeline'
+
+getTimelineSide(0)  // 'left'
+getTimelineSide(1)  // 'right'
+getTimelineSide(2)  // 'left'
+getTimelineClassNames('alternate')  // ['lh-timeline', 'lh-timeline--alternate']
+getTimelineClassNames('left')       // ['lh-timeline']
+```
+
+```vue
+<!-- Vue3: alternate 모드 -->
+<ol :class="getTimelineClassNames(mode)">
+  <li
+    v-for="(item, index) in items"
+    :key="item.id"
+    :class="getTimelineItemClassNames({
+      type: item.type,
+      hollow: item.hollow,
+      side: getTimelineSide(index),
+      isLast: index === items.length - 1,
+    })"
+  >
+    <template v-if="mode === 'alternate'">
+      <!-- 왼쪽 단 -->
+      <div v-if="getTimelineSide(index) === 'left'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+        <p class="lh-timeline__desc">{{ item.desc }}</p>
+      </div>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <!-- 오른쪽 단 -->
+      <div v-if="getTimelineSide(index) === 'right'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+    <template v-else>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <div class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+  </li>
+</ol>
+```
+
+```tsx
+// React: alternate 모드에서 쪽이 렌더링 순서를 결정, getTimelineSide(index)로 분기
+```
+
+```ts
+// uniapp: <view>로 순회; alternate 2단은 절대 위치 + 좌우 50% 레이아웃
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-timeline` | 기본 클래스(`<ol>` 초기화) |
+| `.lh-timeline--alternate` | 교대 모드(축선 가운데) |
+| `.lh-timeline__item` | 단일 노드 항목 |
+| `.lh-timeline__item--{primary\|success\|warning\|danger}` | 의미 유형(점 색) |
+| `.lh-timeline__item--hollow` | 속 빈 점(미도달) |
+| `.lh-timeline__item--right` | alternate 오른쪽 단 |
+| `.lh-timeline__item--last` | 마지막 항목(아래 축선을 그리지 않음) |
+| `.lh-timeline__dot` | 점(`::before`가 축선을 그림) |
+| `.lh-timeline__content` / `__time` / `__title` / `__desc` | 콘텐츠 영역 |
+
+축선 색 `--lh-border-color`; 점의 네 색은 각각 `--lh-primary-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`; 속 빈 노드는 테두리 + 투명 배경.
+
+## 주의사항
+
+- **`isLast`는 반드시 넘겨야**: 넘기지 않으면 축선이 마지막 노드를 넘어가고, 시각적으로 잘린 진행률 표시줄처럼 보입니다.
+- **`alternate` 모드의 데이터 순서**: 좌우 교대는 **index 기준**이며 데이터의 시간 순서와 일치합니다. UI 계층에서 정렬한 뒤에 side를 계산하지 마세요. side가 어긋납니다.
+- **속 빈 노드 `hollow`의 의미**: '이 이벤트에 아직 도달하지 않았음'을 나타냅니다(물류의 '수령 대기' 등). 이것은 `type`과 직교합니다: 속 빈 항 + warning은 '미도달이면서 위험 있음'을 뜻합니다.
+- **콘텐츠 넘침**: alternate 모드는 각 단이 절반 너비뿐이어서 긴 텍스트가 여러 번 줄바꿈됩니다; 콘텐츠가 많을 때는 `left` 모드를 쓰거나 콘텐츠 영역에 `max-height` + 펼침을 주세요.
+- **시간 형식화**: core는 시간을 형식화하지 않으며, UI 계층이 `core/shared/date.formatDate`를 쓰거나 직접 처리합니다; `<time datetime>`은 기계가 해석할 수 있도록 ISO 형식이어야 합니다.
+- **역방향 타임라인**: 일부 장면에서는 최신 이벤트가 위에 와야 합니다. 데이터 계층에서 reverse하면 되고 core는 방향을 인식하지 않습니다.
+
+<FnPlayground module="timeline" fn="getTimelineSide" params='{"index": 3}' />

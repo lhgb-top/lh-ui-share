@@ -1,0 +1,131 @@
+---
+title: icon —— 아이콘
+description: 'getIconSize 크기 변환, getIconSvg 내장 SVG path 가져오기, getIconAria 장식/의미 듀얼 모드 접근성 속성 묶음'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`core/icon`은 33개의 중국풍 미니멀 SVG 아이콘을 내장하고, '크기 단계'를 SVG의 `width/height`로 변환하고, '장석인지 의미인지' 결정을 aria 속성 묶음으로 만드는 일을 합니다. 아이콘 컴포넌트 자체는 props 상태 기계가 없습니다. 그것은 **렌더링 함수의 매개변수 집합**입니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhIcon`을 구현할 때: `name` → path, `size` → 픽셀, `color` → 인라인 `color`.
+- 글자 옆에 아이콘을 넣어야 하는 모든 곳. **대부분의 아이콘은 장식적**이어야 합니다(`decorative: true`, 기본값), 스크린 리더가 이를 읽지 않습니다.
+- 아이콘이 의미를 담아야 할 때('삭제' 버튼에 글자 없이 아이콘만 있는 경우 등), 반드시 `decorative: false` + `label`을 넘겨야 합니다. 그렇지 않으면 스크린 리더가 읽는 것은 침묵의 도형입니다.
+
+## 가져오기
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+import type { LhIconState, LhIconName } from '@lh-ui/share/core/icon'
+import { LH_ICON_SVGS_CONST } from '@lh-ui/share/core/icon'
+```
+
+## 설계 의도
+
+아이콘 크기에는 두 가지 출처가 있습니다: **사전 정의 단계**(`'small'` / `'medium'` ...)와 **임의 숫자**. `getIconSize`는 둘을 `number`로 통일합니다. SVG의 `width`/`height` 속성은 숫자만 받기 때문이며(단위는 속성이 결정), UI 계층이 '단계인지 픽셀인지' 다시 판단할 필요가 없습니다.
+
+접근성은 APG의 '장식 vs 의미' 이분법을 따릅니다:
+
+- 장식 아이콘(기본): `aria-hidden="true"`, 접근성 트리에서 제거. 글자와 나란히 있는 아이콘은 항상 이쪽입니다.
+- 의미 아이콘: `role="img"` + `aria-label`, 읽어줄 수 있는 도형이 됩니다.
+- 세 번째 경우: `decorative: false`인데 `label`을 주지 않음. 숨기지도 의미를 부여하지도 않고 빈 객체를 반환합니다. 이것은 '아이콘 버튼의 label을 바깥쪽 aria-label이 제공하는' 경우를 위해 남겨둔 것으로, 중복 읽기를 피합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getIconSize` | `(size: string \| number \| undefined) => number` | 픽셀 수치 | 단계 매핑, 알 수 없는 값은 16으로 폴백 |
+| `getIconSvg` | `(name: LhIconName \| undefined) => string \| null` | path `d` 또는 null | 내장 아이콘을 가져오고, 찾지 못하면 오류를 던지지 않고 null 반환 |
+| `getIconStyle` | `(state: LhIconState) => Record<string, string>` | 인라인 스타일 | width/height는 항상, color는 필요에 따라 |
+| `getIconAria` | `(options?: { decorative?: boolean; label?: string }) => LhAriaAttrs` | aria 속성 묶음 | 장식/의미 듀얼 모드 |
+
+크기 단계 매핑: `mini: 12` / `small: 14` / `medium: 16` / `large: 20` / `x-large: 24`, 알 수 없는 문자열은 16으로 폴백, falsy(`0` 포함)도 16으로 폴백.
+
+## 타입 정의
+
+```ts
+export interface LhIconState {
+  size: string | number | undefined
+  color: string | undefined
+  name?: LhIconName
+}
+
+export type LhIconName =
+  | 'star' | 'search' | 'check' | 'close' | 'warning' | 'error' | 'info'
+  | 'loading' | 'plus' | 'minus' | 'edit' | 'delete' | 'setting' | 'user'
+  | 'home' | 'menu' | 'more' | 'download' | 'upload' | 'refresh' | 'folder'
+  | 'file' | 'date' | 'clock' | 'email' | 'phone' | 'location' | 'image'
+  | 'share' | 'bell' | 'filter' | 'eye' | 'link'
+```
+
+## 접근성
+
+`getIconAria`는 이 컴포넌트의 aria 속성 묶음 함수입니다:
+
+```ts
+getIconAria()                            // { 'aria-hidden': true }  장식
+getIconAria({ label: '삭제' })            // { 'aria-label': '삭제', role: 'img' }
+getIconAria({ decorative: false })        // {}  바깥쪽이 label 제공
+```
+
+`aria-hidden`의 값이 `true`(불리언)라는 점에 주의하세요. `LhAriaAttrs`는 불리언과 문자열의 공존을 허용하며, 각 단말이 v-bind할 때 프레임워크가 `"true"`로 변환합니다.
+
+## 사용 예
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+
+getIconSize('large')          // 20
+getIconSize(32)               // 32
+getIconSvg('check')           // 'M...'  path 데이터
+getIconSvg('not-exist')       // null (오류를 던지지 않음, UI 계층은 빈 svg나 자리표시자를 렌더링)
+getIconStyle({ size: 'large', color: 'var(--lh-primary-color)' })
+// { width: '20px', height: '20px', color: 'var(--lh-primary-color)' }
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="['lh-icon', { 'lh-icon--loading': name === 'loading' }]"
+  viewBox="0 0 1024 1024"
+  :width="px" :height="px"
+  v-bind="getIconAria({ decorative, label })"
+>
+  <path :d="path" />
+</svg>
+```
+
+```tsx
+// React
+const px = getIconSize(size)
+const aria = getIconAria({ decorative: !label, label })
+return (
+  <svg className="lh-icon" viewBox="0 0 1024 1024" width={px} height={px} {...aria}>
+    <path d={getIconSvg(name) ?? ''} />
+  </svg>
+)
+```
+
+```ts
+// uniapp: h5가 아닌 단말은 인라인 svg를 지원하지 않으므로, UI 계층이 path를 미리 이미지 자원으로 렌더링합니다;
+// getIconSize의 수치는 여전히 이미지 크기를 제어하는 데 쓰입니다.
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-icon` | 기본 클래스: `display: inline-block`, `vertical-align` 정렬 보정 |
+| `.lh-icon--loading` | 로딩 아이콘의 무한 회전 애니메이션 |
+
+아이콘 색상은 기본적으로 부모 글자색을 상속합니다(`fill: currentColor`), 주색이 필요할 때는 `getIconStyle`의 `color`로 명시적으로 주입합니다.
+
+## 주의사항
+
+- `getIconSvg`는 존재하지 않는 이름에 대해 **오류를 던지지 않고 null을 반환**합니다. UI 계층은 이 분기를 처리해야 하며, 그렇지 않으면 빈 `<svg>`가 렌더링됩니다.
+- 내장 아이콘 세트는 **중국풍 미니멀 스타일**이며 제3자 아이콘 라이브러리(element-plus의 fontawesome 클래스명 등)와 호환되지 않습니다. 비즈니스 아이콘이 필요할 때, 각 단말의 `LhIcon`은 보통 `path` 전달이나 슬롯 자체 그리기를 지원합니다.
+- `loading` 아이콘의 회전 애니메이션은 CSS 계층(`.lh-icon--loading`)에 있고 core에는 없습니다. core는 클래스명만 출력합니다.
+- 아이콘과 글자가 나란히 있을 때는 기본 장식 상태를 유지하고, '아이콘 단독으로 작업을 담당'할 때만 label을 넘깁니다.
+
+<FnPlayground module="icon" fn="getIconSize" params='{"size": "large"}' />

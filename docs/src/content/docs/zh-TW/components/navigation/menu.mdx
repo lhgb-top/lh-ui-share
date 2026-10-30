@@ -1,0 +1,156 @@
+---
+title: 'menu 選單 —— 導航'
+description: 'toggleMenuOpen 手風琴/常規雙模式、子選單 aria-expanded 聯動、@deprecated moveMenuFocus 已收斂到 shared/keyboard'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+選單是網站的骨架導航：頂部水平選單、側邊垂直選單、可摺疊的圖示選單。它和 `dropdown` 的區別是**持久性與層級**——選單常駐頁面、可以無限巢狀子級；dropdown 是臨時彈出的操作列表。`core/menu` 管的是展開狀態記帳與無障礙語義，版面配置與定位全在 SCSS。
+
+## 何時使用
+
+- 各端實作 `<LhMenu>` / `<LhSubMenu>` / `<LhMenuItem>`：網站主導航、後臺側邊欄、文件站目錄。
+- 需要**兩級以上層級**的導航。
+- **不該用它**：一行平鋪的操作按鈕（用 `space` + `button`）；臨時彈出的操作選單（用 `dropdown`）；標籤頁式的內容切換（用 `tabs`）。
+
+## 匯入方式
+
+```ts
+import {
+  getMenuClassNames,
+  getMenuItemClassNames,
+  getSubMenuClassNames,
+  getMenuItemGroupClassNames,
+  toggleMenuOpen,
+  isMenuOpen,
+  moveMenuFocus,
+  getMenuAria,
+  getMenuItemAria,
+  getSubMenuAria,
+} from '@lh-ui/share/core/menu'
+import type { LhMenuMode } from '@lh-ui/share/core/menu'
+```
+
+## 設計意圖
+
+**手風琴模式允許零開**：`uniqueOpened: true` 時 `toggleMenuOpen` 點選已展開項傳回 `[]`（全收起），點選未展開項傳回 `[key]`（只保留它）。注意它不是「至少保持一個開」——零開是允許的，這讓「全部收起」成為可互動狀態。
+
+**常規模式是增刪而非替換**：傳回新陣列（`filter` 去掉 / 追加），保持其餘展開項不動——多級選單裡同時開幾個子選單是常見需求。
+
+**`moveMenuFocus` 是 @deprecated 外殼**：循環導航演算法已收斂到 `core/shared/keyboard` 的 `getNextListIndex`，本函式保留舊簽名（吃 DOM 元素陣列）供下游既有引用。它做的事是：過濾掉 `tabIndex === -1`（等價於核心的停用項）、目前元素不在列表中時回退首項。**新程式碼直接用 `getNextListIndex`**。
+
+**aria 三件套**：容器 `role="menu"`、葉子項 `role="menuitem"`、子選單標題 `role="menuitem"` + `aria-expanded` + `aria-controls`。注意**子選單標題不是 menuitem 的子角色**——APG 的 menu 結構裡，可展開的選單項仍是 menuitem，展開狀態由 aria-expanded 表達。
+
+**類別名與狀態分離**：`--active` / `--disabled` / `--opened` 都是獨立布林類，由 SCSS 組合樣式。`--collapse`（摺疊狀態）是容器級類別名，影響所有子項的渲染方式（圖示選單只顯示圖示、tooltip 補全文字）。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getMenuClassNames` | `(state: { mode, collapse }) => string[]` | 類別名 | 版面配置模式 + 摺疊狀態 |
+| `getMenuItemClassNames` | `(state: { active, disabled }) => string[]` | 類別名 | 葉子項 |
+| `getSubMenuClassNames` | `(state: { active, disabled, opened }) => string[]` | 類別名 | 子選單 |
+| `getMenuItemGroupClassNames` | `() => string[]` | 類別名 | 群組容器 |
+| `toggleMenuOpen` | `(openeds, key, uniqueOpened) => string[]` | 新陣列 | 展開/收起（不可變） |
+| `isMenuOpen` | `(openeds, key) => boolean` | 是否展開 | includes 查詢 |
+| `moveMenuFocus` ⚠️ | `(items, currentEl, direction) => HTMLElement \| null` | 目標元素 | ↑/↓ 焦點移動 |
+| `getMenuAria` | `(id?) => LhAriaAttrs` | aria 包 | role=menu |
+| `getMenuItemAria` | `(state: { disabled? }) => LhAriaAttrs` | aria 包 | menuitem |
+| `getSubMenuAria` | `(options: { opened, disabled?, menuId? }) => LhAriaAttrs` | aria 包 | menuitem + expanded |
+
+⚠️ 為 `@deprecated` 相容外殼，新程式碼用 `shared/keyboard` 的 `getNextListIndex`。
+
+## 類型定義
+
+```ts
+export type LhMenuMode = 'horizontal' | 'vertical'
+```
+
+## 無障礙
+
+```ts
+getMenuAria('menu-1')            // { role: 'menu', id: 'menu-1' }
+getMenuItemAria({ disabled: true })  // { role: 'menuitem', 'aria-disabled': true }
+getSubMenuAria({ opened: true, menuId: 'menu-1' })
+// { role: 'menuitem', 'aria-expanded': true, 'aria-controls': 'menu-1' }
+getSubMenuAria({ opened: false })
+// { role: 'menuitem', 'aria-expanded': false }
+```
+
+- **aria-expanded 的假值也輸出**：`{ 'aria-expanded': false }` 是有意義的——它明確告訴讀屏軟體「這個子選單是收起的」。這遵循 `shared/a11y` 的約定：只有 undefined（未傳）才省略，false 是合法狀態值。
+- **鍵盤導航的模式分歧**：水平選單用 ←/→、垂直選單用 ↑/↓，這是 APG 的 menu 模式約定。讀屏軟體使用者按方向鍵時期待對應的行為——`moveMenuFocus` 只提供垂直方向的 1/-1，水平選單的 ←/→ 由 UI 層映射後同樣呼叫。
+- **aria-current 標記目前頁面**：啟動的選單項除了 `--active` 類別名，建議在 UI 層補 `aria-current="page"`（與 `breadcrumb` 的末項語義一致），讓讀屏軟體播報「目前頁面」。
+- **摺疊選單的文字補償**：`collapse` 模式下只顯示圖示，選單項的文字應放到 `aria-label` 或 hover tooltip 裡——否則圖示按鈕對讀屏軟體是無名的。
+- **跳過停用項**：`--disabled` 的項不回應點選（UI 層攔截），但仍在 DOM 中。鍵盤導航必須跳過它們（`moveMenuFocus` 的 tabIndex 過濾）。
+
+## 使用範例
+
+```ts
+import { toggleMenuOpen, isMenuOpen } from '@lh-ui/share/core/menu'
+
+toggleMenuOpen(['a', 'b'], 'b', false)  // ['a']（常規模式收起 b）
+toggleMenuOpen(['a'], 'b', false)       // ['a', 'b']（展開 b）
+toggleMenuOpen(['a'], 'a', true)        // []（手風琴：再點收起，允許零開）
+toggleMenuOpen(['a'], 'b', true)        // ['b']（手風琴：只保留 b）
+
+isMenuOpen(['a', 'b'], 'a')  // true
+isMenuOpen(['a'], 'c')       // false
+```
+
+```ts
+// 受控展開狀態（UI 層）：openeds 是陣列而非 Set，便於序列化與 v-model
+const openeds = ref<string[]>([])
+function onSubMenuClick(key: string) {
+  openeds.value = toggleMenuOpen(openeds.value, key, props.uniqueOpened)
+}
+```
+
+```vue
+<!-- Vue3：側邊垂直選單 -->
+<template>
+  <LhMenu mode="vertical" :collapse="collapsed" :unique-opened="true">
+    <LhSubMenu index="1">
+      <template #title><LhIcon name="settings" /><span>系统设置</span></template>
+      <LhMenuItem index="1-1" @click="go('/users')">用户管理</LhMenuItem>
+      <LhMenuItem index="1-2" disabled>权限管理</LhMenuItem>
+    </LhSubMenu>
+    <LhMenuItem index="2" @click="go('/profile')">个人中心</LhMenuItem>
+  </LhMenu>
+</template>
+```
+
+```tsx
+// React：openeds 用 useState<string[]>；選單項點選 navigate；
+// 摺疊態用 context 下發給子選單（避免每層透傳 props）
+```
+
+```ts
+// uniapp：<view> + catchtap；摺疊模式在小程序端用 px 定寬過渡動畫
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-menu` | 容器 |
+| `.lh-menu--{horizontal\|vertical}` | 版面配置模式 |
+| `.lh-menu--collapse` | 摺疊狀態（僅圖示） |
+| `.lh-menu-item` | 葉子項 |
+| `.lh-menu-item--active` / `--disabled` | 啟動 / 停用 |
+| `.lh-sub-menu` / `--active` / `--disabled` / `--opened` | 子選單標題 |
+| `.lh-sub-menu__popup` | 彈出式子級（水平選單） |
+| `.lh-menu-item-group` | 群組（帶群組標題） |
+
+啟動項背景 `--lh-menu-item-active-background`、文字色 `--lh-menu-item-color`（明色令牌需在 var-dark 顯式翻轉，見根 AGENTS.md「暗色陷阱」）；高度令牌 `--lh-menu-item-height`。
+
+## 注意事項
+
+- **openeds 用陣列而非物件**：順序無關但要去重；`toggleMenuOpen` 保證唯一性。序列化到路由 query 或 localStorage 時陣列更直觀。
+- **手風琴只控制同層級**：`uniqueOpened` 只讓**同一 menu 下**的直接子選單互斥；孫級子選單之間不受影響（各自維護自己的 openeds）。
+- **水平選單的子級是彈出式**：一級橫向排開，二級往下彈（類 `lh-sub-menu__popup`，定位用 `shared/popper`）；垂直選單的子級是內嵌展開（擠壓下方內容）。兩種模式的 DOM 結構不同，由 mode 驅動。
+- **`--active` 需要路由同步**：選單的啟動狀態通常跟隨目前路由，UI 層監聽路由變化更新 active index——core 不碰路由。
+- **摺疊狀態的 tooltip**：`collapse: true` 時選單項只剩圖示，文字應透過 `tooltip` 補全（懸停顯示）。這是兩個元件的協作點。
+- **`moveMenuFocus` 的 DOM 依賴**：它吃 `HTMLElement[]`，只能在瀏覽器端呼叫（SSR 跳過）；且它過濾 tabIndex 而非讀 disabled 類別名——UI 層必須保證停用項的 tabIndex 為 -1。
+- **選單 vs dropdown 的角色相同但用法不同**：兩者都用 `role="menu"`。menu 是持久導航、dropdown 是臨時操作列表——別用 dropdown 冒充網站導航（重新整理即消失、無法深鏈）。
+
+<FnPlayground module="menu" fn="toggleMenuOpen" params='{"openeds": ["a"], "key": "b", "uniqueOpened": true}' />

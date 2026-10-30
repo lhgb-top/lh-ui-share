@@ -1,0 +1,120 @@
+---
+title: tag —— タグ
+description: 'getTagClassNames がタイプ / サイズ / 角丸 / クローズ可能 / 無効 / アウトラインのモディファイアクラスを計算'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+タグはマーク付け、分類、選択に使われます。`core/tag` が行うのは一つだけです：タグの状態をクラス名配列に計算することです。ボタンよりさらにシンプルです——インタラクション判定もサイズのフォールバックもなく、すべての視覚バリアントは直接クラス名に落ちます。
+
+## いつ使うか
+
+- 各端が `LhTag` を実装する：クラス名はすべて `getTagClassNames` が産出する。
+- タグの視覚を再利用しつつコンポーネントを導入したくないケース（テーブルセル内の状態マークなど）では、core の関数と `styles/tag` のクラス名を直接 import できる。
+- **使うべきでない**：`sx` で微調整したい、あるいは色をカスタマイズしたいケース。タグの色はセマンティクストークンであり、カスタマイズするなら core を変えるのではなく ConfigProvider の componentTheme を使ってください。
+
+## インポート方法
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+import type { LhTagState, LhTagType } from '@lh-ui/share/core/tag'
+```
+
+## 設計意図
+
+タグの状態はすべて「視覚のスイッチ」で、計算ロジックは一切ありません。`getTagClassNames` の原則は**真のときだけ追加**です：`type` と `size` が偽値のときはモディファイアクラスすら産出せず、`closable` / `disabled` / `round` / `hit` はそれぞれ独立して判定します。これによりクラス名配列は常に「最小十分な集合」になり、`lh-tag--undefined` のような汚いクラスは決して現れません。
+
+`hit`（アウトライン）はタグがボタンに対して独自に持つセマンティクスです：タグはしばしば「軽量な存在感」を求められ、塗りよりも枠線のほうが適しています。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getTagClassNames` | `(state: LhTagState) => string[]` | クラス名配列 | タグの全クラス名を計算 |
+
+出力例：
+
+```ts
+getTagClassNames({ type: 'success', size: 'small', closable: true, disabled: false, round: false, hit: true })
+// ['lh-tag', 'lh-tag--success', 'lh-tag--small', 'lh-tag--closable', 'lh-tag--hit']
+```
+
+## 型定義
+
+```ts
+export type LhTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhTagState {
+  type: LhTagType
+  size: LhComponentSize        // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  closable: boolean            // クローズ可能（× ボタンをレンダリング）
+  disabled: boolean            // 無効（閉じるボタンも応答しない）
+  round: boolean               // 角丸
+  hit: boolean                 // 塗りではなくアウトライン
+}
+```
+
+## アクセシビリティ
+
+`core/tag` は aria 属性パックを出力しません：タグは純粋な表示要素で、デフォルトではそのテキスト内容がスクリーンリーダーに提示されます。**閉じるボタン**はネイティブ `<button>`（または各端の等価な要素）で実装し、`aria-label`（「削除」など）を付けるべきです——これは UI 層の責務です。
+
+見落とされやすい点：タグを絞り込み条件として使う場合（`LhSelect` の複数選択タグなど）はインタラクションのセマンティクスが生まれ、このときクリック可能な領域全体に `role="button"` を付けるべきです——これは各端の UI 層が処理し、core は関与しません。
+
+## 使用例
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+
+getTagClassNames({ type: 'primary', size: 'medium', closable: false, disabled: false, round: false, hit: false })
+// ['lh-tag', 'lh-tag--primary', 'lh-tag--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getTagClassNames({ type, size, closable, disabled, round, hit })">
+  <slot />
+  <button v-if="closable" class="lh-tag__close" aria-label="閉じる" @click="!disabled && emit('close')">
+    <LhIcon name="close" :size="12" />
+  </button>
+</span>
+```
+
+```tsx
+// React
+const cls = getTagClassNames({ type, size, closable, disabled, round, hit })
+return (
+  <span className={cls.join(' ')}>
+    {children}
+    {closable && <CloseButton disabled={disabled} />}
+  </span>
+)
+```
+
+```ts
+// uniapp：クラス名は同じ；close ボタンは view + @tap で実装する。aria-label のサポート状況は端によって異なり、
+// 読み上げセマンティクスをレンダリングしない方式に降格できる（非 h5 端の読み上げ機能はもとより限定的）
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-tag` | ベースクラス：inline-flex、内側の余白、文字サイズ、角丸 |
+| `.lh-tag--{primary\|success\|warning\|danger\|info\|default}` | セマンティクスタイプ（背景色 + 文字色） |
+| `.lh-tag--{mini\|small\|medium\|large\|x-large}` | サイズの段階 |
+| `.lh-tag--round` | 大きな角丸（カプセル形） |
+| `.lh-tag--hit` | アウトラインスタイル |
+| `.lh-tag--closable` | 閉じるボタンのための右側の間隔を確保 |
+| `.lh-tag--disabled` | 無効状態：透明度を下げる + 禁止カーソル |
+| `.lh-tag__text` | テキストノード（はみ出しを省略） |
+| `.lh-tag__close` | 閉じるボタン |
+
+色はすべて `var(--lh-*)` で、ダークモードは `var-dark.scss` が反転させます。
+
+## 注意事項
+
+- `type` と `size` が偽値のときは**モディファイアクラスを産出しません**（default にフォールバックするのではない）。UI 層が `lh-tag--default` の存在に依存する場合は、明示的に `type: 'default'` を渡してください。
+- 閉じるボタンの無効判定は UI 層にあります（`disabled` が click を阻止する）が、core の `--disabled` は視覚だけを管理します。
+- `round` と `hit` は共存でき、「アウトラインカプセル」になります。
+
+<FnPlayground module="tag" fn="getTagClassNames" params='{"state": {"type": "warning", "size": "small", "closable": true, "disabled": false, "round": true, "hit": false}}' />

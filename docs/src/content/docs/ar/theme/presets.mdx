@@ -1,0 +1,188 @@
+---
+title: مسبقات السمة
+description: 'المسبقات الداخلية الخمس 青花瓷 / 松花绿 / 朱砂 / 水墨 / 藤黄 والتسجيل المخصص عبر registerTheme'
+---
+
+import PresetPreview from '../../../../components/PresetPreview.astro'
+
+المسبقات الداخلية الخمس هي مقترح lh-ui الجمالي الافتراضي: يأخذ كل واحد منها لونًا
+رئيسيًا من الألوان الصينية التقليدية، مع مجموعة كاملة من الألوان الفاتحة والداكنة.
+
+## نظرة عامة على المسبقات
+
+| المسبقة | `name` | المعرّف | labelEn | الوصف | لون رئيسي فاتح |
+| --- | --- | --- | --- | --- | --- |
+| 青花瓷 (الخزف الأزرق) | `'cerblue'` | `LhCerblue` | Ceramic Blue | خزف مزخرف تحت التزجيج، أنيق وبسيط | لا |
+| 松花绿 (أخضر الصنوبر) | `'songhua'` | `LhSonghua` | Pine Green | غابة خيزران ناضرة، مفعمة بالحياة | **نعم** |
+| 朱砂 (الزنجفر) | `'zhusha'` | `LhZhusha` | Vermilion | أحمر الزنجفر التقليدي للأختام، احتفالي ووقور | لا |
+| 水墨 (رسم الحبر) | `'shuimo'` | `LhShuimo` | Ink Wash | رسم الحبر، أنيق وبسيط للغاية | لا |
+| 藤黄 (أصفر عشبي) | `'golden'` | `LhGolden` | Golden Autumn | أصفر القيقب في أواخر الخريف، ذهبي دافئ | **نعم** |
+
+<PresetPreview />
+
+## vars الخاصة بكل مسبقة
+
+### المفاتيح الخمسة الأساسية (في جميع المسبقات)
+
+```ts
+{
+  '--lh-primary-color': '...',
+  '--lh-primary-color-hover': '...',
+  '--lh-primary-color-active': '...',
+  '--lh-primary-color-bg': '...',
+  '--lh-primary-color-border': '...',
+}
+```
+
+### المفتاحان الإضافيان للمسبقات ذات اللون الرئيسي الفاتح
+
+كل من `songhua` (松花绿) و `golden` (藤黄) ذوا **لون رئيسي فاتح**، وتباين النص الأبيض
+فيهما لا يبلغ مستوى AA، فيجب إضافة مفتاحين:
+
+| المفتاح | الدور |
+| --- | --- |
+| `--lh-color-on-primary` | لون النص على زر اللون الرئيسي (في اللون الفاتح يُستبدل بالنص الأسود) |
+| `--lh-selected-color` | لون نص الحالة المحدَّدة (لون active على خلفية التحويم كنص محدد لا يكفي تباينه، فيُعمَّق وحده) |
+
+**لماذا هما ضروريان**: زر بلون رئيسي فاتح مع نص أبيض تبلغ نسبة تباينه 3.x:1 فقط، دون
+بلوغ 4.5:1 لمستوى AA. وستمسكه بوابة `verify:theme`.
+
+نأخذ 松花绿 (أخضر الصنوبر) مثالًا، فقد سُجِّل سبب التعديل في تعليقات المصدر:
+
+- `--lh-color-on-primary`: 松花绿 (أخضر الصنوبر) لون رئيسي فاتح، تباين النص الأبيض 3.93:1 فقط، فيُستبدل
+  بالنص الأسود 4.73:1
+- `--lh-selected-color`: لون active كنص محدد على خلفية التحويم 3.48:1 فقط، فتُعامَل
+  الحالة المحددة وحدها بالتعميق (لا يتأثر لون خلفية active للزر)
+- `--lh-primary-color-active`: القيمة الأصلية `#4B7A4A` تباينها 3.70:1 → `#4F8F4C`
+  تباينها 4.75:1
+
+ويُعامل 藤黄 (أصفر عشبي) بالمثل: نص أبيض 3.25:1 → نص أسود 5.31:1؛ نص محدد 3.41:1 →
+يُعمَّق إلى `#82600A`؛ وactive `#9A7208` تباينه 3.94:1 → `#A87F0A` تباينه 4.70:1.
+
+**مطلب صارم عند إضافة مسبقة بلون رئيسي فاتح**: يجب توفير `--lh-color-on-primary` و
+`--lh-selected-color`، وإلا سيفشل بند AA 4.5:1 في بوابة `verify:theme`.
+
+## استخدام المسبقات
+
+### جلب المسبقة
+
+```ts
+import { LH_THEME_PRESETS, getThemePreset, getThemeVars } from '@lh-ui/share/theme'
+
+LH_THEME_PRESETS                       // الخمس جميعها
+getThemePreset('cerblue')              // كائن LhCerblue
+getThemePreset('not-exists')           // undefined
+getThemeVars('cerblue')?.['--lh-primary-color']
+```
+
+### حقن المسبقة (طبقة واجهة المستخدم)
+
+```ts
+import { buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyPreset(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+
+  const text = buildPresetStyleText(vars)
+  let style = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!style) {
+    style = document.createElement('style')
+    style.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(style)
+  }
+  style.textContent = text     // استبدال لا إلحاق، كي لا تتبقى أنماط مخصصة قديمة عند تبديل السمة
+}
+```
+
+**النقطة الرئيسية** (انظر [قيد الحقن في النظرة العامة على السمة](/ar/theme/overview#قيد-الحقن-كتابة-style-فقط-لا-style-مضمَّن)):
+يجب كتابة عنصر `<style>` فقط، لا style مضمَّن على documentElement، وإلا فسدت ألوان
+الوضع الداكن.
+
+### ConfigProvider في كل مكتبة واجهة
+
+```vue
+<!-- lh-ui-plus / lh-ui-vue2 -->
+<lh-config-provider theme="cerblue">
+  <App />
+</lh-config-provider>
+```
+
+تستقبل خاصية `theme` نوع `LhThemePresetName`، ويسير المكوّن داخليًا عبر منطق الحقن
+أعلاه. وتمر صفحة تخصيص السمة في موقع docs وThemeStudio على `LH_THEME_PRESETS` لتسرد
+جميع المسبقات تلقائيًا —— **فلا حاجة لتعديل صفحات التوثيق في كل مكتبة بعد إضافة مسبقة**.
+
+## مسبقة مخصصة
+
+```ts
+import { registerTheme, getThemePreset } from '@lh-ui/share/theme'
+
+registerTheme({
+  name: 'my-brand',
+  label: 'لون العلامة التجارية',
+  labelEn: 'Brand',
+  description: 'اللون الرئيسي للعلامة التجارية للشركة',
+  vars: {
+    '--lh-primary-color': '#722ED1',
+    '--lh-primary-color-hover': '#9254DE',
+    '--lh-primary-color-active': '#531DAB',
+    '--lh-primary-color-bg': '#F9F0FF',
+    '--lh-primary-color-border': '#D3ADF7',
+    // وفي اللون الرئيسي الفاتح يجب إضافة المفتاحين:
+    // '--lh-color-on-primary': '#101410',
+    // '--lh-selected-color': '#...,
+  },
+})
+
+getThemePreset('my-brand')   // تتوفر فور التسجيل
+```
+
+دلالات `registerTheme`:
+
+- **الكتابة فوق الاسم نفسه**: تكتب `registerTheme({ name: 'cerblue', ... })` **فوق
+  青花瓷 (الخزف الأزرق) الداخلية** — وهذا مقصود، كي يستطيع جانب العمل ضبط السمة
+  الافتراضية دون تعديل المكوّنات.
+- **الأسماء الجديدة تُضاف إلى نهاية المصفوفة**: ترتيب `LH_THEME_PRESETS` هو «الخمس
+  الداخلية + المُسجَّلة».
+- **السجل حالة على مستوى الوحدة**: يُشارَك بمجرد الاستيراد، نسخة واحدة للتطبيق كله.
+
+## تدفق إضافة مسبقة داخلية
+
+1. أضِف `LhThemePreset` في `src/theme/themes/index.ts` (خمسة مفاتيح `--lh-primary-*`
+   على الأقل؛ ويجب على المسبقة ذات اللون الرئيسي الفاتح توفير `--lh-color-on-primary`
+   و `--lh-selected-color` إضافةً).
+2. أضِفها إلى مصفوفة `LH_THEME_PRESETS`، وأكمل الاسم في إعادة التصدير داخل `src/theme/index.ts`.
+3. شغّل `pnpm test` (يوجد في `theme.spec` اختبار ارتجاع لاتساق المسبقات) + `pnpm verify:theme`
+   (بوابة AA 4.5:1).
+4. أرفق changeset؛ وستسرد صفحة تخصيص السمة في توثيق كل مكتبة المسبقة الجديدة تلقائيًا.
+
+**ملاحظة**: لا تخدم vars إلا استهلاك JS في وقت التشغيل؛ أما اللون الرئيسي المستخدم في
+SCSS المكوّنات فلا يزال في `styles/theme/common/variables.scss` —— **وعند الكتابة فوق
+اللون الرئيسي لسمة داخلية يجب تعديل المصدرين معًا** (يوجد ارتجاع في theme.spec).
+
+## اتفاقيات التسمية
+
+**قيمة النص** للمسبقة (`name: 'cerblue'`) هي قيمة يكتبها المستخدم في `theme` الخاص بـ
+ConfigProvider، وتغييرها يكسر كل التكوينات في المستوى الأدنى — وهي إحدى بنود
+[تسجيل إعفاءات التسمية](/ar/guide/naming#تسجيل-الإعفاءات). أما **معرّف TS** المقابل
+فلا يزال يحمل البادئة (`LhCerblue`).
+
+## ملاحظات
+
+- **تُعيد الأسماء غير المُسجَّلة `undefined`**: فلا يُطلِق `getThemePreset` /
+  `getThemeVars` خطأً، فعلى طبقة واجهة المستخدم ألا تنسَ التحقق من القيمة الفارغة.
+- **`--lh-primary-color-active` و `--lh-selected-color` شيئان مختلفان**: فالأول لون
+  خلفية الزر عند الضغط، والثاني لون **النص** للقوائم / العناصر المحدَّدة. وفي المسبقات
+  ذات اللون الرئيسي الفاتح لا يكفي تباين لون active كنص محدد، لذا يلزم
+  `--lh-selected-color` مستقل.
+- **التفتيح التلقائي للوضع الداكن في المسبقات ذات اللون الرئيسي الداكن**: يحكم
+  `buildPresetDarkVars` على اللون الرئيسي بأنه داكن إذا كان تباينه مقابل خلفية الصفحة
+  الداكنة `#1A1A2E` أقل من 3 فيُفتَّح (لمزيد من التفاصيل انظر
+  [النظرة العامة على السمة](/ar/theme/overview#اشتقاق-الوضع-الداكن-في-buildpresetdarkvars)).
+
+## وثائق ذات صلة
+
+- [نظرة عامة على نظام السمة](/ar/theme/overview)
+- [رموز التصميم](/ar/theme/tokens)
+- [التخصيص في وقت التشغيل](/ar/theme/customization)
+- [الوضع الداكن](/ar/theme/dark-mode)

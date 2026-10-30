@@ -1,0 +1,210 @@
+---
+title: image —— Изображение
+description: 'stepZoom/stepRotate масштабирование и вращение, normalizePreviewList откат списка предпросмотра, stepViewerIndex циклическое переключение, семантика dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Суть компонента изображения — не показ (хватит и `<img>`), а **предпросмотр**: клик для увеличения, масштабирование колесом, вращение, переключение между несколькими картинками. `core/image` ведает пересчётом состояний просмотрщика — шагами масштабирования и ограничением, нормализацией вращения, циклическим переключением списка изображений.
+
+## Когда использовать
+
+- При реализации `LhImage` на каждой платформе: изображения товаров, предпросмотр аватаров, сканы документов, галереи.
+- Сценарии, где нужен увеличенный просмотр по клику (масштабирование/вращение/переключение нескольких изображений).
+- **Не следует использовать**: чисто декоративные картинки (прямо `<img>` или фоновое изображение — накладные расходы компонента ни к чему); сложная обрезка/редактирование (это задача image-cropper).
+
+## Импорт
+
+```ts
+import {
+  getImageClassNames,
+  normalizePreviewList,
+  stepZoom,
+  stepRotate,
+  stepViewerIndex,
+  getViewerImageStyle,
+  getImageViewerAria,
+} from '@lh-ui/share/core/image'
+import {
+  LH_IMAGE_ZOOM_MIN,
+  LH_IMAGE_ZOOM_MAX,
+  LH_IMAGE_ZOOM_STEP,
+} from '@lh-ui/share/core/image'
+import type { LhImageFit, LhImageState, LhImageViewerState } from '@lh-ui/share/core/image'
+```
+
+## Замысел
+
+**Ограничение с плавающей точкой при масштабировании**: `stepZoom` каждый раз прибавляет `LH_IMAGE_ZOOM_STEP` (0.25), а затем применяет `Math.round(next * 100) / 100` и ограничивает до `[0.25, 4]`. Округление гарантирует, что `zoom` всегда чистое десятичное (0.25 / 0.5 / 0.75 …), а не `1.0000000000000002` — последнее вызовет видимые глазу ступеньки в `scale()`.
+
+**Коррекция отрицательного остатка для вращения**: `(((rotate + 90) % 360) + 360) % 360` — оператор `%` в JS для отрицательных чисел возвращает отрицательное значение (`-90 % 360 === -90`), а внешний `+360) % 360` приводит его к `[0, 360)`. Хотя данная функция только прибавляет +90 и не может уйти в минус, эта коррекция оборонительная (если вызывающий передаст начальное отрицательное значение угла).
+
+**Циклическое переключение в `stepViewerIndex`**: `(index + delta + total) % total` — на первом изображении нажатие «предыдущее» переносит на последнее. При `total <= 0` возвращается 0 (защита от пустого списка).
+
+**Откат в `normalizePreviewList`**: если `previewSrcList` не передан, происходит откат к `[src]` — одиночный предпросмотр и множественный используют одну и ту же логику, просто `total` равен 1, и кнопки переключения скрываются автоматически.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getImageClassNames` | `(state: LhImageState) => string[]` | классы | error / previewable |
+| `normalizePreviewList` | `(src, previewSrcList?) => string[]` | список | без previewSrcList откат к [src] |
+| `stepZoom` | `(zoom, direction: 1 \| -1) => number` | новое масштабирование | шаг + ограничение |
+| `stepRotate` | `(rotate: number) => number` | новый угол | +90°, нормализация к [0,360) |
+| `stepViewerIndex` | `(index, total, delta) => number` | новый индекс | циклически |
+| `getViewerImageStyle` | `(state: LhImageViewerState) => Record<string, string>` | стили | transform |
+| `getImageViewerAria` | `(options?: { id?, label? }) => LhAriaAttrs` | пакет aria-атрибутов | семантика dialog |
+
+Константы: `LH_IMAGE_ZOOM_MIN = 0.25`, `LH_IMAGE_ZOOM_MAX = 4`, `LH_IMAGE_ZOOM_STEP = 0.25`.
+
+## Определения типов
+
+```ts
+export type LhImageFit = 'contain' | 'cover' | 'fill' | 'none' | 'scale-down'  // нативный object-fit
+
+export interface LhImageState {
+  fit: LhImageFit
+  error: boolean
+  loaded: boolean
+  preview: boolean    // доступен ли предпросмотр (отвечает ли на клик + маска-подсказка)
+}
+
+export interface LhImageViewerState {
+  zoom: number
+  rotate: number
+  index: number
+  total: number
+}
+
+export const LH_IMAGE_ZOOM_MIN = 0.25
+export const LH_IMAGE_ZOOM_MAX = 4
+export const LH_IMAGE_ZOOM_STEP = 0.25
+```
+
+## Доступность
+
+Просмотрщик представляется как **dialog** с объявлением `aria-modal`:
+
+```ts
+getImageViewerAria({ id: 'lh-viewer', label: 'Изображение 2 из 5' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-viewer', 'aria-label': 'Изображение 2 из 5' }
+
+getImageViewerAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true` сообщает скринридеру, что фон недоступен — вместе с `core/shared/focus-trap` это образует ловушку фокуса, закрытие по Esc.
+- **`label` с порядковым номером очень полезен**: при просмотре нескольких изображений скринридер объявляет «Изображение 2 из 5», и пользователь знает, сколько ещё осталось; для одиночного изображения достаточно «Просмотр изображения».
+- У самого эскиза должен быть `alt` (или `role="img" aria-label`) — если изображение не видно, это единственная текстовая информация. Для декоративных — `alt=""`.
+- Кнопки тулбара (увеличить/повернуть/предыдущее/следующее) — кнопки с иконками, для них обязателен `aria-label`.
+- **Объявление ошибки загрузки**: плейсхолдер в состоянии `error` должен иметь `role="img"` + `aria-label="Не удалось загрузить изображение"`, иначе пользователь скринридера не узнает, что здесь изначально была картинка.
+
+## Примеры использования
+
+```ts
+import { stepZoom, stepRotate, stepViewerIndex, normalizePreviewList } from '@lh-ui/share/core/image'
+
+stepZoom(1, 1)      // 1.25
+stepZoom(4, 1)      // 4 (на потолке больше не растёт)
+stepZoom(0.25, -1)  // 0.25 (на полу больше не убывает)
+stepRotate(0)       // 90
+stepRotate(270)     // 0 (нормализация к [0, 360))
+stepRotate(-90)     // 0 (коррекция отрицательного остатка)
+stepViewerIndex(0, 5, -1)   // 4 (циклический переход в конец)
+stepViewerIndex(4, 5, 1)    // 0 (циклический переход в начало)
+stepViewerIndex(0, 0, 1)    // 0 (пустой список)
+normalizePreviewList('a.jpg', ['b.jpg', 'c.jpg'])  // ['b.jpg', 'c.jpg']
+normalizePreviewList('a.jpg', undefined)          // ['a.jpg']
+normalizePreviewList('a.jpg', [])                 // ['a.jpg'] (пустой массив тоже откатывается)
+getViewerImageStyle({ zoom: 1.5, rotate: 90, index: 0, total: 1 })
+// { transform: 'scale(1.5) rotate(90deg)' }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getImageClassNames({ fit, error, loaded, preview })">
+  <img
+    v-if="!error"
+    class="lh-image__img"
+    :src="src"
+    :alt="alt"
+    :style="{ objectFit: fit }"
+    @load="loaded = true"
+    @error="error = true"
+    @click="preview && openViewer()"
+  />
+  <div v-else class="lh-image__error" role="img" aria-label="Не удалось загрузить изображение">
+    <LhIcon name="image" />
+  </div>
+  <div v-if="preview && loaded" class="lh-image__mask">
+    <LhIcon name="zoom-in" /> <span>Нажмите для предпросмотра</span>
+  </div>
+</div>
+
+<Teleport to="body">
+  <div v-if="visible" class="lh-image-viewer" v-bind="getImageViewerAria({ id: viewerId, label: viewerLabel })">
+    <div class="lh-image-viewer__mask" @click="close" />
+    <img
+      class="lh-image-viewer__img"
+      :src="list[index]"
+      :style="getViewerImageStyle({ zoom, rotate, index, total: list.length })"
+    />
+    <div class="lh-image-viewer__toolbar">
+      <button type="button" aria-label="Уменьшить" @click="zoom = stepZoom(zoom, -1)">−</button>
+      <span class="lh-image-viewer__zoom">{{ Math.round(zoom * 100) }}%</span>
+      <button type="button" aria-label="Увеличить" @click="zoom = stepZoom(zoom, 1)">+</button>
+      <button type="button" aria-label="Повернуть" @click="rotate = stepRotate(rotate)">⟳</button>
+      <template v-if="list.length > 1">
+        <button type="button" aria-label="Предыдущее" @click="index = stepViewerIndex(index, list.length, -1)">‹</button>
+        <button type="button" aria-label="Следующее" @click="index = stepViewerIndex(index, list.length, 1)">›</button>
+      </template>
+    </div>
+  </div>
+</Teleport>
+```
+
+```ts
+const list = computed(() => normalizePreviewList(props.src, props.previewSrcList))
+const viewerLabel = computed(() => `Изображение ${index.value + 1} из ${list.value.length}`)
+```
+
+```tsx
+// React: масштабирование колесом (на viewer вешается onWheel)
+// const next = stepZoom(zoom, e.deltaY < 0 ? 1 : -1); setZoom(next)
+```
+
+```ts
+// uniapp: <image> — встроенный компонент (атрибут mode соответствует object-fit:
+// widthFix / aspectFill и т. д.); просмотрщик собирается из <view> + <image>,
+// либо вызывается uni.previewImage (системный, без вращения)
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-image` | базовый класс |
+| `.lh-image--error` | ошибка загрузки |
+| `.lh-image--previewable` | доступен предпросмотр (маска при hover) |
+| `.lh-image__img` | само изображение |
+| `.lh-image__error` | плейсхолдер ошибки |
+| `.lh-image__mask` | маска при hover |
+| `.lh-image-viewer` | полноэкранный просмотрщик (fixed-позиционирование) |
+| `.lh-image-viewer__mask` | чёрная маска |
+| `.lh-image-viewer__img` | большое изображение (transform-анимация) |
+| `.lh-image-viewer__toolbar` / `__zoom` | тулбар / процент масштабирования |
+
+Цвет маски `rgba(0, 0, 0, 0.5)`; кнопки тулбара — полупрозрачный тёмный фон; transition изображения навешен на `transform` (масштабирование и вращение плавные).
+
+## Замечания
+
+- **Связь `previewSrcList` и `src`**: `previewSrcList` — список больших изображений для предпросмотра, он может отличаться от `src` эскиза на странице (эскиз — маленькая картинка для экономии трафика, предпросмотр — оригинал). Если не передать, будет откат к `[src]` — и просматривать будут эскиз, который при увеличении может быть размытым.
+- **`zoom` на границе больше не меняется**: `stepZoom` ограничивает до [0.25, 4], кнопки можно делать disabled или давать визуальную обратную связь, чтобы не было «нажал и ничего не произошло».
+- **Порядок вращения и масштабирования**: `transform: scale(zoom) rotate(rotate)` — сначала масштабирование, потом вращение. При обратном порядке вращение получает смещение от масштабирования (при вращении вокруг центра различие невелико, но при комбинации со смещением оно заметно).
+- **Управление фокусом**: при открытии просмотрщика фокус должен переходить в тулбар, а при закрытии — возвращаться на эскиз; это делается через `core/shared/focus-trap`, иначе TAB убежит за страницу.
+- **Повторная попытка при `error`**: core не предоставляет функции повтора; UI-слой может изменить `src`, добавив query-параметр (`?t=Date.now()`), чтобы принудить к перезагрузке — но сначала нужно сбросить состояние `error`.
+- **Применение `loaded`**: до завершения загрузки можно показывать скелет (`skeleton`) или слабо размытый плейсхолдер (LQIP).
+- **Чувствительность к памяти**: при предпросмотре списка больших изображений реально загружаются только те, что рядом с `index` (браузер грузит по необходимости), но не стоит отрисовывать десятки `<img>` за раз — core не контролирует число отрисовок, UI-слой ограничивает сам.
+- **Отображение `fit` в uniapp**: пять значений `object-fit` на стороне мини-программ соответствуют разным значениям `<image mode>` (`scale-down` не имеет прямого соответствия, обычно приближается `aspectFit`) — маппинг делает UI-слой.
+
+<FnPlayground module="image" fn="stepZoom" params='{"zoom": 1, "direction": 1}' />

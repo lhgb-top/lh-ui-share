@@ -1,0 +1,154 @@
+---
+title: focus-trap —— управление фокусом
+description: 'Перечисление фокусируемых элементов, ловушка фокуса Tab, реестр владельцев inert и сохранение/возврат фокуса; совместно используется Dialog / Drawer / Popover'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+У **компонентов-перекрытий** — модальных окон, панелей, предпросмотра изображений — есть три обязанности по фокусу: при открытии запомнить, где был пользователь, во время открытия удерживать Tab в пределах плавающего слоя, а при закрытии — вернуть фокус обратно. Если реализовывать эти три вещи в dialog / drawer / popover / popconfirm / image-viewer по отдельности, они неизбежно разойдутся; `shared/focus-trap` — их единственная реализация.
+
+## Импорт
+
+```ts
+import {
+  getFocusableElements,
+  focusFirst,
+  focusLast,
+  saveActiveElement,
+  restoreActiveElement,
+  trapTabKey,
+  supportsInert,
+  setInertOutside,
+} from '@lh-ui/share/core/shared/focus-trap'
+```
+
+## Таблица функций
+
+| Функция | Сигнатура | Назначение |
+| --- | --- | --- |
+| `getFocusableElements` | `(container: HTMLElement \| null \| undefined) => HTMLElement[]` | перечисляет элементы контейнера, доступные для перехода по Tab |
+| `focusFirst` | `(container) => boolean` | фокус на первый фокусируемый элемент, иначе `false` |
+| `focusLast` | `(container) => boolean` | фокус на последний фокусируемый элемент, иначе `false` |
+| `saveActiveElement` | `() => HTMLElement \| null` | запоминает активный элемент для последующего возврата (с защитой SSR) |
+| `restoreActiveElement` | `(el: HTMLElement \| null \| undefined) => void` | возвращает фокус |
+| `trapTabKey` | `(container: HTMLElement, event: KeyboardEvent) => boolean` | обработка Tab / Shift+Tab, фокус удерживается в контейнере |
+| `supportsInert` | `() => boolean` | поддерживает ли текущая среда атрибут `inert` |
+| `setInertOutside` | `(container, active: boolean, locked?: HTMLElement[]) => HTMLElement[]` | добавляет / снимает inert со всего DOM вне контейнера |
+
+## Поведение функций
+
+### getFocusableElements
+
+Сначала кандидаты отбираются селекторами: `a[href]`, `button:not([disabled])`, `input:not([disabled]):not([type="hidden"])`, `select` / `textarea:not([disabled])`, `video[controls]`, `audio[controls]`, `[contenteditable]:not([contenteditable="false"])`, `[tabindex]:not([tabindex="-1"])`. Затем `isHiddenForFocus` исключает элементы, перекрытые `disabled` / отрицательным tabindex / `hidden` / `aria-hidden="true"` / `display:none` / `visibility:hidden`, **поднимаясь по цепочке предков**.
+
+Подъём по цепочке предков критически важен: телепортированный плавающий слой часто попадает под влияние `aria-hidden` родителя, и проверка только самого элемента пропустит случаи. Для пустого `container` возвращается `[]`.
+
+### focusFirst / focusLast
+
+Фокус устанавливается с `{ preventScroll: true }`. **Почему**: в первом тике после телепортирования плавающего слоя в body положение элемента может быть временным, и стандартный `focus()` прокрутит страницу к временной позиции элемента. Предотвращение прокрутки избегает этого визуального скачка. Если фокусируемых элементов нет, возвращается `false`, и UI-слой решает, передать ли фокус самому контейнеру (`tabindex="-1"`).
+
+### saveActiveElement / restoreActiveElement
+
+При открытии плавающего слоя `const last = saveActiveElement()`, при закрытии `restoreActiveElement(last)`. Условия пропуска при возврате:
+
+- `el` пустой, нет `document`: немедленный возврат.
+- `!el.isConnected`: кнопка-триггер была размонтирована через `v-if` (например, уничтожается при закрытии) — не фокусировать.
+- **Цель заблокирована `inert` предка**: вместо этого вызывается `blur()` у текущего элемента фокуса. Это гарантированный спецификацией резервный путь — после blur фокус возвращается на body и не застревает на заблокированном элементе.
+
+### trapTabKey
+
+```
+event.key !== 'Tab' или event.defaultPrevented  →  вернуть false (не обрабатывать)
+в контейнере нет доступного фокуса             →  preventDefault(), вернуть true (удержать, не выпускать фокус)
+фокус на границе                               →  preventDefault(), переход на другой конец, вернуть true
+```
+
+Определение границы ведётся по **индексу в списке**, а не по сравнению ссылок. Причина: фокус может оказаться на элементе внутри контейнера, но не входящем в последовательность Tab (например, на самом контейнере с `tabindex="-1"`); тогда `document.activeElement` не найдется в результате `getFocusableElements()` (`idx === -1`), и алгоритм считает его находящимся «перед началом» — Shift+Tab переводит на последний элемент, обычный Tab — на первый, что соответствует интуиции.
+
+### setInertOutside и реестр владельцев
+
+`inert` — стандартный атрибут W3C (с 2024 года поддерживается всеми браузерами): добавление `inert` элементу скрывает его и всё его поддерево от вспомогательных технологий, делает их нефокусируемыми и недоступными для клика. Это более полная фоновая блокировка, чем «ловушка фокуса Tab» — пользователь скринридера не попадёт случайно на перекрытое содержимое страницы.
+
+Путь блокировки в `setInertOutside`: от `container` по цепочке предков вверх до `body`, на каждом уровне помечаются inert **дочерние поддеревья, не содержащие container**. Так доступным остаётся только плавающий слой с его цепочкой предков, всё остальное блокируется.
+
+Сложность — **наложение нескольких плавающих слоёв**: если в dialog открывается popover, при закрытии popover нельзя разблокировать и dialog. Решение — реестр владельцев (`WeakMap`):
+
+- при блокировке каждый заблокированный узел регистрируется «кто заблокировал»; повторный вызов только регистрирует право собственности, **не повторяет setAttribute** (идемпотентность).
+- при разблокировании inert снимается, только если у узла **не осталось ни одного контейнера-владельца**.
+- параметр `locked` — дополнительный список исключений (например, другой всё ещё открытый контейнер-overlay); эти узлы не блокируются, даже если не находятся в цепочке предков container.
+
+Возвращаемое значение: при блокировке — массив заблокированных узлов (для отладки / утверждений в тестах), при разблокировании — `[]`.
+
+Границы: при отсутствии поддержки inert возвращается `[]` (откат к ловушке фокуса `trapTabKey`); при отсутствии `document.body` возвращается `locked`; если контейнер уже отсоединился от document, сначала освобождаются остаточные права собственности, и возвращаются дедуплицированные `locked`.
+
+### supportsInert
+
+Для прогрессивного улучшения: в старых браузерах (Safari до 15.4) нет `inert`, и `setInertOutside` просто возвращает пустой массив — в этом случае компонент **всё равно должен включать `trapTabKey`** как резерв. Оба решения могут сосуществовать, inert — более полный уровень.
+
+## Примеры использования
+
+### Полный жизненный цикл фокуса модального окна
+
+```ts
+// компонент dialog во Vue3
+let lastFocused: HTMLElement | null = null
+let lockedNodes: HTMLElement[] = []
+
+function open() {
+  lastFocused = saveActiveElement()
+  dialogVisible.value = true
+  nextTick(() => {
+    if (!panelRef.value) return
+    focusFirst(panelRef.value)
+    lockedNodes = setInertOutside(panelRef.value, true)
+  })
+}
+
+function close() {
+  setInertOutside(panelRef.value, false, lockedNodes)
+  dialogVisible.value = false
+  restoreActiveElement(lastFocused)
+}
+
+function onKeydown(e: KeyboardEvent) {
+  trapTabKey(panelRef.value, e)   // возврат false означает, что нажата не клавиша Tab — передаём другой логике
+}
+```
+
+### Подключение в React
+
+```tsx
+useEffect(() => {
+  if (!open) return
+  const last = saveActiveElement()
+  focusFirst(panelRef.current)
+  const locked = setInertOutside(panelRef.current, true)
+
+  const onKeydown = (e: KeyboardEvent) => trapTabKey(panelRef.current, e)
+  document.addEventListener('keydown', onKeydown)
+
+  return () => {
+    document.removeEventListener('keydown', onKeydown)
+    setInertOutside(panelRef.current, false, locked)
+    restoreActiveElement(last)
+  }
+}, [open])
+```
+
+### Вложенные плавающие слои
+
+```ts
+// dialog открыт, внутри него открывается popover
+const popoverLocked = setInertOutside(popoverRef.value, true, lockedNodes)
+// popover закрывается: dialog всё ещё в списке исключений lockedNodes, он не будет разблокирован
+setInertOutside(popoverRef.value, false, popoverLocked)
+```
+
+## Замечания
+
+- **Безопасность SSR**: `saveActiveElement` при отсутствии `document` возвращает `null`; `getFocusableElements` для `null` возвращает `[]`. Но `trapTabKey` / `setInertOutside` требуют DOM и вызываются только на клиенте.
+- **Не забывайте возвращать фокус**: это жёсткое требование доступности. Только блокировка без возврата означает, что клавиатурный пользователь при каждом закрытии плавающего слоя теряет фокус на body — это очень неприятный опыт.
+- **Размонтированный через `v-if` триггер**: `restoreActiveElement` пропускает уже `disconnected` элементы (`isConnected === false`); фокус при этом естественно возвращается на body — не пытайтесь принудительно `focus()` узел, которого нет в документе.
+- **Реестр владельцев — состояние уровня модуля**: `WeakMap` автоматически собирается сборщиком мусора, но одной таблицей делятся все экземпляры в процессе — это сделано намеренно, иначе два плавающих слоя не будут знать о существовании друг друга и будут ошибочно разблокировать друг друга.
+
+<FnPlayground module="focus-trap" fn="supportsInert" params='{}' />

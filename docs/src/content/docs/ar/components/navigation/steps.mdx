@@ -1,0 +1,218 @@
+---
+title: steps خطوات —— تنقل
+description: 'تجاوز forced في getStepStatus، وتحمّل العنصر الأخير هيكليًا عبر :last-child (آمن في SSR)، وgetStepsLineLastIndices لاكتشاف نهاية السطر عند التفاف الخطوات الأفقية'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+شريط الخطوات هو «مؤشر تقدّم التدفّق»: «سلة التسوّق → تعبئة المعلومات → الدفع → الاكتمال» في
+سلة التسوّق، والنماذج على نمط المعالج. وفرقه عن `tabs` هو **دلالة التسلسل**——فالخطوات لها
+ترتيب، وتُشتق الحالات من الموضع (مكتمل/جارٍ/معلّق). وما يديره `core/steps` هو اشتقاق الحالات
+وتفصيل تخطيط يسهل كتابته بالخطأ: **عندما تلتف الخطوات الأفقية إلى أسطر، يجب إخفاء خط الربط
+في نهاية كل سطر**.
+
+## متى تُستخدم
+
+- لتطبيق `<LhSteps>` / `<LhStep>`: تدفّق الطلبات، ونماذج المعالج، وتقدّم المهام، والإجراءات
+  متعددة الخطوات.
+- عندما يكون للتدفّق **ترتيب واضح** ويحتاج المستخدم معرفة «أين وصل».
+- **لا ينبغي استخدامه**: تبديل المحتوى بنفس المستوى (استخدم `tabs`——لا دلالة تسلسل)؛ نسبة
+  التقدّم البسيطة (استخدم `progress`)؛ التنقّل الهرمي (استخدم `menu` أو `breadcrumb`).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getStepStatus,
+  getStepsClassNames,
+  getStepClassNames,
+  getStepsLineLastIndices,
+  getStepAria,
+} from '@lh-ui/share/core/steps'
+import type {
+  LhStepStatus, LhStepsDirection, LhStepStatusState, LhStepClassState,
+} from '@lh-ui/share/core/steps'
+```
+
+## نية التصميم
+
+**الحالات تُشتق من الموضع**: القاعدة الجوهرية في `getStepStatus` هي
+`index < current → finish`، و`=== → process`، و`> → wait`. وفي معظم السيناريوهات يكفي تمرير
+`current` لتُحسب الحالات تلقائيًا——فلا تضطر طبقة واجهة المستخدم إلى إعلان حالة كل خطوة صراحةً.
+
+**`forced` تجاوز شامل**: حالة forced على مستوى Steps (مثل `error`) تجعل **كل الخطوات** بهذه
+الحالة. وهذه دلالة «فشل التدفّق ككل»: عند فشل الدفع، لا تكون خطوة واحدة هي الفاشلة، بل يصبح
+التدفّق بأكمله غير قابل للاستمرار. ولاحظ أن لها الأولوية القصوى (تُرجع قبل اشتقاق الموضع).
+
+**العنصر الأخير لا يُخرج اسم صنف، ويُترك لـ `:last-child`**: هذا أدق تصميمات الوحدة. وكتب
+التعليق السبب: تُصرَّر العناصر الفرعية في مرحلة setup كل على حدة، ولم تُسجَّل **العناصر الشقيقة
+اللاحقة بعد**، فحساب isLast استنادًا إلى إجمالي المُسجَّل يجعل كل عنصر يُحكم عليه بالخطأ على أنه
+الأخير في الشاشة الأولى (بما فيها SSR/SSG). أما المُحدِّد البنيوي `:last-child` فلا يُقيَّم إلا
+عند تصيير CSS، وهو صحيح بطبيعته——والثمن أن نمط خط الربط يجب تنفيذه بالمُحدِّد البنيوي الزائف.
+
+**يحل `getStepsLineLastIndices` مشكلة الالتفاف**: بعد أن تلتف الخطوات الأفقية ذات العرض الثابت،
+يمتد **خط الربط لعنصر نهاية كل سطر** نحو الفراغ في نهاية السطر (أول السطر التالي)، فيحدث انقطاع
+بصري. وتجد هذه الدالة نقاط الالتفاف من فرق `offsetTop` بين العناصر المتجاورة: يدل
+`offsetTops[i+1] > offsetTops[i]` على أن i+1 انتقل إلى السطر التالي، فتكون i نهاية السطر. وتضيف
+طبقة واجهة المستخدم بناءً على ذلك صنف `line-last` لعناصر نهاية السطر (شامل العنصر الأخير
+الشامل) لإخفاء خط الربط.
+
+**`lineLast` و `isLast` شيئان مختلفان**: `isLast` (العنصر الأخير الشامل) يحمله `:last-child`؛
+بينما `lineLast` (عنصر نهاية السطر) **مُقاس**، وتحتاج طبقة واجهة المستخدم إلى قراءة offsetTop
+بعد التصيير وإعادته——ولا يلزم إلا في سيناريو الالتفاف الأفقي.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الناتج | الدور |
+| --- | --- | --- | --- |
+| `getStepStatus` | `(state: LhStepStatusState) => LhStepStatus` | الحالة | تجاوز forced / اشتقاق الموضع |
+| `getStepsClassNames` | `(direction: LhStepsDirection) => string[]` | أسماء الأصناف | الاتجاه |
+| `getStepClassNames` | `(state: LhStepClassState) => string[]` | أسماء الأصناف | الحالة + قابلية النقر + نهاية السطر |
+| `getStepsLineLastIndices` | `(offsetTops: number[]) => number[]` | فهارس نهايات السطور | كشف الالتفاف الأفقي |
+| `getStepAria` | `(status: LhStepStatus) => LhAriaAttrs` | حزمة aria | aria-current="step" |
+
+## تعريفات الأنواع
+
+```ts
+export type LhStepStatus = 'wait' | 'process' | 'finish' | 'error'
+export type LhStepsDirection = 'horizontal' | 'vertical'
+
+export interface LhStepStatusState {
+  index: number       // فهرس الخطوة (انطلاقًا من 0)
+  current: number     // فهرس الخطوة الحالية
+  forced?: LhStepStatus  // حالة التجاوز الشامل على مستوى Steps
+}
+
+export interface LhStepClassState {
+  status: LhStepStatus
+  clickable: boolean
+  lineLast?: boolean  // هل هو آخر عنصر في السطر الحالي (تقيسه طبقة واجهة المستخدم عند الالتفاف الأفقي)
+}
+```
+
+## إمكانية الوصول
+
+```ts
+getStepAria('process')  // { 'aria-current': 'step' }
+getStepAria('finish')   // {}
+getStepAria('error')    // {}
+```
+
+- **aria-current="step" لتمييز الخطوة الحالية**: هذه دلالة WAI-ARIA المخصصة، ينطق بها قارئ
+  الشاشة «الخطوة الحالية»——وهي أكثر معيارية من التلميح النصي «جارٍ». وتُخرج في حالة process فقط.
+- **دلالة القائمة المرتّبة**: يُستحسن تصيير شريط الخطوات بـ `<ol>`——فتكون دلالة الترتيب مدمجة،
+  وينطق قارئ الشاشة «العنصر 2 من أصل 4». وإذا نُفِّذ بـ `<div>`، يجب إضافة `role="list"` لكل عنصر
+  و`role="listitem"`.
+- **الحالات بالنص لا باللون فقط**: علامة الصحيح للخطوة finish، والرقم لـ process، والرمادي
+  لـ wait——فالمستخدمون المصابون بعمى الألوان لا يفرّقون. ونص عنوان كل خطوة («تعبئة المعلومات»)
+  مع الأيقونة هو ما يكتمل.
+- **إعلان خطوة error**: يجب على حالة الخطأ أن تُعبَّر في طبقة واجهة المستخدم عبر `aria-invalid`
+  أو بإلحاق نص «(فاشلة)» بعد عنوان الخطوة، فالرمز الأحمر وحده لا يكفي.
+- **دلالة الزر للخطوات القابلة للنقر**: عندما يكون `clickable: true` يجب تصيير عنوان الخطوة
+  كـ `<button>` (للرجوع إلى الخطوات المكتملة)، ليكون قابلًا للوصول بلوحة المفاتيح؛ أما غير
+  القابل للنقر فنص خالص.
+
+## أمثلة الاستخدام
+
+```ts
+import { getStepStatus, getStepsLineLastIndices } from '@lh-ui/share/core/steps'
+
+getStepStatus({ index: 0, current: 2 })  // 'finish'
+getStepStatus({ index: 2, current: 2 })  // 'process'
+getStepStatus({ index: 3, current: 2 })  // 'wait'
+getStepStatus({ index: 0, current: 2, forced: 'error' })  // 'error' (forced تتجاوز الكل)
+getStepStatus({ index: 2, current: 2, forced: 'wait' })   // 'wait'
+
+// التفاف أفقي (عنصران لكل سطر، 4 عناصر في سطرين):
+getStepsLineLastIndices([10, 10, 60, 60])  // [1, 3] (offsetTop للفهرس 2 أكبر → 1 نهاية سطر؛ 3 الأخير شاملًا)
+getStepsLineLastIndices([10, 10, 10])      // [2] (بدون التفاف، الأخير شاملًا فقط)
+getStepsLineLastIndices([])                // []
+```
+
+```ts
+// طبقة واجهة المستخدم: قياس offsetTop بعد التصيير، وإعادة ملء صنف lineLast (أفقي فقط)
+const items = ref<HTMLElement[]>([])
+const lineLastSet = ref<Set<number>>(new Set())
+
+onMounted(() => {
+  const offsetTops = items.value.map((el) => el.offsetTop)
+  lineLastSet.value = new Set(getStepsLineLastIndices(offsetTops))
+})
+// مراقبة resize للنافذة: تتغيّر نقاط الالتفاف مع تغيّر العرض
+```
+
+```vue
+<!-- Vue3: تدفّق الطلب -->
+<template>
+  <LhSteps :current="1">
+    <LhStep title="سلة التسوّق" description="تم اختيار 3 عناصر" />
+    <LhStep title="تعبئة المعلومات" description="عنوان الشحن والفاتورة" />
+    <LhStep title="الدفع" />
+    <LhStep title="الاكتمال" />
+  </LhSteps>
+</template>
+```
+
+```vue
+<!-- فشل شامل (عند فشل الدفع يُعلَّم التدفّق كله بالأحمر) -->
+<template>
+  <LhSteps :current="2" status="error">
+    <LhStep title="سلة التسوّق" /><LhStep title="تعبئة المعلومات" />
+    <LhStep title="الدفع" description="انتهت مهلة الدفع، حاول مجددًا" />
+    <LhStep title="الاكتمال" />
+  </LhSteps>
+</template>
+```
+
+```tsx
+// React: useLayoutEffect لقياس offsetTop (لتفادي وميض الإطار الأول)، مع مراقبة resize
+// لإعادة الحساب
+```
+
+```ts
+// uniapp: <view> + flex؛ وعند الالتفاف الأفقي في جانب التطبيقات المصغّرة يُؤخذ top عبر
+// استعلام العقدة createSelectorQuery
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-steps` | الحاوية الجذر (flex) |
+| `.lh-steps--{horizontal\|vertical}` | الاتجاه |
+| `.lh-steps__item` | عنصر الخطوة |
+| `.lh-steps__item--{wait\|process\|finish\|error}` | الحالة (لون الدائرة + لون النص + لون خط الربط) |
+| `.lh-steps__item--clickable` | قابل للنقر (إبراز عند التحويم + مؤشّر) |
+| `.lh-steps__item--line-last` | نهاية السطر (إخفاء خط الربط الممتد نحو فراغ نهاية السطر) |
+| `.lh-steps__circle` / `__title` / `__description` | الدائرة / العنوان / الوصف |
+| `.lh-steps__line` | خط الربط (يُخفي خط العنصر الأخير الشامل عبر `:last-child`) |
+
+ألوان الحالات: wait `--lh-text-placeholder`، وprocess `--lh-primary-color`، وfinish
+`--lh-success-color`، وerror `--lh-danger-color`؛ وعادةً يُستخدم `--lh-border-color` لخط
+الربط، بينما الجزء المكتمل بلون finish.
+
+## ملاحظات
+
+- **`lineLast` يلزم فقط في سيناريو الالتفاف الأفقي**: في شريط الخطوات العمودي يحتل كل عنصر
+  سطرًا كاملًا، فخط الربط عمودي نحو الأسفل طبيعيًا بلا مشكلة نهاية سطر. وكذلك شريط الخطوات
+  الأفقي ذو العرض الثابت (الذي لا يلتف) لا يحتاجه——إذ لا يُقاس إلا عند **عرض ثابت مع السماح
+  بالالتفاف**.
+- **لحظة القياس**: يجب قراءة `offsetTop` بعد تصيير DOM (onMounted / useLayoutEffect)، وإعادة
+  الحساب عند resize. وقد يومض الإطار الأول (يظهر خط الربط ثم يُخفى)، وهذا مقبول؛ وفي
+  السيناريوهات الصارمة استخدم `visibility` لتأخير العرض.
+- **`forced` تجاوز شامل لا لخطوة واحدة**: عند تمرير `status` بقيمة error تصبح **كل الخطوات**
+  error، بما فيها المكتملة——وهذه دلالة «فشل التدفّق ككل». ولتعليم خطوة واحدة فقط بالفشل، مرِّر
+  status لها منفردًا (تدمج طبقة واجهة المستخدم status الخطوة المفردة في النسخة المفردة من forced،
+  أو تتجاوز أصنافها مباشرةً).
+- **يسمح لتجاوز `current` النطاق**: عند `current: 5` مع 4 خطوات فقط تصبح كلها finish (جميع
+  index أقل من 5)——لعرض الحالة النهائية «اكتمل التدفّق» دون الحاجة لمعاملة خاصة.
+- **فخ العنصر الأخير في SSR/SSG**: هذا سبب عدم قبول `getStepClassNames` لمعامل isLast. فكل
+  تنفيذ يحسب العنصر الأخير في مرحلة setup استنادًا إلى «إجمالي المُسجَّل» يُخطئ في حق كل
+  العناصر على الشاشة الأولى——استخدم `:last-child`.
+- **قيد العمل لقابلية الرجوع**: يُفتح `clickable` عادةً للخطوات **المكتملة** فقط (لمراجعة
+  المعلومات)، أما الجارية والمعلّقة فلا يمكن القفز إليها. وما إذا كان يُسمح بالقفز إلى أي خطوة
+  قرار عمل، وcore لا تُخرج سوى أسماء الأصناف.
+- **مساحة description**: يزداد ارتفاع شريط الخطوات الأفقي عند وجود الوصف، ويتحدّد ارتفاع السطر
+  الملتف بأعلى عنصر——فتأكد قبل قياس offsetTop من تصيير كل العناصر.
+
+<FnPlayground module="steps" fn="getStepStatus" params='{"index": 2, "current": 2}' />

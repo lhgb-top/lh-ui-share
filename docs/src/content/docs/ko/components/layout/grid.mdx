@@ -1,0 +1,183 @@
+---
+title: grid 그리드 —— 레이아웃
+description: '24열 CSS Grid 그리드: resolveBreakpoint 중단점 판정, resolveResponsiveSize 하향 폴백, span/offset/push/pull을 grid-column으로 클램프 매핑'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+그리드는 레이아웃의 뼈대입니다: 페이지를 24열로 나누고, 콘텐츠는 열 너비 비율에 따라 배치되며 중단점에 반응합니다. lh-ui의 그리드는 **CSS Grid**를 기반으로 합니다(flex의 퍼센트 너비가 아닙니다). 위치 지정 정밀도가 더 높고 명시적인 시작점 위치 지정을 지원합니다. `core/grid`가 관리하는 것은 **중단점 판정, 반응형 폴백, 열 위치 지정의 클램프 계산**입니다——CSS 자체로는 "하향 폴백"과 "범위 이탈 클램프"를 계산할 수 없기 때문입니다.
+
+## 사용 시기
+
+- 각 단말에서 `<LhRow>` / `<LhCol>` 구현: 페이지 메인 레이아웃, 폼 2열/3열 배치, 카드 벽, 대시보드.
+- **반응형** 열 너비가 필요한 경우(PC 3열, 태블릿 2열, 모바일 1열).
+- **사용하면 안 되는 경우**: 단순한 두 요소의 좌우 정렬(flex나 `space`가 더 직접적입니다); 가변 너비의 유동 레이아웃(그리드 열 너비는 고정 비율이라 오히려 어색합니다).
+
+## 가져오기
+
+```ts
+import {
+  LH_GRID_COLUMNS,
+  LH_GRID_BREAKPOINTS,
+  LH_GRID_BREAKPOINT_ORDER,
+  resolveBreakpoint,
+  resolveResponsiveSize,
+  getGridRowClassNames,
+  normalizeColSize,
+  clampSpan,
+  getColStyle,
+  getGridColClassNames,
+} from '@lh-ui/share/core/grid'
+import type {
+  LhGridBreakpoint, LhGridSpan, LhColSize, LhBreakpointSizes,
+} from '@lh-ui/share/core/grid'
+```
+
+## 설계 의도
+
+**flex 퍼센트가 아닌 CSS Grid**: flex 그리드의 모든 col은 `width: x/24`이고, 줄 바꿈은 flex-wrap에 의존하며, 열 간격은 음수 margin으로 상쇄합니다——hack 투성이입니다. CSS Grid는 `grid-template-columns: repeat(24, 1fr)`로 직접 처리하고, 간격은 `gap`, col은 `grid-column`으로 위치를 지정해 의미가 깔끔합니다. 대가는 IE 미지원입니다——lh-ui의 타깃 단말(최신 브라우저 + 미니프로그램 webview)은 이미 커버하고 있습니다.
+
+**중단점 하향 폴백**: `resolveResponsiveSize(sizes, 'md')`는 md 단계부터 작은 쪽으로 찾아, 처음으로 **선언된** 단계에 도달합니다. 사용자가 `{ xs: 24, lg: 12 }`만 적었다면 md(768~1024) 너비에서 xs의 24로 폴백합니다——**undefined가 아닙니다**. 이것이 반응형 API의 핵심 경험입니다: 사용자는 주요 중단점만 선언하고, 중간 단계는 자동으로 작은 화면 설정을 따릅니다.
+
+**`span = 0`은 버그가 아니라 센티넬입니다**: `span: 0, offset: 6`은 "열을 차지하지 않고 뒤따른 콘텐츠를 6열만큼 민다"는 뜻입니다. 이때 `getColStyle`은 `7 / span 0`이 아니라 `7 / 25`를 출력합니다(마지막 열까지 연장)——후자는 요소가 0 너비로 무너지게 합니다.
+
+**시작점 클램프로 컨테이너 초과 방지**: `offset 21 + span 8`은 시작점 22를 계산하고, 범위를 벗어납니다. `getColStyle`은 시작점을 `24 + 1 - 8 = 17`로 클램프합니다——요소 전체가 들어갈 수 있는 곳까지 왼쪽으로 밉니다. 주석에 이유가 적혀 있습니다: 범위를 벗어난 `grid-column`은 Grid가 **암시적 트랙**을 생성해 컨테이너 너비를 깨뜨립니다.
+
+**자동 배치와 명시적 위치 지정의 분기점**: 순수 span은 `span N`을 사용(시작점 미지정, Grid가 자동 배치)하고, offset/push/pull이 있으면 `start / span N`을 사용(명시적 시작점, 자동 배치 중단). 주석에는 실제 함정이 기록되어 있습니다: 순수 span을 `1 / span N`으로 적으면 같은 줄의 모든 Col이 열 1에서 시작하므로 Grid는 나머지를 다음 줄로 밀 수밖에 없습니다——시각적으로 "세로 배치"가 됩니다.
+
+**직접 이어 붙이지 않고 클래스명 매핑 테이블**: `justify="center"`와 `align="center"`를 직접 이어 붙이면 두 개의 `lh-row--center`가 충돌합니다(justify는 justify-items, align은 align-items로, 서로 다른 CSS 속성입니다). 명시적 매핑 테이블을 사용하면: justify의 center → `lh-row--center`, align의 center → `lh-row--middle`(center는 middle의 호환 별칭으로, 주류 라이브러리 API 관습에 맞춤). 부수적인 이점: 알 수 없는 값이 더러운 클래스명을 만들지 않습니다.
+
+## 함수 표
+
+| 함수 / 상수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `resolveBreakpoint` | `(width: number) => LhGridBreakpoint` | 중단점 | 뷰포트 너비 → 단계 |
+| `resolveResponsiveSize` | `(sizes, breakpoint) => LhColSize \| undefined` | 적용 크기 | 가장 가까운 선언 단계로 하향 폴백 |
+| `getGridRowClassNames` | `(state: { justify?, align?, wrap? }) => string[]` | 클래스명 | 정렬/줄 바꿈 |
+| `normalizeColSize` | `(size?: LhColSize) => LhGridSpan` | 설명 객체 | 숫자 → `{ span }` |
+| `clampSpan` | `(span?: number) => number` | [0, 24] 정수 | 유한하지 않은 값은 0 |
+| `getColStyle` | `(size?: LhColSize) => Record<string, string>` | 인라인 스타일 | grid-column 위치 지정 |
+| `getGridColClassNames` | `(size?: LhColSize) => string[]` | 클래스명 | span / offset |
+
+상수: `LH_GRID_COLUMNS = 24`, `LH_GRID_BREAKPOINTS`(xs 0 / sm 640 / md 768 / lg 1024 / xl 1280), `LH_GRID_BREAKPOINT_ORDER`(큰 것부터 작은 순).
+
+## 타입 정의
+
+```ts
+export type LhGridBreakpoint = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+
+export interface LhGridSpan {
+  span?: number        // 차지하는 열 수(0 = 열 미차지, offset 위치 지정에만 사용)
+  offset?: number      // 왼쪽에 비워둘 열 수
+  push?: number        // 시작점을 오른쪽으로 이동
+  pull?: number        // 시작점을 왼쪽으로 이동
+}
+
+export type LhColSize = number | LhGridSpan
+export type LhBreakpointSizes = Partial<Record<LhGridBreakpoint, LhColSize>>
+```
+
+## 접근성
+
+그리드는 순수 레이아웃 프리미티브이며 **그 자체로는 접근성 의미가 없습니다**——Row/Col에 role을 부여하지 마세요. 콘텐츠의 의미는 내부 컴포넌트가 제공합니다. 관련 원칙 하나:
+
+- **레이아웃 변화가 DOM 순서를 바꿔서는 안 됩니다**: 반응형 재배치 시 Col의 DOM 순서는 고정되고, 시각적 열 수만 변합니다. 중단점에 따라 콘텐츠 순서가 달라야 한다면("메인 콘텐츠가 PC에서는 왼쪽, 모바일에서는 상단") DOM 순서를 바꾸지 말고 소스 코드 순서 + `order` 스타일을 사용하세요——스크린 리더는 DOM 순서대로 읽으며, 시각과 음성 순서가 불일치하면 혼란을 줍니다.
+
+## 사용 예시
+
+```ts
+import {
+  resolveBreakpoint, resolveResponsiveSize, getColStyle, clampSpan,
+} from '@lh-ui/share/core/grid'
+
+resolveBreakpoint(800)   // 'md'
+resolveBreakpoint(600)   // 'xs'(< 640)
+resolveBreakpoint(1300)  // 'xl'
+
+// 하향 폴백: md 단계 미선언 → xs 취득
+resolveResponsiveSize({ xs: 24, lg: 12 }, 'md')  // 24
+resolveResponsiveSize({ xs: 24, lg: 12 }, 'lg')  // 12
+resolveResponsiveSize({ xs: 24 }, 'xl')          // 24
+resolveResponsiveSize(undefined, 'md')           // undefined(선언 없음)
+```
+
+```ts
+getColStyle(8)             // { gridColumn: 'span 8' }(자동 배치)
+getColStyle({ span: 8, offset: 4 })
+// { gridColumn: '5 / span 8' }(시작점 = offset+1, 클램프 후 범위 이탈 없음)
+getColStyle({ span: 0, offset: 6 })
+// { gridColumn: '7 / 25' }(센티넬: 열 미차지, 마지막 열까지 연장)
+getColStyle({ span: 8, offset: 21 })
+// { gridColumn: '17 / span 8' }(범위 이탈 클램프: 시작점 22 → 17)
+getColStyle({ span: 8, push: 4 })
+// { gridColumn: '5 / span 8' }(push 4 = 시작점을 4만큼 오른쪽으로 이동)
+getColStyle({ span: 8, pull: 4 })
+// { gridColumn: '1 / span 8' }(시작점 5-4=1, 하한 클램프 1)
+getColStyle({})            // { gridColumn: 'span 24' }(선언 없으면 전체 차지)
+
+clampSpan(8)    // 8
+clampSpan(30)   // 24(상한으로 클램프)
+clampSpan(-5)   // 0
+clampSpan(NaN)  // 0(유한하지 않은 값은 0)
+```
+
+```vue
+<!-- Vue3: 반응형 3열 → 2열 → 1열 -->
+<template>
+  <LhRow :gutter="16">
+    <LhCol v-for="item in list" :key="item.id" :xs="24" :sm="12" :lg="8">
+      <LhCard>{{ item.title }}</LhCard>
+    </LhCol>
+  </LhRow>
+</template>
+```
+
+```vue
+<!-- 폼 2열 레이아웃 + offset으로 버튼 위치 지정 -->
+<template>
+  <LhRow :gutter="20">
+    <LhCol :span="12"><LhFormItem label="이름" prop="name" /></LhCol>
+    <LhCol :span="12"><LhFormItem label="이메일" prop="email" /></LhCol>
+    <LhCol :span="12" :offset="12">
+      <LhButton type="primary" @click="submit">제출</LhButton>
+    </LhCol>
+  </LhRow>
+</template>
+```
+
+```tsx
+// React: 중단점 감시는 UI 계층이 resize 리스너나 useMediaQuery로 state를 구동;
+// getColStyle은 render 안에서 순수 함수로 호출
+```
+
+```ts
+// uniapp: <view> + grid; 미니프로그램 환경에는 window가 없으므로 중단점은 UI 계층이
+// uni.getSystemInfoSync()의 safeArea/windowWidth 또는 res.rpx 환산으로 구동,
+// core의 resolveBreakpoint는 그대로 사용
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-row` | 행 컨테이너(`display: grid; grid-template-columns: repeat(24, 1fr)`) |
+| `.lh-row--{end\|center\|space-between\|space-around}` | 수평 정렬(justify-items) |
+| `.lh-row--{middle\|bottom}` | 수직 정렬(align-items) |
+| `.lh-row--nowrap` | 줄 바꿈 없음 |
+| `.lh-col` | 열 컨테이너 |
+| `.lh-col--{1..24}` | span 열 수 |
+| `.lh-col--offset-{1..24}` | 왼쪽 오프셋 열 수 |
+
+간격 토큰 `--lh-row-gutter`(행 간격, `gutter` prop으로 덮어쓰기); 열 사이는 grid `gap`으로 구현.
+
+## 주의 사항
+
+- **`gutter`와 grid gap**: Grid의 gap은 행과 열 **양쪽에 모두** 적용됩니다. 열 간격만 필요하고 행 간격은 필요 없다면, 행 컨테이너에 `row-gap: 0`을 따로 덮어써야 합니다.
+- **반응형 중단점은 UI 계층이 감시**: `resolveBreakpoint`는 순수 함수이므로, UI 계층이 직접 resize를 감시(또는 `matchMedia` 사용)해서 너비를 전달해야 합니다. SSR 첫 화면에는 window가 없으므로 기본적으로 xs 단계로 렌더링하고 클라이언트 하이드레이션 이후에 교정합니다.
+- **자동 배치와 명시적 위치 지정을 혼용하지 마세요**: 같은 줄의 한 Col은 순수 span, 다른 Col은 offset을 사용하면 명시적 위치 지정 쪽이 자동 배치를 중단시킵니다——줄 안의 배치 결과가 직관적이지 않을 수 있습니다. 모두 순수 span이거나 모두 명시적이어야 합니다.
+- **`push` / `pull`과 `offset`의 차이**: 셋 다 시작점을 바꾸지만 의미가 다릅니다——`offset`은 "왼쪽 여백"(자리 차지 의미), `push/pull`은 "이동"(시각적 정렬)입니다. `getColStyle` 구현 상 셋 모두 시작점을 바꿀 뿐이며, **클래스명 수준에서 대응하는 것은 offset뿐**입니다(push/pull은 인라인 스타일만).
+- **24열 좌표계는 강한 제약**: `span 25`는 24로 클램프됩니다; `offset 24 + span 1`의 시작점은 24로 클램프됩니다. 비즈니스 측에서 24 이상의 세밀함이 필요하면 열 수를 늘리지 말고 `LhRow` 중첩을 사용하세요.
+- **중첩 그리드**: `LhCol` 안에 다시 `LhRow`를 넣으면 내부는 다시 24열부터 계산합니다——자식 그리드는 부모의 span 문맥을 상속하지 않습니다. 이는 CSS Grid의 자연스러운 동작입니다.
+- **클래스명 span과 인라인 스타일의 공존**: `getGridColClassNames`가 내놓는 `lh-col--8`과 `getColStyle`의 `grid-column`은 두 가지 메커니즘(클래스명은 SCSS 미디어 쿼리용, 인라인은 JS 반응형 용)입니다. **UI 계층은 둘 중 하나만** 사용해야 하며, 둘 다 쓰면 서로 덮어씁니다(인라인 스타일이 이김).
+
+<FnPlayground module="grid" fn="getColStyle" params='{"size": {"span": 8, "offset": 4}}' />

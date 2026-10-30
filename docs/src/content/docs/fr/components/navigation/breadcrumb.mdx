@@ -1,0 +1,152 @@
+---
+title: "breadcrumb fil d'Ariane —— Navigation"
+description: "getEllipsisBeforeIndex : stratégie premier élément + points de suspension + fin, getCollapsedHiddenIndexes pour l'ensemble des éléments repliés, aria-current=\"page\" sur le dernier élément"
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Le fil d'Ariane est l'indicateur de chemin « où suis-je, d'où viens-je » : `Accueil / Paramètres / Sécurité / Validation en deux étapes`. Plus léger qu'un menu — il n'exprime que le chemin hiérarchique, sans porter la navigation principale ; plus faible qu'une barre d'étapes — il n'exprime pas un flux ordonné, seulement une relation d'inclusion. Lorsque la hiérarchie est profonde, le chemin devient très long : le repli est son algorithme central.
+
+## Quand l'utiliser
+
+- Chaque port implémente `<LhBreadcrumb>` / `<LhBreadcrumbItem>` : chemin hiérarchique des systèmes d'administration, chemin des catégories d'un site documentaire, chemin des catégories de produits.
+- Les scénarios nécessitant d'**identifier la position actuelle** et offrant un **retour niveau par niveau**.
+- **À éviter** : la navigation principale (utilisez `menu`) ; les flux par étapes (utilisez `steps`) ; le bascule entre contenus de même niveau (utilisez `tabs`) ; les chemins à un seul niveau (ce n'est pas un fil d'Ariane, c'est un titre de page).
+
+## Import
+
+```ts
+import {
+  getBreadcrumbItemClassNames,
+  getEllipsisBeforeIndex,
+  getCollapsedHiddenIndexes,
+  getBreadcrumbItemAria,
+} from '@lh-ui/share/core/breadcrumb'
+import type { LhBreadcrumbItemState, LhBreadcrumbCollapseState } from '@lh-ui/share/core/breadcrumb'
+```
+
+## Intentions de conception
+
+**Le repli conserve le premier élément** : la règle de `getEllipsisBeforeIndex` est « premier élément + points de suspension + les `maxItems-1` derniers éléments ». **Le premier élément est toujours conservé** — c'est l'ancre pour « revenir tout en haut » (généralement « Accueil ») ; l'omettre priverait l'utilisateur de la possibilité de revenir à la racine. Cet arbitrage est aussi important que la « conservation du dernier élément » (position actuelle).
+
+**Où insérer les points de suspension** : la fonction renvoie l'**indice du premier élément visible après les points de suspension** (`total - (maxItems - 1)`) ; la couche UI insère l'élément de points de suspension à cet endroit. En l'absence de repli, elle renvoie -1 — notez que -1 est la sentinelle « pas de repli », pas un indice valide.
+
+**`maxItems < 2` désactive le repli** : il faut au moins afficher le premier élément + un élément suivant pour que le repli ait un sens. Avec `maxItems: 1` ou moins, la fonction renvoie -1 — une conception défensive qui évite, en cas de mauvaise configuration, de réduire le fil d'Ariane à de seuls points de suspension.
+
+**Relation entre `getCollapsedHiddenIndexes` et l'indice des points de suspension** : ce qui est masqué, c'est « les éléments entre le premier et les points de suspension », c'est-à-dire l'intervalle semi-ouvert `[1, ellipsisIndex)` — le premier élément (indice 0) et les éléments après les points de suspension sont conservés. Les deux fonctions s'utilisent ensemble : d'abord la position des points de suspension, puis l'ensemble des éléments masqués.
+
+**`aria-current="page"` sur le dernier élément** : le dernier élément est la « page courante » ; `aria-current="page"` est la sémantique standard de WAI-ARIA — le lecteur d'écran annonce « page courante », plus précis qu'une indication textuelle. Les autres éléments ne produisent aucun attribut aria (la sémantique de lien est portée par l'élément natif `<a>`).
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getBreadcrumbItemClassNames` | `(state: LhBreadcrumbItemState) => string[]` | classes | état lien + dernier élément |
+| `getEllipsisBeforeIndex` | `(state: LhBreadcrumbCollapseState) => number` | indice / -1 | position des points de suspension |
+| `getCollapsedHiddenIndexes` | `(state: LhBreadcrumbCollapseState) => number[]` | ensemble d'indices masqués | éléments masqués par le repli |
+| `getBreadcrumbItemAria` | `(isLast: boolean) => LhAriaAttrs` | paquet aria | aria-current sur le dernier élément |
+
+## Définitions de types
+
+```ts
+export interface LhBreadcrumbItemState {
+  isLast: boolean    // dernier élément ou non (page courante)
+  isLink: boolean    // rendu en lien ou non (to transmis et non dernier)
+}
+
+export interface LhBreadcrumbCollapseState {
+  total: number      // nombre total d'éléments
+  maxItems: number   // nombre maximal d'éléments visibles (points de suspension inclus) ; < 2 signifie pas de repli
+}
+```
+
+## Accessibilité
+
+```ts
+getBreadcrumbItemAria(true)   // { 'aria-current': 'page' }
+getBreadcrumbItemAria(false)  // {}
+```
+
+- **`aria-current="page"` uniquement pour le dernier élément** : les éléments intermédiaires sont des liens cliquables qui ne nécessitent pas de marqueur current. À l'entrée dans la page, le lecteur d'écran annonce « Accueil, lien / Paramètres, lien / Sécurité, lien / Validation en deux étapes, page courante » — le chemin et la position sont transmis en une fois.
+- **Utiliser des `<a>` natifs plutôt que des sauts JS** : lorsqu'un élément intermédiaire est un vrai lien, utilisez `<a href="...">` — prise en charge de l'ouverture dans un nouvel onglet via le clic milieu, de la copie du lien via le clic droit, et de l'utilisation sans JS. Le routage côté client est implémenté par la couche UI en interceptant le clic (`@click.prevent`), le href étant conservé. Le commentaire de `getBreadcrumbItemAria` le précise : en présence d'un lien, la sémantique du role est portée par l'élément `a` natif, nul besoin que la fonction la produise.
+- **Accessibilité du bouton de points de suspension** : les points de suspension repliés sont généralement cliquables pour déployer tout le chemin. C'est un contrôle qui nécessite `aria-label="Déployer tout le chemin"` (ou un aria-expanded pour exprimer l'état déployé) — sinon c'est un bouton sans nom.
+- **Conteneur `nav` + aria-label** : l'ensemble du fil d'Ariane devrait utiliser `<nav aria-label="Fil d'Ariane">` — une page peut compter plusieurs nav (navigation principale, navigation de pagination) ; l'aria-label permet de les distinguer.
+- **Séparateurs décoratifs** : les séparateurs `/` ou `»` sont purement décoratifs — `aria-hidden` ou implémentation via un pseudo-élément CSS, pour éviter que le lecteur d'écran annonce chaque barre oblique.
+
+## Exemples d'utilisation
+
+```ts
+import {
+  getEllipsisBeforeIndex, getCollapsedHiddenIndexes, getBreadcrumbItemAria,
+} from '@lh-ui/share/core/breadcrumb'
+
+getEllipsisBeforeIndex({ total: 6, maxItems: 4 })   // 3 (les points de suspension sont insérés avant l'indice 3)
+getEllipsisBeforeIndex({ total: 4, maxItems: 4 })   // -1 (total <= maxItems, pas de repli)
+getEllipsisBeforeIndex({ total: 6, maxItems: 1 })   // -1 (maxItems < 2, pas de repli)
+getEllipsisBeforeIndex({ total: 6, maxItems: 2 })   // 5 (premier élément + 1 dernier élément)
+
+getCollapsedHiddenIndexes({ total: 6, maxItems: 4 })  // [1, 2] (entre le premier élément et les points de suspension)
+getCollapsedHiddenIndexes({ total: 4, maxItems: 4 })  // [] (pas de repli)
+```
+
+```ts
+// Couche UI : rendu du repli (l'état déployé est contrôlé par un state local)
+const expanded = ref(false)
+const items = ['Accueil', 'Système', 'Paramètres', 'Sécurité', 'Compte', 'Validation en deux étapes']
+const ellipsisIndex = computed(() =>
+  getEllipsisBeforeIndex({ total: items.value.length, maxItems: props.maxItems ?? 4 }),
+)
+const hidden = computed(() =>
+  expanded.value ? [] : getCollapsedHiddenIndexes({ total: items.value.length, maxItems: props.maxItems ?? 4 }),
+)
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <nav aria-label="Fil d'Ariane">
+    <LhBreadcrumb :max-items="4">
+      <LhBreadcrumbItem to="/">Accueil</LhBreadcrumbItem>
+      <LhBreadcrumbItem to="/system">Système</LhBreadcrumbItem>
+      <LhBreadcrumbItem to="/system/security">Sécurité</LhBreadcrumbItem>
+      <LhBreadcrumbItem>Validation en deux étapes</LhBreadcrumbItem>
+    </LhBreadcrumb>
+  </nav>
+</template>
+```
+
+```tsx
+// React : les données du chemin sont généralement dérivées de la table de routage (useMatches / route meta personnalisée),
+// et non déclarées élément par élément à la main — le mapping entre fil d'Ariane et routage est une convention métier
+```
+
+```ts
+// uniapp : <navigator> est le composant natif de saut ; les mini-programmes n'ont pas de sémantique <nav>,
+// view + aria-label y est sans effet — c'est acceptable (l'écosystème de lecture d'écran des mini-programmes diffère),
+// il suffit de conserver une structure DOM identique
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-breadcrumb` | conteneur (inline-flex) |
+| `.lh-breadcrumb__item` | élément unique |
+| `.lh-breadcrumb__item--link` | état lien (changement de couleur au survol) |
+| `.lh-breadcrumb__item--last` | dernier élément (page courante, en gras ou couleur principale) |
+| `.lh-breadcrumb__separator` | séparateur (généralement un pseudo-élément CSS) |
+| `.lh-breadcrumb__ellipsis` | points de suspension (cliquables pour déployer) |
+
+Couleur de texte `--lh-text-regular`, couleur au survol des liens `--lh-primary-color`, dernier élément `--lh-text-primary` ; taille de police `--lh-font-size-base`.
+
+## Points d'attention
+
+- **`maxItems` inclut les points de suspension** : `maxItems: 4` affiche en réalité « premier élément + points de suspension + les 3 derniers éléments » = 5 éléments, dont 4 **éléments de texte** visibles. Configurez la valeur en comptant les éléments de texte visibles.
+- **Le dynamisme du repli** : la longueur du chemin varie avec la profondeur de navigation (le `total` de `getEllipsisBeforeIndex` est dynamique), tandis que `maxItems` peut rester fixe — pas besoin de décider manuellement quand replier, la fonction s'en charge.
+- **Interaction du déploiement des points de suspension** : deux approches courantes — ① cliquer sur les points de suspension déploie tout sur place (bascule de l'état `expanded`) ; ② cliquer ouvre une popover listant les éléments masqués. La première est simple, la deuxième économe en espace ; choisissez selon la profondeur du chemin.
+- **La source des données du chemin** : le fil d'Ariane est généralement dérivé de la table de routage plutôt qu'écrit à la main — chaque route configure un `title` dans son meta, et la couche composant agrège les meta des ancêtres du chemin courant. core ne gère que l'algorithme de rendu ; l'intégration au routage relève de la couche UI.
+- **Le dernier élément n'est pas rendu en lien** : pointer vers soi-même n'a pas de sens (et `isLink: false`). Notez que la classe `--link` de `getBreadcrumbItemClassNames` est contrôlée par isLink, et le dernier élément n'en dispose naturellement pas.
+- **Troncature des titres trop longs** : lorsqu'un titre d'un niveau est trop long, utilisez `text-overflow: ellipsis` en CSS (styles de la couche UI) — c'est une « réduction » différente du repli de chemin : le repli réduit le nombre de niveaux, la CSS réduit la largeur d'un seul niveau.
+- **N'utilisez pas le fil d'Ariane comme navigation principale** : c'est un repère auxiliaire, le point d'entrée principal reste le menu. Sur mobile, l'espace étant limité, on omet souvent le fil d'Ariane ou on ne conserve qu'un bouton « Retour ».
+
+<FnPlayground module="breadcrumb" fn="getEllipsisBeforeIndex" params='{"total": 6, "maxItems": 4}' />

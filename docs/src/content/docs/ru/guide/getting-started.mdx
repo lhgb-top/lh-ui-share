@@ -1,0 +1,124 @@
+---
+title: Начало работы
+description: 'Установка @lh-ui/share, импорт чистых функций по требованию и четыре способа подключения стилей'
+---
+
+# Начало работы
+
+## Установка
+
+```bash
+pnpm add @lh-ui/share
+# или npm i @lh-ui/share / yarn add @lh-ui/share
+```
+
+В пакете `external: []` — **нет ни одной runtime-зависимости**: после установки можно использовать сразу, предварительно peer-install фреймворк не нужно.
+
+## Импорт логики (JS / TS)
+
+### Прямой импорт: полностью
+
+```ts
+import { lhlocale, createNamespace, LH_THEME_PRESETS } from '@lh-ui/share'
+```
+
+Полный вход — `./es/index.js` (для CJS — `./lib/index.js`). Поле `sideEffects` в этом пакете объявляет только
+`**/*.css` и `**/*.scss`, поэтому чистые JS-модули подвергаются tree-shaking: при полном импорте лишний код не попадёт в сборку.
+
+### Импорт по подпутям: на компонент (рекомендуется)
+
+```ts
+import { getButtonClasses, getButtonAria } from '@lh-ui/share/core/button'
+import { sxToStyle } from '@lh-ui/share/core/shared/sx'
+import { lhlocale } from '@lh-ui/share/locales'
+import { LH_THEME_PRESETS, buildPresetStyleText } from '@lh-ui/share/theme'
+```
+
+У каждого подпути есть независимые три условия экспорта — types / import / require; при импорте по требованию в сборку попадут чистые функции только этого компонента. Полная таблица ключей — в разделе [Точка входа пакета и подпути](/ru/guide/exports).
+
+## Подключение стилей (четыре способа)
+
+Поле `files` этого пакета публикует только четыре каталога — `es / lib / dist / styles`; стили можно подключить двумя путями:
+
+### 1. Только тема целиком (самый простой вариант)
+
+```ts
+// Только токены, без компонентных стилей — минимальный размер
+import '@lh-ui/share/theme.css'       // Светлые токены :root
+import '@lh-ui/share/theme-dark.css'  // Тёмное переопределение [data-theme='dark']
+```
+
+Подходит для проектов, где «нужны только design-токены, а компонентные стили вы пишете сами».
+
+### 2. Тема целиком + все компонентные стили
+
+```ts
+import '@lh-ui/share/styles.css'      // dist/styles/index.css: токены + все 58 наборов компонентов
+```
+
+`dist/index.css` — это окончательный артефакт, агрегированный на этапе сборки; один import даёт полный визуальный облик.
+
+### 3. Подключение исходников SCSS по требованию (нужен сборщик, умеющий компилировать SCSS)
+
+```scss
+// Полная агрегация (токены темы + все компоненты)
+@use '@lh-ui/share/styles/index.scss';
+
+// Один компонент: компилируется только этот набор, минимальный размер артефакта
+@use '@lh-ui/share/styles/button';
+```
+
+Каталог `styles/` публикуется в виде **исходников** и может компилироваться на лету sass-loader-ом vite / webpack —
+это удобно, чтобы в проекте делать настройку через `@use` токенов.
+
+### 4. Только токены для глубокой настройки
+
+```scss
+@use '@lh-ui/share/styles/theme/common/var.scss' as *;
+
+.my-panel {
+  color: $lh-text-primary;
+  border: 1px solid $lh-border-color;
+}
+```
+
+`styles/theme/common/` открывает 183 SCSS-переменные `$lh-*` и 6 mixin-ов узоров в китайском стиле.
+Подробнее см. [Токены дизайна](/ru/theme/tokens) и [Система узоров](/ru/theme/patterns).
+
+## TypeScript
+
+Все подпути имеют условие `types`, поэтому дополнительные пакеты `@types` не нужны:
+
+```ts
+import type { LhThemePreset, LhThemeVars } from '@lh-ui/share/theme'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+```
+
+Экспорт типов идёт отдельно через `./es/**/*.d.ts`; `import type` не включает реализацию в сборку.
+
+## Запустим чистую функцию
+
+Никакой фреймворк не нужен — работает прямо в Node:
+
+```ts
+import { getButtonClasses } from '@lh-ui/share/core/button'
+
+getButtonClasses({ size: 'small', type: 'primary', disabled: true })
+// => 'lh-button lh-button--small lh-button--primary is-disabled'
+```
+
+Хотите попробовать интерактивно? На странице каждого компонента в этом сайте документации есть панель
+**песочницы функций** — меняйте параметры и сразу видьте результат.
+Например, [песочница функций steps](/ru/components/navigation/steps).
+
+## Тёмная тема
+
+Компоненты этого пакета сами не переключают тёмный режим, а ориентируются только на CSS-переменные. Добавьте атрибут на корневом узле, и переключится весь сайт:
+
+```html
+<html data-theme="dark">
+  <!-- или <body class="dark"> — оба селектора покрыты var-dark.scss -->
+</html>
+```
+
+О принципе работы и ловушке «запекания на этапе компиляции» см. [Тёмная тема](/ru/theme/dark-mode).

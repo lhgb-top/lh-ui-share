@@ -1,0 +1,131 @@
+---
+title: icon —— أيقونة
+description: 'تحويل المقاسات عبر getIconSize، وجلب مسار SVG الداخلي عبر getIconSvg، وحزمة سمات aria ثنائية الوضع (زخرفي/دلالي) عبر getIconAria'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+يحتوي `core/icon` على مجموعة داخلية من 33 أيقونة SVG بسيطة بالنمط الصيني، ويتولّى تحويل «درجة المقاس» إلى `width/height` الخاص بـ SVG، وتحويل قرار «زخرفي أم دلالي» إلى حزمة سمات aria. وليس لمكوّن الأيقونة نفسه آلة حالة props — بل هو **مجموعة وسائط لدالة العرض**.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhIcon`: `name` ← path، `size` ← بكسل، `color` ← `color` مضمّنة.
+- أي مكان يحتاج إلى أيقونة بجوار النص. **معظم الأيقونات يجب أن تكون زخرفية** (`decorative: true`، القيمة الافتراضية)، فلا ينطقها قارئ الشاشة.
+- عندما يلزم أن تحمل الأيقونة دلالة (كزر «حذف» لا نص فيه سوى الأيقونة)، يجب تمرير `decorative: false` + `label`، وإلا سيقرأ قارئ الشاشة رسمًا صامتًا.
+
+## طريقة الاستيراد
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+import type { LhIconState, LhIconName } from '@lh-ui/share/core/icon'
+import { LH_ICON_SVGS_CONST } from '@lh-ui/share/core/icon'
+```
+
+## نية التصميم
+
+لمقاس الأيقونة مصدران: **الدرجات المسبقة** (`'small'` / `'medium'` …) و**أي رقم**. يوحّد `getIconSize` المصدرين إلى `number`، لأن سمتي `width`/`height` الخاصتين بـ SVG لا تقبلان سوى الأرقام (تحدد السمة نفسها الوحدة)، فلا يحتاج الطرف البصري إلى التمييز بين «درجة أم بكسل».
+
+تعتمد إمكانية الوصول على الثنائية «زخرفي مقابل دلالي» من APG:
+
+- أيقونة زخرفية (افتراضي): `aria-hidden="true"`، فتُخرَج من شجرة إمكانية الوصول. هذا هو طريق الأيقونة المرافقة للنص دائمًا.
+- أيقونة دلالية: `role="img"` + `aria-label`، فتصبح رسمًا قابلًا للنطق.
+- الحالة الثالثة: `decorative: false` دون تمرير `label` — لا إخفاء ولا منح دلالة، فتُعاد كائنًا فارغًا. وهي مخصصة لمشهد «يوفّر الزر الأيقوني label عبر aria-label من الخارج»، لتفادي التكرار في النطق.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getIconSize` | `(size: string \| number \| undefined) => number` | قيمة بالبكسل | تعيين الدرجات، مع تراجع إلى 16 للقيم غير المعروفة |
+| `getIconSvg` | `(name: LhIconName \| undefined) => string \| null` | path من النوع `d` أو null | جلب أيقونة داخلية، يعاد null عند عدم العثور دون رمي خطأ |
+| `getIconStyle` | `(state: LhIconState) => Record<string, string>` | أنماط مضمّنة | width/height دائمًا، color عند الحاجة |
+| `getIconAria` | `(options?: { decorative?: boolean; label?: string }) => LhAriaAttrs` | حزمة سمات aria | وضعان: زخرفي/دلالي |
+
+تعيين درجات المقاس: `mini: 12` / `small: 14` / `medium: 16` / `large: 20` / `x-large: 24`، ويُتراجع إلى 16 للنصوص غير المعروفة، وللقيم الفارغة (بما فيها `0`) أيضًا.
+
+## تعريف الأنواع
+
+```ts
+export interface LhIconState {
+  size: string | number | undefined
+  color: string | undefined
+  name?: LhIconName
+}
+
+export type LhIconName =
+  | 'star' | 'search' | 'check' | 'close' | 'warning' | 'error' | 'info'
+  | 'loading' | 'plus' | 'minus' | 'edit' | 'delete' | 'setting' | 'user'
+  | 'home' | 'menu' | 'more' | 'download' | 'upload' | 'refresh' | 'folder'
+  | 'file' | 'date' | 'clock' | 'email' | 'phone' | 'location' | 'image'
+  | 'share' | 'bell' | 'filter' | 'eye' | 'link'
+```
+
+## إمكانية الوصول
+
+`getIconAria` هي دالة حزمة سمات aria لهذا المكوّن:
+
+```ts
+getIconAria()                            // { 'aria-hidden': true }  زخرفية
+getIconAria({ label: 'حذف' })            // { 'aria-label': 'حذف', role: 'img' }
+getIconAria({ decorative: false })        // {}  يُوفَّر label من الخارج
+```
+
+انتبه إلى أن قيمة `aria-hidden` هي `true` (قيمة منطقية)، ويسمح `LhAriaAttrs` بتواجد القيم المنطقية والنصية معًا، وعند عمل v-bind في كل طرف يحوّلها الإطار إلى `"true"`.
+
+## أمثلة الاستخدام
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+
+getIconSize('large')          // 20
+getIconSize(32)               // 32
+getIconSvg('check')           // 'M...'  بيانات path
+getIconSvg('not-exist')       // null (لا يُرمى خطأ، يعرض الطرف البصري svg فارغًا أو عنصرًا احتياطيًا)
+getIconStyle({ size: 'large', color: 'var(--lh-primary-color)' })
+// { width: '20px', height: '20px', color: 'var(--lh-primary-color)' }
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="['lh-icon', { 'lh-icon--loading': name === 'loading' }]"
+  viewBox="0 0 1024 1024"
+  :width="px" :height="px"
+  v-bind="getIconAria({ decorative, label })"
+>
+  <path :d="path" />
+</svg>
+```
+
+```tsx
+// React
+const px = getIconSize(size)
+const aria = getIconAria({ decorative: !label, label })
+return (
+  <svg className="lh-icon" viewBox="0 0 1024 1024" width={px} height={px} {...aria}>
+    <path d={getIconSvg(name) ?? ''} />
+  </svg>
+)
+```
+
+```ts
+// uniapp: لا تدعم الأطراف غير h5 svg المباشر، فيعمد الطرف البصري إلى التحويل المسبق لـ path
+// إلى مورد صوروري؛ ولا يزال رقم getIconSize يُستخدم للتحكم في مقاس الصورة.
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-icon` | الصنف الأساسي: `display: inline-block`، تصحيح المحاذاة العمودية `vertical-align` |
+| `.lh-icon--loading` | حركة دوران لا نهائية لأيقونة التحميل |
+
+يرث لون الأيقونة افتراضيًا لون النص من العنصر الأب (`fill: currentColor`)، وعند الحاجة إلى لون السمة يُحقن صراحةً عبر `color` في `getIconStyle`.
+
+## ملاحظات
+
+- **يعيد `getIconSvg` القيمة null للاسم غير الموجود بدلًا من رمي خطأ** — وعلى الطرف البصري معالجة هذا الفرع، وإلا سيُعرض `<svg>` فارغ.
+- مجموعة الأيقونات الداخلية بأسلوب **النمط الصيني البسيط**، ولا تتوافق مع مكتبات الأيقونات الخارجية (مثل أسماء أصناف fontawesome لدى element-plus). وعند الحاجة إلى أيقونات خاصة بالعمل، فإن `LhIcon` على كل طرف يدعم عادةً تمرير `path` أو الرسم الذاتي عبر الفتحة.
+- حركة دوران أيقونة `loading` موجودة في طبقة CSS (`.lh-icon--loading`)، لا في core — فلا يُخرج core سوى اسم الصنف.
+- حافظ على الحالة الزخرفية الافتراضية حين تكون الأيقونة بجوار نص؛ ومرّر label فقط عندما «تحمل الأيقونة عمليةً بمفردها».
+
+<FnPlayground module="icon" fn="getIconSize" params='{"size": "large"}' />

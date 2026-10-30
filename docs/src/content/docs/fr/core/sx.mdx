@@ -1,0 +1,138 @@
+---
+title: 'sx —— Raccourcis de style'
+description: "sxToStyle transforme les props sx à la Tailwind en styles inline, avec une priorité fixe : côté unique > paire d'axes > abréviation"
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`sx` est le **raccourci de styles inline** de lh-ui : `mt: 4` à la place de `style="margin-top: 32px"`, `p: 2` à la place d'écrire les quatre paddings en une fois. Ce n'est pas Tailwind (aucune classe générée, aucun CSS importé) : à l'exécution, le paquet de props est directement évalué en un `Record<string, string>`, que la couche UI lie à `:style`.
+
+## Quand l'utiliser
+
+- Au sein de la bibliothèque de composants : `sx` permet au composant de s'économiser une nouvelle prop au niveau des « ajustements de mise en page » — `<LhButton sx={{ mt: 2 }} />` suffit à écarter l'espace au-dessus.
+- Les espacements qui doivent varier dynamiquement avec les données : la conversion des nombres en pixels (`×8`) donne une échelle stable à des sémantiques comme « rapproche-le un peu de moi ».
+- **À éviter** : la conception visuelle systématique. sx est un « ajustement temporaire au point d'appel » ; les jetons de conception que sont les couleurs de thème ou la hauteur des contrôles passent toujours par des variables CSS (voir le [système de thèmes](/fr/theme/overview)) ; écrire `color: 'var(--lh-primary-color)'` dans sx fonctionne, mais il est plus recommandé de laisser le composant consommer directement le jeton.
+
+## Import
+
+```ts
+// Import précis (recommandé, favorable au tree-shaking)
+import { sxToStyle, mergeSx } from '@lh-ui/share/core/shared/sx'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+
+// Ou depuis l'entrée agrégée
+import { sxToStyle } from '@lh-ui/share/core/shared'
+```
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `sxToStyle` | `(sx: LhSxProps) => Record<string, string>` | objet de styles inline | évalue le paquet de props sx en styles CSS |
+| `mergeSx` | `(...list: (LhSxProps \| undefined \| null)[]) => LhSxProps` | le sx fusionné | le dernier écrase le premier, pour permettre à la couche UI de composer « sx par défaut + sx de l'appelant » |
+
+### La règle de priorité de `sxToStyle`
+
+**« Côté unique > paire d'axes > abréviation », indépendamment de l'ordre d'écriture des clés**. L'implémentation écrit dans l'objet de styles dans l'ordre fixe `abréviation → paire d'axes → côté unique`, les écritures ultérieures écrasant les précédentes ; ainsi, quelque soit l'ordre de vos clés :
+
+```ts
+sxToStyle({ m: 2, mt: 4 })   // { marginTop: '32px', marginRight: '16px', marginBottom: '16px', marginLeft: '16px' }
+sxToStyle({ mt: 4, m: 2 })   // strictement identique
+sxToStyle({ my: 2, mt: 4 })  // le côté unique marginTop l'emporte : 32px ; mb reste à 16px
+```
+
+Cette règle permet à la bibliothèque de composants d'écrire en toute sécurité un « paquet par défaut + surcharge utilisateur » : le `mt` transmis par l'utilisateur écrasera toujours le `m` interne du composant.
+
+### Nombres et chaînes
+
+- **Les nombres sont convertis à `×8px`** : `mt: 4` → `32px`. 8 est l'unité de base des espacements de lh-ui (même échelle que les jetons `--lh-spacing-*`).
+- **Les chaînes sont transmises telles quelles** : `w: '50%'` → `50%`, `p: '1rem'` → `1rem`.
+- **Les clés de mise en page ne sont pas converties** : les valeurs de `display` / `flex` / `flexDirection` / `alignItems` / `justifyContent` sont écrites directement en tant que chaînes (`flexDirection: 'column'` ne deviendra pas `columnpx`).
+- Toutes les clés sont évaluées selon `!== undefined` : une chaîne vide `''` est considérée comme un **vidage explicite** et est écrite.
+
+## Définitions de types
+
+```ts
+export interface LhSxProps {
+  // Dimensions
+  w?: string | number
+  h?: string | number
+  // Marges extérieures : côté unique / paire d'axes / abréviation
+  mt?: string | number
+  mr?: string | number
+  mb?: string | number
+  ml?: string | number
+  my?: string | number
+  mx?: string | number
+  m?: string | number
+  // Marges intérieures : même structure
+  pt?: string | number
+  pr?: string | number
+  pb?: string | number
+  pl?: string | number
+  py?: string | number
+  px?: string | number
+  p?: string | number
+  // Mise en page
+  display?: string
+  flex?: string
+  flexDirection?: 'row' | 'column'
+  alignItems?: string
+  justifyContent?: string
+  // Compatibilité avec les clés personnalisées en aval ; les clés inconnues sont silencieusement écartées
+  [key: string]: any
+}
+```
+
+La signature d'index `[key: string]: any` est délibérée : chaque bibliothèque UI placera son propre `LhXxxProps` avec un `sx?: LhSxProps` aux côtés des props spécifiques du composant, et la signature d'index permet aux types de ne pas entrer en conflit ; les clés inconnues sont écartées lors de l'évaluation, sans fuite dans les styles.
+
+## Exemples d'utilisation
+
+### Fonction pure
+
+```ts
+sxToStyle({ mt: 2, px: 3, display: 'flex', alignItems: 'center' })
+// {
+//   marginTop: '16px',
+//   paddingLeft: '24px',
+//   paddingRight: '24px',
+//   display: 'flex',
+//   alignItems: 'center',
+// }
+```
+
+### Le câblage de chaque port
+
+```vue
+<!-- Vue3 / Vue2 : on lie directement :style -->
+<template>
+  <lh-button :style="sxToStyle($props.sx)">Bouton</lh-button>
+</template>
+```
+
+```tsx
+// React
+<div style={sxToStyle({ my: 4, w: '100%' })} />
+```
+
+```ts
+// uniapp : la sortie de sxToStyle est un objet simple, qui entre directement dans la liaison style
+// (la conversion ×8px des nombres doit être adaptée à la plateforme hors h5, à la charge de la couche UI)
+```
+
+L'usage type de `mergeSx` est la composition des valeurs par défaut au sein du composant :
+
+```ts
+// Au sein du composant
+const merged = mergeSx({ py: 2, px: 4 }, props.sx) // le sx de l'utilisateur écrase les valeurs par défaut
+const style = sxToStyle(merged)                    // une seule évaluation, la règle de priorité n'est exécutée qu'une fois
+```
+
+## Points d'attention
+
+- **`mergeSx` est une fusion superficielle** (`Object.assign`), sans récursion ; les valeurs de sx sont toutes scalaires, une fusion superficielle suffit.
+- **`sxToStyle` renvoie `{}` pour une valeur fausse** : `sxToStyle(undefined)` est un objet vide, la couche UI peut l'appeler sans réfléchir.
+- L'unité de base de 8px utilisée par la conversion numérique est alignée sur le système de jetons, mais sx lui-même **ne référence aucune variable CSS** — il produit des littérales calculées, adaptées au scénario « ce coup-ci, il faut un léger décalage », inadaptées au scénario « ça doit changer avec le thème ».
+- Multi-plateforme : les rpx d'uniapp hors h5 doivent être convertis par la couche UI ; le noyau de sx ne produit que des px.
+
+<FnPlayground module="sx" fn="sxToStyle" params='{"sx": {"mt": 4, "px": 3, "display": "flex"}}' />

@@ -1,0 +1,182 @@
+---
+title: transfer —— Transfert
+description: 'partitionTransferData le partage immuable, moveTransferKeys le nettoyage des clés fantômes, getTransferCheckAllState les trois états, sourceKeys l’unique source de données'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Le composant de transfert résout le **déplacement bidirectionnel d'une sélection multiple** : la colonne de gauche est « à sélectionner », celle de droite « sélectionnée », et deux boutons à flèches au milieu déplacent les éléments dans les deux sens. Il convient mieux qu'un groupe de cases à cocher lorsqu'il y a beaucoup d'options (pagination + recherche), et il est plus intuitif que plusieurs listes déroulantes (les deux côtés restent visibles). `core/transfer` modélise le tout avec **une source de données unique, `sourceKeys`** — la colonne de gauche est « les éléments qui ne sont pas dans sourceKeys », celle de droite « les éléments qui sont dans sourceKeys », et toutes les opérations ne sont que des transformations de ce tableau.
+
+## Quand l'utiliser
+
+- Chaque framework implémente `LhTransfer` : affectation de droits, sélection des membres d'un rôle, filtrage d'étiquettes, coche de champs de données.
+- Les scénarios avec beaucoup d'options (> 10), nécessitant un filtre de recherche, et où l'on veut voir simultanément les deux côtés « sélectionné / non sélectionné ».
+- **À ne pas utiliser pour** : moins de 6 options (un groupe de cases à cocher ou un contrôle segmenté prend moins de place) ; la sélection unidirectionnelle n'a pas besoin de « renvoyer les éléments » (une liste déroulante convient mieux).
+
+## Import
+
+```ts
+import {
+  partitionTransferData,
+  toggleTransferChecked,
+  toggleTransferCheckAll,
+  moveTransferKeys,
+  getTransferCheckAllState,
+  filterTransferItems,
+  getTransferClassNames,
+  getTransferPanelClassNames,
+} from '@lh-ui/share/core/transfer'
+import type { LhTransferItem, LhTransferSide } from '@lh-ui/share/core/transfer'
+```
+
+## Intentions de conception
+
+**La source de données unique qu'est `sourceKeys`** : la « valeur » du composant est le tableau des clés de la colonne de droite. La colonne de gauche ne stocke pas d'état séparé — `partitionTransferData(data, sourceKeys)` la recalcule à chaque fois à partir de la donnée complète. Cela évite le bug classique du « désynchronisation entre les états des deux colonnes » : tout déplacement ne modifie qu'un seul tableau, et les vues des deux côtés sont recalculées automatiquement.
+
+**Le nettoyage des clés fantômes par `moveTransferKeys`** : `checked` peut contenir des clés qui ne sont pas dans `data` (les anciennes sélections qui subsistent après une actualisation de la donnée, que l'on appelle des **clés fantômes**). Elles ne peuvent pas être déplacées, et ne doivent pas non plus rester dans la zone source pour polluer l'image suivante — c'est pourquoi la fonction, après le déplacement, **en profite pour filtrer les clés fantômes de la zone source**. Le commentaire indique les deux niveaux de raisonnement derrière cette décision.
+
+**`toggleTransferCheckAll` ignore les éléments désactivés** : « tout sélectionner » ne sélectionne que les éléments « disponibles » (`!disabled`), et « tout désélectionner » ne décoche qu'eux — l'état de coche des éléments désactivés reste inchangé, conformément à l'intuition « désactivé = non opérable ».
+
+**Les trois états de `getTransferCheckAllState`** : `all` / `some` / `none` pilotent l'état `indeterminate` de la case à cocher « tout sélectionner » — c'est l'interaction standard de cette case (la barre horizontale s'affiche en cas de sélection partielle).
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `partitionTransferData` | `(data, sourceKeys) => { left, right }` | listes des deux côtés | partage selon le keySet |
+| `toggleTransferChecked` | `(checked, key) => Array` | nouveau tableau de coches | supprime si présent, ajoute sinon |
+| `toggleTransferCheckAll` | `(checked, sideItems) => Array` | nouveau tableau de coches | tout sélectionner / tout désélectionner (ignore les désactivés) |
+| `moveTransferKeys` | `(sourceKeys, data, checked, direction) => Array` | nouveau sourceKeys | déplace et nettoie les clés fantômes |
+| `getTransferCheckAllState` | `(checked, sideItems) => 'all' \| 'some' \| 'none'` | trois états | pilote indeterminate |
+| `filterTransferItems` | `(items, query) => LhTransferItem[]` | liste filtrée | insensible à la casse |
+| `getTransferClassNames` | `(state: { disabled }) => string[]` | classes | désactivé |
+| `getTransferPanelClassNames` | `(side) => string[]` | classes | le côté du panneau |
+
+## Définitions de types
+
+```ts
+export interface LhTransferItem {
+  key: string | number
+  label?: string       // le contrat d'exécution admet l'absence (la couche UI affiche la clé en repli)
+  disabled?: boolean   // désactivé (non déplaçable, et exclu de la sélection totale)
+}
+
+export type LhTransferSide = 'left' | 'right'
+```
+
+## Accessibilité
+
+La structure d'accessibilité du composant de transfert est assemblée par la couche UI, core ne fournit pas de fonction de paquet d'attributs (pas de couche flottante ni de sémantique complexe) : les deux panneaux sont chacun un `role="listbox"`, les éléments de liste `role="option"` + `aria-selected` ; les boutons de déplacement intermédiaires sont de simples `<button>`, avec un `aria-label` indiquant la direction (par exemple « Déplacer 3 élément(s) vers la droite ») ; la case à cocher « tout sélectionner » utilise la sémantique checkbox, et l'état `indeterminate` est déclenché par la valeur `some` de `getTransferCheckAllState` sur l'attribut DOM.
+
+Convention clavier : Espace coche l'élément de liste après focalisation, ↑/↓ se déplacent ; le bouton de déplacement déclenche l'action par Enter après focalisation.
+
+## Exemples d'utilisation
+
+```ts
+import {
+  partitionTransferData, moveTransferKeys, getTransferCheckAllState, filterTransferItems,
+} from '@lh-ui/share/core/transfer'
+
+const data = [
+  { key: 'a', label: 'Pomme' },
+  { key: 'b', label: 'Banane', disabled: true },
+  { key: 'c', label: 'Cerise' },
+]
+
+partitionTransferData(data, ['c'])
+// { left: [Pomme, Banane], right: [Cerise] }
+
+moveTransferKeys(['c'], data, ['a', 'b'], 'left-to-right')
+// ['c', 'a'] —— b est désactivé, non déplacé ; a passe de gauche à droite
+
+moveTransferKeys(['c'], data, ['a', 'ghost'], 'left-to-right')
+// ['c', 'a'] —— la clé fantôme 'ghost' est écartée, elle ne reste pas dans le résultat
+
+getTransferCheckAllState(['a'], [{ key: 'a' }, { key: 'b', disabled: true }, { key: 'c' }])
+// 'some' (les éléments disponibles sont a et c, seul a est coché → partiel ; b désactivé, exclu du décompte)
+
+filterTransferItems(data, 'ban')   // [{ key: 'b', label: 'Banane' }]
+filterTransferItems(data, '')      // le tableau d'origine (une requête vide ne filtre pas)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTransferClassNames({ disabled })">
+  <transfer-panel
+    side="left"
+    :items="partition.left"
+    :checked="leftChecked"
+    @toggle="onToggle"
+    @check-all="onCheckAll"
+  />
+  <div class="lh-transfer__buttons">
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="leftChecked.length === 0"
+      :aria-label="`Déplacer ${leftChecked.length} élément(s) vers la droite`"
+      @click="move('left-to-right')"
+    >→</button>
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="rightChecked.length === 0"
+      :aria-label="`Déplacer ${rightChecked.length} élément(s) vers la gauche`"
+      @click="move('right-to-left')"
+    >←</button>
+  </div>
+  <transfer-panel side="right" :items="partition.right" :checked="rightChecked" />
+</div>
+```
+
+```ts
+// Câblage des états (le partage se fait par computed, checked est l'état de coche local)
+const partition = computed(() => partitionTransferData(props.data, props.modelValue))
+const leftChecked = computed(() => state.checked.filter((k) => !props.modelValue.includes(k)))
+const rightChecked = computed(() => state.checked.filter((k) => props.modelValue.includes(k)))
+
+function move(direction) {
+  const checked = direction === 'left-to-right' ? leftChecked.value : rightChecked.value
+  emit('update:modelValue', moveTransferKeys(props.modelValue, props.data, checked, direction))
+  state.checked = state.checked.filter((k) => !checked.includes(k))  // on retire les coches des éléments déplacés
+}
+```
+
+```tsx
+// React : sourceKeys est la valeur contrôlée ; l'état de coche est un useState local,
+// vidé des éléments correspondants après le déplacement
+```
+
+```ts
+// uniapp : deux colonnes en <view> + <scroll-view> pour le défilement ;
+// le filtre de la recherche utilise filterTransferItems
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-transfer` | classe de base (disposition flex horizontale) |
+| `.lh-transfer--disabled` | désactivé |
+| `.lh-transfer-panel` | panneau d'un côté |
+| `.lh-transfer-panel--left` / `--right` | le côté |
+| `.lh-transfer-panel__header` | en-tête de panneau (case à cocher « tout sélectionner » + décompte) |
+| `.lh-transfer-panel__search` | champ de recherche |
+| `.lh-transfer-panel__body` | zone de liste |
+| `.lh-transfer-panel__item` | élément de liste |
+| `.lh-transfer-panel__item--disabled` | élément désactivé |
+| `.lh-transfer-panel__footer` | pied de page pour l'état vide / le décompte |
+| `.lh-transfer__buttons` / `__button` | groupe de boutons intermédiaire |
+
+L'état `indeterminate` de la case à cocher de l'en-tête de panneau est piloté par `getTransferCheckAllState`.
+
+## Remarques
+
+- **`checked` et `sourceKeys` sont deux états indépendants** : `checked` est « ce qui est actuellement coché » (les deux côtés peuvent se chevaucher), `sourceKeys` est « ce qui se trouve dans la colonne de droite » (la valeur du composant). Après le déplacement, il faut retirer manuellement les clés déplacées de `checked`, sinon elles subsistent dans l'état de coche (`moveTransferKeys` ne modifie pas checked pour vous).
+- **L'origine des clés fantômes** : lors du chargement asynchrone de la donnée, l'utilisateur coche d'abord plusieurs éléments, puis une actualisation fait disparaître certaines clés — ces clés qui restent dans `checked` sont des clés fantômes. `moveTransferKeys` les nettoie, mais le décompte de `toggleTransferCheckAll` (`getTransferCheckAllState`) peut aussi s'en trouver affecté : pour le rendu de l'état de coche, la couche UI a intérêt à filtrer au préalable avec `byKey.has(key)`.
+- **Les limites des éléments désactivés** : un élément à `disabled: true` **ne peut pas être déplacé, n'entre pas dans la sélection totale, et n'est pas non plus décoché par la désélection totale** — il conserve son état de coche. Si le métier impose « les éléments désactivés ne doivent absolument pas être cochés », traitez-le dans la couche de données, sans vous appuyer sur core.
+- **`label` peut manquer** : `label?` est facultatif dans les types, et la couche UI doit afficher la clé en repli (`item.label ?? item.key`).
+- **Les performances avec un gros volume de données** : `partitionTransferData` parcourt la totalité de la donnée à chaque fois ; `filterTransferItems` s'exécute à chaque changement de requête. Au-delà de plusieurs milliers d'éléments, envisagez le défilement virtuel (`core/shared/virtual`) ; la fonction de partage de core est en O(n) et n'est pas le goulot d'étranglement.
+- **L'ordre d'application de la recherche et du partage** : d'abord `partitionTransferData`, puis `filterTransferItems` sur chaque côté — inverser l'ordre amènerait la recherche à filtrer la donnée complète non partagée.
+
+<FnPlayground module="transfer" fn="moveTransferKeys" params='{"sourceKeys": ["c"], "data": [{"key": "a", "label": "Pomme"}, {"key": "b", "label": "Banane", "disabled": true}, {"key": "c", "label": "Cerise"}], "checked": ["a", "b"], "direction": "left-to-right"}' />

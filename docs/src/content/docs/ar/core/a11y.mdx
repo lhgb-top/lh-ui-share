@@ -1,0 +1,174 @@
+---
+title: a11y —— منشئ سمات aria
+description: 'منشئات aria الذرية الموحدة مع دلالة «القيم الكاذبة تُحذف»، وحزمتا سمات جاهزتان لمُطلِق الطبقة المنبثقة والعناصر الزخرفية'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+تهجئة سمات aria وقيمها عمل مُمِل: هل نكتب `aria-haspopup` أم `ariaHaspopup`؟ وهل `'true'` أم `true`؟ وهل تُرضَع القيمة الكاذبة؟ لو أن كل مكوّن يجمعها بنفسه، فإمّا أن يُخطئ في التهجئة أو ينسى الحذف عندما تكون القيمة فارغة (فيظهر للمستخدم قارئ الشاشة كومة من `aria-controls="undefined"`). يُثبِّت `shared/a11y` هذه الاتفاقيات بمجموعة من الدوال النقية.
+
+## الاتفاقية الجوهرية: القيم الكاذبة تُحذف
+
+جميع منشئات aria المنطقية تتبع القاعدة نفسها:
+
+| الخاصية | سلوك القيمة الكاذبة | السبب |
+| --- | --- | --- |
+| `aria-required: false` | تُعيد `{}` ولا تُعرَض | التصريح الصريح بـ «غير إلزامي» هو ضجيج بالنسبة لقارئ الشاشة |
+| `aria-haspopup: false` | تُعيد `{}` ولا تُعرَض | نفس ما سبق |
+| `aria-current: false` | لا تظهر أصلًا | نوع المنشئ لا يقبل `false` أصلًا (معظم قراء الشاشة يتجاهلونه) |
+| `aria-controls` / `aria-labelledby` / `aria-describedby` | تُعيد `{}` عندما يكون id فارغًا | عرض `aria-controls="undefined"` خطأ شائع |
+| **`aria-expanded: false`** | **تُخرَج كما هي** | حالة الطي يجب أن تُذاع صراحةً |
+| **`aria-invalid: false`** | **تُخرَج كما هي** | «اجتاز التحقق» يجب أن يُذاع صراحةً |
+
+«الاستثناءان» مقصودان: قيمة `aria-expanded` / `aria-invalid` الكاذبة تحمل معلومات دلالية، بناءً عليها يقول قارئ الشاشة «مطوي» أو «إدخال صالح».
+
+## طريقة الاستيراد
+
+```ts
+import {
+  generateAriaId,
+  ariaExpanded,
+  ariaControls,
+  ariaLabelledby,
+  ariaDescribedby,
+  ariaInvalid,
+  ariaRequired,
+  ariaCurrent,
+  ariaHaspopup,
+  getPopupTriggerAria,
+  getDecorativeAria,
+  type LhAriaAttrs,
+  type LhAriaHaspopup,
+} from '@lh-ui/share/core/shared/a11y'
+```
+
+## الأنواع
+
+```ts
+// شكل حزمة سمات aria: المفاتيح هي 'aria-*' أو 'role'، تُستخدم مباشرة في v-bind / {...spread}
+export type LhAriaAttrs = Record<string, string | number | boolean | undefined>
+
+// القيم الشرعية لـ aria-haspopup (APG)
+export type LhAriaHaspopup =
+  | 'false' | 'true' | 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog' | 'combobox'
+```
+
+## جدول الدوال
+
+| الدالة | التوقيع | الدور |
+| --- | --- | --- |
+| `generateAriaId` | `(prefix = 'lh-aria') => string` | توليد id فريد لاقترانات aria |
+| `ariaExpanded` | `(expanded: boolean) => LhAriaAttrs` | حالة التوسيع / الطي |
+| `ariaControls` | `(id: string \| undefined) => LhAriaAttrs` | الإشارة إلى اللوحة المُتحكَّم بها |
+| `ariaLabelledby` | `(id: string \| undefined) => LhAriaAttrs` | الإشارة إلى نص مرئي ليكون الاسم القابل للوصول |
+| `ariaDescribedby` | `(id: string \| undefined) => LhAriaAttrs` | الإشارة إلى وصف تكميلي |
+| `ariaInvalid` | `(invalid: boolean) => LhAriaAttrs` | علامة فشل التحقق |
+| `ariaRequired` | `(required: boolean) => LhAriaAttrs` | دلالة الإلزام |
+| `ariaCurrent` | `(current: 'page' \| 'step' \| 'location' \| 'date' \| 'time' \| true \| undefined) => LhAriaAttrs` | علامة الموضع الحالي |
+| `ariaHaspopup` | `(kind: LhAriaHaspopup \| boolean) => LhAriaAttrs` | التصريح بنوع الطبقة المنبثقة |
+| `getPopupTriggerAria` | `(options: { expanded; popupId?; haspopup? }) => LhAriaAttrs` | **حزمة السمات العامة** لمُطلِق الطبقة المنبثقة |
+| `getDecorativeAria` | `(decorative = true) => LhAriaAttrs` | إخفاء العناصر الزخرفية عن التقنيات المساعدة |
+
+## حزمتا السمات المركبة
+
+### getPopupTriggerAria
+
+مُطلِقات popover / popconfirm / select / cascader / date-picker / dropdown **جميعها** تستخدمه، فتحصل على ثلاثة أمور دفعة واحدة:
+
+```ts
+getPopupTriggerAria({ expanded: true, popupId: 'lh-popover-1' })
+// {
+//   'aria-expanded': true,
+//   'aria-controls': 'lh-popover-1',
+//   'aria-haspopup': 'true',      // القيمة الافتراضية
+// }
+
+getPopupTriggerAria({ expanded: false, popupId: 'lh-popover-1', haspopup: 'menu' })
+// { 'aria-expanded': false, 'aria-controls': 'lh-popover-1', 'aria-haspopup': 'menu' }
+
+getPopupTriggerAria({ expanded: false })   // لم يُمرَّر popupId
+// { 'aria-expanded': false, 'aria-haspopup': 'true' }   —— لا يُخرج aria-controls
+```
+
+افتراضيًا قيمة `haspopup` هي `'true'`. والقيم الأدق دلاليًا (القائمة المنسدلة `listbox`، والمتتالية `menu`، والتقويم `dialog`) تجعل إذاعة قارئ الشاشة أدق، ويمررها كل مكوّن وفق دلالته الخاصة.
+
+### getDecorativeAria
+
+```ts
+getDecorativeAria()       // { 'aria-hidden': true }
+getDecorativeAria(false)  // {}   —— إلغاء الإخفاء صراحةً
+```
+
+العناصر الزخرفية (الفواصل الصرفة، وزخرفة loading، والأشكال الهندسية للهيكل العظمي) هي ضجيج بالنسبة للتقنيات المساعدة. انتبه إلى أنها **تُستخدم فقط مع العناصر الخالية من المعلومات فعلًا**—فإضافة `aria-hidden` إلى عنصر يحوي نصًّا مخالفة صريحة لإ accessibility. وتمرير `false` يُعيد كائنًا فارغًا، ويُستخدم في الفروع الشرطية من نوع «مخفي افتراضيًا، لكنه مرئي في بعض المشاهد».
+
+## generateAriaId
+
+```ts
+const id = generateAriaId('lh-popover')  // 'lh-popover-1'، 'lh-popover-2' ……
+```
+
+تُثبَّت البادئة على القيمة الممررة، ويضمن العداد المتزايد داخل الوحدة ألا تتصادم ids بين النسخ المتعددة في العملية الواحدة. وهو آمن في SSR (بلا وصول إلى DOM).
+
+**تنبيه**: العداد هو **حالة متغيرة على مستوى الوحدة**، وهذه الدالة ليست دالة نقية—المدخل نفسه يُعيد مخرجات مختلفة في لحظات مختلفة من العملية. ففي SSR يبدأ العد من 0، وعند hydration في العميل يبدأ كذلك من 0، فما دام ترتيب العرض متطابقًا تتطابق ids أيضًا؛ ولكن اختلف ترتيب عرض SSR / CSR (مكونات غير متزامنة، أو تباين في العرض الشرطي) فقد تظهر ids غير متطابقة. ولهذا فإن مكوّنات الطبقة المنبثقة في كل مكتبات واجهة المستخدم لا تولّد id إلا في العميل (بعد `onMounted`)، فتتجنب هذه المشكلة.
+
+## أمثلة الاستخدام
+
+### Vue3
+
+```vue
+<template>
+  <button
+    v-bind="getPopupTriggerAria({ expanded: open, popupId: panelId, haspopup: 'dialog' })"
+    @click="toggle"
+  >
+    فتح
+  </button>
+  <div :id="panelId" role="dialog" v-show="open">…</div>
+</template>
+
+<script setup lang="ts">
+const panelId = generateAriaId('lh-popover')
+</script>
+```
+
+استخدام `v-bind` مع دالة تُعيد كائنًا هو أسلوب Vue المعتاد—فالقيم `undefined` داخل حزمة السمات يتخطاها Vue تلقائيًا، وهذا يتطابق طبيعيًا مع اتفاقية «القيم الكاذبة تُحذف».
+
+### React
+
+```tsx
+const panelId = generateAriaId('lh-popover')
+
+return (
+  <>
+    <button {...getPopupTriggerAria({ expanded: open, popupId: panelId })} onClick={toggle} />
+    {open && <div id={panelId} role="dialog">…</div>}
+  </>
+)
+```
+
+### التحقق من النماذج
+
+```ts
+// مكوّن input
+const aria = {
+  ...ariaRequired(props.required),      // حين لا يكون إلزاميًا لا تُعرَض الخاصية بأكملها
+  ...ariaInvalid(!!errorMessage.value), // اجتياز التحقق يُذاع صراحةً أيضًا
+  ...ariaDescribedby(errorMessage.value ? errorId : undefined),
+}
+```
+
+### الموضع الحالي في الترقيم / مسار التنقل
+
+```ts
+ariaCurrent(isActive ? 'page' : undefined)   // لغير الصفحة الحالية لا يُخرَج شيء، تجنبًا للضجيج
+ariaCurrent(isActive ? 'page' : undefined)   // الترقيم يستخدم 'page'، وخطوات 'step'، والتواريخ 'date'
+```
+
+## ملاحظات
+
+- **يجب أن يكون id المُشار إليه بـ `aria-controls` موجودًا فعلًا**: هذه الوحدة تجمع السمات فقط، وصحة id هي مسؤولية المكوّن. وعندما تُعرَض الطبقة المنبثقة بتأجيل عبر `v-if`، فاللوحة غير موجودة في DOM في الحالة المغلقة، فيشير `aria-controls` إلى عنصر غير موجود—وهذا مقبول (قارئ الشاشة يتجاهله)، ولكنه خير من الإشارة إلى عنصر خاطئ.
+- **لا تضف `aria-hidden` إلى عنصر يحوي نصًّا**: هذه مخالفة صريحة لقواعد accessibility.
+- **اختر قيمة `ariaCurrent` وفق الدلالة**: الترقيم `'page'`، وخطوات `'step'`، ومسار التنقل `'location'`، والتقويم `'date'`. ويقبل النوع هذه القيم الحرفية + `true`.
+- **لا تخلط الحزمة المركبة مع الدوال الذرية بطريقة تغطّي بعضها بعضًا**: `getPopupTriggerAria` يحتوي أصلًا على `aria-haspopup`، فإن أضفت `ariaHaspopup(...)` خارجًا عبر spread فستُغطّى بالقيمة المنشورة لاحقًا—فاختر إحداهما حسب الحاجة.
+
+<FnPlayground module="a11y" fn="getPopupTriggerAria" params='{"options": {"expanded": true, "popupId": "lh-popover-demo", "haspopup": "menu"}}' />

@@ -1,0 +1,200 @@
+---
+title: tooltip —— Infobulle
+description: 'getDefaultDelay, délais d’affichage/masquage (affichage 200 / masquage 0) ; convention d’appariement role=tooltip et aria-describedby'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+L'infobulle est « l'explication complémentaire que l'on ne regarde qu'au survol » : une icône de bouton incompréhensible, un texte de lien tronqué, une cellule de tableau qui ne peut pas contenir tout le contenu. `core/tooltip` est très mince — le positionnement est confié à `shared/popper`, les délais à `shared/delay` ; il ne fait que déclarer **le rythme par défaut de ce composant** et **la convention d'appariement aria**.
+
+## Quand l'utiliser
+
+- Chaque framework implémente `<LhTooltip>` : ajouter une courte phrase d'explication (une seule phrase) à l'élément déclencheur.
+- Afficher le contenu complet d'un texte tronqué (ellipsis).
+- Explication sémantique d'un bouton icône.
+- **À ne pas utiliser pour** : du contenu exigeant une interaction (utilisez `popover` — aucune icône dans un tooltip) ; les opérations de confirmation (utilisez `popconfirm`) ; les retours d'erreur (utilisez `message`) ; **sur mobile** (pas de survol, l'infobulle est quasiment impossible à déclencher sur écran tactile — remplacez-la par le déclenchement click de popover ou un appui prolongé).
+
+## Import
+
+```ts
+import {
+  getPopperClassNames,
+  getPopperStyle,
+  getDefaultDelay,
+  getTooltipPopperAria,
+  getTooltipTriggerAria,
+} from '@lh-ui/share/core/tooltip'
+import type {
+  LhTooltipPlacementCore,
+  LhTooltipTriggerCore,
+  LhTooltipEffectCore,
+  LhTooltipState,
+} from '@lh-ui/share/core/tooltip'
+```
+
+## Intentions de conception
+
+**L'asymétrie des délais par défaut** : 200 ms à l'affichage, 0 ms au masquage — **affichage lent, masquage rapide**. Le délai d'affichage protège contre les erreurs (la souris qui balaie une série de boutons ne devrait pas déclencher une infobulle pour chacun), et le masquage à 0 ms garantit une disparition immédiate à la sortie, sans traîner. À comparer au masquage à 100 ms de `popover` (voir plus bas) : la différence de rythme entre les deux reflète le poids de l'interaction.
+
+**La convention d'appariement aria** : le déclencheur pointe son `aria-describedby` vers l'id de la couche flottante, et la couche a `role="tooltip"`. C'est la pratique standard WAI-ARIA : lorsque le lecteur d'écran focusse le déclencheur, il lit aussi le contenu de l'infobulle — **l'utilisateur n'a pas besoin de survoler pour obtenir l'information** — c'est le point d'accessibilité le plus facilement négligé : une infobulle purement visuelle est totalement invisible pour les utilisateurs au clavier.
+
+**Le traitement des alias `@deprecated`** : `getPopperClass` / `getPopperStyle` sont les anciens noms, que le dépôt aval vue2 utilise encore ; ils sont conservés pour la compatibilité mais marqués deprecated, et le nouveau code utilise `getPopperClassNames` (la convention getXxxClassNames). **Ils ne peuvent pas être supprimés** — les consommateurs en aval les importent encore ; un renommage devra également modifier les consommateurs en aval.
+
+**`getPopperStyle` ne gère que maxWidth** : un nombre → px, une chaîne est utilisée telle quelle. Les coordonnées de positionnement sont calculées par `computePosition` de `shared/popper`, et le transform/les déplacements de la couche flottante sont le résultat du binding de la couche UI à l'état du popper.
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getPopperClassNames` | `(state: { effect, placement }) => string[]` | noms de classes | effet de thème + position |
+| `getPopperStyle` ⚠️ | `(state: { maxWidth }) => Record<string, string>` | style en ligne | normalisation de maxWidth |
+| `getDefaultDelay` | `(show?, hide?) => { show, hide }` | délais | 200 / 0 par défaut |
+| `getTooltipPopperAria` | `(id?) => LhAriaAttrs` | paquet aria | role="tooltip" |
+| `getTooltipTriggerAria` | `(tooltipId?) => LhAriaAttrs` | paquet aria | aria-describedby |
+
+⚠️ : alias de compatibilité `@deprecated`, le nouveau code utilise les nouveaux noms.
+
+Constantes (types) : `LhTooltipPlacementCore` 12 positions, `LhTooltipTriggerCore`, `LhTooltipEffectCore = 'dark' | 'light'`.
+
+## Définitions de types
+
+```ts
+export type LhTooltipPlacementCore =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhTooltipTriggerCore = 'hover' | 'focus' | 'click' | 'contextmenu'
+export type LhTooltipEffectCore = 'dark' | 'light'
+
+export interface LhTooltipState {
+  visible: boolean
+  effect: LhTooltipEffectCore
+  placement: LhTooltipPlacementCore
+  maxWidth?: number | string
+  showDelay?: number
+  hideDelay?: number
+}
+```
+
+## Accessibilité
+
+```ts
+getTooltipPopperAria('tip-1')
+// { role: 'tooltip', id: 'tip-1' }
+getTooltipTriggerAria('tip-1')
+// { 'aria-describedby': 'tip-1' }
+getTooltipTriggerAria()  // {} (sans id transmis, rien n'est produit : utilisez aria-label en repli)
+```
+
+- **L'id doit être identique aux deux extrémités** : la valeur du `aria-describedby` du déclencheur doit être égale au véritable id rendu par la couche flottante. En rendu côté serveur, l'id peut être vide — sans id transmis, la fonction renvoie un objet vide et la couche UI doit utiliser `aria-label` en repli ; un `aria-describedby` ne doit pas pointer vers un élément inexistant (le lecteur d'écran annoncera « l'élément référencé n'existe pas »).
+- **Le déclenchement focus couvre les utilisateurs au clavier** : avec `trigger: 'focus'`, le focus via Tab affiche l'infobulle — c'est le comportement d'accessibilité recommandé par défaut ; un déclenchement exclusif au survol est totalement invisible pour les utilisateurs au clavier.
+- **Les limites de contenu d'un role="tooltip"** : WAI-ARIA stipule qu'un tooltip **ne doit pas contenir d'éléments interactifs** (boutons, liens) — si l'interaction est nécessaire, utilisez `popover` (role=dialog). Cette contrainte se reflète aussi dans les styles : le tooltip a généralement pointer-events: none.
+- **Texte long** : `maxWidth` limite la largeur du retour à la ligne, mais un tooltip ne devrait pas porter des paragraphes — au-delà d'une phrase, envisagez popover.
+
+## Exemples d'utilisation
+
+```ts
+import { getDefaultDelay, getPopperClassNames, getPopperStyle } from '@lh-ui/share/core/tooltip'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 0 }
+getDefaultDelay(0, 500)                // { show: 0, hide: 500 } (recouvrement explicite)
+
+getPopperClassNames({ effect: 'dark', placement: 'top' })
+// ['lh-tooltip__popper', 'lh-tooltip__popper--dark', 'lh-tooltip__popper--top']
+
+getPopperStyle({ maxWidth: 200 })    // { maxWidth: '200px' }
+getPopperStyle({ maxWidth: '30em' }) // { maxWidth: '30em' }
+getPopperStyle({})                   // {}
+```
+
+```ts
+// Machine à états affichage/masquage (couche UI) : les délais sont normalisés par
+// resolveDelay de shared/delay
+const state = reactive<LhTooltipState>({
+  visible: false, effect: 'dark', placement: 'top',
+})
+
+let showTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleShow() {
+  clearTimeout(showTimer)
+  const { show } = getDefaultDelay(props.showDelay, props.hideDelay)
+  showTimer = setTimeout(() => { state.visible = true }, show)
+}
+function scheduleHide() {
+  clearTimeout(showTimer)
+  const { hide } = getDefaultDelay(props.showDelay, props.hideDelay)
+  setTimeout(() => { state.visible = false }, hide)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTooltip content="La suppression est irréversible" placement="top">
+    <button type="button" aria-label="Supprimer"><LhIcon name="delete" /></button>
+  </LhTooltip>
+</template>
+
+<!-- À l'intérieur du composant : le déclencheur et la couche flottante -->
+<template>
+  <span
+    class="lh-tooltip__trigger"
+    v-bind="getTooltipTriggerAria(popperId)"
+    @mouseenter="scheduleShow" @mouseleave="scheduleHide"
+    @focus="scheduleShow" @blur="scheduleHide"
+  >
+    <slot />
+  </span>
+  <teleport to="body">
+    <transition name="lh-tooltip-fade">
+      <div
+        v-if="state.visible"
+        :id="popperId"
+        :class="getPopperClassNames({ effect: state.effect, placement: state.placement })"
+        :style="{ ...getPopperStyle({ maxWidth: props.maxWidth }), ...popperStyle }"
+        v-bind="getTooltipPopperAria(popperId)"
+        role="tooltip"
+      >
+        <slot name="content">{{ props.content }}</slot>
+      </div>
+    </transition>
+  </teleport>
+</template>
+```
+
+```tsx
+// React : l'élément déclencheur clone les children pour injecter les événements et les
+// attributs aria (React.cloneElement) ; la couche flottante utilise createPortal +
+// useFloating (@floating-ui ou un popper maison)
+```
+
+```ts
+// uniapp : <view> + catchtouchstart ; le survol n'existe pas côté mini-programme, le
+// tooltip sert principalement sur h5 ; les scénarios en mini-programme devraient
+// utiliser le déclenchement click de popover
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-tooltip__trigger` | enveloppe du déclencheur (inline) |
+| `.lh-tooltip__popper` | couche flottante |
+| `.lh-tooltip__popper--{dark\|light}` | effet de thème |
+| `.lh-tooltip__popper--{top\|top-start\|…}` | 12 positions (orientation de la flèche comprise) |
+
+Effet dark : `--lh-tooltip-bg-dark` (proche du noir) + texte blanc ; effet light : `--lh-bg-color` + `--lh-text-primary`. Arrondi `--lh-border-radius-small`, marges internes `--lh-tooltip-padding`, taille de police `--lh-font-size-small`.
+
+## Remarques
+
+- **La double purge des minuteurs** : si le minuteur d'affichage n'a pas encore déclenché et que la souris sort, il faut clearTimeout ; sinon la souris est partie et l'infobulle apparaît. La machine à états ci-dessus ne purge que showTimer ; une implémentation complète doit purger dans les deux sens.
+- **L'entrée dans la couche flottante elle-même** : le `pointer-events` du tooltip est généralement none, donc il n'existe pas de « survol de la couche » — mais popover l'autorise, et c'est de là que vient la différence de délai de masquage entre les deux.
+- **Contrôlé et non contrôlé** : en mode contrôlé `v-model:visible`, les changements visibles externes doivent être synchronisés avec l'état interne ; les minuteurs doivent être réinitialisés avec l'état contrôlé.
+- **La coexistence de plusieurs tooltips** : le popperId de chaque instance doit être unique (useId ou un numéro de séquence auto-incrémenté), sinon aria-describedby pointe vers un mauvais élément.
+- **`getPopperClass` / `getPopperStyle` sont des alias deprecated** : le nouveau code utilise `getPopperClassNames` ; les anciens noms sont encore importés par le dépôt aval vue2, et avant de pouvoir les supprimer, il faut d'abord modifier les consommateurs (l'ordre de publication de la ligne rouge 5).
+- **Le traitement d'un contenu vide** : un `content` vide ne devrait pas afficher une couche flottante vide — la couche UI saute l'affichage quand le contenu est vide (`v-if="content"`), ce n'est pas la responsabilité de core.
+- **L'élément déclencheur désactivé** : un bouton natif `disabled` ne déclenche pas les événements mouseenter/focus, et le tooltip devient inopérant. La pratique courante est d'envelopper le déclencheur dans un élément non désactivé (le span `.lh-tooltip__trigger`) qui recevra les événements — c'est l'une des raisons d'être de la classe trigger.
+
+<FnPlayground module="tooltip" fn="getDefaultDelay" params='{"showDelay": null, "hideDelay": null}' />

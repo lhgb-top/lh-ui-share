@@ -1,0 +1,173 @@
+---
+title: steps pasos —— Navegación
+description: 'La sobreescritura forced de getStepStatus, el último elemento asumido por el :last-child estructural (seguro para SSR), getStepsLineLastIndices con detección del último elemento de línea al ajustar en horizontal'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La barra de pasos es «el indicador de progreso de un flujo»: el «Carrito → Rellenar datos → Pagar → Completado» del carrito de compra, los formularios tipo asistente. La diferencia con `tabs` es **de semántica de orden**: los pasos tienen una secuencia y el estado se deriva de la posición (completado / en curso / pendiente). `core/steps` gestiona la derivación del estado y un detalle de maquetación muy fácil de escribir mal: **cuando la barra de pasos horizontal ajusta la línea, la línea de conexión del final de línea debe ocultarse**.
+
+## Cuándo usarlo
+
+- Implementar `<LhSteps>` / `<LhStep>` en cada extremo: flujos de pedidos, formularios tipo asistente, progreso de tareas, configuración en varios pasos.
+- Flujos **con un orden claro** en los que quien los usa necesita saber «por dónde va».
+- **Cuándo no usarlo**: cambio entre contenidos del mismo nivel (usar `tabs`, sin semántica de orden); un simple porcentaje de progreso (usar `progress`); navegación jerárquica (usar `menu` o `breadcrumb`).
+
+## Importación
+
+```ts
+import {
+  getStepStatus,
+  getStepsClassNames,
+  getStepClassNames,
+  getStepsLineLastIndices,
+  getStepAria,
+} from '@lh-ui/share/core/steps'
+import type {
+  LhStepStatus, LhStepsDirection, LhStepStatusState, LhStepClassState,
+} from '@lh-ui/share/core/steps'
+```
+
+## Intención de diseño
+
+**El estado se deriva de la posición**: la regla central de `getStepStatus` es `index < current → finish`, `=== → process`, `> → wait`. En la mayoría de los escenarios basta pasar `current` y el estado se calcula automáticamente: la capa UI no necesita declarar el estado de cada paso de forma explícita.
+
+**`forced` es una sobreescritura global**: el estado forced a nivel de Steps (p. ej. `error`) convierte **todos los pasos** a ese estado. Es la semántica de «el flujo en su conjunto ha fallado»: cuando falla un pago, no es que un paso haya fallado, sino que todo el flujo no puede continuar. Ojo: su prioridad es la más alta (se devuelve antes de la derivación por posición).
+
+**El último elemento no recibe clase: le toca a `:last-child`**: este es el diseño más sutil del módulo. El comentario explica el motivo: los elementos se renderizan durante su propia fase de setup y en ese momento **los hermanos posteriores aún no se han registrado**, de modo que el isLast calculado a partir del total de registros haría que, en la primera pintura (incluido SSR/SSG), todos los elementos se interpreten erróneamente como últimos. El selector estructural `:last-child` se evalúa al renderizar el CSS y es correcto por naturaleza; el precio es que el estilo de la línea de conexión debe implementarse con pseudoclases estructurales.
+
+**`getStepsLineLastIndices` resuelve el problema del ajuste de línea**: cuando la barra de pasos horizontal de anchura fija ajusta la línea, la línea de conexión del **último elemento de cada línea** apuntaría al espacio en blanco del final de línea (principio de la línea siguiente), produciendo una ruptura visual. Esta función busca los puntos de ajuste a partir de la diferencia de `offsetTop` entre elementos adyacentes: si `offsetTops[i+1] > offsetTops[i]`, entonces i+1 ha bajado a la siguiente línea e i es el final de línea. La capa UI añade entonces la clase `line-last` a los elementos de final de línea (incluido el último global) para ocultar su línea de conexión.
+
+**`lineLast` e `isLast` son dos cosas distintas**: `isLast` (el último global) lo asume `:last-child`; `lineLast` (el final de línea) **se mide**: la capa UI debe leer offsetTop tras el renderizado y rellenarlo. Solo es necesario en el escenario de ajuste horizontal.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Acción |
+| --- | --- | --- | --- |
+| `getStepStatus` | `(state: LhStepStatusState) => LhStepStatus` | Estado | Sobreescritura forced / derivación por posición |
+| `getStepsClassNames` | `(direction: LhStepsDirection) => string[]` | Nombres de clase | Dirección |
+| `getStepClassNames` | `(state: LhStepClassState) => string[]` | Nombres de clase | Estado + pulsable + final de línea |
+| `getStepsLineLastIndices` | `(offsetTops: number[]) => number[]` | Índices de final de línea | Detección del ajuste horizontal |
+| `getStepAria` | `(status: LhStepStatus) => LhAriaAttrs` | Paquete aria | aria-current="step" |
+
+## Definiciones de tipos
+
+```ts
+export type LhStepStatus = 'wait' | 'process' | 'finish' | 'error'
+export type LhStepsDirection = 'horizontal' | 'vertical'
+
+export interface LhStepStatusState {
+  index: number       // Índice del paso (desde 0)
+  current: number     // Índice del paso actual
+  forced?: LhStepStatus  // Estado de sobreescritura global a nivel de Steps
+}
+
+export interface LhStepClassState {
+  status: LhStepStatus
+  clickable: boolean
+  lineLast?: boolean  // Si es el último elemento de la línea actual (medido por la capa UI en el ajuste horizontal)
+}
+```
+
+## Accesibilidad
+
+```ts
+getStepAria('process')  // { 'aria-current': 'step' }
+getStepAria('finish')   // {}
+getStepAria('error')    // {}
+```
+
+- **aria-current="step" marca el paso actual**: es la semántica específica de WAI-ARIA; el lector de pantalla anuncia «paso actual», más estándar que una pista de texto «en curso». Solo se emite en el estado process.
+- **Semántica de lista ordenada**: se recomienda renderizar la barra de pasos con `<ol>`: la semántica de orden va integrada y el lector de pantalla anuncia «elemento 2 de 4». Si se implementa con `<div>`, hay que añadir `role="list"` y, a cada elemento, `role="listitem"`.
+- **El estado con texto y no solo con color**: el visto bueno de finish, el número de process, el gris de wait: las personas con daltonismo no los distinguen. La combinación del texto del título de cada paso («Rellenar datos») + icono es la completa.
+- **Anuncio del paso en error**: el estado de error debería expresarse en la capa UI con `aria-invalid` o añadiendo el texto «(fallido)» tras el título del paso; un icono rojo por sí solo no basta.
+- **Semántica de botón para los pasos pulsables**: cuando `clickable: true`, el título del paso debería renderizarse como `<button>` (para poder volver a un paso ya completado) y ser accesible por teclado; cuando no es pulsable, es texto sin más.
+
+## Ejemplos de uso
+
+```ts
+import { getStepStatus, getStepsLineLastIndices } from '@lh-ui/share/core/steps'
+
+getStepStatus({ index: 0, current: 2 })  // 'finish'
+getStepStatus({ index: 2, current: 2 })  // 'process'
+getStepStatus({ index: 3, current: 2 })  // 'wait'
+getStepStatus({ index: 0, current: 2, forced: 'error' })  // 'error' (forced sobreescribe todo)
+getStepStatus({ index: 2, current: 2, forced: 'wait' })   // 'wait'
+
+// Ajuste horizontal (2 elementos por línea; 4 elementos en 2 líneas):
+getStepsLineLastIndices([10, 10, 60, 60])  // [1, 3] (el offsetTop del índice 2 es mayor → 1 es final de línea; 3 es el último global)
+getStepsLineLastIndices([10, 10, 10])      // [2] (sin ajuste de línea, solo el último global)
+getStepsLineLastIndices([])                // []
+```
+
+```ts
+// Capa UI: tras el renderizado, medir offsetTop y rellenar la clase lineLast (solo necesario en horizontal)
+const items = ref<HTMLElement[]>([])
+const lineLastSet = ref<Set<number>>(new Set())
+
+onMounted(() => {
+  const offsetTops = items.value.map((el) => el.offsetTop)
+  lineLastSet.value = new Set(getStepsLineLastIndices(offsetTops))
+})
+// Observar el resize de la ventana: los puntos de ajuste cambian con la anchura
+```
+
+```vue
+<!-- Vue3: flujo de pedido -->
+<template>
+  <LhSteps :current="1">
+    <LhStep title="Carrito" description="3 artículos seleccionados" />
+    <LhStep title="Rellenar datos" description="Dirección de envío y factura" />
+    <LhStep title="Pagar" />
+    <LhStep title="Completado" />
+  </LhSteps>
+</template>
+```
+
+```vue
+<!-- Fallo global (al fallar el pago, toda la barra se marca en rojo) -->
+<template>
+  <LhSteps :current="2" status="error">
+    <LhStep title="Carrito" /><LhStep title="Rellenar datos" />
+    <LhStep title="Pagar" description="Tiempo de pago agotado, inténtalo de nuevo" />
+    <LhStep title="Completado" />
+  </LhSteps>
+</template>
+```
+
+```tsx
+// React: useLayoutEffect para medir offsetTop (evita el parpadeo del primer fotograma),
+// con un listener de resize para recalcular
+```
+
+```ts
+// uniapp: <view> + flex; el ajuste horizontal en el lado del miniprograma usa
+// la consulta de nodos createSelectorQuery para obtener top
+```
+
+## Estilos y tokens
+
+| Nombre de clase | Semántica |
+| --- | --- |
+| `.lh-steps` | Contenedor raíz (flex) |
+| `.lh-steps--{horizontal\|vertical}` | Dirección |
+| `.lh-steps__item` | Elemento de paso |
+| `.lh-steps__item--{wait\|process\|finish\|error}` | Estado (color del círculo + color del texto + color de la línea de conexión) |
+| `.lh-steps__item--clickable` | Pulsable (resaltado al pasar el cursor + puntero) |
+| `.lh-steps__item--line-last` | Elemento de final de línea (oculta la línea de conexión que apunta al espacio en blanco) |
+| `.lh-steps__circle` / `__title` / `__description` | Círculo / título / descripción |
+| `.lh-steps__line` | Línea de conexión (el último global la oculta mediante `:last-child`) |
+
+Colores de estado: wait `--lh-text-placeholder`, process `--lh-primary-color`, finish `--lh-success-color`, error `--lh-danger-color`; la línea de conexión suele usar `--lh-border-color` y el tramo completado, el color de finish.
+
+## Advertencias
+
+- **`lineLast` solo se necesita en el escenario de ajuste horizontal**: en la barra de pasos vertical, cada elemento ocupa su propia línea y la línea de conexión baja naturalmente: no hay problema de final de línea. Tampoco lo necesita una barra horizontal de anchura fija (sin ajuste): solo se mide cuando la anchura es fija **y se permite el ajuste de línea**.
+- **El momento de la medición**: `offsetTop` debe leerse después de renderizar el DOM (onMounted / useLayoutEffect) y hay que recalcular al redimensionar la ventana. El primer fotograma puede parpadear (la línea aparece y se oculta), lo cual es admisible; en escenarios estrictos, retrasa la visualización con `visibility`.
+- **`forced` es una sobreescritura global, no de un paso individual**: cuando la prop status recibe error, **todos los pasos** pasan a error, incluidos los ya completados: es la semántica de «el flujo entero ha fallado». Para marcar solo un paso como fallido, pasa status a ese LhStep de forma individual (la capa UI combina el status de un paso en la versión de un solo paso de forced, o sobreescribe directamente la clase de ese elemento).
+- **`current` puede estar fuera de rango**: con `current: 5` y solo 4 pasos, todos quedan en finish (todos los index son < 5): útil para mostrar el estado final de «flujo completado», sin necesidad de un caso especial.
+- **La trampa del último elemento con SSR/SSG**: esta es la razón por la que `getStepClassNames` no acepta un parámetro isLast. Cualquier implementación que calcule el último elemento durante la fase de setup a partir del «total de registros» interpretará erróneamente todos los elementos como últimos en la primera pintura: usa `:last-child`.
+- **La restricción de negocio del retorno pulsable**: `clickable` normalmente se habilita solo para los pasos **ya completados** (para revisar información); los pasos en curso y pendientes no son accesibles. Si se permite saltar a cualquier paso es decisión del negocio; core solo emite el nombre de clase.
+- **El espacio de description**: con descripciones, la barra horizontal aumenta su altura y la altura de cada línea ajustada la determina el elemento más alto: asegúrate de que todos los elementos han terminado de renderizar antes de medir offsetTop.
+
+<FnPlayground module="steps" fn="getStepStatus" params='{"index": 2, "current": 2}' />

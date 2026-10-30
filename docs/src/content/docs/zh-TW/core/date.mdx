@@ -1,0 +1,133 @@
+---
+title: date —— 日期原語
+description: 'getDaysInMonth / isDateDisabled / formatDate / parseDate，date-picker 與日曆區間運算的共同內核'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+日期計算是 date-picker 的演算法主體，也是 calendar 區間選擇的公共內核。原生 `Date` 有幾個經典陷阱（兩位數年份、`new Date(2023, 1, 30)` 捲動溢出），這個模組統一處理掉。
+
+## 約定
+
+**month 一律 0 起**，與原生 `Date` 一致（`0` = 一月，`11` = 十二月）。這是本模組最常見的誤用來源——呼叫方從 UI 拿到的「3 月」要傳 `2` 進來。
+
+**只比較日期部分**：`isSameDay` / `compareDate` 不看時分秒，符合「選取某一天」的語義。
+
+## 匯入方式
+
+```ts
+import {
+  getDaysInMonth,
+  getFirstDayOfMonth,
+  isSameDay,
+  isSameMonth,
+  compareDate,
+  isDateDisabled,
+  formatDate,
+  parseDate,
+} from '@lh-ui/share/core/shared/date'
+```
+
+## 函式表
+
+| 函式 | 簽名 | 作用 |
+| --- | --- | --- |
+| `getDaysInMonth` | `(year: number, month: number) => number` | 月份天數（`month` 0 起） |
+| `getFirstDayOfMonth` | `(year: number, month: number) => number` | 月首是星期幾（`0` = 週日） |
+| `isSameDay` | `(a: Date, b: Date) => boolean` | 是否同一天 |
+| `isSameMonth` | `(a: Date, b: Date) => boolean` | 是否同年同月 |
+| `compareDate` | `(a: Date, b: Date) => number` | 比較日期部分，傳回毫秒差 |
+| `isDateDisabled` | `(date, minDate, maxDate, disabledDate) => boolean` | 是否停用 |
+| `formatDate` | `(date: Date, format: string) => string` | 格式化日期 |
+| `parseDate` | `(str: string, format: string) => Date \| null` | 解析日期字串 |
+
+## 兩位數年份歸一
+
+`getDaysInMonth` 和 `getFirstDayOfMonth` 內部對 `year ∈ [0, 99]` 做歸一（`+1900`）。**為什麼**：`new Date(99, 0, 1)` 在 JS 裡被當作 **1999-01-01**（`Date` 建構函式對 0-99 年份的特殊行為），不歸一就會算出錯誤的月首星期。正常的四位數年份不受影響。
+
+## isDateDisabled 的判定順序
+
+```
+disabledDate?.(date) 傳回真     →  true
+date 早於 minDate（minDate 非 null）  →  true
+date 晚於 maxDate（maxDate 非 null）  →  true
+否則                                →  false
+```
+
+`minDate` / `maxDate` / `disabledDate` 為 `null` 時跳過該條件——「只設上限」「只設自訂判定」都能正常工作。順序是刻意的：**自訂判定優先**，讓 `disabledDate` 的語義是「無論區間如何，這些日期就是不可選」（節假日、庫存為 0 的日期）。
+
+## formatDate / parseDate 的 token
+
+支援的定寬 token：`yyyy` / `MM` / `dd` / `HH` / `mm` / `ss`。
+
+- **任意順序**：`'MM/dd/yyyy'`、`'yyyy-MM-dd HH:mm'` 都可以。
+- **多次出現全部替換**：`'yyyy-MM-dd'` 裡的兩個 `dd` 會被同一值替換。
+- **年份補零到 4 位**：`formatDate(new Date(23, 0, 1), 'yyyy')` → `'0023'`。
+- **兩函式對稱**：`parseDate(formatDate(d, fmt), fmt)` 應當還原出同一天（同月同年同日，時分秒視 token 而定）。
+
+```ts
+formatDate(new Date(2026, 9, 12), 'yyyy-MM-dd')   // '2026-10-12'
+formatDate(new Date(2026, 9, 12, 14, 5), 'yyyy-MM-dd HH:mm')  // '2026-10-12 14:05'
+parseDate('2026-10-12', 'yyyy-MM-dd')             // Date(2026, 9, 12)
+parseDate('不合法', 'yyyy-MM-dd')                  // null
+```
+
+### parseDate 傳回 null 的兩種情形
+
+1. **串與格式不對應**：`parseInt` 得到 `NaN`。
+2. **值不合法**：`2023-02-30` 會被原生 `Date` 靜默滾到 3 月 2 日——函式建構後**回讀驗證**，發現捲動了就判定非法傳回 `null`。這是 date-picker 輸入框驗證的關鍵：使用者敲一個不存在的日期，元件能識別出來。
+
+缺失 token 的預設值：年 = 當前年，月 = `0`，日 = `1`，時 / 分 / 秒 = `0`。所以 `parseDate('10-12', 'MM-dd')` 拿到的是「今年的 10 月 12 日 00:00:00」。
+
+## 使用範例
+
+### 渲染日曆面板
+
+```ts
+// 當前視圖的年月
+const year = 2026
+const month = 9   // 0 起 = 十月
+
+const days = getDaysInMonth(year, month)          // 31
+const firstDay = getFirstDayOfMonth(year, month)  // 4 = 週四 → 前面補 4 個空白格
+```
+
+### 區間停用
+
+```ts
+const min = new Date(2026, 0, 1)
+const max = new Date(2026, 11, 31)
+
+isDateDisabled(new Date(2026, 5, 1), min, max, null)          // false
+isDateDisabled(new Date(2025, 5, 1), min, max, null)          // true（早於 min）
+isDateDisabled(new Date(2026, 5, 1), null, null, (d) =>       // true（自訂判定）
+  d.getDay() === 0)                                           // 週日不可選
+```
+
+### 與元件連動
+
+```ts
+// date-picker 元件內部
+function isDisabled(date: Date) {
+  return isDateDisabled(date, props.minDate, props.maxDate, props.disabledDate)
+}
+
+function onInput(value: string) {
+  const parsed = parseDate(value, props.format)
+  if (parsed === null) {
+    errorMessage.value = '日期格式不正确'
+    return
+  }
+  modelValue.value = parsed
+}
+```
+
+## 注意事項
+
+- **month 0 起**：UI 層展示「十月」時要傳 `9`。date-picker 的面板狀態內部統一用 0 起，只在渲染時 `+1`。
+- **`year >= 10000` 不支援**：超出定寬 token 的表達力，`formatDate` 會輸出意料外的結果。這不是實際限制（`input[type=date]` 也只支援到 9999）。
+- **`compareDate` 傳回毫秒差**：`Date.UTC(...)` 的差值，正數表示 `a` 在後。只比較日期部分，不含時刻。
+- **`isDateDisabled` 的 `disabledDate` 在每次渲染每個格子時被呼叫**：日曆 42 格 × 每次視圖變化，別在這裡做重計算，快取由 UI 層負責。
+- **時區**：全部基於本地時區的 `Date`，不做 UTC 轉換。跨時區應用由 UI 層在傳入前統一。
+
+<FnPlayground module="date" fn="getDaysInMonth" params='{"year": 2026, "month": 9}' />

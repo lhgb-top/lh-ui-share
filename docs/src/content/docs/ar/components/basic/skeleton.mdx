@@ -1,0 +1,152 @@
+---
+title: skeleton —— هيكل عظمي
+description: 'يُولّد getSkeletonRowWidths تسلسل عروض مع تقصير الصف الأخير، ويُخفي getSkeletonAria العنصر النائب ويطلب aria-busy في الطرف البصري'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الهيكل العظمي عنصر نائب «قبل اكتمال التحميل»: تُحاكى كتلات رمادية التخطيط الذي سيظهر بعد لحظات، ليكون لدى المستخدم توقع لما «سيراه بعد قليل». يحسب `core/skeleton` تسلسل عروض صفوف النص (مع تقصير الصف الأخير، كالفقرات الحقيقية)، ويُجهّز إشارة إمكانية الوصل بأن «هذا عنصر نائب لا محتوى».
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhSkeleton`: تحميل البطاقات، وتحميل القوائم، وتحميل المقالات.
+- عند الحاجة إلى التعبير البصري عن «جارٍ التحميل» في أي منطقة، فإن الهيكل العظمي «ألصق بالتخطيط القادم» من دائرة تحميل دوّارة.
+- **لا يجب استخدامه**: المشاهد التي يستغرق تحميلها وقتًا قصيرًا جدًا (أقل من 300ms) — فومضة الهيكل العظمي تشتيت بدلًا من ذلك؛ ولا يُستخدم لـ «فراغ البيانات»، فهذا من شأن `LhEmpty`.
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getSkeletonClassNames,
+  getSkeletonItemClassNames,
+  getSkeletonRowWidths,
+  getSkeletonAria,
+} from '@lh-ui/share/core/skeleton'
+import type { LhSkeletonState, LhSkeletonVariant } from '@lh-ui/share/core/skeleton'
+```
+
+## نية التصميم
+
+قيمة `60%` في الصف الأخير التي يُنتجها `getSkeletonRowWidths(rows)` تفصيل دقيق لكنه مهم: الصف الأخير من فقرة نص حقيقية نادرًا ما يكون ممتلئًا. فالهيكل العظمي بصفوف متساوية العرض بالكامل يبدو «خلفية مخططة» لا «نصًا»، وهذه الـ 60% تمنح العنصر النائب «إحساس النص».
+
+لا يُقصَّر الصف الأخير إلا عندما `rows > 1`: فإذا كان صفًا واحدًا فهو صف تام (وتقصير الصف الوحيد يوحي بعنوان مقطوع). وتُعيد `rows <= 0` مصفوفة فارغة دون رمي خطأ.
+
+تعيد `getSkeletonAria()` دائمًا `{ 'aria-hidden': true }` — فمحتوى الهيكل العظمي صفر المعلومة، ولا ينبغي لقارئ الشاشة نطقه. لكن **الإخفاء وحده لا يكفي**: تطلب التعليقات في النص المصدري من الطرف البصري تعليق `aria-busy="true"` في الوقت نفسه على الحاوية الخارجية، كي يعيد قارئ الشاشة نطق المحتوى الحقيقي عند جهوزية البيانات. وهاتان السمتان زوج: `aria-hidden` يزيل الضجيج، و`aria-busy` يعلّم «اقرأ لاحقًا».
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getSkeletonClassNames` | `(state: LhSkeletonState) => string[]` | مصفوفة أسماء الأصناف | معدّلات الحركة، ووجود صورة رمزية |
+| `getSkeletonItemClassNames` | `(variant: LhSkeletonVariant, animated: boolean) => string[]` | مصفوفة أسماء الأصناف | شكل كتلة العنصر النائب وحركتها |
+| `getSkeletonRowWidths` | `(rows: number) => string[]` | تسلسل العروض | توليد عروض صفوف النص |
+| `getSkeletonAria` | `() => LhAriaAttrs` | حزمة سمات aria | دائمًا `{ 'aria-hidden': true }` |
+
+مثال على المُخرجات:
+
+```ts
+getSkeletonRowWidths(3)   // ['100%', '100%', '60%']
+getSkeletonRowWidths(1)   // ['100%']
+getSkeletonRowWidths(0)   // []
+getSkeletonItemClassNames('text', true)
+// ['lh-skeleton-item', 'lh-skeleton-item--text', 'lh-skeleton-item--animated']
+```
+
+## تعريف الأنواع
+
+```ts
+export type LhSkeletonVariant = 'text' | 'rect' | 'circle'
+
+export interface LhSkeletonState {
+  animated: boolean
+  avatar: boolean
+}
+```
+
+## إمكانية الوصول
+
+```ts
+// الحاوية الخارجية في الطرف البصري
+const aria = { 'aria-busy': true }   // تعليم «المحتوى قيد التحميل، أعد القراءة عند الجاهزية»
+// عنصر الهيكل العظمي نفسه
+const skeletonAria = getSkeletonAria()  // { 'aria-hidden': true }
+```
+
+والخطأ الشائع هو فعل أحدهما فقط: `aria-hidden` وحدها تجعل مستخدم قارئ الشاشة يفوّت المحتوى الجديد بعد جهوزية البيانات (لأنه يظن أنه قرأه)؛ و`aria-busy` وحدها تجعل قارئ الشاشة يحاول نطق محتوى الهيكل العظمي الفارغ.
+
+## أمثلة الاستخدام
+
+```ts
+import { getSkeletonRowWidths, getSkeletonItemClassNames } from '@lh-ui/share/core/skeleton'
+
+getSkeletonRowWidths(4)
+// ['100%', '100%', '100%', '60%']
+
+getSkeletonItemClassNames('circle', false)
+// ['lh-skeleton-item', 'lh-skeleton-item--circle']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSkeletonClassNames({ animated, avatar })" aria-busy="true">
+  <div v-if="avatar" class="lh-skeleton__avatar">
+    <div :class="getSkeletonItemClassNames('circle', animated)" />
+  </div>
+  <div class="lh-skeleton__content">
+    <div
+      v-for="(w, i) in getSkeletonRowWidths(rows)"
+      :key="i"
+      :class="getSkeletonItemClassNames('text', animated)"
+      :style="{ width: w }"
+      v-bind="getSkeletonAria()"
+    />
+  </div>
+</div>
+```
+
+```tsx
+// React
+const widths = getSkeletonRowWidths(rows)
+return (
+  <div className={getSkeletonClassNames({ animated, avatar }).join(' ')} aria-busy={true}>
+    <div className="lh-skeleton__content">
+      {widths.map((w, i) => (
+        <div
+          key={i}
+          className={getSkeletonItemClassNames('text', animated).join(' ')}
+          style={{ width: w }}
+          {...getSkeletonAria()}
+        />
+      ))}
+    </div>
+  </div>
+)
+```
+
+```ts
+// uniapp: الحركة قد لا تكون سلسة على الأطراف غير h5، فيمكن للطرف البصري لكل جهة
+// إيقاف animated تكييفًا مع المنصة
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-skeleton` | الصنف الأساسي: التخطيط |
+| `.lh-skeleton--animated` | تفعيل حركة اللمعان shimmer |
+| `.lh-skeleton--with-avatar` | تخطيط يجمع صورة رمزية + نص (مكان للصورة على الجانب البداية) |
+| `.lh-skeleton-item` | كتلة عنصر نائب واحدة |
+| `.lh-skeleton-item--{text\|rect\|circle}` | الشكل: صف نص / مستطيل / دائرة |
+| `.lh-skeleton-item--animated` | حركة اللمعان |
+| `.lh-skeleton__avatar` / `.lh-skeleton__content` | منطقة الصورة الرمزية ومنطقة المحتوى |
+
+يستخدم لون كتلة العنصر النائب رموز `--lh-skeleton-*` (رمادي أغمق قليلًا من الخلفية + لمعان بارز)، ويُعتّم تلقائيًا في الوضع الداكن.
+
+## ملاحظات
+
+- `rows` بقيمة 0 أو سالبة يُعيد مصفوفة فارغة، فلا يعرض الطرف البصري صفوفًا — وهذا مدخل مشروع لا خطأ.
+- يجب أن يتطابق **تخطيط الهيكل العظمي مع المحتوى الحقيقي** (بنية البطاقة نفسها، وعدد الصفوف نفسه)، وإلا سيحدث قفز في التخطيط عند اكتمال التحميل. واستخدام حالة `loading` في `LhCard` أسلم من وضع هيكل عظمي منفصل.
+- حركة اللمعان مصدر إزعاج دهليزي لبعض المستخدمين؛ ومسؤولية احترام `prefers-reduced-motion` تقع على طبقة الأنماط (تعطيل الحركة داخل `@media`)، أما طبقة core فلا تدركها.
+- يُعلَّق `aria-busy` على **حاوية البيانات**، لا على الهيكل العظمي نفسه — فما إن يُدمَّر الهيكل العظمي حتى يُزال `aria-busy` معه.
+
+<FnPlayground module="skeleton" fn="getSkeletonRowWidths" params='{"rows": 3}' />

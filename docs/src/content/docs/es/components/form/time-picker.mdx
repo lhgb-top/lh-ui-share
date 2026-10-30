@@ -1,0 +1,224 @@
+---
+title: time-picker —— Selección de hora
+description: 'análisis con tokens de ancho fijo en parseTime/formatTime, columnas de paso con generateTimeColumn, rebucle con wrapTimeValueInRange, semántica dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La selección de hora es una interacción de **tres ruedas** (horas/minutos/segundos): el usuario hace girar cada columna en lugar de teclear números en un campo. `core/time-picker` gestiona el análisis y la recomposición de cadenas de formato de ancho fijo, la generación de columnas según el paso, el filtrado y el rebucle del dominio de valores posibles, y la semántica APG dialog + listbox. Soporta dos modos: `time` (solo hora) y `date-time` (fecha + hora).
+
+## Cuándo usarlo
+
+- Todos los extremos implementan `LhTimePicker`: cita de una hora, tareas programadas, configuración del horario comercial.
+- Escenarios en los que el valor es un «instante» y la granularidad llega a minutos o segundos.
+- **No usarlo**: si solo necesitas la fecha (usa `date-picker`); para rangos horarios (usa dos time-picker o el modo intervalo `isRange`).
+
+## Importación
+
+```ts
+import {
+  padNumber,
+  formatTime,
+  parseTime,
+  extractTime,
+  generateTimeColumn,
+  createDateTime,
+  isValidTime,
+  formatDateToTimeString,
+  getHourStep,
+  getMinuteStep,
+  getSecondStep,
+  getDisabledHours,
+  getDisabledMinutes,
+  getDisabledSeconds,
+  getHourRange,
+  filterTimeColumnByRange,
+  wrapTimeValueInRange,
+  clampTimeValue,
+  getTimePickerClassNames,
+  getTimePickerTriggerAria,
+  getTimePickerPanelAria,
+  getTimePickerColumnAria,
+} from '@lh-ui/share/core/time-picker'
+import type {
+  LhTimeData,
+  LhTimeColumn,
+  LhTimePickerState,
+  LhTimePickerOptions,
+  LhTimeColumnType,
+  LhTimePickerMode,
+  LhTimeSelectEventData,
+} from '@lh-ui/share/core/time-picker'
+```
+
+## Intención de diseño
+
+`parseTime` / `formatTime` usan **tokens de ancho fijo** (`HH` / `mm` / `ss` ocupan 2 posiciones cada uno) en lugar de una biblioteca de fechas genérica: es una elección deliberada: la hora solo tiene tres componentes, y el análisis posicional con `substring(idx, idx+2)` es mucho más ligero que una expresión regular o moment, y es estrictamente simétrico con `formatTime`: lo que se escribe se puede volver a analizar. Ante un fallo de análisis se devuelve siempre null, nunca datos sucios parciales.
+
+El `step` de `generateTimeColumn` está protegido: los valores no positivos se normalizan a 1 (`step: 0` produciría un bucle infinito en el `for`) y los decimales se truncan (`step: 2.5` pasa a 2). `wrapTimeValueInRange` **devuelve el valor original cuando el rango cubre todo el dominio** — esto es compatibilidad con el comportamiento antiguo: por ejemplo, si el rango de la columna de horas es [0,23], al superar el límite debe detenerse en el borde y no rebotar al otro extremo; solo se rebuclea cuando se ha delimitado explícitamente un subintervalo (como [9, 18]). `clampTimeValue` hace lo contrario: siempre aplica clamp al intervalo, y sirve para reconducir un valor seleccionado previamente al dominio válido.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `padNumber` | `(n: number) => string` | `'09'` | rellena con cero hasta dos dígitos |
+| `formatTime` | `(hours, minutes, seconds, format?) => string` | `'09:30:00'` | compone según format |
+| `parseTime` | `(timeStr, format?) => LhTimeData \| null` | datos de hora \| null | análisis posicional |
+| `extractTime` | `(date: Date) => LhTimeData` | horas/minutos/segundos | extrae de un Date |
+| `generateTimeColumn` | `(type, step?, disabledValues?) => LhTimeColumn[]` | opciones de la columna | incluye isDisabled |
+| `createDateTime` | `(baseDate, hours, minutes, seconds) => Date` | nuevo Date | conserva la fecha y cambia la hora |
+| `isValidTime` | `(hours, minutes, seconds) => boolean` | validez | validación del dominio de valores |
+| `formatDateToTimeString` | `(date: Date, format: string) => string` | cadena | Date → texto mostrado |
+| `getHourStep` / `getMinuteStep` / `getSecondStep` | `(options?) => number` | paso | valor por defecto 1 |
+| `getDisabledHours` / `getDisabledMinutes` / `getDisabledSeconds` | `(options?, …) => number[]` | valores deshabilitados | retrollamadas de quien llama |
+| `getHourRange` | `(start, end) => { start, end }` | intervalo normalizado | clamp a [0,23] |
+| `filterTimeColumnByRange` | `(columns, start, end) => LhTimeColumn[]` | columna filtrada | deja solo lo del intervalo |
+| `wrapTimeValueInRange` | `(value, start, end) => number` | valor con rebucle | rebuclea al salir del intervalo |
+| `clampTimeValue` | `(value, start, end) => number` | valor con clamp | clamp al borde al salir del intervalo |
+| `getTimePickerClassNames` | `(state: { size, disabled, visible }) => string[]` | clases | tamaño/deshabilitado/desplegado |
+| `getTimePickerTriggerAria` | `(visible, panelId?) => LhAriaAttrs` | bolsa de atributos aria | haspopup dialog |
+| `getTimePickerPanelAria` | `(id?) => LhAriaAttrs` | bolsa de atributos aria | role=dialog |
+| `getTimePickerColumnAria` | `(label?) => LhAriaAttrs` | bolsa de atributos aria | role=listbox |
+
+## Definiciones de tipos
+
+```ts
+export type LhTimePickerMode = 'time' | 'date-time'
+export type LhTimeColumnType = 'hour' | 'minute' | 'second'
+
+export interface LhTimeData {
+  hours: number
+  minutes: number
+  seconds: number
+}
+
+export interface LhTimeColumn {
+  value: number
+  text: string
+  isSelected: boolean
+  isDisabled: boolean
+}
+
+export interface LhTimePickerOptions {
+  hours?:   { step?: number; disabledHours?:   () => number[] }
+  minutes?: { step?: number; disabledMinutes?: (hour: number) => number[] }
+  seconds?: { step?: number; disabledSeconds?: (hour: number, minute: number) => number[] }
+}
+
+export interface LhTimeSelectEventData {
+  column: LhTimeColumnType
+  value: number
+}
+```
+
+## Accesibilidad
+
+El panel de hora aparece como **dialog** (el disparador lleva `aria-haspopup="dialog"`) y dentro del panel cada una de las tres columnas es un **listbox**. Esta semántica proviene del `getPopupTriggerAria` del núcleo compartido:
+
+```ts
+getTimePickerTriggerAria(true, 'lh-time-panel')
+// { 'aria-expanded': true, 'aria-haspopup': 'dialog', 'aria-controls': 'lh-time-panel' }
+
+getTimePickerPanelAria('lh-time-panel')
+// { role: 'dialog', id: 'lh-time-panel' }
+
+getTimePickerColumnAria('Horas')
+// { role: 'listbox', 'aria-label': 'Horas' }
+```
+
+- Las opciones de una columna deben llevar `role="option"` + `aria-selected` (la capa UI renderiza `LhTimeColumn.isSelected`) + `aria-disabled` (`isDisabled`).
+- Teclado: tras enfocar la columna, ↑/↓ se mueven y seleccionan entre las opciones **no deshabilitadas**; Esc cierra el panel.
+- La semántica dialog implica que, con el panel desplegado, el foco debe quedar atrapado (`core/shared/focus-trap`); el foco no debe escapar del panel.
+
+## Ejemplos de uso
+
+```ts
+import {
+  parseTime, formatTime, generateTimeColumn, isValidTime, createDateTime,
+} from '@lh-ui/share/core/time-picker'
+
+formatTime(9, 30, 5)                    // '09:30:05'
+formatTime(9, 30, 5, 'HH:mm')           // '09:30'
+parseTime('09:30:05')                   // { hours: 9, minutes: 30, seconds: 5 }
+parseTime('09:30:05', 'HH:mm')          // { hours: 9, minutes: 30, seconds: 0 } (ss ausente, relleno con 0)
+parseTime('99:99:99')                   // null (valores fuera del dominio)
+parseTime('abc', 'HH:mm:ss')            // null (NaN)
+parseTime('09:30', 'YYYY-MM-DD')        // null (format sin token de hora)
+generateTimeColumn('hour', 1)           // 24 elementos: 00..23
+generateTimeColumn('minute', 15)        // 4 elementos: 00 15 30 45
+generateTimeColumn('minute', 0)         // 60 elementos (step 0 normalizado a 1)
+generateTimeColumn('hour', 1, [0, 1, 2])// los tres primeros con isDisabled: true
+isValidTime(23, 59, 59)                 // true
+isValidTime(24, 0, 0)                   // false
+createDateTime(new Date('2026-10-12'), 9, 30, 0)  // 2026-10-12 09:30:00
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTimePickerClassNames({ size, disabled, visible })">
+  <input
+    class="lh-time-picker__input"
+    :value="formatDateToTimeString(value, format)"
+    v-bind="getTimePickerTriggerAria(visible, panelId)"
+    @click="open"
+  />
+  <div v-if="visible" class="lh-time-picker__panel" v-bind="getTimePickerPanelAria(panelId)">
+    <div
+      v-for="col in columns"
+      :key="col.type"
+      class="lh-time-picker__column"
+      v-bind="getTimePickerColumnAria(col.label)"
+    >
+      <div
+        v-for="opt in col.items"
+        :key="opt.value"
+        class="lh-time-picker__option"
+        :class="{ 'is-selected': opt.isSelected, 'is-disabled': opt.isDisabled }"
+        role="option"
+        :aria-selected="opt.isSelected"
+        @click="onSelect(col.type, opt.value)"
+      >
+        {{ opt.text }}
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+```tsx
+// React: generación de columnas
+// const hours = generateTimeColumn('hour', getHourStep(options), getDisabledHours(options))
+// la columna de minutos depende de la hora seleccionada: getDisabledMinutes(options, selectedHour)
+```
+
+```ts
+// uniapp: <picker mode="time"> es un componente integrado (formato de values 'HH:mm');
+// las columnas de rueda personalizadas necesitan <picker-view> + <picker-view-column>;
+// las funciones de generación de columnas del core se usan tal cual
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-time-picker` | clase base |
+| `.lh-time-picker--{small\|large}` | tamaño |
+| `.lh-time-picker--disabled` | deshabilitado |
+| `.lh-time-picker__input` | campo de entrada del disparador |
+| `.lh-time-picker__panel` | panel emergente |
+| `.lh-time-picker__column` | rueda de una columna |
+| `.lh-time-picker__option` | opción dentro de la columna |
+| `.lh-time-picker__footer` | barra de confirmación/cancelación (modo date-time) |
+
+Problema conocido (registrado en la «iniciativa de tokens de altura»): la altura de los controles relacionados con time-picker es 33px, no unificada con input (37) ni select (32); la causa raíz es la falta del token `--lh-control-height-*`.
+
+## Advertencias
+
+- **El orden de los tokens del format puede ser cualquiera**: `formatTime` y `parseTime` toman los valores por la posición del token en format, y `'mm:HH'` también realiza el recorrido correctamente. Pero al mezclar caracteres que no son token (como `'HH时mm分'`), `parseTime` sigue cortando con la anchura fija de 2; los caracteres chinos no afectan (no son token), pero **los separadores numéricos se desplazarán** — en `'09点30'`, la posición de `mm` captura `'点3'`, que se analiza como NaN y devuelve null. Mantén el format con solo tokens y separadores no numéricos.
+- **La tolerancia a fallos de `parseTime`**: devuelve null en lugar de lanzar una excepción; la capa UI debe manejar el null al perder el foco del campo (normalmente se conserva el valor anterior y se muestra una pista).
+- **Interacción entre paso y deshabilitación**: `disabledValues` solo marca deshabilitado, no filtra — la navegación por teclado de la capa UI debe saltar por sí misma los elementos con `isDisabled`.
+- **El modo `date-time`**: la parte de fecha la gestiona `date-picker`, y la parte de hora reutiliza este módulo; en el panel normalmente se elige primero la fecha y luego la hora, y `createDateTime(baseDate, …)` fusiona ambas; ten en cuenta que si `baseDate` es null se toma la fecha del **instante actual**.
+- **El modo intervalo `isRange`**: `rangeStart` / `rangeEnd` son dos `LhTimeData`, y los valores deshabilitados de la segunda columna dependen de la selección de la primera (por ejemplo, la hora de finalización debe ser posterior a la de inicio); la capa UI los calcula dinámicamente con retrollamadas como `getDisabledMinutes`.
+- **`SS` en mayúsculas no son los segundos**: solo `ss` en minúsculas son los segundos; `HH` en mayúsculas y `mm`/`ss` en minúsculas es la escritura fija, en consonancia con el convenio de bibliotecas como day.js.
+
+<FnPlayground module="time-picker" fn="generateTimeColumn" params='{"type": "minute", "step": 15}' />

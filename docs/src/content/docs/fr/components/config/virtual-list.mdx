@@ -1,0 +1,199 @@
+---
+title: 'virtual-list liste virtuelle —— Configuration'
+description: 'computeRange à hauteur fixe et double mode build/patch/find pour hauteur dynamique, assainissement NaN contre l’écran blanc, algorithme noyau partagé avec table'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La liste virtuelle est la « solution de rendu pour des dizaines de milliers de données » : on ne rend que les quelques dizaines d'éléments visibles dans la fenêtre, et on les remplace dynamiquement au défilement. Rendre 100 000 lignes de données bloque le navigateur ; la liste virtuelle maintient constant le nombre de nœuds DOM. La contrepartie est que **la hauteur doit être prévisible** — le mode à hauteur fixe calcule directement, le mode à hauteur dynamique doit d'abord mesurer. `core/virtual-list` encapsule les deux modes et partage `shared/virtual`, le même algorithme noyau, avec le défilement virtuel de `table`.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `<LhVirtualList>` : longues listes de messages, flux de journaux, répertoires, options déroulantes à grand volume de données.
+- Elle ne vaut la peine que lorsque le volume dépasse **plus de 5 fois la capacité de la fenêtre** et que le coût de rendu de chaque élément n'est pas négligeable.
+- **À ne pas utiliser pour** : quelques dizaines ou centaines d'éléments (rendu direct, le coût de mesure/positionnement de la virtualisation n'est pas rentable) ; les éléments dont la hauteur est **totalement imprévisible et non mesurée** (il faut accepter la hauteur fixe ou fournir une capacité de mesure) ; les scénarios exigeant le DOM intégral (recherche Ctrl+F dans le navigateur, impression de la page entière — le contenu hors liste virtuelle n'est pas dans le DOM, il est introuvable).
+
+## Importation
+
+```ts
+import {
+  LH_VIRTUAL_ITEM_SIZE,
+  LH_VIRTUAL_OVERSCAN,
+  computeWindow,
+  computeVirtualRange,
+  buildVirtualItems,
+  patchMeasuredSize,
+  findVirtualRange,
+  getItemOffset,
+  getVirtualListClassNames,
+} from '@lh-ui/share/core/virtual-list'
+import type { LhVirtualItem, LhVirtualRange } from '@lh-ui/share/core/virtual-list'
+```
+
+## Intentions de conception
+
+**Double mode** : hauteur fixe (`computeRange`, intervalle calculé en O(1)) et hauteur dynamique (`buildVirtualItems` + `patchMeasuredSize` + `findVirtualRange`, mesure nécessaire). La hauteur fixe est le mode recommandé par défaut — simple, sans scintillement. La hauteur dynamique est destinée aux cas où la hauteur du contenu est réellement inégale (des messages de chat de longueurs différentes).
+
+**Le noyau partagé avec table** : les commentaires de `shared/virtual` relatent l'historique — l'algorithme à hauteur fixe existait auparavant **en deux exemplaires**, un dans virtual-list et un dans table, avec même des valeurs d'overscan par défaut différentes (2 vs 3) : une correction appliquée à l'un n'était pas répercutée sur l'autre. Après extraction de l'algorithme unique, les deux côtés ne sont plus que des enveloppes fines. `LH_TABLE_OVERSCAN = 3` est la valeur personnalisée côté table, virtual-list utilisant la valeur par défaut `LH_VIRTUAL_OVERSCAN = 2`.
+
+**L'assainissement NaN protège contre l'écran blanc** : les commentaires de `computeRange` sont très explicites — un scrollTop NaN qui entre dans `Math.max` / `Math.floor` produit une fenêtre NaN, et `array.slice(NaN)` renvoie un tableau vide → **écran blanc**. Toutes les entrées passent par l'assainissement `Number.isFinite`. `findVirtualRange` va plus loin : `items[NaN].offset` déclenche directement une TypeError et interrompt le rendu.
+
+**`first` est clampé à `total - 1`** : au frame où les données se contractent (lignes supprimées) alors que scrollTop n'est pas encore clampé, `first` peut dépasser le total, menant à `start > end` → slice vide → écran blanc. Ce clamp est une correction de situation de concurrence.
+
+**`patchMeasuredSize` modifie sur place** : une fois la hauteur réelle mesurée, on **modifie le tableau d'origine** en décalant l'offset de tous les éléments suivants, puis on renvoie le delta de la variation de taille. Comparé à la reconstruction intégrale de `buildVirtualItems` (nouveau tableau en O(n) + déclenchement de tous les diff), il ne parcourt qu'une fois et ne provoque pas le re-rendu des éléments inchangés. Les commentaires documentent ce choix — l'immutabilité s'efface ici devant la performance.
+
+**Le raccourci hauteur fixe de `getItemOffset`** : en mode hauteur fixe, défiler jusqu'au N-ième élément se réduit à `N * itemHeight`, sans besoin du tableau items — la documentation de la fonction précise qu'il n'est utilisé qu'en mode dynamique.
+
+**`computeWindow` est la version indépendante de l'axe** : la virtualisation horizontale (scrollLeft/viewportWidth/itemWidth) et la verticale partagent le même algorithme, seul le nom du champ passe de offsetY à offset. `LhAxisRange` et `LhVirtualRange` sont synonymes.
+
+## Table des fonctions
+
+| Fonction / constante | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `computeRange` (via `computeVirtualRange`) | `(scrollTop, viewportHeight, itemHeight, total, overscan?) => LhVirtualRange` | Intervalle visible | Mode hauteur fixe |
+| `computeWindow` | `(scrollOffset, viewportSize, itemSize, total, overscan?) => LhAxisRange` | Intervalle indépendant de l'axe | Virtualisation horizontale |
+| `buildVirtualItems` | `(count, sizes, defaultSize?) => { items, totalHeight }` | Tableau d'éléments | Pré-calcul hauteur dynamique |
+| `patchMeasuredSize` | `(items, index, size, defaultSize?) => number` | delta | Mise à jour incrémentale des tailles mesurées |
+| `findVirtualRange` | `(items, scrollTop, viewportHeight, overscan?) => LhVirtualRange` | Intervalle visible | Recherche dichotomique hauteur dynamique |
+| `getItemOffset` ⚠️ | `(items, index) => number` | Décalage | Défiler jusqu'à un élément donné |
+| `getVirtualListClassNames` | `() => string[]` | Classes | Conteneur |
+
+Constantes : `LH_VIRTUAL_ITEM_SIZE = 40` (hauteur estimée par défaut d'un élément), `LH_VIRTUAL_OVERSCAN = 2` (overscan par défaut).
+
+⚠️ `computeVirtualRange` / `getItemOffset` sont des alias de compatibilité `@deprecated` ; pour le nouveau code, utilisez directement `computeRange` / `getItemOffsetAt` de `shared/virtual`.
+
+## Définitions de types
+
+```ts
+export interface LhVirtualItem {
+  size: number      // Hauteur estimée / mesurée de l'élément
+  offset: number    // Décalage de l'élément par rapport au sommet de la liste
+}
+
+export interface LhVirtualRange {
+  start: number     // Indice de début (inclus)
+  end: number       // Indice de fin (exclus)
+  offsetY: number   // Décalage de la fenêtre en px (hauteur d'espace réservé qui soutient la barre de défilement)
+  totalHeight: number  // Hauteur totale en px (qui produit la barre de défilement)
+}
+```
+
+## Accessibilité
+
+La liste virtuelle est un **défi invisible** pour les lecteurs d'écran : le DOM ne contient que quelques dizaines d'éléments, et le lecteur d'écran ne peut pas annoncer « élément 3000 sur 10000 ».
+
+- **aria-rowcount / aria-rowindex** : le conteneur reçoit `aria-rowcount` (nombre total d'éléments), chaque élément `aria-rowindex` (indice réel + 1). C'est la pratique du défilement virtuel de tableau (`table`) que l'on peut prêter aux scénarios de liste. **Ces attributs sont rendus par la couche UI**, core ne calcule que l'intervalle.
+- **Maintien du focus pendant le défilement** : si l'utilisateur met le focus clavier sur un élément puis défile, l'élément retiré du DOM perd le focus. La couche UI doit mémoriser l'indice du focus avant le démontage et le restaurer après le remontage — c'est le point difficile de la disponibilité clavier des listes virtuelles.
+- **N'utilisez pas la liste virtuelle pour des listes sémantiques** : le parcours « par élément » du lecteur d'écran ne couvre que les éléments présents dans le DOM. Les flux de présentation à grand volume (journaux, messages) sont adaptés à la virtualisation ; **les listes nécessitant un accès élément par élément au lecteur d'écran sont à éviter** (par exemple une liste de produits que l'utilisateur veut écouter un par un).
+- **Recherche et positionnement** : le contenu hors liste virtuelle n'est pas dans le DOM, la recherche Ctrl+F du navigateur est impuissante. Fournissez en compensation des fonctions « sauter au N-ième élément » et « recherche avec filtre ».
+
+## Exemples d'utilisation
+
+```ts
+import {
+  computeRange, buildVirtualItems, patchMeasuredSize, findVirtualRange,
+} from '@lh-ui/share/core/virtual-list'
+
+// Mode hauteur fixe
+computeRange(800, 400, 50, 1000)
+// { start: 14, end: 26, offsetY: 700, totalHeight: 50000 }
+// (first = floor(800/50) = 16, start = 16-2 = 14, visible = ceil(400/50) = 8,
+//   end = 14 + 8 + 4 = 26)
+
+computeRange(0, 400, 50, 10)   // { start: 0, end: 10, offsetY: 0, totalHeight: 500 }
+computeRange(NaN, 400, 50, 10) // { start: 0, end: 10, offsetY: 0, totalHeight: 500 } (assainissement NaN)
+computeRange(0, 400, 0, 10)    // { start: 0, end: 0, offsetY: 0, totalHeight: 0 } (itemHeight illegale)
+```
+
+```ts
+// Mode hauteur dynamique
+const { items, totalHeight } = buildVirtualItems(5, [30, 0, 60], 40)
+// items: [{ size: 30, offset: 0 }, { size: 40, offset: 30 }, { size: 60, offset: 70 },
+//         { size: 40, offset: 130 }, { size: 40, offset: 170 }]
+// totalHeight: 210 (les éléments manquants dans sizes sont estimés à defaultSize=40)
+
+const delta = patchMeasuredSize(items, 1, 50)  // 10 (variation de 40 → 50)
+// items[2..4].offset décalés de +10 ; items[1].size = 50
+
+findVirtualRange(items, 100, 200)
+// Intervalle de la fenêtre par recherche dichotomique, renvoie { start, end, offsetY, totalHeight }
+```
+
+```ts
+// Couche UI : rendu en mode hauteur fixe
+const range = ref<LhVirtualRange>({ start: 0, end: 0, offsetY: 0, totalHeight: 0 })
+
+function onScroll() {
+  range.value = computeRange(
+    container.value!.scrollTop,
+    container.value!.clientHeight,
+    props.itemHeight,
+    props.data.length,
+  )
+}
+const visibleData = computed(() => props.data.slice(range.value.start, range.value.end))
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <div class="lh-virtual-list" @scroll.passive="onScroll">
+    <div class="lh-virtual-list__phantom" :style="{ height: range.totalHeight + 'px' }">
+      <div class="lh-virtual-list__window" :style="{ transform: `translateY(${range.offsetY}px)` }">
+        <div v-for="item in visibleData" :key="item.id" class="lh-virtual-list__item">
+          {{ item.text }}
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+```
+
+```ts
+// Mode hauteur dynamique : après le rendu, mesurer la hauteur réelle de chaque élément
+function onItemMounted(index: number, el: HTMLElement) {
+  const height = el.getBoundingClientRect().height
+  const delta = patchMeasuredSize(items.value, index, height)
+  if (delta !== 0) {
+    // Une variation de hauteur modifie totalHeight et les offsets suivants, recalculer l'intervalle
+    range.value = findVirtualRange(items.value, scrollTop.value, viewportHeight.value)
+  }
+}
+```
+
+```tsx
+// React : le tableau items est stocké dans un useRef (patchMeasuredSize modifie sur place,
+// sans déclencher de setState qui relancerait la chaîne de mesure) ;
+// l'événement de défilement est limité par throttle ou requestAnimationFrame
+```
+
+```ts
+// uniapp : <scroll-view scroll-y :scroll-top> + requête de nœuds (createSelectorQuery)
+// pour mesurer les hauteurs ; l'événement scroll du mini-programme est déjà limité,
+// mais la synchronisation du scroll-view a un retard d'un cran par rapport au h5
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-virtual-list` | Conteneur de défilement (hauteur fixe + overflow: auto) |
+| `.lh-virtual-list__phantom` | Élément d'espace réservé (hauteur = totalHeight, produit la barre de défilement) |
+| `.lh-virtual-list__window` | Fenêtre visible (transform: translateY(offsetY)) |
+| `.lh-virtual-list__item` | Un élément |
+
+La hauteur du conteneur est définie par le métier (`height: 400px` ou remplissage flex) ; `will-change: transform` optimise la performance du déplacement de la fenêtre.
+
+## Remarques
+
+- **Le mode hauteur fixe exige une hauteur réellement fixe** : le passage à la ligne du contenu ou des tailles d'icônes différentes rendent la hauteur des éléments inégale, et le mode hauteur fixe produit des décalages (éléments tronqués ou chevauchés). En cas de doute, passez en mode hauteur dynamique, ou forcez une hauteur fixe sur une ligne avec CSS `white-space: nowrap; overflow: hidden; text-overflow: ellipsis`.
+- **Le sens de l'`overscan`** : on rend 2 éléments supplémentaires de chaque côté de la fenêtre, afin d'éviter les clignotements vierges lors d'un défilement rapide. Plus la valeur est élevée, plus c'est fluide, mais plus on rend — 2 est la valeur d'expérience par défaut, table utilise 3 (les lignes de tableau sont plus complexes).
+- **Le scintillement de la hauteur dynamique** : le premier écran est rendu avec la hauteur estimée, et la hauteur réelle mesurée diffère → la liste saute un peu. Atténuation : affinez l'estimation (utilisez la hauteur moyenne historique) ou mesurez de façon synchrone au premier rendu.
+- **L'utilisation du delta de `patchMeasuredSize`** : la différence de hauteur renvoyée sert à **corriger le scrollTop** — après une variation de taille, la position de défilement peut ne plus correspondre au contenu antérieur, et la couche UI compense la quantité de défilement en conséquence.
+- **La stabilité de la key** : la key du `v-for` doit être un identifiant métier stable (pas l'indice) — la liste virtuelle ajoute et supprime fréquemment des éléments, et utiliser l'indice comme key réutiliserait les mauvais nœuds DOM.
+- **La virtualisation horizontale utilise `computeWindow`** : les carrousels et les frises chronologiques à défilement horizontal utilisent la version indépendante de l'axe, avec le même algorithme.
+- **Les alias `@deprecated`** : `computeVirtualRange` / `getItemOffset` sont les anciens noms, qui délèguent à `shared/virtual` — pour le nouveau code, importez directement le noyau (`@lh-ui/share/core/shared/virtual`) ; vue2 en aval fait encore référence aux anciens noms, corrigez l'aval avant de les supprimer.
+- **La dépendance circulaire du moment de mesure** : le rendu dépend de l'intervalle → l'intervalle dépend des hauteurs → la hauteur dépend de la mesure après le rendu. Pour briser le cercle : premier écran rendu avec les hauteurs estimées, puis une mise à jour après mesure. Ne forcez pas de disposition de manière synchrone dans la callback de mesure (`getBoundingClientRect` provoquerait déjà un reflow).
+- **Pas d'animations complexes dans la liste virtuelle** : les éléments sont montés et démontés sans cesse, et les animations d'entrée/sortie clignotera. Pour des animations, utilisez FLIP ou intégrez-les à l'intérieur même des éléments.
+
+<FnPlayground module="virtual-list" fn="computeRange" params='{"scrollTop": 800, "viewportHeight": 400, "itemHeight": 50, "total": 1000}' />

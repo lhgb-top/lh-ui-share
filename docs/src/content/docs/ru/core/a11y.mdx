@@ -1,0 +1,174 @@
+---
+title: a11y —— построитель aria-атрибутов
+description: 'Единые атомарные построители aria и семантика «опускать ложные значения», готовые пакеты атрибутов для триггеров плавающих слоёв и декоративных элементов'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Написание aria-атрибутов и их значений — рутинная работа: `aria-haspopup` или `ariaHaspopup`? `'true'` или `true`? Выводить ли ложное значение? Каждый компонент, собирающий это самостоятельно, либо ошибается в написании, либо забывает опустить атрибут при пустом значении (в скринридере появляется куча `aria-controls="undefined"`). `shared/a11y` фиксирует соглашения набором чистых функций.
+
+## Ключевое соглашение: опускание ложных значений
+
+Все булевы построители aria следуют одному правилу:
+
+| Атрибут | Поведение для ложного значения | Причина |
+| --- | --- | --- |
+| `aria-required: false` | возврат `{}`, не рендерится | явное объявление «необязательное поле» для скринридера — это шум |
+| `aria-haspopup: false` | возврат `{}`, не рендерится | то же |
+| `aria-current: false` | не встречается | построитель на уровне типа не принимает `false` (большинство скринридеров его игнорируют) |
+| `aria-controls` / `aria-labelledby` / `aria-describedby` | при пустом id возврат `{}` | отрендеренный `aria-controls="undefined"` — частый баг |
+| **`aria-expanded: false`** | **выводится как есть** | свёрнутое состояние нужно озвучивать явно |
+| **`aria-invalid: false`** | **выводится как есть** | «проверка пройдена» нужно озвучивать явно |
+
+Оба «исключения» сделаны намеренно: ложные значения `aria-expanded` / `aria-invalid` несут информацию, и скринридер по ним скажет «свёрнуто» / «ввод корректен».
+
+## Импорт
+
+```ts
+import {
+  generateAriaId,
+  ariaExpanded,
+  ariaControls,
+  ariaLabelledby,
+  ariaDescribedby,
+  ariaInvalid,
+  ariaRequired,
+  ariaCurrent,
+  ariaHaspopup,
+  getPopupTriggerAria,
+  getDecorativeAria,
+  type LhAriaAttrs,
+  type LhAriaHaspopup,
+} from '@lh-ui/share/core/shared/a11y'
+```
+
+## Типы
+
+```ts
+// Форма пакета aria-атрибутов: ключи 'aria-*' или 'role', напрямую v-bind / {...spread}
+export type LhAriaAttrs = Record<string, string | number | boolean | undefined>
+
+// Допустимые значения aria-haspopup (APG)
+export type LhAriaHaspopup =
+  | 'false' | 'true' | 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog' | 'combobox'
+```
+
+## Таблица функций
+
+| Функция | Сигнатура | Назначение |
+| --- | --- | --- |
+| `generateAriaId` | `(prefix = 'lh-aria') => string` | генерирует уникальный id для aria-связей |
+| `ariaExpanded` | `(expanded: boolean) => LhAriaAttrs` | развёрнутое / свёрнутое состояние |
+| `ariaControls` | `(id: string \| undefined) => LhAriaAttrs` | ссылка на управляемую панель |
+| `ariaLabelledby` | `(id: string \| undefined) => LhAriaAttrs` | ссылка на видимый текст как на доступное имя |
+| `ariaDescribedby` | `(id: string \| undefined) => LhAriaAttrs` | ссылка на дополнительное описание |
+| `ariaInvalid` | `(invalid: boolean) => LhAriaAttrs` | признак неудачной проверки |
+| `ariaRequired` | `(required: boolean) => LhAriaAttrs` | семантика обязательного поля |
+| `ariaCurrent` | `(current: 'page' \| 'step' \| 'location' \| 'date' \| 'time' \| true \| undefined) => LhAriaAttrs` | отметка текущей позиции |
+| `ariaHaspopup` | `(kind: LhAriaHaspopup \| boolean) => LhAriaAttrs` | объявляет, какой плавающий слой всплывает |
+| `getPopupTriggerAria` | `(options: { expanded; popupId?; haspopup? }) => LhAriaAttrs` | **общий пакет атрибутов** триггера плавающего слоя |
+| `getDecorativeAria` | `(decorative = true) => LhAriaAttrs` | скрытие декоративного элемента от вспомогательных технологий |
+
+## Два составных пакета атрибутов
+
+### getPopupTriggerAria
+
+Триггеры popover / popconfirm / select / cascader / date-picker / dropdown используют его **все** — за один вызов получается три вещи:
+
+```ts
+getPopupTriggerAria({ expanded: true, popupId: 'lh-popover-1' })
+// {
+//   'aria-expanded': true,
+//   'aria-controls': 'lh-popover-1',
+//   'aria-haspopup': 'true',      // значение по умолчанию
+// }
+
+getPopupTriggerAria({ expanded: false, popupId: 'lh-popover-1', haspopup: 'menu' })
+// { 'aria-expanded': false, 'aria-controls': 'lh-popover-1', 'aria-haspopup': 'menu' }
+
+getPopupTriggerAria({ expanded: false })   // popupId не передан
+// { 'aria-expanded': false, 'aria-haspopup': 'true' }   —— aria-controls не выводится
+```
+
+`haspopup` по умолчанию `'true'`. Семантически более точные значения (для выпадающих списков — `listbox`, для каскадов — `menu`, для календаря — `dialog`) сделают озвучивание скринридера точнее, каждый компонент передаёт своё значение.
+
+### getDecorativeAria
+
+```ts
+getDecorativeAria()       // { 'aria-hidden': true }
+getDecorativeAria(false)  // {}   —— явная отмена скрытия
+```
+
+Декоративные элементы (чистый разделитель, декорация loading, геометрические фигуры скелетона) — это шум для вспомогательных технологий. Обратите внимание: применяйте **только к действительно неинформативным элементам** — добавление `aria-hidden` к элементу с текстом является нарушением правил доступности. Передача `false` возвращает пустой объект и используется для условных ветвей «по умолчанию скрыт, но в некоторых сценариях должен быть видим».
+
+## generateAriaId
+
+```ts
+const id = generateAriaId('lh-popover')  // 'lh-popover-1', 'lh-popover-2' …
+```
+
+Префикс фиксируется переданным значением, а счётчик с автоинкрементом внутри модуля гарантирует отсутствие коллизий id между несколькими экземплярами в одном процессе. Безопасно для SSR (без доступа к DOM).
+
+**Обратите внимание**: счётчик — это **изменяемое состояние уровня модуля**, функция не является чистой — одинаковый ввод в разные моменты процесса возвращает разные результаты. При рендеринге на сервере счёт начинается с 0, при гидратации на клиенте — тоже с 0; если порядок рендера совпадает, id совпадут, но если порядок рендера SSR / CSR различается (асинхронные компоненты, различия в условном рендере), возможно несовпадение id. Плавающие слои в каждой UI-библиотеке генерируют id только на клиенте (после `onMounted`), что обходит эту проблему.
+
+## Примеры использования
+
+### Vue3
+
+```vue
+<template>
+  <button
+    v-bind="getPopupTriggerAria({ expanded: open, popupId: panelId, haspopup: 'dialog' })"
+    @click="toggle"
+  >
+    Открыть
+  </button>
+  <div :id="panelId" role="dialog" v-show="open">……</div>
+</template>
+
+<script setup lang="ts">
+const panelId = generateAriaId('lh-popover')
+</script>
+```
+
+`v-bind` с функцией, возвращающей объект — идиоматичная запись Vue: значения `undefined` в пакете атрибутов пропускаются Vue автоматически, что естественно совпадает с соглашением «опускать ложные значения».
+
+### React
+
+```tsx
+const panelId = generateAriaId('lh-popover')
+
+return (
+  <>
+    <button {...getPopupTriggerAria({ expanded: open, popupId: panelId })} onClick={toggle} />
+    {open && <div id={panelId} role="dialog">……</div>}
+  </>
+)
+```
+
+### Проверка формы
+
+```ts
+// компонент input
+const aria = {
+  ...ariaRequired(props.required),      // для необязательного поля атрибут вообще не рендерится
+  ...ariaInvalid(!!errorMessage.value), // успешная проверка тоже озвучивается явно
+  ...ariaDescribedby(errorMessage.value ? errorId : undefined),
+}
+```
+
+### Текущая позиция в постраничной навигации / хлебных крошках
+
+```ts
+ariaCurrent(isActive ? 'page' : undefined)   // для не текущей страницы не выводится, чтобы не создавать шум
+ariaCurrent(isActive ? 'page' : undefined)   // постраничная навигация использует 'page', шаги — 'step', даты — 'date'
+```
+
+## Замечания
+
+- **id у `aria-controls` должен действительно существовать**: этот модуль только собирает атрибуты, а за корректность id отвечает компонент. Если плавающий слой рендерится с задержкой через `v-if`, в закрытом состоянии панели нет в DOM, и `aria-controls` указывает на несуществующий элемент — это допустимо (скринридер проигнорирует), но лучше, чем указание на ошибочный элемент.
+- **Не добавляйте `aria-hidden` элементам с текстом**: это жёсткое нарушение правил доступности.
+- **Значение `ariaCurrent` выбирайте по семантике**: постраничная навигация `'page'`, шаги `'step'`, хлебные крошки `'location'`, календарь `'date'`. На уровне типа принимаются эти литералы + `true`.
+- **Составные пакеты нельзя смешивать с атомарными функциями для переопределения**: `getPopupTriggerAria` уже включает `aria-haspopup`, и если снаружи ещё раз развернуть `ariaHaspopup(...)`, более поздний разворот победит — выбирайте что-то одно.
+
+<FnPlayground module="a11y" fn="getPopupTriggerAria" params='{"options": {"expanded": true, "popupId": "lh-popover-demo", "haspopup": "menu"}}' />

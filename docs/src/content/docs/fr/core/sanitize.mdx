@@ -1,0 +1,137 @@
+---
+title: 'sanitize —— Sanitisation des nombres'
+description: 'sanitizeNumber / clamp / safePrecision interceptent NaN et Infinity à l\’entrée, afin de ne pas polluer le rendu en aval'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Numéro de page, espacement, step, precision, limite de taille — de nombreuses fonctions de la couche core reçoivent des valeurs numériques externes. Dès que `NaN` / `Infinity` s'infiltrent, ils polluent tout l'aval : des styles en `NaNpx`, un tableau vide pour `slice(NaN)`, un `RangeError` de `toFixed(1000)` qui fait s'effondrer le rendu. La stratégie de ce module est **l'interception uniforme à l'entrée**, afin que les algorithmes en aval ne manipulent que des nombres « déjà propres ».
+
+## Import
+
+```ts
+import {
+  sanitizeNumber,
+  clamp,
+  safePrecision,
+  LH_PRECISION_MAX,
+  type LhSanitizeNumberOptions,
+} from '@lh-ui/share/core/shared/sanitize'
+```
+
+## Types et constantes
+
+```ts
+export interface LhSanitizeNumberOptions {
+  min?: number       // valeur minimale autorisée (un min non fini est lui-même ignoré)
+  max?: number       // valeur maximale autorisée (un max non fini est lui-même ignoré)
+  integer?: boolean  // arrondir à l'entier ou non (troncature vers 0)
+}
+
+export const LH_PRECISION_MAX = 100   // limite de precision : au-delà de 100 chiffres, toFixed jette un RangeError
+```
+
+## Tableau des fonctions
+
+| Fonction | Signature | Rôle |
+| --- | --- | --- |
+| `sanitizeNumber` | `(value: number \| undefined \| null, fallback: number, options?) => number` | sanitise n'importe quelle valeur numérique en un nombre fini |
+| `clamp` | `(value: number, min: number, max: number) => number` | le clamp brut, **sans aucune sanitisation** |
+| `safePrecision` | `(precision: number) => number` | sanitise precision en un entier de `[0, 100]` |
+
+## sanitizeNumber
+
+```ts
+sanitizeNumber(5, 0)                    // 5
+sanitizeNumber(NaN, 0)                  // 0
+sanitizeNumber(Infinity, 10)            // 10
+sanitizeNumber(undefined, 1)            // 1
+sanitizeNumber(null, 1)                 // 1
+sanitizeNumber(3.7, 0, { integer: true })   // 3 (troncature vers 0, pas un arrondi)
+sanitizeNumber(-5, 0, { min: 0 })       // 0
+sanitizeNumber(999, 0, { max: 100 })    // 100
+```
+
+L'ordre du traitement : **test de finitude → arrondi `integer` → clamp de `min` → clamp de `max`**.
+
+Le point clé de la conception : **`min` / `max` subissent eux aussi un filtrage de la non-finitude**.
+
+```ts
+sanitizeNumber(5, 0, { min: NaN, max: Infinity })
+// 5  —— un mauvais min/max ne réintroduit pas de NaN dans le résultat
+```
+
+Pourquoi c'est important : `min` / `max` viennent généralement des props de l'utilisateur (`<lh-slider :min="NaN">`) ; sans filtrage, `Math.max(NaN, 5)` vaut `NaN` — la sanitisation n'aurait servi à rien.
+
+## clamp
+
+```ts
+clamp(12, 0, 10)    // 10
+clamp(-3, 0, 10)    // 0
+clamp(5, 0, 10)     // 5
+clamp(NaN, 0, 10)   // NaN  —— transmis tel quel !
+```
+
+`clamp` est l'expression **brute** `Math.min(Math.max(value, min), max)`, sans sanitisation. C'est délibéré :
+
+- Les scénarios où **l'appelant garantit déjà la finitude** n'ont pas besoin du surcoût d'une sanitisation répétée — le `clampValue` d'input-number, le clamping du glissement de slider, le clamp géométrique de popper relèvent de cette catégorie (les valeurs proviennent de résultats intermédiaires calculés en interne).
+- **La conservation de la sémantique de transmission du NaN** : certains scénarios exigent que « NaN reste NaN » jusqu'à l'étape du test de bornes ; tout avaler uniformément masquerait au contraire les bugs.
+
+**Le principe de sélection** : une valeur venant de l'extérieur (props, saisie utilisateur, réseau) → `sanitizeNumber` ; une valeur issue d'un calcul interne → `clamp`.
+
+## safePrecision
+
+```ts
+safePrecision(2)       // 2
+safePrecision(-1)      // 0
+safePrecision(999)     // 100
+safePrecision(NaN)     // 0
+safePrecision(2.7)     // 2 (arrondi d'abord)
+```
+
+Équivaut à `sanitizeNumber(precision, 0, { min: 0, max: LH_PRECISION_MAX, integer: true })`.
+
+**Pourquoi la sanitisation est indispensable** : `(1.234).toFixed(precision)` jette un `RangeError` lorsque `precision > 100` — une prop precision illégale fait s'effondrer directement le rendu d'input-number / statistic. Une sanitisation à 0 vaut bien mieux qu'un rendu effondré.
+
+## Qui l'utilise
+
+| Consommateur | Utilisation |
+| --- | --- |
+| `pagination` | `sanitizeNumber(currentPage, 1, { min: 1 })` |
+| `input-number` | `sanitizeNumber(props.step, 1, { min: 0 })` + `safePrecision(props.precision)` |
+| `space` | `sanitizeNumber(props.size, 8)` (espacement) |
+| `popper` | Sanitisation champ par champ des rects en entrée + clamp |
+| `keyboard` | `clamp` pour les bornes de navigation |
+| `statistic` | `safePrecision(props.precision)` |
+
+## Exemples d'utilisation
+
+### La sanitisation des props
+
+```ts
+// Composant pagination
+const currentPage = computed(() =>
+  sanitizeNumber(props.currentPage, 1, { min: 1, max: totalPages.value }),
+)
+```
+
+### Un outil défensif
+
+```ts
+// Sanitisation après extraction de la valeur d'un événement
+const value = sanitizeNumber(Number(e.target.value), 0)
+```
+
+### La sécurité du precision
+
+```ts
+const display = modelValue.value.toFixed(safePrecision(props.precision))
+```
+
+## Points d'attention
+
+- **`integer` est une troncature vers 0** (`Math.trunc`), pas un arrondi : `3.7 → 3`, `-3.7 → -3`. C'est exactement ce que l'on veut pour la pagination ou les indices.
+- **`clamp` ne sanitise pas** : c'est une fonctionnalité, pas un bug ; ne la « corrigez » pas en une version sanitisée (cela détruirait la valeur de débogage de la transmission du NaN).
+- **Le fallback est obligatoire** : il n'y a pas de valeur par défaut raisonnable (la « valeur sûre » diffère selon le contexte) ; l'obliger contraint l'appelant à réfléchir.
+
+<FnPlayground module="sanitize" fn="sanitizeNumber" params='{"value": null, "fallback": 1, "options": {"min": 0, "max": 10}}' />

@@ -1,0 +1,229 @@
+---
+title: cascader —— 계단식 선택기
+description: 'findNode/findPathByValues 트리 탐색과 경로 복원, normalizeCascaderNodes 일괄 정규화, searchNodes 조상 체인을 포함한 검색'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+계단식 선택기는 "도 > 시 > 구" 같은 **단계별 선택** 데이터를 다룹니다: 윗 단계를 선택해야 다음 단계가 나타납니다. `core/cascader`는 share에서 가장 무거운 core 모듈 중 하나입니다——트리 데이터의 탐색, 경로 복원, 패널 생성, 검색, 정규화가 전부 순수 함수이며, UI 계층은 패널 항목을 열로 렌더링하기만 하면 됩니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhCascader`: 다단계 분류, 지역 선택, 조직도.
+- 데이터가 트리이고 (또는 트리로 정규화 가능하고), 각 단계가 배타적으로 선택되는 경우.
+- **사용하면 안 되는 경우**: 단일 단계 선택은 `select`; 부모를 체크하면 자식도 체크되는 계단식 체크가 필요하면 `tree` (`checkStrictly` 의미 있음) 사용.
+
+## 임포트 방법
+
+```ts
+import {
+  findNode,
+  findPathByValues,
+  getField,
+  getChildren,
+  getPanelItems,
+  searchNodes,
+  getSelectedLabelPath,
+  getCascaderClassNames,
+  getPanelClassNames,
+  expandLastValue,
+  isLeafNode,
+  normalizeCascaderNodes,
+  flattenNodes,
+  getCascaderTriggerAria,
+  getCascaderColumnAria,
+  getCascaderItemAria,
+} from '@lh-ui/share/core/cascader'
+import type {
+  LhCascaderNode,
+  LhCascaderPath,
+  LhCascaderPanelItem,
+  LhCascaderState,
+  LhCascaderSearchResult,
+  LhCascaderItemConfig,
+} from '@lh-ui/share/core/cascader'
+```
+
+## 설계 의도
+
+몇 가지 핵심 설계:
+
+- **전역 visited가 아닌 조상 체인으로 중복 판정**: 트리 조작에는 보통 순환 참조 보호가 필요합니다. 여기서는 모듈 수준이나 전역 Set이 아닌 "조상 체인"으로 중복을 판정합니다 (`ancestors` 매개변수를 단계별로 전달), 보호는 **단일 호출 내에서만 유효**하다는 것이 단점이지만, DAG에서 합법적으로 공유되는 하위 트리를 잘못 건너뛰지 않고 인스턴스 간 상태 누출도 없다는 장점이 있습니다.
+- **`getField`로 필드 별칭이 진짜로 작동**: 백엔드 데이터는 흔히 `value`/`label`/`children`이라고 부르지 않습니다 (`id`/`name`/`subList`일 수 있음). `LhCascaderItemConfig`로 별칭 매핑을 선언하고, 모든 트리 조작이 `getField`를 거쳐 읽습니다.
+- **한 번 정규화, 모든 곳에서 표준 구조 사용**: `normalizeCascaderNodes`가 임의의 필드 구조를 가진 원본 트리를 `LhCascaderNode[]`로 바꾸고, 그 이후의 모든 함수는 표준 구조만 다룹니다. itemConfig를 전달하며 정규화 없이 써도 되며, 두 경로는 동등합니다 (다만 정규화 쪽이 매 단계마다 별칭을 조회하지 않아 성능이 더 좋습니다).
+- **검색 결과가 완전한 조상 체인을 포함**: `searchNodes`가 반환하는 각 결과에는 `path`(값 배열), `nodes`(노드 배열), `pathLabels`(레이블 배열)이 포함되며, UI는 "저장성 / 항저우 / 시후" 한 줄을 곧바로 렌더링할 수 있고 다시 조회할 필요가 없습니다.
+- **프로그래밍 방식 사전 표시는 비활성화 항목을 걸러내지 않음**: `findPathByValues`는 **비활성화 자식 노드를 일부러 걸러내지 않습니다**——비활성화는 UI 계층의 클릭 제약이며, 프로그래밍 방식 사전 표시 (`v-model` 초깃값 등)는 임의의 경로를 복원할 수 있어야 하며, 그렇지 않으면 "나중에 비활성화하고 나서 사전 표시"가 값을 잃게 됩니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `findNode` | `(nodes, value, strict?, ancestors?, itemConfig?) => { node, path } \| null` | 노드 + 조상 체인 | 재귀 탐색 |
+| `getField` | `<T>(node, standard: string, configKey?: string) => T` | 필드값 | 별칭으로 노드 속성 읽기 |
+| `findPathByValues` | `(nodes, values, itemConfig?) => LhCascaderPath \| null` | 경로 | 값 배열로 단계별 복원 |
+| `getChildren` | `(node, itemConfig?) => LhCascaderNode[]` | 자식 배열 | 오염된 데이터는 `[]`로 폴백 |
+| `getPanelItems` | `(nodes, expandedValues?, itemConfig?) => LhCascaderPanelItem[]` | 패널 항목 | 트리 → 패널 항목 매핑 |
+| `searchNodes` | `(nodes, keyword, results?, itemConfig?, maxResults?) => LhCascaderSearchResult[]` | 검색 결과 | 대소문자 무구분, 기본 상한 50 |
+| `getSelectedLabelPath` | `(nodes, values, itemConfig?) => string` | `"저장성 / 항저우"` | 선택된 레이블 문자열 |
+| `expandLastValue` | `(nodes, value, itemConfig?) => (string\|number)[] \| null` | 경로 배열 | `emitPath: false`일 때 단일 값에서 경로 복원 |
+| `isLeafNode` | `(node, itemConfig?) => boolean` | 불리언 | 명시적 `leaf` 우선, 그 외 children으로 판정 |
+| `normalizeCascaderNodes` | `(nodes: readonly unknown[], itemConfig?) => LhCascaderNode[]` | 표준 트리 | 일괄 정규화 |
+| `flattenNodes` | `(nodes, itemConfig?) => {node, path, pathValues}[]` | 평탄화 목록 | 각 항목에 경로 포함 |
+| `getCascaderClassNames` | `(state) => string[]` | 클래스명 | 컨테이너 |
+| `getPanelClassNames` | `(state) => string[]` | 클래스명 | 패널 (`--hover-mode`) |
+
+## 타입 정의
+
+```ts
+export interface LhCascaderNode {
+  value: string | number
+  label: string
+  disabled?: boolean
+  leaf?: boolean
+  children?: LhCascaderNode[]
+}
+
+export interface LhCascaderPath {
+  path: (string | number)[]      // 선택된 값 배열
+  nodes: LhCascaderNode[]        // 대응하는 노드 배열
+}
+
+export interface LhCascaderPanelItem {
+  value: string | number
+  label: string
+  isDisabled: boolean
+  isExpanded: boolean
+  hasChildren: boolean
+}
+
+export interface LhCascaderSearchResult {
+  path: (string | number)[]
+  nodes: LhCascaderNode[]
+  pathLabels: string[]
+}
+
+export interface LhCascaderItemConfig {
+  value?: string    // value 필드의 별칭
+  label?: string
+  children?: string
+  disabled?: string
+  leaf?: string
+}
+
+export interface LhCascaderState {
+  options: LhCascaderNode[]
+  size: LhComponentSize
+  disabled: boolean
+  clearable: boolean
+  placeholder: string
+  visible: boolean
+  checkStrictly: boolean   // 부모-자식 비연동 (아무 단계나 선택 가능)
+  emitPath: boolean        // true면 값이 경로 배열, false면 말단 값만
+  multiple: boolean
+  cascading: boolean
+  value: (string | number)[]
+  selectedValue: (string | number)[] | null
+}
+```
+
+## 접근성
+
+3단계 속성 팩:
+
+```ts
+// 트리거: listbox 의미로 팝업
+getCascaderTriggerAria(true, 'my-panel')
+// { 'aria-expanded': true, 'aria-controls': 'my-panel', 'aria-haspopup': 'listbox' }
+
+// 각 열: role="listbox" + aria-level로 깊이 표시 (1부터)
+getCascaderColumnAria('col-2', 2)  // { role: 'listbox', id: 'col-2', 'aria-level': 2 }
+
+// 항목: role="option" + 필요에 따라 aria-expanded/selected/disabled
+getCascaderItemAria({ selected: true, expanded: true, hasChildren: true })
+// { role: 'option', 'aria-expanded': true, 'aria-selected': true }
+```
+
+`getCascaderItemAria`는 **하위 항목이 없을 때 `aria-expanded`를 출력하지 않습니다**——말단 옵션에 `aria-expanded="false"`를 선언하는 것은 APG가 허용하지만 불필요하며, 스크린 리더가 "펼칠 수 있으나 지금 펼쳐지지 않은 상태"로 오해하게 만듭니다.
+
+## 사용 예시
+
+```ts
+import { findPathByValues, getSelectedLabelPath, getPanelItems } from '@lh-ui/share/core/cascader'
+
+const tree = [
+  {
+    value: 'zj', label: '저장성', children: [
+      { value: 'hz', label: '항저우', children: [{ value: 'xh', label: '시후' }] },
+    ],
+  },
+]
+
+findPathByValues(tree, ['zj', 'hz', 'xh'])
+// { path: ['zj','hz','xh'], nodes: [저장성, 항저우, 시후] }
+
+getSelectedLabelPath(tree, ['zj', 'hz', 'xh'])  // '저장성 / 항저우 / 시후'
+getSelectedLabelPath(tree, ['nope'])            // '' (못 찾으면 빈 문자열)
+
+getPanelItems(tree, new Set(['zj']))
+// [{ value:'zj', label:'저장성', isExpanded:true, hasChildren:true },
+//  { value:'hz', label:'항저우', isExpanded:false, hasChildren:true }]
+```
+
+필드 별칭:
+
+```ts
+const raw = [{ id: 'zj', name: '저장성', subList: [{ id: 'hz', name: '항저우' }] }]
+const cfg = { value: 'id', label: 'name', children: 'subList' }
+const standard = normalizeCascaderNodes(raw, cfg)
+// [{ value:'zj', label:'저장성', children:[{ value:'hz', label:'항저우' }] }]
+findPathByValues(standard, ['zj', 'hz'])  // 정상 동작
+```
+
+```vue
+<!-- Vue3: 각 열이 한 단계의 panelItems를 렌더링 -->
+<div :class="getCascaderClassNames({ size, disabled, visible, readonly })">
+  <button class="lh-cascader__input" v-bind="getCascaderTriggerAria(visible, panelId)">
+    {{ getSelectedLabelPath(options, value) || placeholder }}
+  </button>
+  <div v-if="visible" class="lh-cascader-panel" :class="getPanelClassNames({ hoverMode })">
+    <div
+      v-for="(col, ci) in columns"
+      :key="ci"
+      class="lh-cascader-panel__column"
+      v-bind="getCascaderColumnAria(`col-${ci}`, ci + 1)"
+    >
+      <div
+        v-for="item in col"
+        class="lh-cascader-panel__item"
+        v-bind="getCascaderItemAria({ selected: ..., expanded: item.isExpanded, disabled: item.isDisabled, hasChildren: item.hasChildren })"
+        @click="select(item, ci)"
+      >{{ item.label }}</div>
+    </div>
+  </div>
+</div>
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-cascader` / `--disabled` / `--visible` | 컨테이너 |
+| `.lh-cascader__input` / `__input-inner` | 트리거 입력 영역 |
+| `.lh-cascader__tags` / `__tag` / `__tag-more` | 다중 선택 태그 (넘침 시 접기) |
+| `.lh-cascader__clear` | 지우기 버튼 |
+| `.lh-cascader-panel` / `--hover-mode` | 패널 (hover 모드: 마우스 올리면 다음 단계 펼침) |
+| `.lh-cascader-panel__column` / `__column-header` | 열과 열 머리 |
+| `.lh-cascader-panel__item` / `--active` / `--disabled` | 열 항목 |
+| `.lh-cascader-panel__search` / `__search-item` | 검색 결과 영역 |
+| `.lh-cascader-panel__empty` | 결과 없음 자리표시자 |
+| `.lh-cascader-panel-*` 전환 클래스 | 패널 입장/퇴장 애니메이션 |
+
+## 주의사항
+
+- **`searchNodes`의 기본 상한 50**: 큰 트리 + 고빈도 입력일 때 매 키 입력마다 O(전체 노드)가 걸려 버벅일 수 있으며, 상한은 성능 보험입니다; 더 많은 결과가 필요하면 UI 계층이 "결과가 너무 많습니다, 키워드를 구체화해 주세요"라고 알려줍니다.
+- **순환 참조 보호의 유효 범위**: 조상 체인 중복 판정은 단일 호출 내에서만 유효하고 **호출 간에 캐시하지 않습니다**. `findNode`의 결과를 캐시해 재사용하려 하지 마세요——트리가 바뀌면 다시 계산해야 합니다.
+- **`expandLastValue`는 `emitPath: false`일 때만 사용**: 이 모드에서는 `v-model`이 말단 값만 주며, 사전 표시할 때 단일 값에서 전체 펼침 경로를 복원해야 합니다.
+- **`getChildren`의 오염된 데이터 폴백**: null 노드, 객체가 아닌 노드, children이 배열이 아닌 경우 모두 `[]`를 반환하며 TypeError를 던지지 않습니다. 이것이 계단식 선택기가 백엔드의 오염된 데이터를 삼킬 수 있게 합니다 (children이 null로 오는 것이 흔한 경우).
+- **`checkStrictly`와 `emitPath`의 조합**: `checkStrictly`는 아무 단계의 선택을 허용하며, 이때 흔히 `emitPath: false`와 짝합니다 (말단 값만), 둘은 직교합니다.
+
+<FnPlayground module="cascader" fn="getSelectedLabelPath" params='{"nodes": [{"value": "zj", "label": "저장성", "children": [{"value": "hz", "label": "항저우"}]}], "values": ["zj", "hz"]}' />

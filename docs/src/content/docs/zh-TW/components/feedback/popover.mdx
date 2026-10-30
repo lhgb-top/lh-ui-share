@@ -1,0 +1,175 @@
+---
+title: popover —— 彈出層
+description: '可承載互動內容的浮層：hover 移入的 100ms 隱藏延遲、role=dialog + aria-labelledby、aria-haspopup 觸發器語義'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Popover 是「能放東西的 tooltip」：提示裡可以有按鈕、表單、選單、圖片。它不替代 tooltip——tooltip 只能放純文字且禁止互動；也不替代 dialog——dialog 是模態的、搶焦點的。`core/popover` 與 tooltip 同樣薄，差異全在**互動重量**上。
+
+## 何時使用
+
+- 各端實作 `<LhPopover>`：卡片式詳情、篩選面板、內聯表單、操作按鈕群組。
+- 需要使用者在浮層內**停留並互動**的場景。
+- **不該用它**：純文字一句話提示（用 `tooltip`，更輕更克制）；需要打斷使用者流程的強確認（用 `dialog`，模態）；二次確認操作（用 `popconfirm`，語義更準確）。
+
+## 匯入方式
+
+```ts
+import {
+  LH_POPOVER_TRIGGERS,
+  LH_POPOVER_PLACEMENT_DEFAULT,
+  getPopoverClass,
+  getPopoverWidthStyle,
+  getPopoverTriggerAria,
+  getPopoverPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+import type { LhPopoverTrigger, LhPopoverState } from '@lh-ui/share/core/popover'
+```
+
+## 設計意圖
+
+**隱藏延遲 100ms 的存在理由**：tooltip 隱藏是 0ms（移出立即消失），popover 留 100ms——**為了讓指標能從觸發器走進浮層**。滑鼠從觸發器移到浮層的過程中會短暫離開觸發元素，0ms 延遲會在路途中就關掉浮層，使用者根本進不去。這是 popover 可互動帶來的直接約束。
+
+**`LH_POPOVER_TRIGGERS` 作為驗證常數**：觸發方式是有限列舉（click/hover/focus/manual），匯出為 readonly 陣列供 UI 層做 props 驗證（Vue 的 validator、React 的執行時斷言），同時是 TS 類型的執行時對應物。
+
+**`role="dialog"` 而非 `"tooltip"`**：WAI-ARIA 規定 tooltip 內不能有互動元素，可互動的浮層必須是 dialog 語義。配 `aria-labelledby` 指向標題元素，螢幕閱讀器開啟時播報標題而非整段內容。
+
+**`canCloseOnEscape` 的 disabled 攔截**：預設允許 Esc 關閉，`disabled` 時阻止——停用狀態下浮層本就不該被觸發，這個守衛防止已開啟的浮層在元件被停用後仍被 Esc 關掉（業務語義上 disabled 通常意味著「操作鎖定」）。
+
+**箭頭是可選的**：`arrow !== false` 才加 `--arrow` 類別名——箭頭需要額外的定位計算（`shared/popper` 的 `computeArrowOffset`），純資訊型彈出層可以省掉。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | 延遲 | 預設 200 / 100 |
+| `getPopoverClass` | `(state: { placement, arrow?, popperClass? }) => string[]` | 類別名 | 方位 + 箭頭 + 自訂 |
+| `getPopoverWidthStyle` | `(width?: string \| number) => Record<string, string>` | 內聯樣式 | 寬度歸一 |
+| `getPopoverTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | aria 包 | aria-expanded/controls/haspopup |
+| `getPopoverPopperAria` | `(id?, titleId?) => LhAriaAttrs` | aria 包 | role=dialog + aria-labelledby |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | 是否允許 | disabled 時攔截 |
+
+常數：`LH_POPOVER_TRIGGERS`（4 種觸發）、`LH_POPOVER_PLACEMENT_DEFAULT = 'top'`。
+
+## 類型定義
+
+```ts
+export type LhPopoverTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopoverState {
+  placement?: LhPlacement        // 12 方位（shared/popper）
+  trigger?: LhPopoverTrigger
+  width?: string | number        // 彈出層寬度
+  title?: string
+  visible?: boolean
+  disabled?: boolean
+  arrow?: boolean                // 預設 true
+  showAfter?: number
+  hideAfter?: number
+}
+```
+
+## 無障礙
+
+```ts
+getPopoverTriggerAria(true, 'pop-1')
+// { 'aria-expanded': true, 'aria-controls': 'pop-1', 'aria-haspopup': 'true' }
+getPopoverTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'true' }
+
+getPopoverPopperAria('pop-1', 'pop-1-title')
+// { role: 'dialog', id: 'pop-1', 'aria-labelledby': 'pop-1-title' }
+```
+
+- **觸發器三件套**：`aria-haspopup` 宣告「我會彈出東西」、`aria-expanded` 宣告「現在開著沒」、`aria-controls` 指向「彈出的是哪個元素」。鍵盤使用者靠 expanded 狀態判斷目前局面。
+- **`aria-controls` 需要浮層存在**：浮層 `v-if` 渲染時 id 才存在；未傳 popperId 時只輸出 expanded/haspopup。**不要讓 controls 指向已卸載的元素**——關閉後浮層移除，觸發器的 controls 會懸空（螢幕閱讀器容忍，但嚴格驗證會報）。
+- **標題即門面**：`aria-labelledby` 指向 `<div class="lh-popover__title" :id="titleId">`。標題要寫清楚這個彈出層是什麼（「篩選條件」「訂單詳情」），不要寫動詞（「點選這裡」）。
+- **焦點管理是 UI 層的活**：`role="dialog"` 不自帶焦點圈——是否 trap 焦點、初始焦點落哪，由 UI 層用 `shared/focus-trap` 決定。非模態 popover 通常**不 trap**（使用者仍可操作頁面其他部分），但點選外部要關閉。
+- **鍵盤開啟**：click 觸發下，觸發器是按鈕即可 Enter/Space 開啟；hover 觸發對鍵盤使用者不可達——**關鍵操作不要只提供 hover 觸發**。
+
+## 使用範例
+
+```ts
+import {
+  getDefaultDelay, getPopoverClass, getPopoverWidthStyle, canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 100 }
+getDefaultDelay(0, 0)                   // { show: 0, hide: 0 }（顯式即時）
+
+getPopoverClass({ placement: 'bottom' })
+// ['lh-popover__popper', 'lh-popover__popper--bottom', 'lh-popover__popper--arrow']
+getPopoverClass({ placement: 'top', arrow: false })
+// ['lh-popover__popper', 'lh-popover__popper--top']
+getPopoverClass({ placement: 'top', popperClass: 'my-pop' })
+// ['lh-popover__popper', '…--top', '…--arrow', 'my-pop']
+
+getPopoverWidthStyle(240)     // { width: '240px' }
+getPopoverWidthStyle('50%')   // { width: '50%' }
+getPopoverWidthStyle(undefined) // {}
+
+canCloseOnEscape({ disabled: false })  // true
+canCloseOnEscape({ disabled: true })   // false
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopover :width="280" trigger="click" title="筛选条件">
+    <template #reference>
+      <LhButton>筛选</LhButton>
+    </template>
+    <div class="filter-body">
+      <LhCheckbox v-model="form.active">仅看启用</LhCheckbox>
+      <LhButton type="primary" @click="apply">应用</LhButton>
+    </div>
+  </LhPopover>
+</template>
+```
+
+```ts
+// 點選外部關閉（UI 層）：document 監聽 click，判斷 target 是否在觸發器與浮層之外
+function onDocumentClick(e: MouseEvent) {
+  if (!triggerEl.value?.contains(e.target as Node) && !popperEl.value?.contains(e.target as Node)) {
+    state.visible = false
+  }
+}
+watch(() => state.visible, (v) => {
+  v ? document.addEventListener('click', onDocumentClick) : document.removeEventListener('click', onDocumentClick)
+})
+```
+
+```tsx
+// React：useRef 拿觸發器與浮層節點；外部點選用自訂 useClickOutside hook；
+// 浮層 portal 到 document.body，避免被父級 overflow:hidden 裁掉
+```
+
+```ts
+// uniapp：<view> 浮層；「點選外部關閉」在小程序端用 catchtouchstart 全域遮罩實作
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-popover__popper` | 彈出層容器 |
+| `.lh-popover__popper--{top\|top-start\|…}` | 12 方位（含翻轉後的實際方位） |
+| `.lh-popover__popper--arrow` | 帶箭頭 |
+| `.lh-popover__title` | 標題 |
+| `.lh-popover__body` | 內容區 |
+
+底色 `--lh-bg-color`，邊框 `--lh-border-color`，陰影 `--lh-box-shadow-popover`，圓角 `--lh-border-radius-base`，z-index `--lh-z-index-popover`。
+
+## 注意事項
+
+- **浮層要 teleport 到 body**：留在原 DOM 位置會被父級的 `overflow: hidden`、`transform`、`z-index` 層疊上下文坑掉。teleport 後定位座標用 `shared/popper` 的 `computePosition` 基於視區計算。
+- **翻轉後的方位類別名**：`getPopoverClass` 吃的是**實際生效的 placement**（popper flip 之後的值），不是 prop 原值——否則箭頭朝向與視覺不符。UI 層要把 popper 傳回的真實方位傳進來。
+- **`width` 與內容自適應**：設了固定寬度時窄內容會被拉伸；不設時內容可能撐出視區。複雜內容建議傳 `min-width` 而非 `width`（透過 popperClass 自訂樣式）。
+- **hover 觸發的行動端**：觸控螢幕沒有 hover，hover 觸發的 popover 在行動端要點一下才有「懸停」狀態、再點別處才關——體驗很差。跨端元件建議按端切換觸發方式。
+- **巢狀 popover**：A 的浮層裡再開 B，關閉 A 時要級聯關 B，否則 B 懸空。共享 popper 狀態時注意。
+- **`manual` 觸發**：完全由外部 `v-model:visible` 控制——常配合「選取行即展開」這類邏輯，此時外部點選關閉邏輯要自己寫（core 的點選外部關閉也是 UI 層實作的）。
+- **與 tooltip 的程式碼復用**：兩者共用 `shared/popper` 和 `shared/delay`，但 **aria 角色不可混用**——別為了復用把 tooltip 的 `role="tooltip"` 用在可互動浮層上，違反 ARIA 且螢幕閱讀器行為不可預期。
+
+<FnPlayground module="popover" fn="getDefaultDelay" params='{"showAfter": null, "hideAfter": null}' />

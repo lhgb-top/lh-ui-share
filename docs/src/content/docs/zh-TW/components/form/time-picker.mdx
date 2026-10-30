@@ -1,0 +1,223 @@
+---
+title: time-picker —— 時間選擇
+description: 'parseTime/formatTime 定寬 token 解析、generateTimeColumn 步進列、wrapTimeValueInRange 回繞、dialog 語義'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+時間選擇是**三列滾輪**（時/分/秒）的互動：使用者分別轉列，而不是在一個輸入框裡敲數字。`core/time-picker` 管的是定寬格式字串的解析與反解析、按步長生成列、可選值域的過濾與回繞、以及 APG dialog + listbox 語義。它支援 `time`（純時間）與 `date-time`（日期 + 時間）兩種模式。
+
+## 何時使用
+
+- 各端實作 `LhTimePicker`：預約時間、定時任務、營業時間設定。
+- 值是「時刻」且粒度到分或秒的場景。
+- **不該用它**：只要日期不要時間（用 `date-picker`）；時間跨度（用兩個 time-picker 或區間模式 `isRange`）。
+
+## 匯入方式
+
+```ts
+import {
+  padNumber,
+  formatTime,
+  parseTime,
+  extractTime,
+  generateTimeColumn,
+  createDateTime,
+  isValidTime,
+  formatDateToTimeString,
+  getHourStep,
+  getMinuteStep,
+  getSecondStep,
+  getDisabledHours,
+  getDisabledMinutes,
+  getDisabledSeconds,
+  getHourRange,
+  filterTimeColumnByRange,
+  wrapTimeValueInRange,
+  clampTimeValue,
+  getTimePickerClassNames,
+  getTimePickerTriggerAria,
+  getTimePickerPanelAria,
+  getTimePickerColumnAria,
+} from '@lh-ui/share/core/time-picker'
+import type {
+  LhTimeData,
+  LhTimeColumn,
+  LhTimePickerState,
+  LhTimePickerOptions,
+  LhTimeColumnType,
+  LhTimePickerMode,
+  LhTimeSelectEventData,
+} from '@lh-ui/share/core/time-picker'
+```
+
+## 設計意圖
+
+`parseTime` / `formatTime` 用**定寬 token**（`HH` / `mm` / `ss` 各佔 2 位）而非通用日期庫，是有意的取捨：時間只有三個分量，`substring(idx, idx+2)` 的位置解析比正規表示法或 moment 輕量得多，且與 `formatTime` 嚴格對稱——寫什麼就能解回什麼。解析失敗一律傳回 null，不部分傳回髒資料。
+
+`generateTimeColumn` 的 `step` 做了防禦：非正數歸一為 1（`step: 0` 會讓 `for` 迴圈死循環），小數取整（`step: 2.5` 變 2）。`wrapTimeValueInRange` 在**範圍覆蓋全量程時原值傳回**——這是舊行為的相容：比如小時列範圍是 [0,23]，捲動越界就該停在邊界而非回繞到另一頭；只有顯式限定了子區間（如 [9, 18]）時才回繞。`clampTimeValue` 則相反，永遠鉗到區間內，用於把已有選取值收斂回合法區間。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `padNumber` | `(n: number) => string` | `'09'` | 兩位補零 |
+| `formatTime` | `(hours, minutes, seconds, format?) => string` | `'09:30:00'` | 按 format 拼 |
+| `parseTime` | `(timeStr, format?) => LhTimeData \| null` | 時間資料 \| null | 位置解析 |
+| `extractTime` | `(date: Date) => LhTimeData` | 時分秒 | 從 Date 提取 |
+| `generateTimeColumn` | `(type, step?, disabledValues?) => LhTimeColumn[]` | 列選項 | 含 isDisabled |
+| `createDateTime` | `(baseDate, hours, minutes, seconds) => Date` | 新 Date | 保留日期換時間 |
+| `isValidTime` | `(hours, minutes, seconds) => boolean` | 是否合法 | 值域驗證 |
+| `formatDateToTimeString` | `(date: Date, format: string) => string` | 字串 | Date → 顯示文字 |
+| `getHourStep` / `getMinuteStep` / `getSecondStep` | `(options?) => number` | 步長 | 缺省兜底 1 |
+| `getDisabledHours` / `getDisabledMinutes` / `getDisabledSeconds` | `(options?, …) => number[]` | 停用值 | 呼叫方回呼 |
+| `getHourRange` | `(start, end) => { start, end }` | 收斂區間 | 鉗到 [0,23] |
+| `filterTimeColumnByRange` | `(columns, start, end) => LhTimeColumn[]` | 過濾列 | 只留區間內 |
+| `wrapTimeValueInRange` | `(value, start, end) => number` | 回繞值 | 越界回繞 |
+| `clampTimeValue` | `(value, start, end) => number` | 鉗制值 | 越界鉗邊界 |
+| `getTimePickerClassNames` | `(state: { size, disabled, visible }) => string[]` | 類別名 | 尺寸/停用/展開 |
+| `getTimePickerTriggerAria` | `(visible, panelId?) => LhAriaAttrs` | aria 屬性包 | haspopup dialog |
+| `getTimePickerPanelAria` | `(id?) => LhAriaAttrs` | aria 屬性包 | role=dialog |
+| `getTimePickerColumnAria` | `(label?) => LhAriaAttrs` | aria 屬性包 | role=listbox |
+
+## 類型定義
+
+```ts
+export type LhTimePickerMode = 'time' | 'date-time'
+export type LhTimeColumnType = 'hour' | 'minute' | 'second'
+
+export interface LhTimeData {
+  hours: number
+  minutes: number
+  seconds: number
+}
+
+export interface LhTimeColumn {
+  value: number
+  text: string
+  isSelected: boolean
+  isDisabled: boolean
+}
+
+export interface LhTimePickerOptions {
+  hours?:   { step?: number; disabledHours?:   () => number[] }
+  minutes?: { step?: number; disabledMinutes?: (hour: number) => number[] }
+  seconds?: { step?: number; disabledSeconds?: (hour: number, minute: number) => number[] }
+}
+
+export interface LhTimeSelectEventData {
+  column: LhTimeColumnType
+  value: number
+}
+```
+
+## 無障礙
+
+時間面板以 **dialog** 彈出（觸發器 `aria-haspopup="dialog"`），面板內三列各是 **listbox**。這套語義來自共享核心的 `getPopupTriggerAria`：
+
+```ts
+getTimePickerTriggerAria(true, 'lh-time-panel')
+// { 'aria-expanded': true, 'aria-haspopup': 'dialog', 'aria-controls': 'lh-time-panel' }
+
+getTimePickerPanelAria('lh-time-panel')
+// { role: 'dialog', id: 'lh-time-panel' }
+
+getTimePickerColumnAria('小时')
+// { role: 'listbox', 'aria-label': '小时' }
+```
+
+- 列內選項應有 `role="option"` + `aria-selected`（UI 層渲染 `LhTimeColumn.isSelected`）+ `aria-disabled`（`isDisabled`）。
+- 鍵盤：列聚焦後 ↑/↓ 在**未停用**的選項間移動並選取；Esc 關閉面板。
+- dialog 語義意味著面板展開時應做焦點圈定（`core/shared/focus-trap`），焦點不要逃到面板外。
+
+## 使用範例
+
+```ts
+import {
+  parseTime, formatTime, generateTimeColumn, isValidTime, createDateTime,
+} from '@lh-ui/share/core/time-picker'
+
+formatTime(9, 30, 5)                    // '09:30:05'
+formatTime(9, 30, 5, 'HH:mm')           // '09:30'
+parseTime('09:30:05')                   // { hours: 9, minutes: 30, seconds: 5 }
+parseTime('09:30:05', 'HH:mm')          // { hours: 9, minutes: 30, seconds: 0 }（ss 缺失補 0）
+parseTime('99:99:99')                   // null（值域非法）
+parseTime('abc', 'HH:mm:ss')            // null（NaN）
+parseTime('09:30', 'YYYY-MM-DD')        // null（format 無時間 token）
+generateTimeColumn('hour', 1)           // 24 項：00..23
+generateTimeColumn('minute', 15)        // 4 項：00 15 30 45
+generateTimeColumn('minute', 0)         // 60 項（step 0 歸一為 1）
+generateTimeColumn('hour', 1, [0, 1, 2])// 前三項 isDisabled: true
+isValidTime(23, 59, 59)                 // true
+isValidTime(24, 0, 0)                   // false
+createDateTime(new Date('2026-10-12'), 9, 30, 0)  // 2026-10-12 09:30:00
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTimePickerClassNames({ size, disabled, visible })">
+  <input
+    class="lh-time-picker__input"
+    :value="formatDateToTimeString(value, format)"
+    v-bind="getTimePickerTriggerAria(visible, panelId)"
+    @click="open"
+  />
+  <div v-if="visible" class="lh-time-picker__panel" v-bind="getTimePickerPanelAria(panelId)">
+    <div
+      v-for="col in columns"
+      :key="col.type"
+      class="lh-time-picker__column"
+      v-bind="getTimePickerColumnAria(col.label)"
+    >
+      <div
+        v-for="opt in col.items"
+        :key="opt.value"
+        class="lh-time-picker__option"
+        :class="{ 'is-selected': opt.isSelected, 'is-disabled': opt.isDisabled }"
+        role="option"
+        :aria-selected="opt.isSelected"
+        @click="onSelect(col.type, opt.value)"
+      >
+        {{ opt.text }}
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+```tsx
+// React：列生成
+// const hours = generateTimeColumn('hour', getHourStep(options), getDisabledHours(options))
+// 分鐘列依賴已選小時：getDisabledMinutes(options, selectedHour)
+```
+
+```ts
+// uniapp：<picker mode="time"> 是內置組件（values 格式 'HH:mm'），
+// 自訂滾輪列需 <picker-view> + <picker-view-column>；core 的列生成函數照用
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-time-picker` | 基礎類 |
+| `.lh-time-picker--{small\|large}` | 尺寸檔 |
+| `.lh-time-picker--disabled` | 停用 |
+| `.lh-time-picker__input` | 觸發輸入框 |
+| `.lh-time-picker__panel` | 彈出面板 |
+| `.lh-time-picker__column` | 單列滾輪 |
+| `.lh-time-picker__option` | 列內選項 |
+| `.lh-time-picker__footer` | 確認/取消欄（date-time 模式） |
+
+已知問題（「高度令牌專項」記錄）：time-picker 相關控制項高度為 33px，與 input（37）/ select（32）不統一，根因是缺 `--lh-control-height-*` 令牌。
+
+## 注意事項
+
+- **format 的 token 順序可以是任意的**：`formatTime` 與 `parseTime` 都按 token 在 format 中的位置取值，`'mm:HH'` 也能正確往返。但混入非 token 字元（如 `'HH时mm分'`）時，`parseTime` 仍按固定 2 位寬度截取，中文不影響（不是 token），**數字分隔符號會錯位**——`'09点30'` 裡 `mm` 位置截到的是 `'点3'`，解析為 NaN 傳回 null。保持 format 只含 token 與非數字分隔符號。
+- **`parseTime` 的容錯**：傳回 null 而非拋例外，UI 層輸入框失焦時要處理 null（通常保持原值並提示）。
+- **步長與停用的互動**：`disabledValues` 只標記停用，不過濾——UI 層鍵盤導覽要自己跳過 `isDisabled` 的項。
+- **`date-time` 模式**：日期部分由 `date-picker` 負責，時間部分複用本模組；面板通常先選日期再選時間，`createDateTime(baseDate, …)` 把兩者合併，注意 `baseDate` 為 null 時取**目前時刻**的日期。
+- **區間模式 `isRange`**：`rangeStart` / `rangeEnd` 是兩個 `LhTimeData`，第二列的停用值依賴第一列的選擇（如結束時間必須晚於開始），由 UI 層用 `getDisabledMinutes` 等回呼動態計算。
+- **`SS` 大寫不是秒**：只有小寫 `ss` 是秒，`HH` 大寫、`mm`/`ss` 小寫是固定寫法，與 day.js 等庫的約定一致。
+
+<FnPlayground module="time-picker" fn="generateTimeColumn" params='{"type": "minute", "step": 15}' />

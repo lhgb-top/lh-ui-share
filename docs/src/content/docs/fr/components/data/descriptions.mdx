@@ -1,0 +1,179 @@
+---
+title: descriptions —— Liste de descriptions
+description: 'buildDescriptionRows structure les lignes selon la normalisation de span (repli des valeurs illégales, clampage en cas de dépassement, remplissage de la dernière ligne)'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La liste de descriptions est un « tableau en lecture seule » : elle affiche plusieurs champs d'un enregistrement (étiquette + valeur), sans tri, ni filtre, ni pagination. Sa difficulté est très concentrée — **le calcul des retours à la ligne quand un élément occupe plusieurs colonnes** : un élément a `span: 2`, mais il ne reste qu'un seul écart de colonne sur la ligne, que faire ? La dernière ligne ne contient que 2 éléments alors que la ligne en compte 4, faut-il combler ? `buildDescriptionRows` répond à ces questions.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhDescriptions` : pages de détail (détail d'une commande, profil utilisateur), résumés de réglages, affichage des informations d'un flux d'approbation.
+- Présentation groupée en lecture seule « étiquette - valeur » exigeant plusieurs champs par ligne.
+- **À ne pas utiliser pour** : les tableaux nécessitant tri / filtre / actions sur les lignes (utilisez `table`) ; l'affichage d'un seul champ (une simple paire étiquette + texte suffit) ; la saisie (utilisez `form`).
+
+## Importation
+
+```ts
+import {
+  getDescriptionsClassNames,
+  buildDescriptionRows,
+} from '@lh-ui/share/core/descriptions'
+import type { LhDescriptionsItem, LhDescriptionsState } from '@lh-ui/share/core/descriptions'
+```
+
+## Intentions de conception
+
+Les quatre règles de `buildDescriptionRows` sont toutes défensives, chacune correspondant à une catégorie réelle d'entrées :
+
+1. **Repli d'un span illégal sur 1** : `span <= 0`, NaN, une valeur non numérique (`Number('large')` = NaN) — tout est traité comme 1. La configuration provient souvent des props transmises par l'utilisateur, et une valeur sale ne doit pas réduire la mise en page à 0 colonne.
+2. **Clampage sur la largeur restante de la ligne** : quand `used + span > column`, on clamp à la largeur restante (au moins 1 colonne). Un passage direct à la ligne laisserait un trou dans la ligne en cours, qui ressemblerait à un bug visuel.
+3. **Clampage d'un span unique dépassant la ligne entière sur la ligne entière** : avec `column: 3`, un élément à `span: 5` occupe toute la ligne plutôt que de déborder.
+4. **Remplissage de la dernière ligne** : lorsque la dernière ligne est incomplète par rapport à `column`, le champ `filler` indique à la couche de rendu combien de cellules d'espace réservé ajouter — avec le style à bordures, ne pas combler laisse un bord manquant.
+
+La valeur de retour est un « tableau de lignes », chaque ligne contenant `cells` (éléments + span réel) et `filler` (nombre d'espaces réservés à ajouter). La couche UI n'a besoin que de deux `v-for` imbriqués.
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getDescriptionsClassNames` | `(state: LhDescriptionsState) => string[]` | Classes | Modificateur border |
+| `buildDescriptionRows` | `(items: LhDescriptionsItem[], column: number) => Row[]` | Structure des lignes | Retours à la ligne + remplissage |
+
+```ts
+type Row = {
+  cells: { item: LhDescriptionsItem; span: number }[]
+  filler: number
+}
+```
+
+## Définitions de types
+
+```ts
+export interface LhDescriptionsItem {
+  label: string
+  value?: string | number    // Possibilité également d'utiliser un slot de portée (scoped slot)
+  span?: number              // Nombre de colonnes occupées, 1 par défaut, clampé au-delà de column
+}
+
+export interface LhDescriptionsState {
+  column: number    // Nombre de colonnes affichées par ligne
+  border: boolean   // Afficher ou non les bordures (mise en page tabulaire)
+}
+```
+
+## Accessibilité
+
+`descriptions` est un composant **de présentation**, sans exigence de rôle APG. La structure DOM recommandée est la sémantique de la liste de définitions :
+
+```html
+<dl>
+  <dt>Nom d'utilisateur</dt><dd>lhgb</dd>
+  <dt>E-mail</dt><dd>i@lhgb.top</dd>
+</dl>
+```
+
+Cela correspond naturellement au modèle de données « étiquette - valeur », et le lecteur d'écran annonce correctement « Nom d'utilisateur : lhgb ». Si l'implémentation utilise un `<table>` (fréquent avec le style à bordures), ajoutez `role="presentation"` ou conservez la sémantique d'en-tête — ne mettez pas de vrai `<th scope="row">` sans fournir de summary, cela ferait croire au lecteur d'écran à un tableau interactif.
+
+Avec des bordures, les cellules d'espace réservé du `filler` devraient recevoir `aria-hidden="true"`, afin d'éviter que le lecteur d'écran n'annonce des cellules vides.
+
+## Exemples d'utilisation
+
+```ts
+import { buildDescriptionRows } from '@lh-ui/share/core/descriptions'
+
+// column 3 : le troisième élément a span 2, mais il ne reste que 1 écart de colonne → clampé à 1
+buildDescriptionRows([
+  { label: 'Nom d'utilisateur', value: 'lhgb' },
+  { label: 'E-mail', value: 'i@lhgb.top' },
+  { label: 'Signature', value: 'Codeuse', span: 2 },
+], 3)
+// [{ cells: [Nom d'utilisateur(1), E-mail(1), Signature(1)], filler: 0 }]  ← après clampage, ligne pleine
+
+// Note : l'implémentation **clampe sur la largeur restante** sans passer à la ligne —
+// un span qui ne tient pas dans la ligne en cours n'est pas repoussé sur la suivante
+buildDescriptionRows([
+  { label: 'Nom d'utilisateur', value: 'lhgb' },
+  { label: 'Signature', value: 'Codeuse', span: 2 },
+  { label: 'E-mail', value: 'i@lhgb.top' },
+], 2)
+// [
+//   { cells: [Nom d'utilisateur(1), Signature(2→1 clampé)], filler: 0 },  ← ligne pleine
+//   { cells: [E-mail(1)], filler: 1 },                                     ← dernière ligne, 1 espace réservé
+// ]
+
+// Un élément unique dont le span dépasse la ligne entière est lui aussi clampé sur la largeur restante (ici la ligne entière)
+buildDescriptionRows([{ label: 'A', span: 1 }, { label: 'B', span: 5 }], 2)
+// [{ cells: [A(1), B(5→1 clampé)], filler: 0 }]  ← B entre dans le seul écart restant de la première ligne
+
+// Ce n'est que lorsque B est seul et que son span dépasse la ligne entière qu'il occupe toute la ligne
+buildDescriptionRows([{ label: 'B', span: 5 }], 2)
+// [{ cells: [B(5→2 clampé)], filler: 0 }]
+
+// Repli d'un span illégal
+buildDescriptionRows([{ label: 'A', span: 0 }, { label: 'B', span: NaN }, { label: 'C', span: -1 }], 3)
+// [{ cells: [A(span 1), B(span 1), C(span 1)], filler: 0 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getDescriptionsClassNames({ column, border })">
+  <div v-for="(row, ri) in rows" :key="ri" class="lh-descriptions__row">
+    <template v-for="(cell, ci) in row.cells" :key="ci">
+      <div class="lh-descriptions__label" :style="{ gridColumn: `span ${cell.span}` }">
+        {{ cell.item.label }}
+      </div>
+      <div class="lh-descriptions__value" :style="{ gridColumn: `span ${cell.span}` }">
+        <slot :name="cell.item.label" :item="cell.item">{{ cell.item.value }}</slot>
+      </div>
+    </template>
+    <div
+      v-for="f in row.filler"
+      :key="`filler-${f}`"
+      class="lh-descriptions__filler"
+      aria-hidden="true"
+    />
+  </div>
+</div>
+```
+
+```ts
+const rows = computed(() => buildDescriptionRows(props.items, props.column))
+```
+
+```tsx
+// React : avec la propriété CSS grid gridColumn: `span ${cell.span}` ;
+// notez que l'étiquette et la valeur occupent chacune span colonnes,
+// de sorte que « column 3 » correspond en réalité à 6 cellules de grille
+```
+
+```ts
+// uniapp : <view> + proportions flex (span / column * 100%) ;
+// avec border, les filets du tableau doivent être simulés avec des
+// pseudo-éléments ou un box-shadow en disposition flex
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-descriptions` | Classe de base |
+| `.lh-descriptions--border` | Avec bordures (couleur de fond distincte pour les étiquettes) |
+| `.lh-descriptions__row` | Une ligne |
+| `.lh-descriptions__label` | Cellule d'étiquette |
+| `.lh-descriptions__value` | Cellule de valeur |
+| `.lh-descriptions__filler` | Espace réservé de dernière ligne (`aria-hidden`) |
+
+Les deux modes de largeur d'étiquette : avec `border`, l'étiquette et la valeur ont la même largeur dans la même colonne ; sans bordure, la largeur de l'étiquette est déterminée par le contenu (`--lh-descriptions-label-width` est surchargeable). Le texte de l'étiquette en `--lh-text-color-secondary`, la valeur en `--lh-text-color-primary`.
+
+## Remarques
+
+- **La relation entre column et les cellules de grille** : l'unité de `span` est « l'élément », mais au moment du rendu l'étiquette et la valeur occupent chacun une part de largeur. En CSS grid, si l'on compte l'étiquette et la valeur comme une cellule de grille chacune, `column: 3` exige en réalité 6 colonnes de grille — la définition du nombre de colonnes de la couche UI doit rester cohérente avec le `column` de core (un élément = une unité de span).
+- **column adaptatif** : sur écran étroit, diminuez `column` (par exemple 3 → 1), `buildDescriptionRows` recalculera. core n'écoute pas la largeur de l'écran, la couche UI bascule via une media query ou une container query.
+- **La key du slot de portée** : la couche UI utilise généralement `item.label` comme nom de slot ; lorsque l'étiquette contient des caractères spéciaux (espaces, caractères chinois), la compatibilité du framework est OK, mais des étiquettes contenant `/` ou en doublon entrent en conflit — il est recommandé que la couche UI fournisse un alias de champ `slot` (non fourni dans ce type, chaque plateforme peut l'étendre elle-même).
+- **`filler` n'est indispensable qu'en mode border** : sans bordure, les cellules d'espace réservé sont invisibles, mais les conserver ne coûte rien au rendu et un traitement uniforme est plus simple.
+- **items vide** : `buildDescriptionRows([], 3)` renvoie `[]`, la couche UI rend un conteneur vide — pensez à prévoir un état vide (le composant `empty` ou un texte informatif).
+- **L'affichage par défaut de la valeur** : lorsque `value` est undefined, ce qui est affiché est décidé par la couche UI (généralement `—`), core ne s'immisce pas dans les textes.
+
+<FnPlayground module="descriptions" fn="buildDescriptionRows" params='{"items": [{"label": "Nom d’utilisateur", "value": "lhgb"}, {"label": "E-mail", "value": "i@lhgb.top"}, {"label": "Signature", "value": "Codeuse", "span": 2}], "column": 2}' />

@@ -1,0 +1,137 @@
+---
+title: sanitize —— санитизация чисел
+description: 'sanitizeNumber / clamp / safePrecision перехватывают NaN и Infinity на входе, не давая им загрязнить рендеринг downstream'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Номер страницы, интервал, step, precision, предельный размер — множество функций слоя core принимают числа извне. Стоит `NaN` / `Infinity` попасть внутрь, и они загрязняют всё дальше по цепочке: стили `NaNpx`, пустой массив из `slice(NaN)`, `RangeError` из `toFixed(1000)`, ломающий рендеринг. Стратегия этого модуля — **перехватывать в одной точке входа**, чтобы алгоритмы downstream работали только с «уже чистыми» числами.
+
+## Импорт
+
+```ts
+import {
+  sanitizeNumber,
+  clamp,
+  safePrecision,
+  LH_PRECISION_MAX,
+  type LhSanitizeNumberOptions,
+} from '@lh-ui/share/core/shared/sanitize'
+```
+
+## Типы и константы
+
+```ts
+export interface LhSanitizeNumberOptions {
+  min?: number       // допустимый минимум (нефинитный min игнорируется)
+  max?: number       // допустимый максимум (нефинитный max игнорируется)
+  integer?: boolean  // округлять ли до целого (отбрасыванием дробной части)
+}
+
+export const LH_PRECISION_MAX = 100   // верхний предел precision: toFixed больше 100 бросает RangeError
+```
+
+## Таблица функций
+
+| Функция | Сигнатура | Назначение |
+| --- | --- | --- |
+| `sanitizeNumber` | `(value: number \| undefined \| null, fallback: number, options?) => number` | превратить любое значение в конечное число |
+| `clamp` | `(value: number, min: number, max: number) => number` | исходный кламп, **без всякой санитизации** |
+| `safePrecision` | `(precision: number) => number` | санитизирует precision в целое из `[0, 100]` |
+
+## sanitizeNumber
+
+```ts
+sanitizeNumber(5, 0)                    // 5
+sanitizeNumber(NaN, 0)                  // 0
+sanitizeNumber(Infinity, 10)            // 10
+sanitizeNumber(undefined, 1)            // 1
+sanitizeNumber(null, 1)                 // 1
+sanitizeNumber(3.7, 0, { integer: true })   // 3 (отбрасыванием, а не округлением)
+sanitizeNumber(-5, 0, { min: 0 })       // 0
+sanitizeNumber(999, 0, { max: 100 })    // 100
+```
+
+Порядок обработки: **проверка на нефинитность → округление `integer` → кламп по `min` → кламп по `max`**.
+
+Ключевое решение: **`min` / `max` тоже проходят фильтрацию на нефинитность**.
+
+```ts
+sanitizeNumber(5, 0, { min: NaN, max: Infinity })
+// 5  —— плохой min/max не вернёт NaN в результат
+```
+
+Почему это важно: `min` / `max` обычно приходят из props пользователя (`<lh-slider :min="NaN">`); если их не фильтровать, `Math.max(NaN, 5)` даст `NaN` — санитизация окажется бессмысленной.
+
+## clamp
+
+```ts
+clamp(12, 0, 10)    // 10
+clamp(-3, 0, 10)    // 0
+clamp(5, 0, 10)     // 5
+clamp(NaN, 0, 10)   // NaN  —— проходит насквозь!
+```
+
+`clamp` — это **простой** `Math.min(Math.max(value, min), max)` без санитизации. Это сделано намеренно:
+
+- В сценариях, где **вызывающая сторона уже гарантирует конечность**, не нужна повторная санитизация: `clampValue` в input-number, кламп перетаскивания в slider, геометрический кламп в popper — всё из этого ряда (значения приходят из собственных промежуточных вычислений).
+- **Сохраняется семантика прозрачного прохода NaN**: в некоторых сценариях нужно, чтобы «NaN остался NaN» вплоть до граничной проверки; единое поглощение скрыло бы баг.
+
+**Принцип выбора**: значение пришло извне (props, пользовательский ввод, сеть) → `sanitizeNumber`; значение получено внутренним вычислением → `clamp`.
+
+## safePrecision
+
+```ts
+safePrecision(2)       // 2
+safePrecision(-1)      // 0
+safePrecision(999)     // 100
+safePrecision(NaN)     // 0
+safePrecision(2.7)     // 2 (сначала округление)
+```
+
+Эквивалентно `sanitizeNumber(precision, 0, { min: 0, max: LH_PRECISION_MAX, integer: true })`.
+
+**Почему санитизация обязательна**: `(1.234).toFixed(precision)` при `precision > 100` бросает `RangeError` — один некорректный проп precision напрямую рендерит input-number / statistic неработоспособными. Санитизация в 0 намного лучше сломанного рендеринга.
+
+## Кто использует
+
+| Потребитель | Применение |
+| --- | --- |
+| `pagination` | `sanitizeNumber(currentPage, 1, { min: 1 })` |
+| `input-number` | `sanitizeNumber(props.step, 1, { min: 0 })` + `safePrecision(props.precision)` |
+| `space` | `sanitizeNumber(props.size, 8)` (интервал) |
+| `popper` | санитизация полей rect + кламп |
+| `keyboard` | `clamp` для навигационных границ |
+| `statistic` | `safePrecision(props.precision)` |
+
+## Примеры использования
+
+### Санитизация props
+
+```ts
+// компонент pagination
+const currentPage = computed(() =>
+  sanitizeNumber(props.currentPage, 1, { min: 1, max: totalPages.value }),
+)
+```
+
+### Защитная утилита
+
+```ts
+// санитизация значения, извлечённого из события
+const value = sanitizeNumber(Number(e.target.value), 0)
+```
+
+### Безопасный precision
+
+```ts
+const display = modelValue.value.toFixed(safePrecision(props.precision))
+```
+
+## Замечания
+
+- **`integer` — это отбрасывание дробной части** (`Math.trunc`), а не округление: `3.7 → 3`, `-3.7 → -3`. Для сценариев вроде пагинации и индексов нужно именно отбрасывание.
+- **`clamp` не санитизирует**: это свойство, а не баг; не «исправляйте» его на санитизирующий (это сломает отладочную ценность прозрачного прохода NaN).
+- **`fallback` обязателен**: универсального значения по умолчанию нет («безопасное значение» в разных сценариях своё), и обязательная передача заставляет вызывающую сторону задуматься.
+
+<FnPlayground module="sanitize" fn="sanitizeNumber" params='{"value": null, "fallback": 1, "options": {"min": 0, "max": 10}}' />

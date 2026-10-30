@@ -1,0 +1,133 @@
+---
+title: radio —— زر الاختيار
+description: 'isRadioChecked يستخدم Object.is لمقارنة modelValue مع value، و getRadioClassNames يُخرج مُعدِّل النوع'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+دلالة زر الاختيار هي «واحد فقط يأخذ أثراً داخل المجموعة». يُبسِّط `core/radio` الأمر إلى أبسط صورة: **هل قيمة المجموعة الحالية `modelValue` تساوي قيمتي `value`؟**. على خلاف checkbox الذي يقوم بحسابات على المجموعات، فإن radio هو مقارنة قيمة مفردة.
+
+## متى يُستخدم
+
+- تُنجزه الأطراف على هيئة `LhRadio` و `LhRadioGroup` (تحتفظ المجموعة بـ `modelValue`، ويحكم كل عنصر على حالة تحديده الخاصة).
+- الاختيار المتنافي: الجنس، طريقة الدفع، فروع النموذج على نمط علامات التبويب.
+- **لا ينبغي استخدامه**: للاختيار المتعدد استخدم `checkbox`؛ وللتبديل استخدم `switch`؛ وللتبديل المجزّأ استخدم `segmented` (أخف بصرياً).
+
+## طريقة الاستيراد
+
+```ts
+import { isRadioChecked, getRadioClassNames } from '@lh-ui/share/core/radio'
+import type { LhRadioState } from '@lh-ui/share/core/radio'
+```
+
+## القصد التصميمي
+
+يستخدم `isRadioChecked` الدالة `Object.is(modelValue, value)` بدلاً من `===`، وللسبب نفسه في checkbox: اتساق دلالات NaN / -0 في المجموعات، إضافة إلى «إمكانية استخدام قيمة من أي نوع كمفتاح اختيار».
+
+لا يحتاج radio إلى دالة تبديل — فالتحديد هنا **إسناد قيمة** (`modelValue = value`)، وهذا هو الفرق الرياضي بين الاختيار الفردي والاختيار المتعدد (إسناد متغيّر واحد مقابل إضافة/حذف في مجموعة).
+
+## جدول الدوال
+
+| الدالة | التوقيت | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `isRadioChecked` | `(state: LhRadioState) => boolean` | قيمة منطقية | `Object.is(modelValue, value)` |
+| `getRadioClassNames` | `(type: string) => string[]` | مصفوفة أسماء أصناف | `lh-radio` + مُعدِّل النوع |
+
+```ts
+getRadioClassNames('primary')  // ['lh-radio', 'lh-radio--primary']
+getRadioClassNames('')         // ['lh-radio']
+```
+
+## تعريفات الأنواع
+
+```ts
+export interface LhRadioState {
+  modelValue: unknown   // قيمة المجموعة الحالية
+  value: unknown        // قيمة هذا الزر
+  checked: boolean
+}
+```
+
+## إمكانية الوصول
+
+كما في checkbox: **استخدم عنصر `<input type="radio">` الأصلي**، فتأتي الدلالة ولوحة المفاتيح وإرسال النموذج كلها مجاناً. وتلعب خاصة name دوراً محورياً — إذ يجب أن تتشارك أزرار المجموعة name واحداً، ويعتمد عليها تنقّل المتصفح بالأسهم (التحرك بين أفراد المجموعة).
+
+```ts
+// ما يقرأه قارئ الشاشة هو نص الوسم + حالة «محدد/غير محدد»، ويغطيها radio الأصلي بالكامل
+```
+
+## أمثلة الاستخدام
+
+```ts
+import { isRadioChecked, getRadioClassNames } from '@lh-ui/share/core/radio'
+
+isRadioChecked({ modelValue: 'b', value: 'b', checked: false })  // true
+isRadioChecked({ modelValue: 'b', value: 'a', checked: false })  // false
+```
+
+```vue
+<!-- Vue3 -->
+<div class="lh-radio-group" :class="`lh-radio-group--${size}`">
+  <label
+    v-for="opt in options"
+    :key="String(opt.value)"
+    :class="getRadioClassNames(type)"
+    :class-mod="{ 'lh-radio--checked': isRadioChecked({ modelValue, value: opt.value, checked: false }) }"
+  >
+    <span class="lh-radio__box">
+      <input
+        class="lh-radio__input"
+        type="radio"
+        :name="groupName"
+        :checked="modelValue === opt.value"
+        @change="emit('update:modelValue', opt.value)"
+      />
+    </span>
+    <span class="lh-radio__label">{{ opt.label }}</span>
+  </label>
+</div>
+```
+
+```tsx
+// React
+const [value, setValue] = useState('a')
+return options.map((opt) => (
+  <label key={opt.value} className="lh-radio">
+    <input
+      type="radio"
+      name={groupName}
+      checked={value === opt.value}
+      onChange={() => setValue(opt.value)}
+    />
+    <span className="lh-radio__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp: <radio-group> + <radio> مكوّنان مدمجان، ويعطي حدث change قيمة العنصر المحدد مباشرة؛
+// لاحظ أن قيمة radio في uniapp تدعم السلاسل النصية فقط
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-radio` | الصنف الأساسي |
+| `.lh-radio--checked` / `--disabled` | الحالات |
+| `.lh-radio--{small\|large}` | درجة الحجم |
+| `.lh-radio__box` | دائرة الاختيار المخصّصة (تتجاوز المظهر الأصلي) |
+| `.lh-radio__input` | عنصر input الأصلي (مخفٍّ بصرياً، مع الاحتفاظ بالدلالة) |
+| `.lh-radio__label` | النص |
+| `.lh-radio-group` / `--{small\|large}` | حاوية المجموعة |
+
+تُلوَّن النقطة الداخلية لحالة التحديد بـ `var(--lh-primary-color)`، وتستخدم حالة التعطيل `--lh-text-disabled`.
+
+## ملاحظات
+
+- **خاصية `type` شيء وحجم radio-group شيء آخر**: ما يُخرِجه `getRadioClassNames(type)` في radio هو مُعدِّل **النوع** (مثل primary)، بينما مُعدِّل الحجم يقع على المجموعة (`lh-radio-group--{size}`).
+- **يجب أن يكون name موحَّداً للجميع في المجموعة**: وإلا يفشل تنقّل المتصفح بالأسهم (التحرك بين أفراد المجموعة)، وتُرسَل عدة قيم عند إرسال النموذج.
+- **القيمة الابتدائية لـ `modelValue`**: ينبغي أن تكون قيمةَ أحد الخيارات، أو `undefined` (دون تحديد أي شيء). وإسناد قيمة لا تقع ضمن الخيارات يجعل جميع الأزرار غير محددة، ولا يمكن استرجاع الوضع عبر الواجهة.
+- كلاً من radio و segmented يُنجز التبديل المتنافي: radio يحمل دلالة «عنصر نموذج» (أصلي، قابل للإرسال)، بينما segmented يحمل دلالة «تبديل العرض» (أخف، وأشبه بمجموعة أزرار).
+
+<FnPlayground module="radio" fn="getRadioClassNames" params='{"type": "primary"}' />

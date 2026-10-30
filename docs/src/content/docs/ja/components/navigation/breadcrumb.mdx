@@ -1,0 +1,151 @@
+---
+title: 'breadcrumb パンくずリスト —— ナビゲーション'
+description: 'getEllipsisBeforeIndex の先頭項 + 省略号 + 末尾戦略、getCollapsedHiddenIndexes の折りたたみ非表示セット、末項の aria-current="page"'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+パンくずリストは「今どこにいて、どうやって来たか」の経路表示です：`ホーム / 設定 / セキュリティ / 2 段階認証`。メニューより軽量です——階層の経路だけを表し、メインのナビゲーションは担いません；ステップバーより弱いです——順序のあるフローではなく、包含関係だけを表します。階層が深いと経路は長くなり、折りたたみがその中核のアルゴリズムになります。
+
+## いつ使うか
+
+- 各端の `<LhBreadcrumb>` / `<LhBreadcrumbItem>` 実装：バックエンドシステムの階層経路、ドキュメントサイトのカテゴリ経路、商品カテゴリの経路。
+- **現在位置を示し**、かつ**段階的に戻る**入り口を提供したいシーン。
+- **使うべきでない**：メインナビゲーション（`menu` を使います）；ステップフロー（`steps` を使います）；同階層のコンテンツ切り替え（`tabs` を使います）；1 階層しかない経路（それはパンくずリストではなく、ページタイトルです）。
+
+## インポート方法
+
+```ts
+import {
+  getBreadcrumbItemClassNames,
+  getEllipsisBeforeIndex,
+  getCollapsedHiddenIndexes,
+  getBreadcrumbItemAria,
+} from '@lh-ui/share/core/breadcrumb'
+import type { LhBreadcrumbItemState, LhBreadcrumbCollapseState } from '@lh-ui/share/core/breadcrumb'
+```
+
+## 設計意図
+
+**折りたたんでも先頭項は残す**：`getEllipsisBeforeIndex` のルールは「先頭項 + 省略号 + 末尾の maxItems-1 項」です。**先頭項は常に保持します**——それは「最上位に戻る」ためのアンカー（通常は「ホーム」）であり、省略すればユーザーはルートに戻る能力を失います。この取舍は「末項を残す」（現在位置）と同等に重要です。
+
+**省略号をどの項の前に挿入するか**：返されるのは**省略号の後ろの最初の可視項のインデックス**（`total - (maxItems - 1)`）で、UI 層はこの位置の前に省略号の要素を挿入します。折りたたまない場合は -1 を返します——-1 は「折りたたまない」ことを示すセンチネルであって、有効なインデックスではない点に注意してください。
+
+**`maxItems < 2` なら折りたたまない**：少なくとも先頭項 + 後続項 1 つを表示して初めて折りたたみに意味があります。`maxItems: 1` 以下では -1 を返します——これは防御的な設計で、値の設定ミスでパンくずリストが省略号 1 つだけに折りたたまれるのを防ぎます。
+
+**`getCollapsedHiddenIndexes` と省略号インデックスの関係**：非表示になるのは「先頭項と省略号の間の項」、つまり半開区間 `[1, ellipsisIndex)` です——先頭項（インデックス 0）と省略号位置より後ろの項はすべて保持します。2 つの関数は組み合わせて使います：先に省略号の位置を取り、それから非表示の集合を計算します。
+
+**末項の aria-current="page"**：最後の項は「現在のページ」で、`aria-current="page"` は WAI-ARIA の標準セマンティクスです——スクリーンリーダーは「現在のページ」と読み上げ、テキストのヒントよりも正確です。末項以外にはいかなる aria 属性も出力しません（リンクのセマンティクスはネイティブの `<a>` が担います）。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getBreadcrumbItemClassNames` | `(state: LhBreadcrumbItemState) => string[]` | クラス名 | リンク状態 + 末項 |
+| `getEllipsisBeforeIndex` | `(state: LhBreadcrumbCollapseState) => number` | インデックス / -1 | 省略号の位置 |
+| `getCollapsedHiddenIndexes` | `(state: LhBreadcrumbCollapseState) => number[]` | 非表示インデックスの集合 | 折りたたみで隠す項 |
+| `getBreadcrumbItemAria` | `(isLast: boolean) => LhAriaAttrs` | aria パック | 末項の aria-current |
+
+## 型定義
+
+```ts
+export interface LhBreadcrumbItemState {
+  isLast: boolean    // 最後の項かどうか（現在のページ）
+  isLink: boolean    // リンクとしてレンダリングするか（to が渡され、かつ末項でない）
+}
+
+export interface LhBreadcrumbCollapseState {
+  total: number      // 項の総数
+  maxItems: number   // 最大の可視項数（省略号を含む）；2 未満は折りたたまない
+}
+```
+
+## アクセシビリティ
+
+```ts
+getBreadcrumbItemAria(true)   // { 'aria-current': 'page' }
+getBreadcrumbItemAria(false)  // {}
+```
+
+- **aria-current="page" は末項にのみ**：中間の項はクリック可能なリンクで、current のマークは不要です。スクリーンリーダーはページに入ったとき「ホーム、リンク / 設定、リンク / セキュリティ、リンク / 2 段階認証、現在のページ」と読み上げます——経路と位置が一度に完整に伝わります。
+- **JS のジャンプではなくネイティブの `<a>` を使う**：中間の項が本当のリンクであれば `<a href="...">` を使います——中クリックで新しいウィンドウを開く、右クリックでリンクをコピーする、JS なしでも使えるというサポートがあります。クライアントサイドルーティングは UI 層がクリックを遮断して実現し（`@click.prevent`）、href は保持します。`getBreadcrumbItemAria` のコメントにもこの点が書かれています：リンクがある場合、role のセマンティクスはネイティブの a が担い、関数の出力は不要です。
+- **省略号ボタンのアクセシビリティ**：折りたたまれた後の省略号は、通常はクリックして完全な経路を展開できます。それは 1 つのコントロールであり、`aria-label="経路をすべて展開"`（または展開状態を表す aria-expanded）が必要です——さもなくば名前のないボタンになります。
+- **nav で包む + aria-label**：パンくずリスト全体は `<nav aria-label="パンくずリスト">` にすることが推奨されます——ページ上に複数の nav（メインナビゲーション、ページネーションナビゲーション）がある可能性があり、aria-label でそれらを区別します。
+- **セパレーターの装飾化**：`/` や `»` のセパレーターは純粋な装飾で、`aria-hidden` にするか CSS の擬似要素で実現し、スクリーンリーダーがスラッシュを逐次読み上げるのを避けます。
+
+## 使用例
+
+```ts
+import {
+  getEllipsisBeforeIndex, getCollapsedHiddenIndexes, getBreadcrumbItemAria,
+} from '@lh-ui/share/core/breadcrumb'
+
+getEllipsisBeforeIndex({ total: 6, maxItems: 4 })   // 3（省略号はインデックス 3 の前に挿入）
+getEllipsisBeforeIndex({ total: 4, maxItems: 4 })   // -1（総数 <= maxItems、折りたたまない）
+getEllipsisBeforeIndex({ total: 6, maxItems: 1 })   // -1（maxItems < 2 は折りたたまない）
+getEllipsisBeforeIndex({ total: 6, maxItems: 2 })   // 5（先頭項 + 末尾 1 項を保持）
+
+getCollapsedHiddenIndexes({ total: 6, maxItems: 4 })  // [1, 2]（先頭項と省略号の間）
+getCollapsedHiddenIndexes({ total: 4, maxItems: 4 })  // []（折りたたまない）
+```
+
+```ts
+// UI 層：折りたたみのレンダリング（展開状態はローカルの state で制御）
+const expanded = ref(false)
+const items = ['ホーム', 'システム', '設定', 'セキュリティ', 'アカウント', '2 段階認証']
+const ellipsisIndex = computed(() =>
+  getEllipsisBeforeIndex({ total: items.value.length, maxItems: props.maxItems ?? 4 }),
+)
+const hidden = computed(() =>
+  expanded.value ? [] : getCollapsedHiddenIndexes({ total: items.value.length, maxItems: props.maxItems ?? 4 }),
+)
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <nav aria-label="パンくずリスト">
+    <LhBreadcrumb :max-items="4">
+      <LhBreadcrumbItem to="/">ホーム</LhBreadcrumbItem>
+      <LhBreadcrumbItem to="/system">システム</LhBreadcrumbItem>
+      <LhBreadcrumbItem to="/system/security">セキュリティ</LhBreadcrumbItem>
+      <LhBreadcrumbItem>2 段階認証</LhBreadcrumbItem>
+    </LhBreadcrumb>
+  </nav>
+</template>
+```
+
+```tsx
+// React：経路データは通常ルートテーブルから派生する（useMatches / カスタム route meta）。
+// 1 つずつ手作業で宣言するのではない——パンくずリストとルーティングのマッピングは業務の決め事
+```
+
+```ts
+// uniapp：<navigator> はネイティブのジャンプコンポーネント；ミニプログラム側に <nav> セマンティクスはなく、
+// view + aria-label は無効だが許容する（ミニプログラムの読み上げの生態は異なる）、DOM 構造を一致させておくだけでよい
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-breadcrumb` | コンテナ（inline-flex） |
+| `.lh-breadcrumb__item` | 個々の項目 |
+| `.lh-breadcrumb__item--link` | リンク状態（hover で変色する） |
+| `.lh-breadcrumb__item--last` | 末項（現在のページ、太字または主色） |
+| `.lh-breadcrumb__separator` | セパレーター（通常は CSS の擬似要素） |
+| `.lh-breadcrumb__ellipsis` | 省略号（クリックで展開可能） |
+
+文字色は `--lh-text-regular`、リンクの hover 色は `--lh-primary-color`、末項は `--lh-text-primary`；文字サイズは `--lh-font-size-base` です。
+
+## 注意事項
+
+- **`maxItems` は省略号を含む**：`maxItems: 4` は实际には「先頭項 + 省略号 + 末尾 3 項」= 5 つの要素を表示し、可視の**文字項目**は 4 つです。値を設定するときは可視文字項目で数えてください。
+- **折りたたみの動的性**：経路の長さはナビゲーションの深さに合わせて変化し（`getEllipsisBeforeIndex` の total は動的）、`maxItems` は固定でかまいません——いつ折りたたむかを手動で判定する必要はなく、関数が自動的に処理します。
+- **省略号の展開のインタラクション**：よくある 2 つのやり方——① 省略号をクリックしてその場で全部を展開する（`expanded` 状態の切り替え）；② クリックで popover を出し、非表示の項をリストする。前者はシンプル、後者は省スペースで、経路の深さに合わせて選びます。
+- **経路データの来源**：パンくずリストは多くの場合、手書きではなくルートテーブルから派生します——各ルートの meta に `title` を設定し、コンポーネント層が現在の経路の祖先の meta を集約します。core はレンダリングのアルゴリズムだけを管理し、ルーティングとの統合は UI 層の仕事です。
+- **末項はリンクとしてレンダリングしない**：現在のページが自分自身を指す意味はありません（かつ `isLink: false` です）。`getBreadcrumbItemClassNames` の `--link` クラス名は isLink で制御され、末項には天然にない点に注意してください。
+- **超過したタイトルの省略**：1 つの階層のタイトルが長すぎる場合は CSS の `text-overflow: ellipsis`（UI 層のスタイル）を使います。経路の折りたたみとは別の「省略」です——折りたたみが省くのは階層の数で、CSS が省くのは 1 階層の幅です。
+- **パンくずリストをメインナビゲーションに使わないでください**：これは補助的な位置づけのもので、メインの入り口は引き続きメニューです。モバイルはスペースが限られるため、パンくずリストを省略するか「戻る」ボタンだけを残すことがよくあります。
+
+<FnPlayground module="breadcrumb" fn="getEllipsisBeforeIndex" params='{"total": 6, "maxItems": 4}' />

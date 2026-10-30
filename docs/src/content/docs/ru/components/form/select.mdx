@@ -1,0 +1,156 @@
+---
+title: select —— Выпадающий селектор
+description: 'точное совпадение findSelectOption, детерминированные id getSelectOptionId, трёхуровневый пакет aria-атрибутов combobox/listbox/option'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Выпадающий селектор — простейшая реализация паттерна «триггер + плавающий список». `core/select` занимается поиском вариантов, генерацией детерминированных id для option и трёхуровневым пакетом aria-атрибутов паттерна combobox из APG. **Вычисление позиционирования здесь не производится** — координаты плавающего слоя находятся в ведении `core/shared/popper` (см. [popper](/ru/core/popper)).
+
+## Когда использовать
+
+- В каждой платформе реализован `LhSelect`.
+- Сценарии одиночного выбора; для множественного — каскад или checkbox-group.
+- **Не использовать для**: вариантов с древовидной иерархией (`cascader`); нескольких сотен вариантов (рассмотрите виртуализацию `virtual-list`).
+
+## Импорт
+
+```ts
+import {
+  findSelectOption,
+  getNextEnabledIndex,
+  getSelectOptionId,
+  getSelectTriggerAria,
+  getSelectListboxAria,
+  getSelectOptionAria,
+} from '@lh-ui/share/core/select'
+import type { LhSelectOption, LhSelectState } from '@lh-ui/share/core/select'
+```
+
+## Замысел дизайна
+
+«Детерминированность» `getSelectOptionId(listboxId, index)` — это предпосылка работоспособности паттерна combobox из APG: триггер ссылается на текущий подсвеченный элемент через `aria-activedescendant`, и обе стороны должны указывать на **один и тот же DOM id**. Вместо того чтобы UI-слой генерировал id на лету и потом пытался их синхронизировать, на уровне core зафиксировано правило `${listboxId}-option-${index}`, и обе стороны берут значения по нему.
+
+Не менее важна защита: при пустом `listboxId`, нецелочисленном index или `index < 0` (-1 означает «нет подсветки») возвращается **undefined** — атрибуты со значением undefined игнорируются при v-bind во фреймворке, так что `aria-activedescendant` не станет указывать на несуществующий элемент.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `findSelectOption` | `(options: LhSelectOption[], value: unknown) => LhSelectOption \| undefined` | вариант | точное совпадение value через `Object.is` |
+| `getNextEnabledIndex` | `(options: LhSelectOption[], currentIndex: number, direction: 1 \| -1) => number` | индекс | **@deprecated**, обращается к `shared/keyboard.getNextListIndex` |
+| `getSelectOptionId` | `(listboxId: string \| undefined, index: number) => string \| undefined` | id | детерминированная склейка, при некорректном вводе undefined |
+| `getSelectTriggerAria` | `(options: { visible: boolean; listboxId?: string; highlightedIndex: number }) => LhAriaAttrs` | пакет aria-атрибутов | триггер combobox |
+| `getSelectListboxAria` | `(id?: string) => LhAriaAttrs` | пакет aria-атрибутов | контейнер listbox |
+| `getSelectOptionAria` | `(options: { listboxId?: string; index: number; selected: boolean; disabled?: boolean }) => LhAriaAttrs` | пакет aria-атрибутов | отдельный вариант |
+
+## Определения типов
+
+```ts
+export interface LhSelectOption {
+  label: string
+  value: unknown
+  disabled?: boolean
+}
+
+export interface LhSelectState {
+  options: LhSelectOption[]
+  highlightedIndex: number
+}
+```
+
+## Доступность
+
+Три уровня пакетов атрибутов составляют полный паттерн combobox:
+
+```ts
+// Триггер: aria-haspopup="listbox" + aria-expanded + aria-controls
+getSelectTriggerAria({ visible: true, listboxId: 'my-listbox', highlightedIndex: 2 })
+// { role: 'combobox', 'aria-expanded': true, 'aria-controls': 'my-listbox',
+//   'aria-haspopup': 'listbox', 'aria-activedescendant': 'my-listbox-option-2' }
+
+// Плавающий слой: role="listbox" + id (соответствует aria-controls триггера)
+getSelectListboxAria('my-listbox')  // { role: 'listbox', id: 'my-listbox' }
+
+// Вариант: role="option" + id + aria-selected
+getSelectOptionAria({ listboxId: 'my-listbox', index: 2, selected: true })
+// { role: 'option', id: 'my-listbox-option-2', 'aria-selected': true }
+```
+
+Полный замкнутый цикл взаимодействия с клавиатурой (реализуется на UI-слое, алгоритмы предоставляет core): ArrowDown/Up перемещают `highlightedIndex` (через `shared/keyboard.getNextListIndex`, с зацикливанием на концах и пропуском disabled), Enter выбирает, Esc закрывает. **Визуальная подсветка должна браться из того же `highlightedIndex`**, иначе получится «aria указывает на A, а глаза видят B».
+
+## Примеры использования
+
+```ts
+import { findSelectOption, getSelectOptionId, getSelectTriggerAria } from '@lh-ui/share/core/select'
+
+const options = [
+  { label: 'сине-белый фарфор', value: 'cerblue' },
+  { label: 'тушь', value: 'shuimo', disabled: true },
+]
+findSelectOption(options, 'cerblue')   // { label: 'сине-белый фарфор', value: 'cerblue' }
+findSelectOption(options, 'nope')      // undefined
+getSelectOptionId('lb', 0)             // 'lb-option-0'
+getSelectOptionId('lb', -1)            // undefined (нет подсветки)
+getSelectOptionId(undefined, 0)        // undefined
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-select', `lh-select--${size}`, { 'lh-select--open': visible, 'lh-select--disabled': disabled }]">
+  <button
+    class="lh-select__trigger"
+    v-bind="getSelectTriggerAria({ visible, listboxId, highlightedIndex })"
+    @click="toggle"
+  >
+    <span class="lh-select__value" :class="{ 'lh-select__value--placeholder': !selected }">
+      {{ selected ? selected.label : placeholder }}
+    </span>
+    <LhIcon class="lh-select__arrow" name="more" :size="12" />
+  </button>
+  <div v-if="visible" :id="listboxId" class="lh-select__dropdown" v-bind="getSelectListboxAria(listboxId)">
+    <div
+      v-for="(opt, i) in options"
+      :key="i"
+      class="lh-select__option"
+      :class="{ 'lh-select__option--highlighted': i === highlightedIndex, 'lh-select__option--selected': i === selectedIdx, 'lh-select__option--disabled': opt.disabled }"
+      v-bind="getSelectOptionAria({ listboxId, index: i, selected: i === selectedIdx, disabled: opt.disabled })"
+      @click="choose(opt)"
+    >{{ opt.label }}</div>
+  </div>
+</div>
+```
+
+```tsx
+// React: состояние visible + useRef хранит listboxId (стабильный id генерируется через useId)
+```
+
+```ts
+// uniapp: плавающий слой абсолютно позиционируется через view; aria-activedescendant
+// на не-h5 платформах не поддерживается, и навигация с клавиатуры деградирует
+// до простого перемещения фокуса (на элементе в фокусе), а чтение экрана
+// идёт через события focus
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-select` | базовый класс |
+| `.lh-select--{small\|large}` / `--disabled` / `--open` | модификаторы состояния |
+| `.lh-select__trigger` | кнопка-триггер |
+| `.lh-select__value` / `--placeholder` | отображаемое значение / состояние плейсхолдера |
+| `.lh-select__arrow` / `__clear` / `__actions` | стрелка / очистка / область действий |
+| `.lh-select__dropdown` / `--teleported` | плавающий слой (teleported — перенесён в body) |
+| `.lh-select__option` / `--highlighted` / `--selected` / `--disabled` | четыре состояния варианта |
+| `.lh-select__empty` | заглушка при отсутствии вариантов |
+| `.lh-select-fade-*` | переходы появления и скрытия плавающего слоя (имена классов Vue3, на стороне Vue2 выравниваются через mixin) |
+
+## Замечания
+
+- **`Object.is` вместо `===`**: `findSelectOption` использует `Object.is`, корректно обрабатывая такие граничные случаи, как `NaN` и `-0` (хотя реальные значения вариантов с ними сталкиваются редко).
+- **`getNextEnabledIndex` устарел**: реализация перенесена в `shared/keyboard.getNextListIndex`, а эта функция только обращается к ней и сохранена ради прежней сигнатуры. В новом коде импортируйте напрямую из ядра.
+- **Стабильность id**: `listboxId` не должен меняться в течение жизненного цикла компонента (иначе `aria-activedescendant` будет указывать на старый id) — используйте стабильную генерацию id на каждой платформе.
+- **Телепорт**: при переносе плавающего слоя в body `aria-controls` продолжает работать (в пределах документа), но будьте осторожны с **управлением фокусом** — после выбора варианта фокус должен возвращаться на триггер.
+
+<FnPlayground module="select" fn="findSelectOption" params='{"options": [{"label": "青花瓷", "value": "cerblue"}, {"label": "水墨", "value": "shuimo"}], "value": "cerblue"}' />

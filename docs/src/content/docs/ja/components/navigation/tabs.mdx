@@ -1,0 +1,180 @@
+---
+title: 'tabs タブ —— ナビゲーション'
+description: 'resolveActiveName の空文字ページ签名、getNameAfterRemove のページ削除後のアクティブ化戦略、tab / tabpanel の双方向 aria 連携'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+タブは「同一エリアのコンテンツ切り替え」です：設定ページの「基本 / セキュリティ / 通知」、ブラウザのタブ。複数のパネルを同じ空間に重ね、ページタブで表示 / 非表示を切り替えます——縦のスペースを節約できますが、代償として同時に見られるパネルは 1 つだけです。`core/tabs` が管理するのは**アクティブ状態の解決、ページ削除後のアクティブ化戦略、roving tabindex ナビゲーション**です。
+
+## いつ使うか
+
+- 各端の `<LhTabs>` / `<LhTabPane>` の実装：設定ページ、詳細ページの分割、ダッシュボードのパネル切り替え。
+- コンテンツが**互いに排他的**で**同列**の分割。
+- **使うべきでない**：プロセス式のステップ（`steps` を使います——tabs には順序のセマンティクスがありません）；階層ナビゲーション（`menu` を使います）；2 つのパネルを同時に見比べたい場合（`grid` で並べます）；切り替えでフォームの下書きが失われる場合は慎重に（UI 層で keep-alive して保活できます）。
+
+## インポート方法
+
+```ts
+import {
+  getTabsClassNames,
+  resolveActiveName,
+  getNextActiveName,
+  getNameAfterRemove,
+  getTablistAria,
+  getTabAria,
+  getTabpanelAria,
+} from '@lh-ui/share/core/tabs'
+import type {
+  LhTabsType, LhTabsPosition, LhTabRecord, LhTabNavDirection,
+} from '@lh-ui/share/core/tabs'
+```
+
+## 設計意図
+
+**真値の短絡評価ではなく `!= null`**：`resolveActiveName` は modelValue を判定するとき `modelValue != null` を使います——なぜなら**ページ签名は業務識別子であり、空文字は合法な値**だからです。ユーザーが明示的に `name: ''` のタブにバインドしたとき、真値の短絡評価（`if (modelValue && ...)`)は空文字を「値が渡されていない」と見なして無視し、最初の利用可能なタブをアクティブにしてしまい、原因が特定しづらい状態のズレを引き起こします。
+
+**アクティブ化の検証には disabled を含む**：`modelValue` が存在しても対応するタブが無効化されているとき、**それをアクティブにせず**、最初の利用可能なタブにフォールバックします——無効なタブは選択できないというハード制約で、外部から強制設定しても通しません。
+
+**`getNameAfterRemove` の右優先 → 左**：削除したのが現在アクティブなタブのとき、**右側の最も近い利用可能な項**を優先して選び（視線の位置を保つ）、右側になければ左側の最も近い項を選びます。この順序は「削除後にフォーカスがそのまま右へ流れる」という直感に合います。削除された項がアクティブ項でないときは元のアクティブを維持します。
+
+**`getNextActiveName` は @deprecated のラッパー**：ナビゲーションのアルゴリズムは `shared/keyboard.getNextListIndex` に集約されており、本関数は旧シグネチャ（'next' / 'prev' / 'first' / 'last' というセマンティックな方向名）と「現在値が不明または無効化されているときは先頭項にフォールバック」という既有の挙動を残しています。**新規コードは直接コアを使ってください**。
+
+**roving tabindex**：タブバーのキーボードナビゲーションの標準パターンは roving tabindex です——すべてのタブを `tabindex="-1"` とし、アクティブなタブだけ `tabindex="0"` にします。方向キーでタブ間をフォーカス移動し、Tab キーでタブバーからパネルのコンテンツへ抜けます。`getNextActiveName` が目標のタブ签名を返し、UI 層がそれに従ってフォーカスを移動し tabindex を設定します。
+
+**双方向の aria 連携**：タブの `aria-controls` → パネルの id；パネルの `aria-labelledby` → アクティブなタブの id。両端を書き、スクリーンリーダーがどちらの端からでももう一方の端へジャンプできるようにします。`aria-selected` はアクティブなときだけ出力します（false は出力しない——非アクティブがデフォルトの状態だからです）。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getTabsClassNames` | `(state: { type, position }) => string[]` | クラス名 | 外観 + 位置 |
+| `resolveActiveName` | `(records, modelValue) => string \| null` | アクティブなタブ签名 | modelValue の検証 + フォールバック |
+| `getNextActiveName` ⚠️ | `(records, currentName, direction) => string \| null` | 目標のタブ签名 | キーボードナビゲーション |
+| `getNameAfterRemove` | `(records, removedName, currentName) => string \| null` | 推奨アクティブ | 削除後の右優先 → 左 |
+| `getTablistAria` | `(id?) => LhAriaAttrs` | aria パック | role=tablist |
+| `getTabAria` | `(options: { active, disabled?, panelId?, id? }) => LhAriaAttrs` | aria パック | role=tab |
+| `getTabpanelAria` | `(options: { tabId?, id? }) => LhAriaAttrs` | aria パック | role=tabpanel |
+
+⚠️ は `@deprecated` の互換ラッパーで、新規コードには `shared/keyboard` の `getNextListIndex` を使います。
+
+## 型定義
+
+```ts
+export type LhTabsType = 'line' | 'card'      // 下線 / カード外観
+export type LhTabsPosition = 'top' | 'bottom' // タブの位置
+export type LhTabNavDirection = 'next' | 'prev' | 'first' | 'last'
+
+export interface LhTabRecord {
+  name: string       // 一意識別子（安定キー、ライフサイクルで変化しない）
+  label: string      // タブのタイトル
+  disabled: boolean
+}
+```
+
+## アクセシビリティ
+
+```ts
+getTabAria({ active: true, panelId: 'panel-1', id: 'tab-1' })
+// { role: 'tab', id: 'tab-1', 'aria-controls': 'panel-1', 'aria-selected': true }
+getTabAria({ active: false, disabled: true })
+// { role: 'tab', 'aria-disabled': true }（非アクティブは aria-selected を出力しない）
+
+getTabpanelAria({ tabId: 'tab-1', id: 'panel-1' })
+// { role: 'tabpanel', id: 'panel-1', 'aria-labelledby': 'tab-1' }
+```
+
+- **role=tab のキーボード規約**（APG）：←/→ でタブを切り替えます（かつ**アクティブはフォーカスに追従する**——フォーカスを移すだけで切り替わり、改めて Enter を押す必要はありません）；Home/End で先頭 / 末尾のタブへジャンプします。Tab キーでタブバーを抜けて現在のパネルに入ります。
+- **`getNextActiveName` の first / last**：direction は 'first' / 'last' をサポートし、Home / End キーに対応します——別途境界判定を自分で書かないでください。
+- **パネルに tabindex が必要**：パネル自体に通常 `tabindex="0"` を付け、キーボードのユーザーが Tab でパネルのコンテンツに入れるようにします（APG の推奨做法）。これは core の職責ではなく、UI 層が実装します。
+- **パネルの隠し方**：非アクティブなパネルは `v-if` / `hidden` でアクセシビリティツリーから外します；**`visibility: hidden` 以外の手段でパネルをフォーカス可能なまま残さないでください**。保活が必要な場合（フォームの下書き）は、`display: none` + キャッシュしたレンダリングを使います。
+- **aria-selected の省略のセマンティクス**：非アクティブのときはこの属性を出力しません（false を出力するのではなく）——APG は tab の aria-selected のデフォルトを false と規定しており、明示的に false を出力するのは合法ですが冗長です。`getTabAria` は `shared/a11y` の偽値省略の規約に従います。
+
+## 使用例
+
+```ts
+import { resolveActiveName, getNameAfterRemove, getNextActiveName } from '@lh-ui/share/core/tabs'
+
+const records = [
+  { name: 'a', label: '基本', disabled: false },
+  { name: 'b', label: 'セキュリティ', disabled: false },
+  { name: 'c', label: '通知', disabled: true },
+]
+
+resolveActiveName(records, 'b')   // 'b'
+resolveActiveName(records, 'c')   // 'a'（c は無効、最初の利用可能なものにフォールバック）
+resolveActiveName(records, '')    // 'a'（空文字は != null で検証ブランチに入るが、name が '' のタブがない → フォールバック）
+resolveActiveName(records, undefined)  // 'a'
+resolveActiveName([], undefined)       // null（利用可能なタブがない）
+
+getNextActiveName(records, 'a', 'next')  // 'b'（無効な c をスキップし、a の next で b を得る）
+getNextActiveName(records, 'b', 'next')  // 'a'（利用可能なのは a/b のみ、循環）
+getNextActiveName(records, 'unknown', 'next')  // 'a'（不明なら先頭項にフォールバック）
+
+getNameAfterRemove(records, 'b', 'b')  // 'a'（削除したのがアクティブ項 b：右側に利用可能なものがない → 左側の最も近いもの）
+getNameAfterRemove(records, 'a', 'b')  // 'b'（削除したのがアクティブ項ではない、b を維持）
+getNameAfterRemove([{ name: 'a', disabled: true }], 'a', 'a')  // null（利用可能なものがない）
+```
+
+```ts
+// 制御付きアクティブ化（UI 層）
+const activeName = ref<string | null>(null)
+const records = ref<LhTabRecord[]>([])
+
+function onTabClick(name: string) {
+  activeName.value = name
+}
+function onRemove(name: string) {
+  const next = getNameAfterRemove(records.value, name, activeName.value ?? '')
+  records.value = records.value.filter((r) => r.name !== name)
+  activeName.value = next
+}
+watch(records, () => {
+  activeName.value = resolveActiveName(records.value, activeName.value)
+}, { immediate: true })
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTabs v-model="activeName" type="card">
+    <LhTabPane name="basic" label="基本設定">…</LhTabPane>
+    <LhTabPane name="security" label="セキュリティ設定">…</LhTabPane>
+  </LhTabs>
+</template>
+```
+
+```tsx
+// React：records は TabPane の子コンポーネントが登録（useEffect + context）するか、props で直接渡します；
+// キーボードナビゲーションは onKeyDown で getNextActiveName + focus() を呼びます
+```
+
+```ts
+// uniapp：<view> のタブ + scroll-view で横向きスクロール；アクティブの下線は transform で位置決め
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-tabs` | ルートコンテナ |
+| `.lh-tabs--{line\|card}` | 外観 |
+| `.lh-tabs--{top\|bottom}` | タブの位置（下線 / カードの境界線がそれに伴って反転） |
+| `.lh-tabs__header` / `__nav` / `__nav-wrap` | タブバー / ナビゲーション / スクロールラップ（スクロール可能なタブバー） |
+| `.lh-tabs__item` / `--active` / `--disabled` | タブ |
+| `.lh-tabs__active-bar` | アクティブな下線（line タイプ、transform で位置決め） |
+| `.lh-tabs__content` / `__pane` | パネル領域 |
+
+アクティブの文字色 `--lh-tabs-active-color`、下線は同色；カードタイプは `--lh-border-color` の境界線 + アクティブ状態の背景 `--lh-bg-color` で持ち上げます。
+
+## 注意事項
+
+- **タブバーのスクロール**：タブが多くなり溢れるときは左右のスクロールボタンかジェスチャーのスワイプが必要です——`__nav-wrap` の `overflow: hidden` + `__nav` の transform の平行移動が一般的な実装で、スクロール量は UI 層が算出します（core は関与しません）。
+- **`type: card` の境界線のつなぎ合わせ**：カードタブのアクティブ状態では、コンテンツ領域と重なるあの辺の境界線を取り除きます（top 位置なら下辺、bottom 位置なら上辺）——さもなくば二重の境界線が現れます——これが position のクラス名が存在する理由です。
+- **動的なタブの増減**：増減後に `resolveActiveName` を再実行する必要があります（watch records）。ページの削除は `getNameAfterRemove` を使い、アクティブ状態が宙に浮かないようにします。
+- **タブ内に閉じるボタンを置く**：`closable` なタブの ✕ ボタンは `@click.stop` が必要です（さもなければタブの切り替えも同時に発火する）、かつ `aria-label` が必要です。
+- **keep-alive とパフォーマンス**：頻繁に切り替える重いパネル（チャート、テーブル）は破棄して再構築するのではなく保活を推奨します——Vue は `<keep-alive>`、React は CSS での非表示 + アンマウント戦略。core は関知しません。
+- **`getNextActiveName` の旧シグネチャ**：direction はコアの 1 / -1 ではなくセマンティックな名前（'next' / 'prev'）を使い、かつ**現在値が不明のときは方向に関係なく先頭項にフォールバックします**（方向に従って進むのではない）——これは旧挙動の保持であり、移行時に注意してください。
+- **空文字のタブ签名の罠**：`resolveActiveName(records, '')` は records の中から `name === ''` のタブを探します——業務が空文字で「未選択」を表すと、合法な空文字のタブ签名と衝突します。「未選択」は `''` ではなく `null` で表してください。
+
+<FnPlayground module="tabs" fn="getNameAfterRemove" params='{"records": [{"name": "a", "label": "基本", "disabled": false}, {"name": "b", "label": "セキュリティ", "disabled": false}, {"name": "c", "label": "通知", "disabled": true}], "removedName": "b", "currentName": "b"}' />

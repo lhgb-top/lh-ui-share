@@ -57,7 +57,7 @@ description: 'pnpm build / build:styles / build:dts / test / lint / typecheck / 
 | 任务 | 命令 | 作用 |
 | --- | --- | --- |
 | 数据生成 | `pnpm docs:data` | `scripts/gen-docs-data.mjs` 解析令牌 / 图标 / 类名 → `docs/src/data/*.json` |
-| 本地开发 | `pnpm docs:dev` | Astro dev server（`http://localhost:4321/lhui/share/`） |
+| 本地开发 | `pnpm docs:dev` | Astro dev server（`http://localhost:5180/lhui/share/`） |
 | 构建 | `pnpm docs:build` | 生产构建到 `docs/dist/` |
 | 预览 | `pnpm docs:preview` | 预览构建产物 |
 

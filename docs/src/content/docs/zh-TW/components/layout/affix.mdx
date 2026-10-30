@@ -1,0 +1,152 @@
+---
+title: affix 固定 —— 版面配置
+description: 'isAffixFixed 視區越界判定（top/bottom 雙模式）、getAffixFixedStyle 定位樣式、IntersectionObserver 與 getBoundingClientRect 雙路徑'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+頁面捲動時，有些元素要「釘住」：頂部導覽、底部操作列、側邊目錄。`affix` 在元素滾出視區時把它切換成 fixed 定位，捲回來再還原。難點不在切換本身，而在**判定時機**和**佔位防塌陷**——core 只管判定與樣式，監聽與佔位由 UI 層負責。
+
+## 何時使用
+
+- 各端實作 `<LhAffix>`：頁面頂部導覽釘頂、表單底部操作列釘底、長文件側邊目錄釘視區。
+- 元素需要在**捲動過程中保持可見**的場景。
+- **不該用它**：元素本來就在視區內的短頁面（無需釘）；需要全螢幕遮罩的場景（用 `loading` 的 fullscreen）；側邊欄整體固定版面配置（直接用 CSS `position: sticky` 更簡單——affix 的價值在於「捲動到閾值才固定」的條件行為）。
+
+## 匯入方式
+
+```ts
+import {
+  getAffixClassNames,
+  isAffixFixed,
+  getAffixFixedStyle,
+} from '@lh-ui/share/core/affix'
+import type { LhAffixState } from '@lh-ui/share/core/affix'
+```
+
+## 設計意圖
+
+**top 與 bottom 是互斥的兩種模式**：`offsetTop > 0` 時判「頂邊是否越過視區頂閾值」，`offsetBottom > 0` 時判「底邊是否越過視區底閾值」。兩個 offset 不能同時生效——`isAffixFixed` 用 `if (offsetBottom > 0)` 優先走底部模式。語義上元素只能釘一個邊。
+
+**底部判定必須吃視區高度**：`rect.bottom > viewportHeight - offsetBottom`——佔位元素的底邊要越過「視區底 - 閾值」才算固定。這個閾值是**動態的**（viewportHeight 隨視窗大小變化），所以 UI 層每次回呼都要把當前視區高度傳進來，不能快取。
+
+**判定函式與監聽機制解耦**：`isAffixFixed` 吃的是 `{ top, bottom }` 矩形物件，不關心它哪來的——IntersectionObserver 回呼拿 entry 的 boundingClientRect，或 resize / scroll 事件裡 `getBoundingClientRect()` 兜底，兩條路徑共用同一份判定邏輯。
+
+**`getAffixFixedStyle` 的 `top: 'auto'` / `bottom: 'auto'`**：固定時顯式把另一軸設為 auto，防止元素同時攜帶 top 和 bottom（在 fixed 定位下兩者同時有值會拉伸元素高度）。
+
+**fixed 類別名而非直接改樣式**：`lh-affix--fixed` 由 SCSS 決定 fixed 定位的細節（z-index、陰影、過渡動畫），core 的 `getAffixFixedStyle` 只算 top / bottom 的具體像素值——定位開關與偏移量分離。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getAffixClassNames` | `(state: LhAffixState) => string[]` | 類別名 | fixed 狀態 |
+| `isAffixFixed` | `(rect: { top, bottom }, offsetTop, offsetBottom, viewportHeight) => boolean` | 是否固定 | 視區越界判定 |
+| `getAffixFixedStyle` | `(offsetTop, offsetBottom) => Record<string, string>` | 內聯樣式 | fixed 定位偏移 |
+
+## 類型定義
+
+```ts
+export interface LhAffixState {
+  fixed: boolean    // 當前是否處於固定態（驅動類別名）
+}
+```
+
+## 無障礙
+
+affix 是純視覺定位，**不改變內容語義**，無專屬 aria 屬性。兩條相關實踐：
+
+- **固定態不要改變 DOM 順序**：元素 fixed 後仍在原 DOM 位置，讀屏軟體按原始碼順序播報。若為了視覺把它移到 body 結尾（teleport），播報順序會跳變——affix 的實作應只改定位、不動 DOM。
+- **固定元素的可見性**：固定態元素始終在視區內，`aria-hidden` 不應隨捲動變化（它本來就一直可見）。
+- **焦點陷阱風險**：釘底的「儲存 / 提交」操作列在長表單裡是便利，但注意 fixed 元素可能遮擋頁面底部內容（按鈕永遠蓋住最後一行）——UI 層應給 body 或內容容器加 `padding-bottom` 預留空間，這是版面配置問題不是無障礙問題，但影響可操作性。
+
+## 使用範例
+
+```ts
+import { isAffixFixed, getAffixFixedStyle } from '@lh-ui/share/core/affix'
+
+// 頂部模式：頂邊越過閾值 80px
+isAffixFixed({ top: 50, bottom: 200 }, 80, 0, 900)   // false（50 < 80 才固定，50 未越過）
+isAffixFixed({ top: 100, bottom: 300 }, 80, 0, 900)  // true（100 > 80）
+// 注意判定方向：top < offsetTop 為真 —— 元素頂邊**高於**閾值線（被捲上去了）
+
+// 底部模式：底邊越過「視區底 - 閾值」
+isAffixFixed({ top: 700, bottom: 950 }, 0, 60, 900)  // true（950 > 900-60=840）
+isAffixFixed({ top: 500, bottom: 700 }, 0, 60, 900)  // false（700 < 840，還沒越過）
+
+// 兩 offset 都傳：底部優先
+isAffixFixed({ top: 100, bottom: 950 }, 80, 60, 900)  // true（走底部分支）
+```
+
+```ts
+getAffixFixedStyle(80, 0)   // { position: 'fixed', top: '80px', bottom: 'auto' }
+getAffixFixedStyle(0, 60)   // { position: 'fixed', bottom: '60px', top: 'auto' }
+getAffixFixedStyle(0, 0)    // { position: 'fixed', top: '0px', bottom: 'auto' }（預設釘頂）
+```
+
+```ts
+// UI 層：IntersectionObserver 主路徑 + 佔位防塌陷
+const placeholder = document.createElement('div')  // 固定時撐開原位置，防後續內容跳變
+let observer: IntersectionObserver | undefined
+
+function observe() {
+  observer = new IntersectionObserver(
+    (entries) => {
+      const rect = entries[0].boundingClientRect
+      const fixed = isAffixFixed(
+        { top: rect.top, bottom: rect.bottom },
+        props.offsetTop ?? 0,
+        props.offsetBottom ?? 0,
+        window.innerHeight,
+      )
+      if (fixed !== state.fixed) {
+        state.fixed = fixed
+        if (fixed) targetEl.before(placeholder)   // 佔位
+        else placeholder.remove()                  // 撤佔位
+      }
+    },
+    { threshold: [0, 1] },
+  )
+  observer.observe(targetEl)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhAffix :offset-top="64">
+    <nav class="page-nav">…</nav>
+  </LhAffix>
+</template>
+```
+
+```tsx
+// React：useEffect 註冊 IntersectionObserver；SSR 時跳過（無 IntersectionObserver），
+// 用戶端激活後掛載
+```
+
+```ts
+// uniapp：IntersectionObserver 在小程序端是 wx.createIntersectionObserver；
+// h5 端用瀏覽器原生 API。core 的判定函數兩端共用
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-affix` | 包裹容器（原位） |
+| `.lh-affix--fixed` | 固定態（position: fixed + z-index + 可選陰影 / 過渡） |
+
+z-index `--lh-z-index-affix`；固定態陰影 `--lh-box-shadow-affix`（可選，釘頂時底部一條細陰影區分層級）。
+
+## 注意事項
+
+- **佔位元素是必需的**：元素一旦 fixed 就脫離文件流，後面的內容會整體上移填補空位——頁面劇烈跳變。UI 層必須放一個同尺寸佔位元素（上面的範例）。佔位的高度要等於元素**固定前**的高度。
+- **底部模式的視區高度要即時**：`isAffixFixed` 的 `viewportHeight` 參數每次呼叫都該傳當前值，視窗 resize 時要重新判定（affix 狀態可能從固定變回非固定）。
+- **`offsetTop` / `offsetBottom` 二選一**：同時傳時底部優先，頂部閾值失效。API 上雖然允許都傳，但語義上應該只配一個。
+- **固定態的寬度塌陷**：元素 fixed 後寬度不再受父容器約束（block 元素 fixed 會縮成內容寬度）。SCSS 側通常要在 `--fixed` 裡記錄並復用原寬度，或 UI 層把寬度寫進內聯樣式。
+- **巢狀捲動容器**：頁面裡有個局部捲動的容器（不是 window 捲動），IntersectionObserver 的 root 要設成那個容器——`isAffixFixed` 的視區高度參數也要換成容器的 clientHeight。core 不區分，由呼叫方保證一致。
+- **IntersectionObserver 的相容性**：目標端都已支援；若要相容極舊環境，用 scroll 事件 + `getBoundingClientRect()` 兜底（判定函式可直接復用，因為它只吃矩形物件）。
+- **affix 與 sticky 的選擇**：CSS `position: sticky` 能覆蓋大部分「釘頂」需求且零 JS。affix 的額外價值是**閾值可控**（不是貼邊才固定，而是越過 64px 才固定）與**底部模式**（sticky 只能貼捲動方向的近邊）。簡單場景別上 affix。
+
+<FnPlayground module="affix" fn="isAffixFixed" params='{"rect": {"top": 100, "bottom": 300}, "offsetTop": 80, "offsetBottom": 0, "viewportHeight": 900}' />

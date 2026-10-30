@@ -1,0 +1,229 @@
+---
+title: cascader —— Каскадный селектор
+description: 'поиск по дереву и восстановление путей findNode/findPathByValues, однократная нормализация normalizeCascaderNodes, поиск searchNodes с цепочкой предков'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Каскадный селектор обрабатывает данные с послойным выбором вида «провинция > город > район»: выбранный верхний уровень открывает следующий. `core/cascader` — один из самых тяжёлых модулей core в share: поиск по дереву, восстановление путей, генерация панелей, поиск и нормализация — всё это чистые функции, а UI-слой только рендерит элементы панелей по столбцам.
+
+## Когда использовать
+
+- В каждой платформе реализован `LhCascader`: многоуровневые категории, выбор регионов, организационные структуры.
+- Данные представляют дерево (или нормализуемы в дерево), на каждом уровне выбор взаимоисключающий.
+- **Не использовать для**: выбора одного уровня — `select`; для каскадного выделения, где родитель отмечается вместе с потомками — `tree` (там есть семантика `checkStrictly`).
+
+## Импорт
+
+```ts
+import {
+  findNode,
+  findPathByValues,
+  getField,
+  getChildren,
+  getPanelItems,
+  searchNodes,
+  getSelectedLabelPath,
+  getCascaderClassNames,
+  getPanelClassNames,
+  expandLastValue,
+  isLeafNode,
+  normalizeCascaderNodes,
+  flattenNodes,
+  getCascaderTriggerAria,
+  getCascaderColumnAria,
+  getCascaderItemAria,
+} from '@lh-ui/share/core/cascader'
+import type {
+  LhCascaderNode,
+  LhCascaderPath,
+  LhCascaderPanelItem,
+  LhCascaderState,
+  LhCascaderSearchResult,
+  LhCascaderItemConfig,
+} from '@lh-ui/share/core/cascader'
+```
+
+## Замысел дизайна
+
+Ключевые решения:
+
+- **Дедупликация по цепочке предков, а не глобальный visited**: операции с деревом повсеместно требуют защиты от циклических ссылок. Здесь для дедупликации используется «цепочка предков» (параметр `ancestors` передаётся уровень за уровнем), а не модульный или глобальный Set — плата в том, что защита **действует только в пределах одного вызова**, а выигрыш в том, что корректно разделяемые поддеревья в DAG не пропускаются по ошибке и нет утечки состояния между экземплярами.
+- **`getField` заставляет псевдонимы полей работать по-настоящему**: данные с бэкенда часто называются не `value`/`label`/`children` (а, например, `id`/`name`/`subList`). `LhCascaderItemConfig` объявляет отображение псевдонимов, и все операции с деревом читают поля через `getField`.
+- **Одна нормализация — везде стандартная структура**: `normalizeCascaderNodes` превращает исходное дерево с произвольной структурой полей в `LhCascaderNode[]`, и после этого все функции работают со стандартной структурой. Можно и не нормализовывать, а напрямую передать itemConfig — оба пути равноценны (но после нормализации производительность выше, так как псевдонимы не опрашиваются на каждом уровне).
+- **Результаты поиска несут полную цепочку предков**: каждый результат `searchNodes` содержит `path` (массив значений), `nodes` (массив узлов) и `pathLabels` (массив меток) — UI сразу рендерит строку «Чжэцзян / Ханчжоу / Сиху», без повторных запросов.
+- **Программное восстановление не фильтрует отключённые элементы**: `findPathByValues` намеренно **не отфильтровывает отключённые дочерние узлы** — отключение является ограничением кликов на UI-слое, а программное восстановление (например, начальное значение `v-model`) должно уметь восстанавливать любой путь, иначе сценарий «сначала отключили, потом восстанавливаем» потеряет значение.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `findNode` | `(nodes, value, strict?, ancestors?, itemConfig?) => { node, path } \| null` | узел + цепочка предков | рекурсивный поиск |
+| `getField` | `<T>(node, standard: string, configKey?: string) => T` | значение поля | чтение свойства узла по псевдониму |
+| `findPathByValues` | `(nodes, values, itemConfig?) => LhCascaderPath \| null` | путь | послойное восстановление по массиву значений |
+| `getChildren` | `(node, itemConfig?) => LhCascaderNode[]` | массив потомков | при грязных данных откат в `[]` |
+| `getPanelItems` | `(nodes, expandedValues?, itemConfig?) => LhCascaderPanelItem[]` | элементы панели | отображение дерева в элементы панели |
+| `searchNodes` | `(nodes, keyword, results?, itemConfig?, maxResults?) => LhCascaderSearchResult[]` | результаты поиска | нечувствителен к регистру, лимит по умолчанию 50 |
+| `getSelectedLabelPath` | `(nodes, values, itemConfig?) => string` | `"Чжэцзян / Ханчжоу"` | строка выбранных меток |
+| `expandLastValue` | `(nodes, value, itemConfig?) => (string\|number)[] \| null` | массив пути | восстановление пути из одного значения при `emitPath: false` |
+| `isLeafNode` | `(node, itemConfig?) => boolean` | логическое значение | явный `leaf` в приоритете, иначе по children |
+| `normalizeCascaderNodes` | `(nodes: readonly unknown[], itemConfig?) => LhCascaderNode[]` | стандартное дерево | однократная нормализация |
+| `flattenNodes` | `(nodes, itemConfig?) => {node, path, pathValues}[]` | плоский список | каждый элемент несёт путь |
+| `getCascaderClassNames` | `(state) => string[]` | имена классов | контейнер |
+| `getPanelClassNames` | `(state) => string[]` | имена классов | панель (`--hover-mode`) |
+
+## Определения типов
+
+```ts
+export interface LhCascaderNode {
+  value: string | number
+  label: string
+  disabled?: boolean
+  leaf?: boolean
+  children?: LhCascaderNode[]
+}
+
+export interface LhCascaderPath {
+  path: (string | number)[]      // массив выбранных значений
+  nodes: LhCascaderNode[]        // соответствующий массив узлов
+}
+
+export interface LhCascaderPanelItem {
+  value: string | number
+  label: string
+  isDisabled: boolean
+  isExpanded: boolean
+  hasChildren: boolean
+}
+
+export interface LhCascaderSearchResult {
+  path: (string | number)[]
+  nodes: LhCascaderNode[]
+  pathLabels: string[]
+}
+
+export interface LhCascaderItemConfig {
+  value?: string    // псевдоним поля value
+  label?: string
+  children?: string
+  disabled?: string
+  leaf?: string
+}
+
+export interface LhCascaderState {
+  options: LhCascaderNode[]
+  size: LhComponentSize
+  disabled: boolean
+  clearable: boolean
+  placeholder: string
+  visible: boolean
+  checkStrictly: boolean   // родитель и потомки не связаны (можно выбирать любой уровень)
+  emitPath: boolean        // true — значение это массив пути, false — только значение нижнего уровня
+  multiple: boolean
+  cascading: boolean
+  value: (string | number)[]
+  selectedValue: (string | number)[] | null
+}
+```
+
+## Доступность
+
+Три уровня пакетов атрибутов:
+
+```ts
+// Триггер: всплывает с семантикой listbox
+getCascaderTriggerAria(true, 'my-panel')
+// { 'aria-expanded': true, 'aria-controls': 'my-panel', 'aria-haspopup': 'listbox' }
+
+// Каждый столбец: role="listbox" + aria-level отмечает глубину (с 1)
+getCascaderColumnAria('col-2', 2)  // { role: 'listbox', id: 'col-2', 'aria-level': 2 }
+
+// Элемент: role="option" + aria-expanded/selected/disabled по необходимости
+getCascaderItemAria({ selected: true, expanded: true, hasChildren: true })
+// { role: 'option', 'aria-expanded': true, 'aria-selected': true }
+```
+
+Обратите внимание: `getCascaderItemAria` **не выводит `aria-expanded` для элементов без потомков** — объявлять `aria-expanded="false"` для листовых вариантов разрешено APG, но избыточно, и к тому же даёт программе чтения экрана ложное представление, будто элемент «разворачивается, просто сейчас развёрнут».
+
+## Примеры использования
+
+```ts
+import { findPathByValues, getSelectedLabelPath, getPanelItems } from '@lh-ui/share/core/cascader'
+
+const tree = [
+  {
+    value: 'zj', label: 'Чжэцзян', children: [
+      { value: 'hz', label: 'Ханчжоу', children: [{ value: 'xh', label: 'Сиху' }] },
+    ],
+  },
+]
+
+findPathByValues(tree, ['zj', 'hz', 'xh'])
+// { path: ['zj','hz','xh'], nodes: [Чжэцзян, Ханчжоу, Сиху] }
+
+getSelectedLabelPath(tree, ['zj', 'hz', 'xh'])  // 'Чжэцзян / Ханчжоу / Сиху'
+getSelectedLabelPath(tree, ['nope'])            // '' (при отсутствии — пустая строка)
+
+getPanelItems(tree, new Set(['zj']))
+// [{ value:'zj', label:'Чжэцзян', isExpanded:true, hasChildren:true },
+//  { value:'hz', label:'Ханчжоу', isExpanded:false, hasChildren:true }]
+```
+
+Псевдонимы полей:
+
+```ts
+const raw = [{ id: 'zj', name: 'Чжэцзян', subList: [{ id: 'hz', name: 'Ханчжоу' }] }]
+const cfg = { value: 'id', label: 'name', children: 'subList' }
+const standard = normalizeCascaderNodes(raw, cfg)
+// [{ value:'zj', label:'Чжэцзян', children:[{ value:'hz', label:'Ханчжоу' }] }]
+findPathByValues(standard, ['zj', 'hz'])  // работает корректно
+```
+
+```vue
+<!-- Vue3: каждый столбец рендерит один уровень panelItems -->
+<div :class="getCascaderClassNames({ size, disabled, visible, readonly })">
+  <button class="lh-cascader__input" v-bind="getCascaderTriggerAria(visible, panelId)">
+    {{ getSelectedLabelPath(options, value) || placeholder }}
+  </button>
+  <div v-if="visible" class="lh-cascader-panel" :class="getPanelClassNames({ hoverMode })">
+    <div
+      v-for="(col, ci) in columns"
+      :key="ci"
+      class="lh-cascader-panel__column"
+      v-bind="getCascaderColumnAria(`col-${ci}`, ci + 1)"
+    >
+      <div
+        v-for="item in col"
+        class="lh-cascader-panel__item"
+        v-bind="getCascaderItemAria({ selected: ..., expanded: item.isExpanded, disabled: item.isDisabled, hasChildren: item.hasChildren })"
+        @click="select(item, ci)"
+      >{{ item.label }}</div>
+    </div>
+  </div>
+</div>
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-cascader` / `--disabled` / `--visible` | контейнер |
+| `.lh-cascader__input` / `__input-inner` | область ввода триггера |
+| `.lh-cascader__tags` / `__tag` / `__tag-more` | метки множественного выбора (сворачивание при переполнении) |
+| `.lh-cascader__clear` | кнопка очистки |
+| `.lh-cascader-panel` / `--hover-mode` | панель (режим hover: следующий уровень разворачивается при наведении) |
+| `.lh-cascader-panel__column` / `__column-header` | столбец и заголовок столбца |
+| `.lh-cascader-panel__item` / `--active` / `--disabled` | элемент столбца |
+| `.lh-cascader-panel__search` / `__search-item` | область результатов поиска |
+| `.lh-cascader-panel__empty` | заглушка при отсутствии результатов |
+| `.lh-cascader-panel-*` переходные классы | анимация появления и скрытия панели |
+
+## Замечания
+
+- **Лимит `searchNodes` по умолчанию — 50**: для большого дерева и частого ввода каждое нажатие клавиши выполняет обход всех узлов, что приведёт к зависаниям, а лимит является страховкой производительности; если нужно больше результатов, UI-слой подсказывает «слишком много результатов, уточните ключевое слово».
+- **Область действия защиты от циклических ссылок**: дедупликация по цепочке предков действует только в пределах одного вызова и **не кешируется между вызовами**. Не пытайтесь кешировать и переиспользовать результат `findNode` — если дерево изменилось, всё нужно пересчитать.
+- **`expandLastValue` применяется только при `emitPath: false`**: в этом режиме `v-model` получает только значение нижнего уровня, и при восстановлении нужно по одному значению развернуть полный путь раскрытия.
+- **Откат `getChildren` при грязных данных**: null-узлы, не-объекты и не-массивы в children возвращают `[]` без возбуждения TypeError. Благодаря этому каскад «проглатывает» грязные данные с бэкенда (children, записанные как null — частый случай).
+- **Сочетание `checkStrictly` и `emitPath`**: `checkStrictly` разрешает выбирать любой уровень, и тогда часто применяется вместе с `emitPath: false` (нужно только значение нижнего уровня) — эти два параметра ортогональны.
+
+<FnPlayground module="cascader" fn="getSelectedLabelPath" params='{"nodes": [{"value": "zj", "label": "Чжэцзян", "children": [{"value": "hz", "label": "Ханчжоу"}]}], "values": ["zj", "hz"]}' />

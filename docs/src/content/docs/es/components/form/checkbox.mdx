@@ -1,0 +1,149 @@
+---
+title: checkbox —— Casilla de verificación
+description: 'isCheckboxChecked con comparación Object.is, conmutación inmutable con toggleCheckboxValue'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La casilla de verificación es la máquina de estados más pequeña de un formulario: si un valor está o no en un array. `core/checkbox` solo tiene dos funciones, porque abstrae «marcar» como una **operación de conjuntos**: el valor de un grupo de casillas es un array; marcar es añadir un elemento y desmarcar es eliminarlo.
+
+## Cuándo usarla
+
+- Cada framework implementa `LhCheckbox` y `LhCheckboxGroup` (el grupo mantiene el array de valores y cada elemento deduce de él su propio estado de marcado).
+- Escenarios de selección múltiple; para un conmutador de dos estados es más apropiado `switch`.
+- **No usarla para**: selección única, usa `radio`; si necesitas la semántica del estado indeterminado (un nodo padre parcialmente marcado), usa el marcado en cascada de `tree`.
+
+## Importación
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+import type { LhCheckboxState } from '@lh-ui/share/core/checkbox'
+```
+
+## Intención de diseño
+
+Se juzga con `Object.is` y no con la igualdad implícita de `includes` porque el valor de una casilla puede ser de cualquier tipo (cadena, número, incluso una referencia a un objeto). `includes` devuelve false con NaN, mientras que `Object.is(NaN, NaN)` devuelve true — aunque sea un escenario raro en la práctica, la semántica de conjuntos debe ser coherente.
+
+`toggleCheckboxValue` es **inmutable**: primero filtra los elementos del mismo valor (deduplicación) y luego, según `checked`, decide si añadirlo. Este orden garantiza la **idempotencia** — llamar repetidamente con el mismo valor y la misma dirección siempre da el mismo resultado y nunca aparecen elementos duplicados en el array.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `isCheckboxChecked` | `(values: unknown[], value: unknown) => boolean` | booleano | si value está en el array |
+| `toggleCheckboxValue` | `(values: unknown[], value: unknown, checked: boolean) => unknown[]` | array nuevo | conmutación inmutable |
+
+## Definiciones de tipos
+
+```ts
+export interface LhCheckboxState {
+  values: unknown[]
+  value: unknown
+  checked: boolean
+}
+```
+
+## Accesibilidad
+
+`core/checkbox` no emite ninguna bolsa de atributos aria — **se recomienda encarecidamente que cada framework use el `<input type="checkbox">` nativo**: el elemento nativo trae de fábrica `aria-checked`, soporta la operación con teclado y la semántica de envío de formulario; cualquier implementación equivalente con un control personalizado es difícil de replicar por completo.
+
+El estado `indeterminate` (medio marcado) de una casilla nativa **solo se puede establecer por JS** (no existe un atributo HTML equivalente); este es el único punto especial que la capa UI necesita gestionar en escenarios de grupo:
+
+```ts
+// El estado indeterminado de la casilla padre (como la casilla de «seleccionar todo»)
+input.indeterminate = checkedCount > 0 && checkedCount < total
+```
+
+## Ejemplos de uso
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+
+isCheckboxChecked(['a', 'b'], 'b')   // true
+isCheckboxChecked(['a', 'b'], 'c')   // false
+
+toggleCheckboxValue(['a', 'b'], 'c', true)   // ['a', 'b', 'c']
+toggleCheckboxValue(['a', 'b', 'c'], 'b', false)  // ['a', 'c']
+toggleCheckboxValue(['a', 'b'], 'b', false)       // ['a']
+toggleCheckboxValue(['a'], 'a', true)             // ['a'] (ya existía, idempotente)
+```
+
+```vue
+<!-- Vue3: LhCheckboxGroup -->
+<script setup>
+const model = defineModel<Array<string>>({ default: [] })
+const toggle = (value: string, checked: boolean) => {
+  model.value = toggleCheckboxValue(model.value, value, checked)
+}
+</script>
+
+<template>
+  <div class="lh-checkbox-group" :class="`lh-checkbox-group--${size}`">
+    <label
+      v-for="opt in options"
+      :key="String(opt.value)"
+      class="lh-checkbox"
+      :class="{
+        'lh-checkbox--checked': isCheckboxChecked(model, opt.value),
+        'lh-checkbox--disabled': disabled || opt.disabled,
+      }"
+    >
+      <span class="lh-checkbox__box">
+        <input
+          class="lh-checkbox__input"
+          type="checkbox"
+          :checked="isCheckboxChecked(model, opt.value)"
+          :disabled="disabled || opt.disabled"
+          @change="toggle(opt.value, ($event.target as HTMLInputElement).checked)"
+        />
+      </span>
+      <span class="lh-checkbox__label">{{ opt.label }}</span>
+    </label>
+  </div>
+</template>
+```
+
+```tsx
+// React
+const [values, setValues] = useState<string[]>([])
+return options.map((opt) => (
+  <label key={opt.value} className="lh-checkbox">
+    <input
+      type="checkbox"
+      checked={isCheckboxChecked(values, opt.value)}
+      onChange={(e) => setValues(toggleCheckboxValue(values, opt.value, e.target.checked))}
+    />
+    <span className="lh-checkbox__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp: <checkbox-group> + <checkbox> son componentes integrados y el evento change
+// entrega directamente el array de valores; al personalizar el aspecto del marcado se
+// usa .lh-checkbox__box para sobrescribir la apariencia nativa (fuera de h5, cuidado
+// con la reactividad de :checked)
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-checkbox` | clase base (envoltura label) |
+| `.lh-checkbox--checked` / `--indeterminate` / `--disabled` | tres estados |
+| `.lh-checkbox--{small\|large}` | tamaños |
+| `.lh-checkbox__box` | casilla personalizada (sobrescribe la apariencia nativa) |
+| `.lh-checkbox__input` | input nativo (oculto visualmente, conserva la semántica) |
+| `.lh-checkbox__label` | texto |
+| `.lh-checkbox-group` / `--{small\|large}` | contenedor del grupo y tamaño del grupo |
+
+El posicionamiento del check es fijo `top: 2px / left: 5px` — **solo es correcto con una caja de 16px**; es el punto pendiente de unificar que registra el documento específico de «alturas de token» (debería pasar a un centrado al 50%).
+
+## Advertencias
+
+- **Coherencia del tipo de los valores**: `toggleCheckboxValue(['1'], 1, true)` da `['1', 1]` — la cadena `'1'` y el número `1` son dos valores distintos. El tipo de id que entrega el backend debe unificarse en la capa UI.
+- **La semántica del array vacío**: `values: []` significa «ninguno marcado» y no es lo mismo que `values: undefined`; el valor por defecto del grupo debería ser `[]`.
+- **La dirección del parámetro `checked`**: es el «estado objetivo» y no el «estado actual»; `toggleCheckboxValue(v, x, false)` elimina x siempre, tanto si estaba antes como si no.
+- Con muchas opciones, valora `virtual-list`; el grupo en sí no hace virtualización.
+
+<FnPlayground module="checkbox" fn="toggleCheckboxValue" params='{"values": ["a", "b"], "value": "c", "checked": true}' />

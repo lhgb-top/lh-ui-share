@@ -1,0 +1,177 @@
+---
+title: drawer —— 서랍
+description: 'normalizeDrawerSize 크기 정규화, 사방향 패널 스타일, canDrawerClose 이스케이프 게이트, dialog과의 의미 차이'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+서랍은 화면 가장자리에서 미끄러져 나오는 패널입니다. 대화상자와의 차이는 코드가 아니라 **사용 의미**에 있습니다: 대화상자는 "중단하고 반드시 처리", 서랍은 "옆으로 펼쳐 보여주고 언제든 떠날 수 있음"입니다. 그래서 서랍은 기본적으로 포커스를 가두지 않고 스크롤을 잠그지 않으며(설정 가능), 마스크도 클릭으로 닫게 하거나 아예 표시하지 않을 수 있습니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhDrawer`: 상세 사이드 패널, 필터 패널, 여러 단계 폼의 분할, 모바일 풀스크린 패널.
+- 옆에서 미끄러져 나오고 콘텐츠가 대화상자보다 긴 상황.
+- **사용하면 안 되는 경우**: 강제로 처리해야 하는 확인 (`dialog` 사용); 순간적인 알림 (`message` 사용); 순수 텍스트 힌트 (`tooltip` 사용).
+
+## 임포트 방법
+
+```ts
+import {
+  LH_DRAWER_DIRECTION_DEFAULT,
+  LH_DRAWER_SIZE_DEFAULT,
+  normalizeDrawerSize,
+  getDrawerPanelStyle,
+  getDrawerClass,
+  canDrawerClose,
+  shouldDrawerTrapFocus,
+  getDrawerAria,
+} from '@lh-ui/share/core/drawer'
+import type { LhDrawerDirection, LhDrawerState } from '@lh-ui/share/core/drawer'
+```
+
+## 설계 의도
+
+**`canDrawerClose`의 기본값은 dialog과 대칭이지만 다릅니다**:
+
+- `maskClosable` 기본 **false**——서랍은 필터나 여러 단계 폼을 담는 일이 많아, 마스크를 실수로 터치해 상태를 잃게 됩니다.
+- `closeOnEsc` 기본 **true**——dialog과 마찬가지로 키보드 탈출구를 남깁니다.
+
+주석에 한 토막 역사가 기록되어 있습니다: `closeOnEsc`가 이전에는 state에만 선언되고 logic은 읽지 않아, **이스케이프 게이트가 유명무실**했습니다; 계산 가능한 함수로 보완된 후에야 Esc가 진정으로 이 스위치의 제어를 받게 되었습니다. 이런 "props는 선언했지만 logic이 소비하지 않는" 빈틀은 상태 모델에서 가장 흔한 잠재적 버그입니다.
+
+**`shouldDrawerTrapFocus`의 이름에 컴포넌트 접두어가 붙은 이유**: dialog의 `shouldTrapFocus`와 같은 시그니처에 다른 의미입니다(state 필드명이 다름: `modelValue` vs `visible`). star가 집계해서 내보낼 때 동명 이의성은 TS에 의해 조용히 버려지므로, 이 레포의 관례대로 명시적으로 구분합니다 (`getDefaultDelay → getPopconfirmDefaultDelay` 처리와 정렬).
+
+**크기의 방향 인식**: `getDrawerPanelStyle`은 방향에 따라 size를 width(left/right) 또는 height(top/bottom)에 적용합니다——이것이 "size 하나의 프로퍼티로 두 차원을 표현하는" 선택이며, `width` / `height` 두 개의 프로퍼티보다 간결합니다.
+
+**기본값 상수**: `LH_DRAWER_DIRECTION_DEFAULT = 'right'`, `LH_DRAWER_SIZE_DEFAULT = '30%'`, UI 계층의 `withDefaults` / defaultProps가 참조하여 세 말단의 일치함을 보장합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `normalizeDrawerSize` | `(size: string \| number \| undefined) => string` | 크기 문자열 | 숫자 → px, 빈 값 → 기본값 |
+| `getDrawerPanelStyle` | `(direction, size?) => Record<string, string>` | 스타일 | 방향이 width/height 결정 |
+| `getDrawerClass` | `(state: { direction }) => string[]` | 클래스명 | 방향 수식어 |
+| `canDrawerClose` | `(state, reason: 'maskClick' \| 'escape') => boolean` | 닫기 허용 여부 | 이스케이프 게이트 |
+| `shouldDrawerTrapFocus` | `(state: { modelValue, lockScroll }) => boolean` | 포커스 가둘지 | 결정 (DOM 미접촉) |
+| `getDrawerAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | aria 속성 팩 | dialog 의미 |
+
+## 타입 정의
+
+```ts
+export type LhDrawerDirection = 'right' | 'left' | 'top' | 'bottom'
+
+export interface LhDrawerState {
+  direction?: LhDrawerDirection
+  size?: string | number
+  modelValue?: boolean
+  title?: string
+  maskClosable?: boolean
+  showClose?: boolean
+  lockScroll?: boolean
+  closeOnEsc?: boolean
+}
+
+export const LH_DRAWER_DIRECTION_DEFAULT: LhDrawerDirection = 'right'
+export const LH_DRAWER_SIZE_DEFAULT = '30%'
+```
+
+## 접근성
+
+서랍은 접근성 측면에서 **여전히 dialog**입니다 (APG에 전용 drawer 패턴이 없습니다):
+
+```ts
+getDrawerAria({ id: 'lh-drawer-1', titleId: 'lh-drawer-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-drawer-1', 'aria-labelledby': 'lh-drawer-title' }
+```
+
+- `aria-modal: true`는 **무조건 출력**됩니다——UI 계층이 마스크를 표시하지 않고 포커스를 가두지 않더라도 말입니다. 서랍이 비모달이라면 (배경을 가리지 않는다면) UI 계층은 `aria-modal: false` 또는 다른 역할을 사용해야 합니다, 스크린 리더가 배경에 닿을 수 없다고 오해하지 않도록.
+- 포커스 관리의 선택: 모달 서랍 (`lockScroll`이고 마스크 있음)은 포커스를 가둬야 합니다; 비모달 서랍 (마스크 없음, 배경 동시 조작 가능)은 **가두지 않아야** 합니다——`shouldDrawerTrapFocus`가 false를 반환하면 UI 계층은 focus-trap을 활성화하지 않습니다.
+- **스와이프 제스처와 키보드**: 모바일에서 가장자리를 오른쪽으로 스와이프해 닫는 것은 제스처 조작이고, 키보드 등가물은 Esc입니다 (`canDrawerClose`의 `escape` 분기). 두 가지가 모두 사용 가능해야 합니다, 그렇지 않으면 키보드 사용자가 닫을 수 없습니다.
+- top/bottom 방향의 서랍은 모바일에서 너비를 가득 채워야 하며, `aria-modal`과 포커스 트랩은 평소대로입니다.
+
+## 사용 예시
+
+```ts
+import { normalizeDrawerSize, getDrawerPanelStyle, canDrawerClose } from '@lh-ui/share/core/drawer'
+
+normalizeDrawerSize(300)      // '300px'
+normalizeDrawerSize('50%')    // '50%'
+normalizeDrawerSize(undefined) // '30%' (기본값)
+normalizeDrawerSize('')       // '30%'
+
+getDrawerPanelStyle('right', 300)   // { width: '300px' }
+getDrawerPanelStyle('bottom', '40%') // { height: '40%' }
+getDrawerPanelStyle('left')          // { width: '30%' }
+
+canDrawerClose({ maskClosable: false, closeOnEsc: true }, 'maskClick')  // false
+canDrawerClose({ maskClosable: false, closeOnEsc: true }, 'escape')     // true
+canDrawerClose({}, 'escape')   // true (기본적으로 Esc로 닫기 가능)
+canDrawerClose({}, 'maskClick') // false (기본적으로 마스크 클릭으로 닫기 불가)
+
+getDrawerClass({ direction: 'right' })  // ['lh-drawer', 'lh-drawer--right']
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-drawer-fade">
+    <div v-if="visible" :class="getDrawerClass({ direction })">
+      <div v-if="showMask" class="lh-drawer__mask" @click="onMaskClick" />
+      <transition :name="`lh-drawer-slide-${direction}`">
+        <div
+          v-if="visible"
+          class="lh-drawer__panel"
+          :class="`lh-drawer__panel--${direction}`"
+          :style="getDrawerPanelStyle(direction, size)"
+          v-bind="getDrawerAria({ id: drawerId, titleId })"
+        >
+          <header class="lh-drawer__header">
+            <h3 class="lh-drawer__title" :id="titleId">{{ title }}</h3>
+            <button v-if="showClose" type="button" class="lh-drawer__close" aria-label="닫기" @click="close">✕</button>
+          </header>
+          <div class="lh-drawer__body"><slot /></div>
+          <footer v-if="$slots.footer" class="lh-drawer__footer"><slot name="footer" /></footer>
+        </div>
+      </transition>
+    </div>
+  </transition>
+</teleport>
+```
+
+```tsx
+// React: 네 방향 각각 하나의 slide 전환; 방향 클래스명이 transform의 시작점을 구동
+// right: translateX(100%) → 0; bottom: translateY(100%) → 0
+```
+
+```ts
+// uniapp: fixed + transform 애니메이션; 가장자리 스와이프로 닫기는 @touchstart/@touchmove/@touchend로 직접 판정
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-drawer` | 기본 클래스 |
+| `.lh-drawer--{right\|left\|top\|bottom}` | 방향 (마스크 애니메이션과 패널 위치 지정을 결정) |
+| `.lh-drawer__mask` | 마스크 |
+| `.lh-drawer__panel` | 패널 본체 |
+| `.lh-drawer__panel--{방향}` | 패널 위치 지정 (fixed + 해당 가장자리 밀착) |
+| `.lh-drawer__header` / `__title` / `__close` | 헤더 |
+| `.lh-drawer__body` | 콘텐츠 영역 (스크롤 가능) |
+| `.lh-drawer__footer` | 하단 |
+
+패널 `--lh-bg-color`, 마스크 `rgba(0, 0, 0, 0.45)` (dialog보다 약간 얕음, 의미상 서랍은 더 약한 모달).
+
+전환 클래스명은 `styles/theme/common/transition.scss`의 `lh-transition-ends` 믹스인으로 정리됩니다 (말단 간 `-leave-to` 차이), 컴포넌트 스타일은 더 이상 클래스명을 두 벌 쓰지 않습니다 (레드라인 2).
+
+## 주의사항
+
+- **`size`의 단위**: 숫자는 px, 문자열은 그대로입니다 (`'30%'` / `'50vh'` 지원). `'50%'`는 **뷰포트**에 대한 비율이지, 트리거 요소에 대한 비율이 아닙니다.
+- **top/bottom 서랍의 기본 크기**: `LH_DRAWER_SIZE_DEFAULT`는 `'30%'`이며, top/bottom 방향에서는 뷰포트 높이의 30%를 의미합니다——모바일 풀스크린 서랍에는 명시적으로 `'100%'`를 전달해야 합니다.
+- **방향과 전환 애니메이션**: 네 방향 각각 슬라이드 애니메이션이 필요합니다 (transform 시작점이 다름). UI 계층이 방향에 따라 transition name을 선택하며, core는 애니메이션을 관리하지 않습니다.
+- **중첩 서랍**: 오른쪽 서랍 안에 또 오른쪽 서랍을 열면 후자가 전자를 덮습니다; 다른 방향이나 zIndex로 구분하세요. 포커스 반환도 dialog과 같습니다 (내부가 닫힐 때 내부 트리거 요소로 반환).
+- **콘텐츠 스크롤**: 서랍 콘텐츠가 매우 길면 `__body`에 `overflow: auto`를 설정하세요; 하단 footer는 뷰포트 안에 고정되어야 합니다 (flex 레이아웃), footer가 콘텐츠에 밀려 나가게 하지 마세요.
+- **`closeOnEsc`의 역사적 빈틀**: 옛 버전에서는 이 props가 선언만 되고 logic이 읽지 않았으며, 업그레이드 후에야 동작이 진정으로 적용되었습니다——다운스트림이 "Esc로 항상 닫기 가능"이라는 옛 동작에 의존하고 있었다면 명시적으로 `closeOnEsc`를 전달하세요.
+- **dialog과의 선택**: 중단형 조작에는 dialog을 (삭제 확인), 병렬형 조회에는 drawer를 (주문 상세) 사용하세요. 사용자가 멈춰서 처리할 필요가 없는 일이라면 모달 레이어를 쓰면 안 됩니다.
+
+<FnPlayground module="drawer" fn="getDrawerPanelStyle" params='{"direction": "bottom", "size": "40%"}' />

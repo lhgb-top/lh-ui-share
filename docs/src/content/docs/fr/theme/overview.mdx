@@ -1,0 +1,163 @@
+---
+title: Vue d'ensemble du système de thèmes
+description: "Les cinq primitives d'exécution et la synchronisation double-source des jetons SCSS : le côté JS injecte des variables CSS, les composants ne consomment que des var()"
+---
+
+import PresetPreview from '../../../../components/PresetPreview.astro'
+
+Le système de thèmes de lh-ui est **à double source**, c'est ce qu'il faut clarifier d'abord :
+
+| Source | Contenu | Mode de consommation |
+| --- | --- | --- |
+| `styles/theme/common/var.scss` + `var-dark.scss` | Les propriétés personnalisées CSS (`--lh-*`) | `var(--lh-*)` dans les SCSS des composants, évaluées à l'exécution |
+| `styles/theme/common/variables.scss` | Les variables SCSS (`$lh-*`) | Cuites à la compilation en valeurs concrètes, utilisées pour les calculs (les fonctions de couleur, la composition des ombres, etc.) |
+| `src/theme/themes/index.ts` | Le mappage `vars` des 5 préréglages | Injection `<style>` à l'exécution (ConfigProvider / ThemeStudio) |
+
+**Les composants ne connaissent que les variables CSS**. La raison d'être du système de thèmes côté JS est : injecter **à l'exécution** un système de jetons de conception dans un sous-arbre du DOM, afin que les composants changent de peau sans recompilation.
+
+## Les deux voies
+
+### 1. Les thèmes préréglés (clés en main)
+
+Les cinq préréglages intégrés : 青花瓷 (porcelaine bleue et blanche) / 松花绿 (vert pin) / 朱砂 (cinabre) / 水墨 (encre de Chine) / 藤黄 (gamboge). La couche UI utilise `buildPresetStyleText(vars)` pour générer le texte `<style>` à écrire dans le DOM.
+
+```ts
+import { LH_THEME_PRESETS, buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+const preset = LH_THEME_PRESETS[0]                    // porcelaine bleue et blanche (cerblue)
+const styleText = buildPresetStyleText(preset.vars)  // Assemblé en texte CSS
+// → injecté dans <style id="lh-preset-theme">
+```
+
+Voir [Préréglages de thème](/fr/theme/presets).
+
+### 2. La personnalisation à l'exécution (themeVars)
+
+Le ConfigProvider reçoit `themeVars`, dont les clés sont **abrégées** (le préfixe `--lh-` est ajouté automatiquement) :
+
+```vue
+<lh-config-provider :theme-vars="{ 'primary-color': '#1677ff' }">
+  <App />
+</lh-config-provider>
+```
+
+Voir [Personnalisation à l'exécution](/fr/theme/customization).
+
+## Les cinq primitives d'exécution
+
+Les exports de `src/theme/index.ts` (l'implémentation est dans `src/theme/themes/index.ts`) :
+
+| Primitive | Signature | Usage |
+| --- | --- | --- |
+| `LH_THEME_PRESETS` | `LhThemePreset[]` | Le tableau de tous les préréglages, parcouru par la documentation et le ConfigProvider |
+| `registerTheme(preset)` | `(preset: LhThemePreset) => void` | Enregistrer ou surcharger un préréglage (surcharge du même nom ; les préréglages intégrés peuvent aussi être surchargés) |
+| `getThemePreset(name)` | `(name: LhThemePresetName) => LhThemePreset \| undefined` | Obtenir un préréglage par son nom |
+| `getThemeVars(name)` | `(name: LhThemePresetName) => LhThemeVars \| undefined` | Obtenir ses vars par son nom (renvoie `undefined` si non enregistré) |
+| `buildPresetStyleText(vars)` | `(vars: Record<string, string>) => string` | Assembler les vars en un texte `<style>` injectable |
+
+S'y ajoutent les primitives de calcul de contraste (utilisées par `verify:theme` et ThemeStudio) :
+
+| Primitive | Signature | Usage |
+| --- | --- | --- |
+| `getRelativeLuminance(color)` | `(color: string \| undefined) => number \| undefined` | La luminance relative WCAG (renvoie `undefined` si la valeur n'est pas du hex) |
+| `getContrastRatio(a, b)` | `(a, b: string \| undefined) => number \| undefined` | Le contraste WCAG (de 1 à 21) |
+| `buildPresetDarkVars(vars)` | `(vars: Record<string, string>) => Record<string, string>` | Déduit les variables du bloc sombre à partir des vars du préréglage |
+| `LH_PRESET_THEME_STYLE_ID` | `'lh-preset-theme'` | L'id fixe de l'élément injecté |
+
+## Les types
+
+```ts
+export type LhThemePresetName =
+  | 'cerblue' | 'songhua' | 'zhusha' | 'shuimo' | 'golden'
+  | (string & {})          // ← ouvre les noms personnalisés tout en gardant l'autocomplétion des cinq littérales
+
+export interface LhThemePreset {
+  name: LhThemePresetName
+  label: string            // Le nom en chinois
+  labelEn: string          // Le nom en anglais
+  description: string      // La description du thème
+  vars: Record<string, string>   // Le mappage des variables CSS
+}
+
+export type LhThemeVars = Record<string, string>
+```
+
+Le `(string & {})` final de `LhThemePresetName` est une astuce TS : conserver l'autocomplétion des cinq premières littérales tout en autorisant `registerTheme({ name: 'my-brand', ... })` à passer n'importe quelle chaîne. Les noms non enregistrés renvoient `undefined` dans `getThemePreset` / `getThemeVars`.
+
+## Contrainte d'injection : uniquement des `<style>`, jamais de style inline
+
+C'est la **contrainte la plus importante** du système de thèmes, on s'y est déjà cassé les dents :
+
+```ts
+// ✅ Correct : écrire un élément <style>, la spécificité est 0,1,0
+const el = document.createElement('style')
+el.id = LH_PRESET_THEME_STYLE_ID
+el.textContent = buildPresetStyleText(vars)
+document.head.appendChild(el)
+
+// ❌ Faux : écrire un style inline sur documentElement, la spécificité est 1,0,0,0
+Object.assign(document.documentElement.style, vars)
+```
+
+**Pourquoi** : la spécificité d'un style inline est supérieure à **n'importe quelle feuille de styles** ; elle écrase tout le bloc de déclarations des variables sombres de `var-dark.scss` (`[data-theme='dark'], .dark { --lh-*: ... }`), ce qui fausse la palette du mode sombre — les variables sombres sont écrasées par la valeur claire inline.
+
+La structure du texte généré par `buildPresetStyleText` :
+
+```css
+:root {
+  --lh-primary-color: #2B4C7C;
+  /* ... toutes les vars du préréglage */
+}
+
+[data-theme='dark'],
+.dark {
+  --lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent);
+  --lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff);
+  /* Les préréglages à primaire profonde éclaircissent la couleur primaire en supplément */
+}
+```
+
+Le bloc sombre vient **après** le bloc `:root` ; à spécificité égale le second gagne — la valeur claire de `--lh-selected-color` déclarée dans `:root` par un préréglage à primaire claire ne fuit donc pas dans le mode sombre. Le contenu du bloc sombre est déduit par `buildPresetDarkVars`.
+
+## La dérivation sombre de buildPresetDarkVars
+
+Trois règles :
+
+1. **Redéfinir sans condition deux variables** (par référence à `var()`, évaluées sur l'élément où elles s'appliquent, suivant la couleur primaire courante) :
+   - `--lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent)`
+   - `--lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff)`
+
+2. **L'éclaircissement des primaires profondes** : si le contraste de `--lh-primary-color` par rapport au fond de page sombre `#1A1A2E` (`DARK_PAGE_BG`) est inférieur à 3 (`DARK_PRIMARY_CONTRAST_THRESHOLD`), la couleur primaire est jugée profonde et éclaircie en supplément :
+   - `--lh-primary-color: color-mix(in srgb, <la valeur littérale> 55%, #fff)` — **substitution directe de la valeur littérale**, car `color-mix(var(--lh-primary-color) …)` créerait une boucle d'auto-référence CSS
+   - `--lh-primary-color-hover: color-mix(in srgb, var(--lh-primary-color) 70%, #fff)`
+   - `--lh-primary-color-active: color-mix(in srgb, var(--lh-primary-color) 85%, #000)`
+   - `--lh-color-on-primary: #101410` (`INK_ON_LIGHTENED_PRIMARY`) — une fois la couleur primaire éclaircie, le texte blanc n'atteint plus 3:1 de contraste, on passe au texte encre
+
+3. Le calcul du contraste utilise `getContrastRatio(getRelativeLuminance(primary), getRelativeLuminance(DARK_PAGE_BG))`. Les valeurs non hex (y compris les valeurs dynamiques contenant `var()`) renvoient `undefined`, traitées comme « impossible à juger » — la couleur primaire des vars d'un préréglage doit donc être un hex littéral.
+
+## La synchronisation double-source
+
+**Quand on modifie la couleur primaire d'un thème intégré, les deux côtés doivent être modifiés ensemble** :
+
+1. Le `vars['--lh-primary-color']` du préréglage dans `src/theme/themes/index.ts` (pour l'injection JS à l'exécution)
+2. Le `$lh-primary-color` de `styles/theme/common/variables.scss` (pour les calculs des SCSS des composants)
+
+`tests/unit/theme.spec.ts` contient une régression de cohérence ; lancer `pnpm test` intercepte toute désynchronisation.
+
+## Ce que le thème ne peut pas faire
+
+- **Il ne peut pas modifier la hauteur des contrôles** : les jetons `--lh-control-height-*` ne sont pas encore en place (les hauteurs des contrôles ne sont pas unifiées, inscrites dans le « chantier des jetons de hauteur » en attente d'un changeset ultérieur).
+- **Il ne peut pas modifier la structure des composants** : le thème ne fait que changer des valeurs de jetons ; la mise en page et la structure DOM restent inchangées.
+- **Les motifs sont un système indépendant** : voir [Motifs style chinois](/fr/theme/patterns).
+
+## L'aperçu des préréglages
+
+<PresetPreview />
+
+## Documentation connexe
+
+- [Préréglages de thème](/fr/theme/presets) — le détail des 5 préréglages intégrés
+- [Jetons de conception](/fr/theme/tokens) — la table complète des 185 jetons clairs + 118 sombres
+- [Personnalisation à l'exécution](/fr/theme/customization) — themeVars / componentTheme / patternComponents
+- [Mode sombre](/fr/theme/dark-mode) — le mécanisme et le piège de la cuisson à la compilation
+- [Motifs style chinois](/fr/theme/patterns) — les 6 textures intégrées

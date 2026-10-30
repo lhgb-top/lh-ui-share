@@ -1,0 +1,165 @@
+---
+title: popconfirm —— تأكيد الفقاعة
+description: 'حل خفيف للتأكيد الثاني: دلالة alertdialog، نبرة warning الافتراضية، وعقد حدثَي التأكيد/الإلغاء'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الحذف، الإرسال، النشر—مثل هذه العمليات «التي يصعب التراجع عنها» تحتاج من المستخدم تأكيداً ثانياً. `dialog` ثقيل جداً (مشروط، يخطف التركيز، قناع)، بينما ينبثق `popconfirm` فقاعة صغيرة في مكانها: جملة واحدة + زرّان، وتختفي فور التأكيد. إنه مكوّن **وزنه التفاعلي يقع تماماً بين tooltip وdialog**.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `<LhPopconfirm>`: حذف صف، التراجع عن عملية، تفريغ البيانات، إرسال طلب.
+- تأكيد ثانٍ **خفيف، في مكانه، وضيق هامش التراجع**.
+- **لا ينبغي استخدامه**: عندما تكون العواقب خطيرة لدرجة تتطلب كامل انتباه المستخدم (استخدم `dialog`—فالقناع المشروط يفرض التركيز)؛ مجرد عرض المعلومات (استخدم `tooltip` / `message`)؛ التأكيدات التي تتطلب ذكر سبب أو تحديد خيار (استخدم `dialog` مع نموذج).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_POPCONFIRM_TYPE_DEFAULT,
+  LH_POPCONFIRM_PLACEMENT_DEFAULT,
+  getPopconfirmIconName,
+  getPopconfirmClass,
+  getPopconfirmTriggerAria,
+  getPopconfirmPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popconfirm'
+import type { LhPopconfirmType, LhPopconfirmTrigger, LhPopconfirmState } from '@lh-ui/share/core/popconfirm'
+```
+
+## القصد التصميمي
+
+**النبرة الافتراضية هي warning لا info**: `LH_POPCONFIRM_TYPE_DEFAULT = 'warning'`—فظهور مربع التأكيد يعني أساساً أن هناك «خطراً»، والنبرة الافتراضية ينبغي أن تكون تحذيرية. ويُترك info للتأكيدات الإخبارية البحتة («وضع علامة مقروء؟»)، وdanger للعمليات غير القابلة للتراجع («لا يمكن الاستعادة بعد الحذف»).
+
+**ثلاث نبرات، ثلاث أيقونات**: info → `info`، warning → `warning`، danger → `error` (اسم الأيقونة error لا danger—فمكتبة الأيقونات تستخدم تسمية error، وهذا تعيين بين تسميتين). والنوع غير المعروف يسقط إلى warning.
+
+**`role="alertdialog"` لا `"dialog"` الخاص بـ popover**: alertdialog في ARIA هو «مربع حوار يتطلب استجابة فورية من المستخدم»—فقد يُعطي قارئ الشاشة له **أولوية الإعلان** (في الإعلان المقاطع مثل alert، لكن مع اشتراط اختيار المستخدم). وهذا ألصق بدلالة «بانتظار قرارك» من dialog.
+
+**عقد حدثَي التأكيد/الإلغاء على طبقة UI**: لا يُخرج core سوى أسماء الأصناف، والأيقونات، وسمات aria، والتأخير؛ أما أحداث `onConfirm` / `onCancel`، ونصوص الأزرار، وحالة loading فكلها على طبقة UI—لأنها تتصل بشجرة المكوّنات (emit)، وcore لا يمسّ واجهات API الخاصة بالأطر.
+
+**التأخير يتبع popover**: القيم الافتراضية في `getDefaultDelay` هي 200/100، موافقة لـ popover—لأن فقاعة التأكيد تسمح أيضاً بالتفعيل بـ hover، ويجب أن يتمكن المؤشر من الدخول إليها.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `getPopconfirmIconName` | `(type: LhPopconfirmType) => string` | اسم الأيقونة | النوع غير المعروف يسقط إلى warning |
+| `getPopconfirmClass` | `(state: { type, placement, popperClass? }) => string[]` | أسماء الأصناف | النبرة + الموضع |
+| `getPopconfirmTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | حزمة aria | expanded/controls/haspopup |
+| `getPopconfirmPopperAria` | `(id?) => LhAriaAttrs` | حزمة aria | role=alertdialog |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | التأخير | افتراضياً 200 / 100 |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | هل يُسمح | الاعتراض عند disabled |
+
+الثوابت: `LH_POPCONFIRM_TYPE_DEFAULT = 'warning'`، `LH_POPCONFIRM_PLACEMENT_DEFAULT = 'top'`.
+
+## تعريفات الأنواع
+
+```ts
+export type LhPopconfirmType = 'info' | 'warning' | 'danger'
+export type LhPopconfirmTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopconfirmState {
+  type?: LhPopconfirmType
+  trigger?: LhPopconfirmTrigger
+  placement?: LhPlacement
+  visible?: boolean
+  disabled?: boolean
+  showIcon?: boolean             // افتراضياً true
+}
+```
+
+## إمكانية الوصول
+
+```ts
+getPopconfirmPopperAria('pc-1')
+// { role: 'alertdialog', id: 'pc-1' }
+getPopconfirmTriggerAria(true, 'pc-1')
+// { 'aria-expanded': true, 'aria-controls': 'pc-1', 'aria-haspopup': 'true' }
+```
+
+- **إعلان alertdialog**: عند مصادفة قارئ الشاشة لـ alertdialog يُعلن محتواه فوراً (عبر aria-labelledby أو النص الداخلي)، **دون حاجة المستخدم إلى القراءة بنفسه**—وهذا ما يجبره أقوى من dialog، ويتماشى مع نية «بانتظار تأكيدك».
+- **يجب أن تحمل الأزرار نصوصاً واضحة**: «تأكيد / إلغاء» أفضل من «OK / NO» أو الأزرار الأيقونية. وفي النبرة `danger` يُستحسَن أن يُحمَل نص زر التأكيد على العاقبة («حذف» بدلاً من «تأكيد»).
+- **الإلغاء هو الاتجاه الآمن**: هل يُطلِق Enter افتراضياً **التأكيد** أم **الإلغاء**؟ والممارسة الشائعة هي وقوع التركيز الابتدائي على زر **الإلغاء** (ضغطة Tab واحدة ثم Enter تخرج بأمان)—لا تضع التركيز الافتراضي على زر التأكيد في العمليات التدميرية. هذا قرار طبقة UI، وcore لا يتدخل.
+- **Esc = إلغاء**: عندما يسمح `canCloseOnEscape`، يجب أن يُطلِق Esc الحدث onCancel لا الإغلاق المجرد—فدلالة «إغلاق مربع التأكيد» هي «عدم التأكيد».
+- **أيقونة aria-hidden**: الأيقونة الدلالية (warning/error) قد أُوصِل محتواها عبر النص، فهي زخرفية، تفادياً لتكرار إعلان قارئ الشاشة كلمة «تحذير».
+
+## أمثلة الاستخدام
+
+```ts
+import { getPopconfirmIconName, getPopconfirmClass, LH_POPCONFIRM_TYPE_DEFAULT } from '@lh-ui/share/core/popconfirm'
+
+getPopconfirmIconName('info')     // 'info'
+getPopconfirmIconName('warning')  // 'warning'
+getPopconfirmIconName('danger')   // 'error'
+getPopconfirmIconName('other' as never)  // 'warning' (سقوط احتياطي)
+
+getPopconfirmClass({ type: 'danger', placement: 'top' })
+// ['lh-popconfirm__popper', 'lh-popconfirm__popper--danger', 'lh-popconfirm__popper--top']
+
+LH_POPCONFIRM_TYPE_DEFAULT  // 'warning'
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopconfirm
+    title="لا يمكن الاستعادة بعد الحذف، هل تريد حذف هذا الصف؟"
+    type="danger"
+    confirm-text="حذف"
+    cancel-text="إلغاء"
+    @confirm="remove(row)"
+  >
+    <template #reference>
+      <LhButton type="danger" size="small">حذف</LhButton>
+    </template>
+  </LhPopconfirm>
+</template>
+
+<script setup>
+async function remove(row) {
+  // يُطلَق onConfirm؛ ويمكن أن يدعم المكوّن داخلياً confirmLoading: لا تُغلق الفقاعة إلا بعد اكتمال غير المتزامن
+  await api.delete(row.id)
+  LhMessage.success('تم الحذف')
+}
+</script>
+```
+
+```ts
+// التأكيد غير المتزامن: تعطيل الزرّين أثناء confirm + إظهار loading، وعند الفشل تبقى الفقاعة مفتوحة
+// هذا منطق طبقة UI: فـ core لا يحمل حالة غير متزامنة
+```
+
+```tsx
+// React: يُمرَّر onConfirm/onCancel عبر props؛ والقيمة المتحكم فيها visible مع التأكيد غير المتزامن
+```
+
+```ts
+// uniapp: فقاعة <view>؛ وحالة الضغط على الزر عبر hover-class؛ وعقد الأحداث وفق النموذج نفسه
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-popconfirm__popper` | حاوية الفقاعة |
+| `.lh-popconfirm__popper--{info\|warning\|danger}` | النبرة (لون الأيقونة + لون زر التأكيد) |
+| `.lh-popconfirm__popper--{top\|bottom\|…}` | الموضع |
+| `.lh-popconfirm__icon` | أيقونة النبرة |
+| `.lh-popconfirm__title` | نص العنوان |
+| `.lh-popconfirm__actions` | منطقة الأزرار (محاذاة للنهاية) |
+
+يتغيّر لون زر التأكيد وفقاً للنبرة: danger يستخدم `--lh-danger-color`، وwarning يستخدم `--lh-warning-color`، وinfo يستخدم `--lh-primary-color`.
+
+## ملاحظات
+
+- **اكتب العاقبة في العنوان**: «هل تريد الحذف؟» نص سيئ (لم يذكر العاقبة)؛ و«لا يمكن الاستعادة بعد الحذف، هل تريد حذف هذا الصف؟» نص جيد. هذا هو جوهر تجربة popconfirm.
+- **لا تُدخِل تداخلاً**: فقاعة popconfirm داخل فقاعة popconfirm أخرى ستحيّر المستخدم حول أي طبقة يؤكّد عليها. استخدم dialog للتأكيد متعدد الخطوات.
+- **عندما يكون المُطلِق زراً معطّلاً**: الزر `disabled` لا يُطلق أحداثاً (قيد أصلي)، فلن تنفتح فقاعة popconfirm—على طبقة العمل معالجة ذلك (لفّها بعنصر غير معطّل، أو عدم العرض إطلاقاً عند التعطيل).
+- **توقيت إغلاق التأكيد غير المتزامن**: أثناء معالجة confirm يجب تعطيل الزرّين + قناع لمنع النقر المزدوج؛ وعند الفشل **تبقى الفقاعة مفتوحة** مع عرض الخطأ، ولا تُغلق إلا عند النجاح. والإغلاق المتزامن للفقاعة داخل onConfirm مباشرة علة شائعة.
+- **التنسيق مع message**: بعد إكمال التأكيد استخدم `message` لتغذية النجاح («تم الحذف»)، فالاثتان يشكّلان السلسلة المعيارية «تأكيد → تنفيذ → تغذية راجعة».
+- **تفعيل hover على الأجهزة المحمولة**: كما في popover، لا يوجد hover على شاشات اللمس. استخدم تفعيل click افتراضياً عبر الأطراف.
+- **`role="alertdialog"` لا يتضمن الدلالات الضمنية للأزرار**: يجب عرض منطقة الأزرار على هيئة `<button>` حقيقية (لا div + onclick)، كي يتمكن مستخدمو لوحة المفاتيح من التعامل معها.
+
+<FnPlayground module="popconfirm" fn="getPopconfirmIconName" params='{"type": "danger"}' />

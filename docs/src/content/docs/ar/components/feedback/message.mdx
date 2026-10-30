@@ -1,0 +1,205 @@
+---
+title: message —— الرسائل العامة
+description: 'resolveMessageDuration للطول الدلالي، clampMessageQueue لتقليم الطابور، وتعيين أدوار live region (alert/status)'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الرسالة العامة هي «تغذية راجعة خفيفة بعد اكتمال العملية»: نجاح الحفظ، خطأ في الشبكة، نجاح النسخ. تنزلق من أعلى الشاشة، وتبقى ثواني ثم تختفي تلقائياً، دون مقاطعة عمل المستخدم. ما يديره `core/message` هو **محاسبة طابور الرسائل**—استنتاج المدة وفقاً للدلالة، والتقليم عند تجاوز الحد، وإنشاء السجلات، إضافة إلى دور live region.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `LhMessage` (واجهة API خدمية: `LhMessage.success('تم الحفظ')`): تغذية العملية، تنبيهات الأخطاء الخفيفة، تنبيهات التحميل.
+- التنبيهات اللحظية النصية القصيرة التي لا تحتاج إلى معالجة من المستخدم.
+- **لا ينبغي استخدامه**: التأكيدات التي تتطلب إجراءً من المستخدم (استخدم `dialog` / `popconfirm`)؛ المحتوى الأطول أو الذي يحتاج إلى عنوان (استخدم `notification`)؛ أشرطة التنبيه الثابتة داخل الصفحة (استخدم `alert`).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_MESSAGE_DURATION_DEFAULT,
+  LH_MESSAGE_MAX_DEFAULT,
+  LH_MESSAGE_OFFSET_DEFAULT,
+  getMessageRole,
+  getMessageIconName,
+  getMessageClassNames,
+  resolveMessageDuration,
+  clampMessageQueue,
+  createMessageRecord,
+} from '@lh-ui/share/core/message'
+import type { LhMessageType, LhMessageRecord, LhMessageState } from '@lh-ui/share/core/message'
+```
+
+## القصد التصميمي
+
+**الطول الدلالي في `resolveMessageDuration`**: النوع `loading` يُعيد افتراضياً **0 (لا يُغلق تلقائياً)**—فاختفاء رسالة التحميل تلقائياً عملٌ عبثي، ويجب أن تُغلق صراحةً من كود العمل. ولكن **عند تمرير duration صراحةً تُحترم القيمة الصريحة**—فـ `resolveMessageDuration(0, 'loading')` تُعيد 0 (صريح)، و`resolveMessageDuration(undefined, 'loading')` تُعيد 0 أيضاً (الدلالة الافتراضية)، والنتيجتان متساويتان لكن المسار مختلف؛ أما `resolveMessageDuration(5000, 'loading')` فتُعيد 5000 (تجاوز صريح).
+
+**`clampMessageQueue` يُعيد السجلات المُزالة**: لا يُعيد المحفوظة فحسب، بل يُعيد أيضاً `removed`—بحيث يتولّى المُستدعي استدعاء `onClose` الخاص بها. هذا التصميم مهم: فعند تقليم الطابور تُزال الرسائل قسراً، وإن لم يُستدعَ onClose فلن تُنفّذ أبداً نداءات التنظيف الخاصة بالعمل (مثل التتبّع وإعادة ضبط الحالة).
+
+**تعيين دور live region** (النموذج نفسه في `alert` / `notification`): `warning` / `danger` / `error` → `role="alert"` (**إعلان فوري مقاطِع**)، والباقي → `role="status"` (**إعلان لطيف في الطابور**). ولهذا التمييز دلالة عملية: الأخطاء عادةً يحتاج المستخدم لمعرفتها فوراً، بينما يمكن لمعلومات النجاح أن تنتظر حتى يأخذ المستخدم استراحة في عمليته الحالية.
+
+**`getMessageIconName` يُعيد null بالنسبة لـ loading**: أيقونة التحميل الدوّرة يُعرضها مكوّن `LhSpinner` (تحتاج إلى حركة)، وليست أيقونة ثابتة—وتُعالج طبقة UI بناءً على ذلك عرض المكوّن المناسب.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `getMessageRole` | `(type: LhMessageType) => LhAlertRole` | 'alert' \| 'status' | دور live region |
+| `getMessageIconName` | `(type) => string \| null` | اسم الأيقونة | loading يُعيد null |
+| `getMessageClassNames` | `(state: LhMessageState) => string[]` | أسماء الأصناف | النوع + قابل للإغلاق |
+| `resolveMessageDuration` | `(duration: number \| undefined, type) => number` | مللي ثانية | loading افتراضياً 0 |
+| `clampMessageQueue` | `(items, max) => { kept, removed }` | نتيجة التقليم | الاحتفاظ بأحدث max رسالة |
+| `createMessageRecord` | `(partial, seq) => LhMessageRecord` | السجل | إكمال الطول والإزاحة الافتراضيين |
+
+الثوابت: `LH_MESSAGE_DURATION_DEFAULT = 3000`، `LH_MESSAGE_MAX_DEFAULT = 5`، `LH_MESSAGE_OFFSET_DEFAULT = 20`.
+
+## تعريفات الأنواع
+
+```ts
+export type LhMessageType = 'info' | 'success' | 'warning' | 'danger' | 'error' | 'loading'
+
+export interface LhMessageRecord {
+  id: number
+  type: LhMessageType
+  content: string
+  duration: number     // 0 تعني عدم الإغلاق التلقائي
+  showClose: boolean
+  offset: number       // الإزاحة من أعلى إطار العرض بالبكسل
+  sx?: LhSxProps
+  onClose?: () => void
+}
+
+export interface LhMessageState {
+  type: LhMessageType
+  showClose: boolean
+}
+```
+
+يُضيف `LhMessageType` النوع `loading` إلى الثوابت الدلالية العامة (`LH_TYPES_CONST`: info/success/warning/danger/error).
+
+## إمكانية الوصول
+
+```ts
+getMessageRole('danger')   // 'alert'
+getMessageRole('warning')  // 'alert'
+getMessageRole('info')     // 'status'
+getMessageRole('success')  // 'status'
+getMessageRole('loading')  // 'status'
+```
+
+- العنصر ذو `role="alert"` **يُعلَن فور ظهوره في DOM**، وهو مناسب للأخطاء؛ أما `role="status"` فيُعلَن ضمن الطابور، وهو مناسب للنجاح/المعلومات.
+- **ملحق aria-live**: تُضيف طبقة UI عادةً عند العرض `aria-live="polite"` (لـ status) أو `aria-live="assertive"` (لـ alert)—وقد يحتويها `role` ضمناً، وتكرار الإعلان غير ضار عموماً، غير أن بعض قارئات الشاشة أكثر استقراراً مع `role`، وكتابة الاثنين معاً هي الأضمن.
+- **إعلان الرسائل المكررة**: ثلاث رسائل متتالية «تم الحفظ» ستُعلَن ثلاث مرات، وهذا صحيح (كل رسالة حدث جديد). وأخ الكبح فمن شأن طبقة العمل.
+- **زر الإغلاق**: `aria-label="إغلاق"` (زر أيقوني بلا نص).
+
+## أمثلة الاستخدام
+
+```ts
+import { resolveMessageDuration, clampMessageQueue, createMessageRecord } from '@lh-ui/share/core/message'
+
+resolveMessageDuration(undefined, 'success')  // 3000
+resolveMessageDuration(undefined, 'loading')  // 0 (التحميل لا يُغلق تلقائياً)
+resolveMessageDuration(5000, 'loading')       // 5000 (تجاوز صريح)
+
+clampMessageQueue([{ id: 1 }, { id: 2 }, { id: 3 }], 2)
+// { kept: [{ id: 2 }, { id: 3 }], removed: [{ id: 1 }] }  ← إزالة الأقدم
+
+clampMessageQueue([{ id: 1 }, { id: 2 }], 0)  // { kept: [...], removed: [] } (max <= 0 لا يُقلَّم)
+
+createMessageRecord({ type: 'success', content: 'تم الحفظ', showClose: true }, 7)
+// { id: 7, type: 'success', content: 'تم الحفظ', showClose: true,
+//   duration: 3000, offset: 20 }
+```
+
+```ts
+// طبقة الخدمة (طبقة UI): طابور وحيد + تسلسل متزايد
+let seq = 0
+const queue = ref<LhMessageRecord[]>([])
+
+function open(type: LhMessageType, content: string, options?: Partial<LhMessageRecord>) {
+  const record = createMessageRecord(
+    { type, content, showClose: false, ...options },
+    ++seq,
+  )
+  queue.value = [...queue.value, record]
+  // تجاوز سعة الطابور: إزالة الأقدم واستدعاء onClose الخاص بها
+  const { kept, removed } = clampMessageQueue(queue.value, LH_MESSAGE_MAX_DEFAULT)
+  removed.forEach((r) => r.onClose?.())
+  queue.value = kept
+  // الإغلاق التلقائي
+  if (record.duration > 0) {
+    setTimeout(() => close(record.id), record.duration)
+  }
+  return record.id
+}
+
+const api = {
+  info: (c: string, o?) => open('info', c, o),
+  success: (c: string, o?) => open('success', c, o),
+  warning: (c: string, o?) => open('warning', c, o),
+  error: (c: string, o?) => open('error', c, o),
+  loading: (c: string, o?) => open('loading', c, o),
+}
+```
+
+```vue
+<!-- Vue3: طبقة العرض -->
+<teleport to="body">
+  <div class="lh-message" :style="{ top: offset + 'px' }">
+    <transition-group name="lh-message-fade" tag="div" class="lh-message__list">
+      <div
+        v-for="record in queue"
+        :key="record.id"
+        :class="getMessageClassNames({ type: record.type, showClose: record.showClose })"
+        :role="getMessageRole(record.type)"
+      >
+        <LhSpinner v-if="record.type === 'loading'" :size="14" />
+        <LhIcon v-else :name="getMessageIconName(record.type)!" />
+        <span class="lh-message__content">{{ record.content }}</span>
+        <button v-if="record.showClose" type="button" aria-label="إغلاق" @click="close(record.id)">✕</button>
+      </div>
+    </transition-group>
+  </div>
+</teleport>
+```
+
+```ts
+// الاستخدام النموذجي لـ loading: الفتح عند الحفظ والإغلاق عند الاكتمال
+const id = LhMessage.loading('جارٍ الحفظ…')
+await save()
+LhMessage.close(id)
+LhMessage.success('تم الحفظ')
+```
+
+```tsx
+// React: عرض الطابور عبر createPortal؛ وإدارة مؤقّت كل رسالة عند الإغلاق بـ clearTimeout
+```
+
+```ts
+// uniapp: تحديد fixed + حركة؛ والطابور وفق النموذج نفسه، مع تنفيذ LhSpinner بـ view دوّار على غير h5
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-message` | الحاوية (ثابتة في الأعلى ومتوسطة) |
+| `.lh-message__list` | الطابور (transition-group) |
+| `.lh-message__item` | رسالة واحدة |
+| `.lh-message__item--{info\|success\|warning\|danger\|error\|loading}` | النوع الدلالي (لون الأيقونة + إطار/خلفية) |
+| `.lh-message__item--closable` | قابل للإغلاق (حجز مكان لزر الإغلاق) |
+| `.lh-message__content` | النص |
+
+الألوان الدلالية الأربعة: `--lh-info-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`؛ والخلفية `--lh-bg-color` + إطار خفيف + ظل.
+
+## ملاحظات
+
+- **رسالة `loading` يجب إغلاقها يدوياً**: `resolveMessageDuration(undefined, 'loading')` تُعيد 0، ولن تختفي تلقائياً. و نسيان الإغلاق سيترك رسالة «جارٍ التحميل» إلى الأبد—وهو أكثر سوءات الاستخدام شيوعاً.
+- **علاقة `error` بـ `danger`**: كلاهما يُعَيَّن إلى دور `alert` وأيقونة `error`—فـ `danger` هو التسمية في الثوابت الدلالية العامة، و`error` اسم بديل لها (لمحاذاة API message الشائع `LhMessage.error()`). ولك في طبقة العمل استخدام أي منهما.
+- **حد الطابور `LH_MESSAGE_MAX_DEFAULT = 5`**: في المشاهد عالية التردد (مثل تقدّم الرفع) يتجاوز العدد 5 رسائل بسهولة فتُقلَّم—ويكون `onClose` للسجلات المُقلَّمة من شأن المُستدعي، كما يجب تنظيف مؤقّتات العمل تبعاً لذلك.
+- **دلالة `offset`**: هي الإزاحة **الابتدائية** من أعلى إطار العرض، أما تباعد الرسائل المتعددة المتراكمة فتحسبه طبقة UI تراكمياً حسب الارتفاع (راجع `computeStackOffsets` في `notification`).
+- **تفرد `id`**: تكفي زيادة `seq` على مستوى الوحدة في طبقة الخدمة؛ وعند تعدد النسخ (الواجهات الدقيقة) يلزم تمرير بادئة id خارجية لتفادي التعارض.
+- **أمان SSR**: تعتمد خدمة الرسائل على DOM (teleport، setTimeout)، فيُستحب تجاوز الإنشاء التلقائي في SSR حتى تتوفر هذه الإمكانات على العميل.
+- **الجمود بين `duration: 0` و`showClose: false`**: رسالة لا تُغلق تلقائياً ولا يدوياً تبقى للأبد—ما لم تحتفظ طبقة العمل بـ id وتستدعي `close(id)`. اترك للمستخدم طريق إغلاق واحداً على الأقل.
+
+<FnPlayground module="message" fn="resolveMessageDuration" params='{"duration": null, "type": "loading"}' />

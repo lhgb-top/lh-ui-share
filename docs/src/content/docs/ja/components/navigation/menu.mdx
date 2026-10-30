@@ -1,0 +1,156 @@
+---
+title: 'menu メニュー —— ナビゲーション'
+description: 'toggleMenuOpen のアコーディオン / 通常の 2 モード、サブメニューの aria-expanded 連動、@deprecated moveMenuFocus は shared/keyboard に集約済み'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+メニューはウェブサイトの骨格となるナビゲーションです：トップの水平メニュー、サイドの垂直メニュー、折りたたみ可能なアイコンメニュー。`dropdown` との違いは**持続性と階層**です——メニューはページに常駐し、無限に子階層をネストできます；dropdown は一時的に飛び出す操作リストです。`core/menu` が管理するのは展開状態の記帳とアクセシビリティのセマンティクスで、レイアウトと位置決めはすべて SCSS にあります。
+
+## いつ使うか
+
+- 各端の `<LhMenu>` / `<LhSubMenu>` / `<LhMenuItem>` 実装：サイトのメインナビゲーション、バックエンドのサイドバー、ドキュメントサイトの目次。
+- **2 階層以上**のナビゲーション。
+- **使うべきでない**：1 行に並んだ操作ボタン（`space` + `button` を使います）；一時的に飛び出す操作メニュー（`dropdown` を使います）；タブ式のコンテンツ切り替え（`tabs` を使います）。
+
+## インポート方法
+
+```ts
+import {
+  getMenuClassNames,
+  getMenuItemClassNames,
+  getSubMenuClassNames,
+  getMenuItemGroupClassNames,
+  toggleMenuOpen,
+  isMenuOpen,
+  moveMenuFocus,
+  getMenuAria,
+  getMenuItemAria,
+  getSubMenuAria,
+} from '@lh-ui/share/core/menu'
+import type { LhMenuMode } from '@lh-ui/share/core/menu'
+```
+
+## 設計意図
+
+**アコーディオンモードはゼロ開を許容する**：`uniqueOpened: true` のとき、`toggleMenuOpen` は展開済みの項目をクリックすると `[]`（すべて閉じる）を返し、未展開の項目をクリックすると `[key]`（それだけを保持）を返します。「少なくとも 1 つは開いたまま」ではない点に注意してください——ゼロ開は許容され、「すべて閉じる」がインタラクティブな状態になります。
+
+**通常モードは置換ではなく追加・削除**：新しい配列を返し（`filter` で削除 / 追加）、ほかの展開済み項目はそのままにします——多階層メニューで複数のサブメニューを同時に開くのはよくある要件です。
+
+**`moveMenuFocus` は @deprecated のラッパー**：循環ナビゲーションのアルゴリズムは `core/shared/keyboard` の `getNextListIndex` に集約されており、この関数は旧シグネチャ（DOM 要素の配列を受け取る）を下流の既存参照のために残しています。行っていることは：`tabIndex === -1` をフィルタし（コアの disabled 項目に等価）、現在の要素がリストにないときは先頭項目にフォールバックすることです。**新規コードは `getNextListIndex` を直接使ってください**。
+
+**aria の 3 点セット**：コンテナは `role="menu"`、葉の項目は `role="menuitem"`、サブメニューのタイトルは `role="menuitem"` + `aria-expanded` + `aria-controls` です。**サブメニューのタイトルは menuitem のサブロールではない**点に注意してください——APG の menu 構造では、展開可能なメニュー項目も menuitem のままで、展開状態は aria-expanded で表します。
+
+**クラス名と状態の分離**：`--active` / `--disabled` / `--opened` はすべて独立した真偽クラスで、SCSS がスタイルを組み合わせます。`--collapse`（折りたたみ状態）はコンテナレベルのクラス名で、すべての子項目のレンダリング方式に影響します（アイコンメニューはアイコンのみを表示し、tooltip が文字を補完する）。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getMenuClassNames` | `(state: { mode, collapse }) => string[]` | クラス名 | レイアウトモード + 折りたたみ状態 |
+| `getMenuItemClassNames` | `(state: { active, disabled }) => string[]` | クラス名 | 葉の項目 |
+| `getSubMenuClassNames` | `(state: { active, disabled, opened }) => string[]` | クラス名 | サブメニュー |
+| `getMenuItemGroupClassNames` | `() => string[]` | クラス名 | グループコンテナ |
+| `toggleMenuOpen` | `(openeds, key, uniqueOpened) => string[]` | 新しい配列 | 展開 / 閉じる（イミュータブル） |
+| `isMenuOpen` | `(openeds, key) => boolean` | 展開中かどうか | includes による照会 |
+| `moveMenuFocus` ⚠️ | `(items, currentEl, direction) => HTMLElement \| null` | 目標要素 | ↑/↓ のフォーカス移動 |
+| `getMenuAria` | `(id?) => LhAriaAttrs` | aria パック | role=menu |
+| `getMenuItemAria` | `(state: { disabled? }) => LhAriaAttrs` | aria パック | menuitem |
+| `getSubMenuAria` | `(options: { opened, disabled?, menuId? }) => LhAriaAttrs` | aria パック | menuitem + expanded |
+
+⚠️ は `@deprecated` の互換ラッパーで、新規コードには `shared/keyboard` の `getNextListIndex` を使います。
+
+## 型定義
+
+```ts
+export type LhMenuMode = 'horizontal' | 'vertical'
+```
+
+## アクセシビリティ
+
+```ts
+getMenuAria('menu-1')            // { role: 'menu', id: 'menu-1' }
+getMenuItemAria({ disabled: true })  // { role: 'menuitem', 'aria-disabled': true }
+getSubMenuAria({ opened: true, menuId: 'menu-1' })
+// { role: 'menuitem', 'aria-expanded': true, 'aria-controls': 'menu-1' }
+getSubMenuAria({ opened: false })
+// { role: 'menuitem', 'aria-expanded': false }
+```
+
+- **aria-expanded の偽値も出力する**：`{ 'aria-expanded': false }` には意味があります——「このサブメニューは閉じている」とスクリーンリーダーに明確に伝えます。これは `shared/a11y` の規約に従います：undefined（渡されていない）のときのみ省略し、false は合法な状態値です。
+- **キーボードナビゲーションのモードの違い**：水平メニューは ←/→、垂直メニューは ↑/↓ を使い、これが APG の menu パターンの規約です。スクリーンリーダーのユーザーは方向キーを押したときに対応する挙動を期待します——`moveMenuFocus` は垂直方向の 1 / -1 だけを提供し、水平メニューの ←/→ は UI 層がマップした上で同じように呼び出します。
+- **aria-current で現在のページを示す**：活性化したメニュー項目には `--active` クラス名のほか、UI 層で `aria-current="page"` を補うことが推奨されます（`breadcrumb` の末項のセマンティクスと一致）し、スクリーンリーダーに「現在のページ」と読み上げさせます。
+- **折りたたみメニューの文字の補償**：`collapse` モードではアイコンのみを表示するため、メニュー項目のテキストは `aria-label` か hover 時の tooltip に置くべきです——さもなくばアイコンボタンはスクリーンリーダーにとって名前のないものになります。
+- **無効な項目をスキップ**：`--disabled` の項目はクリックに応答しません（UI 層が遮断）が、DOM の中には残ります。キーボードナビゲーションはそれらをスキップしなければなりません（`moveMenuFocus` の tabIndex フィルタ）。
+
+## 使用例
+
+```ts
+import { toggleMenuOpen, isMenuOpen } from '@lh-ui/share/core/menu'
+
+toggleMenuOpen(['a', 'b'], 'b', false)  // ['a']（通常モードで b を閉じる）
+toggleMenuOpen(['a'], 'b', false)       // ['a', 'b']（b を展開）
+toggleMenuOpen(['a'], 'a', true)        // []（アコーディオン：再クリックで閉じる、ゼロ開を許容）
+toggleMenuOpen(['a'], 'b', true)        // ['b']（アコーディオン：b だけを保持）
+
+isMenuOpen(['a', 'b'], 'a')  // true
+isMenuOpen(['a'], 'c')       // false
+```
+
+```ts
+// 制御付き展開状態（UI 層）：openeds は Set ではなく配列で、シリアライズと v-model に便利
+const openeds = ref<string[]>([])
+function onSubMenuClick(key: string) {
+  openeds.value = toggleMenuOpen(openeds.value, key, props.uniqueOpened)
+}
+```
+
+```vue
+<!-- Vue3：サイドの垂直メニュー -->
+<template>
+  <LhMenu mode="vertical" :collapse="collapsed" :unique-opened="true">
+    <LhSubMenu index="1">
+      <template #title><LhIcon name="settings" /><span>システム設定</span></template>
+      <LhMenuItem index="1-1" @click="go('/users')">ユーザー管理</LhMenuItem>
+      <LhMenuItem index="1-2" disabled>権限管理</LhMenuItem>
+    </LhSubMenu>
+    <LhMenuItem index="2" @click="go('/profile')">個人センター</LhMenuItem>
+  </LhMenu>
+</template>
+```
+
+```tsx
+// React：openeds は useState<string[]>；メニュー項目のクリックで navigate；
+// 折りたたみ状態は context でサブメニューに下ろす（層ごとに props を透過させない）
+```
+
+```ts
+// uniapp：<view> + catchtap；折りたたみモードはミニプログラム側で px の固定幅のトランジションを使う
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-menu` | コンテナ |
+| `.lh-menu--{horizontal\|vertical}` | レイアウトモード |
+| `.lh-menu--collapse` | 折りたたみ状態（アイコンのみ） |
+| `.lh-menu-item` | 葉の項目 |
+| `.lh-menu-item--active` / `--disabled` | アクティブ / 無効 |
+| `.lh-sub-menu` / `--active` / `--disabled` / `--opened` | サブメニュータイトル |
+| `.lh-sub-menu__popup` | ポップアップ式の子階層（水平メニュー） |
+| `.lh-menu-item-group` | グループ（グループタイトル付き） |
+
+アクティブ項目の背景は `--lh-menu-item-active-background`、文字色は `--lh-menu-item-color`（明色トークンは var-dark で明示的に反転させる必要があります。ルートの AGENTS.md の「ダークモードの罠」を参照）；高さトークンは `--lh-menu-item-height` です。
+
+## 注意事項
+
+- **openeds はオブジェクトではなく配列**：順序は問わないものの重複を排除する必要があります；`toggleMenuOpen` が一意性を保証します。ルートの query や localStorage にシリアライズするときは配列のほうが直感的です。
+- **アコーディオンは同階層のみを制御する**：`uniqueOpened` は**同一 menu 下**の直接のサブメニューだけを排他にします；孫階層のサブメニュー同士は影響を受けません（それぞれが自身の openeds を管理します）。
+- **水平メニューの子階層はポップアップ式**：第 1 階層が横向きに並び、第 2 階層が下へ飛び出します（クラス `lh-sub-menu__popup`、位置決めは `shared/popper`）；垂直メニューの子階層はインラインに展開します（下のコンテンツを押しのける）。2 つのモードで DOM 構造が異なり、mode が駆動します。
+- **`--active` はルーティングとの同期が必要**：メニューのアクティブ状態は通常現在のルートに追従し、UI 層がルートの変化をリッスンして active index を更新します——core はルーティングに関与しません。
+- **折りたたみ状態の tooltip**：`collapse: true` のときメニュー項目はアイコンだけになり、文字は `tooltip` で補完すべきです（ホバーで表示）。これは 2 つのコンポーネントの協調ポイントです。
+- **`moveMenuFocus` の DOM 依存**：これは `HTMLElement[]` を受け取るためブラウザ側でしか呼べません（SSR はスキップ）；かつ disabled クラス名ではなく tabIndex を読んでフィルタします——UI 層は無効な項目の tabIndex が -1 であることを保証しなければなりません。
+- **menu と dropdown は役割が同じでも使い方が異なる**：両方とも `role="menu"` を使います。menu は永続するナビゲーションで、dropdown は一時的な操作リストです——dropdown でサイトのナビゲーションを装わないでください（リロードで消え、ディープリンクできません）。
+
+<FnPlayground module="menu" fn="toggleMenuOpen" params='{"openeds": ["a"], "key": "b", "uniqueOpened": true}' />

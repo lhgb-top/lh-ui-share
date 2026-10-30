@@ -1,0 +1,147 @@
+---
+title: alert —— アラート
+description: 'ページ内の持続する通知バー：getAlertRole の alert/status デュアルロール映射、closable/showIcon/plain の 4 状態クラス名'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Alert は「ページにピン留めされた通知」です：保存失敗の理由、アカウントの期限が近づいていること、現在は読み取り専用モードであること。`message` との違いは**持続性**です——message は数秒で消えますが、alert はそこに留まり続け、ユーザーがいつ見てもかまいません。`core/alert` は極めて薄く、中核は**セマンティクスから live region ロールへのマッピング**です。
+
+## いつ使うか
+
+- 各端末で `<LhAlert>` を実装するケース：フォームの入力検証サマリー、ページレベルの公告、操作結果の常駐通知、案内的な説明。
+- コンテンツを**ユーザーが自発的に読む**必要があり、時間で消えないシーン。
+- **使うべきでないケース**：瞬間的な操作フィードバック（`message` を使う。自動で消える方が控えめ）；システムレベルの非同期通知（`notification` を使う。隅に貼り付きドキュメントフローを占めない）；ユーザーの確認が必要な操作（`popconfirm` / `dialog` を使う）。
+
+## インポート方法
+
+```ts
+import {
+  getAlertClassNames,
+  getAlertRole,
+  getAlertIconName,
+} from '@lh-ui/share/core/alert'
+import type { LhAlertType, LhAlertState, LhAlertRole } from '@lh-ui/share/core/alert'
+```
+
+## 設計意図
+
+**デュアルロールのマッピング**：`warning` / `danger` → `role="alert"`（即座に読み上げを割り込む）、`info` / `success` → `role="status"`（順番を待つ穏やかな読み上げ）。この二分には根拠があります：APG（ARIA Authoring Practices）は alert を「重要かつ時間的に機密な」コンテンツに明確に用いています。エラー通知を 5 秒遅く読んだらユーザーはもう重複操作をしているかもしれませんが、成功通知が数秒遅れるのは無害です。
+
+**4 つの真偽値状態は独立してクラス名になる**：`closable` / `showIcon` / `plain` / `withTitle` はそれぞれ修飾クラスを持ちます——それらが影響するのは**レイアウト**だからです（アイコンがあればそのスペースを空ける、タイトルがあればパディングを大きくする、閉じるボタンがあれば右側のスペースを空ける）。単なる色の変化ではありません。独立したクラス名にすることで SCSS は組み合わせに応じてレイアウトを書けます。
+
+**`plain` は控えめモード**：背景色と枠線を取り除き、アイコン色と文字色だけを残します——「派手にしたくないが常駐させたい」シーン（ページ上部の灰色の一行の説明など）のためのものです。デフォルトモードとの違いは視覚的な重さであって、セマンティクスではありません。
+
+**アイコンのマッピングは既存のアイコンセットを消費する**：success → `check`（`success` ではない——アイコンライブラリに success アイコンはないため、チェックマークで成功を表現する）、danger → `error`。これは「セマンティクス → 具体的なアイコン」の一層のマッピングで、UI 層はアイコンライブラリに具体的に何があるかを気にする必要がありません。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getAlertClassNames` | `(state: LhAlertState) => string[]` | クラス名 | タイプ + 4 つの真偽値 |
+| `getAlertRole` | `(type: LhAlertType) => LhAlertRole` | 'alert' \| 'status' | live region ロール |
+| `getAlertIconName` | `(type: LhAlertType) => string` | アイコン名 | 4 つのセマンティックアイコン |
+
+## 型定義
+
+```ts
+export type LhAlertType = 'info' | 'success' | 'warning' | 'danger'
+export type LhAlertRole = 'alert' | 'status'
+
+export interface LhAlertState {
+  type: LhAlertType
+  closable: boolean      // 閉じるボタンを表示
+  showIcon: boolean      // セマンティックアイコンを表示
+  plain: boolean         // 控えめモード（背景色と枠線なし）
+  withTitle: boolean     // タイトルあり（タイトル + 説明の 2 段組み）
+}
+```
+
+## アクセシビリティ
+
+```ts
+getAlertRole('info')     // 'status'
+getAlertRole('success')  // 'status'
+getAlertRole('warning')  // 'alert'
+getAlertRole('danger')   // 'alert'
+```
+
+- **role は alert のルート要素に置く**：`<div class="lh-alert lh-alert--danger" role="alert">`。ページ読み込み時にすでに存在する alert は即座に読み上げられます；動的に挿入される alert は `aria-live` と組み合わせる方が安定します（一部のスクリーンリーダーは動的に挿入される role=alert への反応が一貫しません）。
+- **アイコンは aria-hidden**：セマンティクスはすでにテキストで伝わっており、「警告」を二重に読み上げるのはノイズです。アイコンがテキストにない情報を担うときだけ公開します。
+- **閉じるボタンのアクセシビリティ**：`aria-label="閉じる"`。クリックすると alert は DOM から取り除かれます——取り除き自体に追加の通知は不要です（ユーザーが自発的に行った操作の直接的な結果のため）。
+- **タイトルと説明の階層**：タイトルがある場合、タイトルは `<div class="lh-alert__title" role="heading">`（またはそのまま `<h4>`）とし、説明は別の段落にします。スクリーンリーダーはドキュメントの流れに従って処理します。
+- **alert をフォーム検証のエラー通知に使わないでください**：フィールドレベルのエラーはフィールドの隣に貼るべきです（`form` の `aria-describedby` + `aria-invalid`）。alert はフォーム全体のサマリー通知に使います。
+
+## 使用例
+
+```ts
+import { getAlertClassNames, getAlertRole, getAlertIconName } from '@lh-ui/share/core/alert'
+
+getAlertClassNames({ type: 'warning', closable: true, showIcon: true, plain: false, withTitle: false })
+// ['lh-alert', 'lh-alert--warning', 'lh-alert--closable', 'lh-alert--show-icon']
+
+getAlertRole('danger')     // 'alert'
+getAlertIconName('success')  // 'check'
+```
+
+```vue
+<!-- Vue3：基本的な使い方 -->
+<template>
+  <LhAlert type="warning" :closable="true" show-icon title="注意">
+    現在メンテナンスウィンドウ期間中です。一部の機能が利用できない可能性があります。
+  </LhAlert>
+</template>
+```
+
+```vue
+<!-- フォーム検証サマリー：failedRules が空でなければレンダリング -->
+<template>
+  <LhAlert
+    v-if="failedRules.length"
+    type="danger"
+    show-icon
+    :closable="false"
+    title="フォームに N 箇所の修正が必要です"
+  >
+    <ul>
+      <li v-for="rule in failedRules" :key="rule.field">{{ rule.message }}</li>
+    </ul>
+  </LhAlert>
+</template>
+```
+
+```tsx
+// React：受控な表示/非表示（visible state + 閉じるボタンの onClick で false に）；
+// alert のコンテンツは DOM に残しておいた方が SEO とフォールバックに有利。
+// アンマウントではなく CSS の display で切り替える
+```
+
+```ts
+// uniapp：<view> + セマンティックアイコンは <image> かフォントアイコン；
+// closable はミニプログラム側で catchtap を使う
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-alert` | ルートコンテナ |
+| `.lh-alert--{info\|success\|warning\|danger}` | セマンティックタイプ（背景色 + 枠線 + アイコン色） |
+| `.lh-alert--closable` | 閉じるボタンあり（右側にスペース） |
+| `.lh-alert--show-icon` | アイコンあり（左側にスペース） |
+| `.lh-alert--plain` | 控えめモード（透明な背景、枠線なし） |
+| `.lh-alert--with-title` | 2 段組み（縦方向の間隔を拡大） |
+| `.lh-alert__icon` / `__title` / `__content` / `__close` | アイコン / タイトル / 説明 / 閉じるボタン |
+
+セマンティックカラー：`--lh-info-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`；明るい背景色はセマンティックカラーの低い不透明度の混合（明色 / 暗色で各 1 セット）；角丸 `--lh-border-radius-base`。
+
+## 注意事項
+
+- **alert はドキュメントフローの一部**：レイアウトのスペースを占め、コンテンツを押しのけます。ページ上部に常駐する alert はコンテンツ全体を下にずらします——固定配置（`position: sticky`）にするかは UI 層が決め、core は関与しません。
+- **`role="alert"` の割り込み性は諸刃の剣**：ページ内に複数の danger alert があると、連続して読み上げが割り込まれ、体験が悪くなります。エラーサマリーのシーンでは 1 つの alert ですべての問題を列挙することを推奨します。エラーごとに 1 つの alert を作るのではありません。
+- **動的に挿入される alert**：role=alert は要素が**すでに DOM に存在する**ときに読み上げられます；JS で後から挿入するものは `aria-live="assertive"`（alert）または `"polite"`（status）を併用してフォールバックしてください。これは UI 層の責任です。
+- **`closable` と状態の永続化**：ユーザーが閉じた alert はリロード後に復活します。「閉じたらもう表示しない」（公告の既読など）が必要なら、ビジネス層が localStorage などに永続化しなければなりません。
+- **`plain` モードのセマンティクスは変わらない**：控えめさは視覚だけを変え、`type` が決める role とアイコン色はそのままです——「目立たせない」ために danger を info に格下げするのはセマンティクスの格下げです。
+- **alert の中にインタラクティブボタンを置かない**：「再試行」「詳細を表示」が必要な場合、ボタンを `__content` に置くのは問題ありません（alert の role はインタラクションを禁じない）が、**alert でダイアログを模擬しないでください**。
+
+<FnPlayground module="alert" fn="getAlertRole" params='{"type": "warning"}' />

@@ -1,0 +1,197 @@
+---
+title: notification —— Notification
+description: 'groupNotificationsByPosition, regroupement aux quatre coins ; computeStackOffsets, décalages d’empilement ; une couche de notification plus lourde que message'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La notification est la « version poids lourd » du message : elle porte un titre, se place dans les quatre coins de l'écran, reste plus longtemps et peut être cliquée pour naviguer. Elle sert les **événements systémiques ou asynchrones** — un nouveau message arrive, une tâche se termine, un résultat d'opération en arrière-plan. `core/notification` gère le regroupement aux quatre coins et les décalages d'empilement — c'est la différence essentielle avec `message` (file unique, centrée en haut).
+
+## Quand l'utiliser
+
+- Chaque framework implémente `LhNotification` (API de service) : notifications système, résultats de tâches asynchrones, événements à consulter plus tard.
+- Les situations où le contenu est plus long (titre + corps) et nécessite un suivi par clic de l'utilisateur.
+- **À ne pas utiliser pour** : un retour instantané d'opération (utilisez `message`, plus léger) ; une confirmation exigeant un traitement immédiat (utilisez `dialog`) ; une indication persistante dans la page (utilisez `alert`).
+
+## Import
+
+```ts
+import {
+  LH_NOTIFICATION_DURATION_DEFAULT,
+  LH_NOTIFICATION_GAP_DEFAULT,
+  getNotificationIconName,
+  getNotificationClassNames,
+  isTopPosition,
+  isRightPosition,
+  groupNotificationsByPosition,
+  computeStackOffsets,
+  getNotificationRole,
+  getNotificationAria,
+} from '@lh-ui/share/core/notification'
+import type {
+  LhNotificationType,
+  LhNotificationPosition,
+  LhNotificationRecord,
+} from '@lh-ui/share/core/notification'
+```
+
+## Intentions de conception
+
+**Regroupement aux quatre coins plutôt qu'en file unique** : `groupNotificationsByPosition` découpe la file en quatre groupes selon la position, et le service rend chaque groupe dans le conteneur du coin correspondant. Un commentaire conserve la trace d'un repli : une position inconnue (données sales côté JS) **retombe dans top-right par défaut** , pour qu'une seule donnée sale ne fasse pas s'effondrer tout le regroupement.
+
+**La direction d'accumulation de `computeStackOffsets`** : elle renvoie le décalage de chaque enregistrement par rapport au **bord du viewport** — le premier, collé au bord, est à 0, et les suivants accumulent « hauteur des précédents + espacement ». **Pour les conteneurs collés en bas, c'est à l'appelant d'inverser la direction** — core ne sait pas de quel côté se trouve le conteneur, il calcule seulement « la distance au bord ».
+
+**La durée par défaut est plus longue que celle de message** : `LH_NOTIFICATION_DURATION_DEFAULT = 4500` contre 3000 pour message — une notification est par nature « consultation différable », une présence plus longue est justifiée.
+
+**La détection par chaîne d'`isTopPosition` / `isRightPosition`** : `position.startsWith('top')` / `endsWith('right')` — décomposer une position composite comme `'top-left'` en indicateurs sémantiques, pour que la couche UI décide du positionnement du conteneur et de la direction de l'animation d'entrée (collé en haut : glissement depuis le haut ; collé en bas : glissement depuis le bas).
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getNotificationIconName` | `(type) => LhIconName` | nom d'icône | quatre sémantiques |
+| `getNotificationClassNames` | `(state: { type, showClose, clickable }) => string[]` | noms de classes | type / fermable / cliquable |
+| `isTopPosition` | `(position) => boolean` | collé en haut ? | positionnement du conteneur et direction d'entrée |
+| `isRightPosition` | `(position) => boolean` | collé à droite ? | positionnement du conteneur |
+| `groupNotificationsByPosition` | `(items) => Record<Position, T[]>` | quatre groupes | position inconnue : repli top-right |
+| `computeStackOffsets` | `(heights: number[], gap?) => number[]` | tableau des décalages | cumul des hauteurs + espacement |
+| `getNotificationRole` | `(type) => 'alert' \| 'status'` | rôle live | même paradigme que message |
+| `getNotificationAria` | `(type) => LhAriaAttrs` | paquet d'attributs aria | rôle |
+
+Constantes : `LH_NOTIFICATION_DURATION_DEFAULT = 4500`, `LH_NOTIFICATION_GAP_DEFAULT = 16`.
+
+## Définitions de types
+
+```ts
+export type LhNotificationType = 'info' | 'success' | 'warning' | 'danger' | 'error'  // pas de loading
+export type LhNotificationPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left'
+
+export interface LhNotificationRecord {
+  id: number
+  type: LhNotificationType
+  title: string
+  content: string
+  duration: number       // 0 signifie pas de fermeture automatique
+  position: LhNotificationPosition
+  showClose: boolean
+  sx?: LhSxProps
+  onClick?: () => void
+  onClose?: () => void
+}
+```
+
+## Accessibilité
+
+```ts
+getNotificationAria('danger')   // { role: 'alert' }
+getNotificationAria('success')  // { role: 'status' }
+```
+
+- Le mappage des rôles suit le même paradigme qu'`alert` / `message` : warning/danger/error en annonce immédiate, info/success en file.
+- **L'annonce du titre** : la notification porte un titre, il est recommandé de le rendre en `<h4>` (ou `role="heading"`) pour que les lecteurs d'écran le traitent selon la hiérarchie des titres ; seul le contenu est annoncé par la live region, le titre passe par la sémantique DOM.
+- **Notification cliquable** : à l'état `clickable`, toute la carte est cliquable et doit être enveloppée dans un `<button>` ou un `role="link"` — ne vous contentez pas d'un `onclick` sur un `<div>` , les utilisateurs au clavier ne pourraient pas l'actionner.
+- **Bouton de fermeture** : un bouton icône nécessite un `aria-label`.
+
+## Exemples d'utilisation
+
+```ts
+import {
+  groupNotificationsByPosition, computeStackOffsets, isTopPosition,
+} from '@lh-ui/share/core/notification'
+
+isTopPosition('top-right')   // true
+isTopPosition('bottom-left') // false
+isRightPosition('top-right')  // true
+isRightPosition('top-left')   // false
+
+groupNotificationsByPosition([
+  { position: 'top-right' }, { position: 'bottom-left' }, { position: 'top-right' },
+])
+// { 'top-right': [2 enregistrements], 'top-left': [], 'bottom-right': [], 'bottom-left': [1 enregistrement] }
+
+groupNotificationsByPosition([{ position: 'middle' as never }])
+// position inconnue → repli dans 'top-right'
+
+computeStackOffsets([40, 60, 30])
+// [0, 76, 152]  ← 0, 40+16, 40+16+60+16
+computeStackOffsets([40])  // [0]
+```
+
+```ts
+// Couche service : chaque conteneur de coin gère sa propre file
+const groups = computed(() => {
+  const byPos = groupNotificationsByPosition(queue.value)
+  return Object.entries(byPos).map(([position, items]) => ({
+    position: position as LhNotificationPosition,
+    items,
+    // Décalage d'empilement : les conteneurs du bas doivent inverser (le premier est collé
+    // en bas, les suivants s'empilent vers le haut)
+    offsets: computeStackOffsets(items.map((i) => heights.value[i.id] ?? 60)),
+  }))
+})
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <div
+    v-for="group in groups"
+    :key="group.position"
+    class="lh-notification"
+    :class="[`lh-notification--${group.position}`]"
+  >
+    <transition-group :name="isTopPosition(group.position) ? 'lh-notification-slide-top' : 'lh-notification-slide-bottom'" tag="div">
+      <div
+        v-for="(record, i) in group.items"
+        :key="record.id"
+        :class="getNotificationClassNames({ type: record.type, showClose: record.showClose, clickable: !!record.onClick })"
+        :role="getNotificationRole(record.type)"
+        :style="{ transform: `translateY(${(isTopPosition(group.position) ? 1 : -1) * group.offsets[i]}px)` }"
+        @click="record.onClick?.()"
+      >
+        <LhIcon :name="getNotificationIconName(record.type)" />
+        <div class="lh-notification__main">
+          <h4 class="lh-notification__title">{{ record.title }}</h4>
+          <p class="lh-notification__content">{{ record.content }}</p>
+        </div>
+        <button v-if="record.showClose" type="button" aria-label="Fermer" @click.stop="close(record.id)">✕</button>
+      </div>
+    </transition-group>
+  </div>
+</teleport>
+```
+
+```tsx
+// React : la hauteur doit être mesurée après le rendu (ref + useCallbackLayoutEffect) avant
+// de calculer les décalages d'empilement ; utiliser une hauteur estimée à la première
+// image, puis mettre à jour une fois mesurée
+```
+
+```ts
+// uniapp : <view> + fixed aux quatre coins ; mesure des hauteurs avec createSelectorQuery
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-notification` | conteneur (fixed aux quatre coins) |
+| `.lh-notification--{top-right\|top-left\|bottom-right\|bottom-left}` | position |
+| `.lh-notification__item` | une carte |
+| `.lh-notification__item--{info\|success\|warning\|danger\|error}` | type sémantique |
+| `.lh-notification__item--closable` / `--clickable` | fermable / cliquable (surbrillance au survol + pointeur) |
+| `.lh-notification__main` / `__title` / `__content` | zone principale / titre / corps |
+
+Largeur fixe (par ex. 320~360px), fond `--lh-bg-color` + ombre ; les quatre couleurs sémantiques s'appliquent à l'icône et à la barre colorée latérale.
+
+## Remarques
+
+- **Les décalages d'empilement exigent les hauteurs réelles** : `computeStackOffsets` consomme un tableau de hauteurs, la couche UI doit mesurer la hauteur de rendu réelle de chaque enregistrement. À la première image, l'utilisation d'une hauteur estimée provoque des sauts — mettez à jour une fois avec l'état mesuré.
+- **Inversion de direction pour les conteneurs du bas** : `computeStackOffsets` renvoie une « distance au bord », le conteneur bottom doit multiplier par -1 (le bas est positif). C'est la responsabilité de l'appelant, core ne connaît pas l'orientation du conteneur.
+- **La notification `duration: 0`** : elle ne se ferme pas automatiquement, ce qui convient aux « messages non lus » que l'utilisateur doit lever lui-même — combinée avec `showClose: true` ou une fermeture au clic.
+- **Le conflit d'événements entre `onClick` et `showClose`** : sur une carte cliquable, le bouton de fermeture doit utiliser `@click.stop`, sinon cliquer sur Fermer déclenche aussi la navigation de la carte.
+- **Le nombre de conteneurs en cas de positions multiples** : les conteneurs des quatre coins restent dans le DOM même vides (transition-group l'exige) ; un `v-if` casserait l'animation.
+- **La frontière avec message** : la notification est plus lourde (occupe un coin, porte un titre, reste plus longtemps) ; pour un retour d'opération, message suffit. Les deux peuvent coexister (un message pour le succès d'une opération, une notification pour les événements système).
+- **Le typage strict de `position`** : avec TS, une position erronée est interceptée, mais un appelant JS peut transmettre `'topCenter'` et compagnie — le repli top-right évite le plantage, mais la position ne correspondra pas à l'attente ; l'appelant doit se vérifier.
+
+<FnPlayground module="notification" fn="groupNotificationsByPosition" params='{"items": [{"position": "top-right"}, {"position": "bottom-left"}, {"position": "top-right"}]}' />

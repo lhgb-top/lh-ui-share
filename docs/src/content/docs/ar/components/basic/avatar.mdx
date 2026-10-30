@@ -1,0 +1,122 @@
+---
+title: avatar —— صورة رمزية
+description: 'يستخرج getAvatarText المحرف الأول عبر codePointAt (آمن مع الإيموجي)، ويحكم isImageSource على الاحتفاظ بالصورة، ويحسب getAvatarClassNames معدّلات الشكل'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+يتعين على مكوّن الصورة الرمزية معالجة ثلاثة أشكال للمحتوى: الصورة، والنص، والأيقونة، مع وجوب الانخفاض السلس عند فشل تحميل الصورة أو كان العنوان غير صالح. يحوّل `core/avatar` «استخراج النص» و«التحقق من مصدر الصورة» إلى دوال صرفة — يجب أن يكون هذان الحكمان متطابقين تمامًا عبر الأطراف، وإلا سيظهر اختلاف «Vue3 يعرض نصًا بينما يعرض uniapp صورة مكسورة».
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhAvatar`: يُعرض `img` عند توفّر صورة، وإلا الحرف الأول المستخرج عبر `getAvatarText`، وإذا لم يوجد أيهما تُعرض أيقونة احتياطية.
+- سيناريوهات أخذ «الحرف الأول من الاسم» كصورة رمزية افتراضية في أنظمة المستخدمين.
+- **لا يجب استخدامه**: اقتصاص الصور ورفعها. تلك شؤون `LhUpload` ومنطق العمل.
+
+## طريقة الاستيراد
+
+```ts
+import { getAvatarClassNames, getAvatarText, isImageSource } from '@lh-ui/share/core/avatar'
+import type { LhAvatarState, LhAvatarShape } from '@lh-ui/share/core/avatar'
+```
+
+## نية التصميم
+
+يستخدم `getAvatarText` الدالتين `codePointAt(0)` + `String.fromCodePoint` بدلًا من `str[0]`، وهذا فخٌّ يسهل تفويته: `'😀'[0]` يعطي نصف زوج بديل (`\uD83D`)، ويُعرض كمربع مشوّش. وباستخراج نقطة الرمز يبقى الإيموجي ومحارف المستوى المكمّل (الكثير من المحارف الصينية النادرة) آمنة.
+
+التعبير النمطي في `isImageSource` يقوم بـ**حكم قابلية متسامح** فقط، لا بتحقق أمني: يُعتبر عنوانًا للصورة أي نص يبدأ بـ `http(s)://` أو `data:image/` أو مسار مطلق `/` أو مسار نسبي `./` أو `../`. الغرض منه «تقرير ما إذا كان يجدر محاولة عرض img»، أما فشل التحميل الفعلي فيتعامل معه حدث `error` الخاص بـ `img` (حيث ينتقل الطرف البصري إلى حالة النص).
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getAvatarClassNames` | `(state: LhAvatarState) => string[]` | مصفوفة أسماء الأصناف | معدّلات الشكل والحجم |
+| `getAvatarText` | `(source: string) => string` | المحرف الأول أو `''` | استخراج محرف العرض من النص |
+| `isImageSource` | `(src: string \| undefined) => boolean` | قيمة منطقية | هل يستحق عنوان الصورة محاولة العرض |
+
+تفاصيل الحدود:
+
+- `getAvatarText('')` → `''`؛`getAvatarText(' 水墨 ')` → `'水'` (يُقصّ الطرفان أولًا)؛`getAvatarText('Alice')` → `'A'`.
+- يُعيد `getAvatarText` القيمة `''` عندما يُعيد `codePointAt(0)` القيمة undefined (النص الفارغ مُقصّ بالفعل، فلا يمكن نظريًا أن يحدث ذلك).
+- `isImageSource(undefined)` → `false`؛`isImageSource('')` → `false`.
+
+## تعريف الأنواع
+
+```ts
+export type LhAvatarShape = 'circle' | 'square'
+
+export interface LhAvatarState {
+  size: LhComponentSize
+  shape: LhAvatarShape
+}
+```
+
+## إمكانية الوصول
+
+لا يُخرج `core/avatar` حزمة سمات aria، لأن معالجة الصورة الرمزية تتوقف على شكل المحتوى:
+
+- **صورة رمزية مصوّرة**: تُستخدم `<img>` الأصلية، و`alt` إلزامي (مثل «صورة رمزية لجانب»). لا تترك `alt` فارغًا — فالـ alt الفارغ يعني «صورة زخرفية»، بينما تحمل الصورة الرمزية عادةً معلومات الهوية.
+- **صورة رمزية نصية**: النص نفسه محتوى قابل للقراءة، ولا يحتاج إلى معالجة إضافية.
+- **صورة رمزية أيقونية** (عنصر احتياطي للمستخدم المجهول): تمرّ الأيقونة عبر `getIconAria({ decorative: false, label: 'مستخدم مجهول' })`.
+
+## أمثلة الاستخدام
+
+```ts
+import { getAvatarText, isImageSource } from '@lh-ui/share/core/avatar'
+
+getAvatarText('محمد')       // 'م'
+getAvatarText('Alice Smith')  // 'A'
+getAvatarText('😀هاها')       // '😀'
+isImageSource('https://a.com/1.png')  // true
+isImageSource('data:image/png;base64,...')  // true
+isImageSource(undefined)               // false
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getAvatarClassNames({ size, shape })">
+  <img v-if="isImage && !error" :src="src" :alt="alt" @error="error = true" />
+  <span v-else-if="text" class="lh-avatar__text">{{ text }}</span>
+  <LhIcon v-else name="user" :decorative="false" label="مستخدم مجهول" />
+</div>
+```
+
+```tsx
+// React
+const text = getAvatarText(name)
+const showImg = isImageSource(src) && !imgError
+return (
+  <div className={getAvatarClassNames({ size, shape }).join(' ')}>
+    {showImg ? <img src={src} alt={alt} onError={() => setImgError(true)} />
+      : text ? <span className="lh-avatar__text">{text}</span>
+      : <LhIcon name="user" decorative={false} label="مستخدم مجهول" />}
+  </div>
+)
+```
+
+```ts
+// uniapp: يدعم مكوّن <image> الحدث @error، والمنطق كما سبق؛
+// وانتبه إلى تراجع الخط للصور الرمزية النصية على الأطراف غير h5 (قد تفتقر المحارف النادرة إلى الرسوم)
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-avatar` | الصنف الأساسي: عرض وارتفاع ثابتان، إخفاء التجاوز، توسيط |
+| `.lh-avatar--{mini\|small\|medium\|large\|x-large}` | درجات الحجم |
+| `.lh-avatar--circle` / `.lh-avatar--square` | الشكل (درجة الاستدارة) |
+| `.lh-avatar__img` | الصورة: ملء + object-fit |
+| `.lh-avatar__text` | النص: موسّط، أبيض، مُحجّم وفق الحجم |
+| `.lh-avatar__icon` | أيقونة احتياطية |
+
+لون خلفية الصورة الرمزية هو رمز اللون الأساسي افتراضيًا؛ وفي سيناريوهات الصور المتعددة (مثل مجموعات الصور الرمزية) يمكن لكل طرف بصري تلوينها وفق تجزئة الاسم، ولا يتدخل core في ذلك.
+
+## ملاحظات
+
+- **لا تستخدم `str[0]` أو `str.charAt(0)`** لاستخراج الحرف الأول في الطرف البصري بنفسك — فالإيموجي والمحارف النادرة ستُقطع وتصبح رموزًا مشوّشة؛ استخدم `getAvatarText` موحّدًا.
+- لا يعني مجرد إعادة `isImageSource` للقيمة true أن الصورة موجودة، بل يعني فقط «يستحق المحاولة`. الاحتفاظ بـ `onError` أمر لا غنى عنه.
+- `square` ليس زاوية قائمة، بل استدارة صغيرة (للتناغم البصري)، فالصورة الرمزية بزوايا قائمة تبدو حادة التأثير للغاية.
+- `object-fit` الافتراضي للصورة الرمزية المصوّرة هو `cover`، وقد يُقتَلص طرف الوجه — وكثيرًا ما تحتاج الأعمال إلى ضبط `object-position`، وهذا يُعالج في الطرف البصري لكل جهة.
+
+<FnPlayground module="avatar" fn="getAvatarText" params='{"source": "青花瓷"}' />

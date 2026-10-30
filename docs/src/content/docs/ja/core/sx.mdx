@@ -1,0 +1,161 @@
+---
+title: sx —— スタイル速記
+description: 'sxToStyle は Tailwind 風の sx props をインラインスタイルに変換する。固定優先度：単辺 > 軸組 > 省略形'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`sx` は lh-ui の**インラインスタイル速記**です：`style="margin-top: 32px"` の代わりに `mt: 4`、
+四辺の padding を一度に書く代わりに `p: 2` を使います。Tailwind ではありません（クラス名を
+生成せず、CSS も読み込みません）。props パッケージを実行時に `Record<string, string>` へ
+評価し、UI 層が `:style` に束縛します。
+
+## いつ使うか
+
+- コンポーネントライブラリ内部：`sx` があれば「レイアウトの微調整」のために新しい prop を
+  追加せずに済みます——`<LhButton sx={{ mt: 2 }} />` で上の間隔を押し開けられます。
+- データに応じて動的に変わる間隔：数値から px への変換（`×8`）により、「もう少し近づけたい」
+  というセマンティクスに安定した目盛りが生まれます。
+- **使うべきでない場合**：体系的なビジュアルデザイン。sx は「呼び出し箇所での一時的な微調整」で、
+  テーマ色やコントロールの高さのようなデザイントークンは依然として CSS 変数を通ります
+  （[テーマシステム](/ja/theme/overview)を参照）。sx に `color: 'var(--lh-primary-color)'` と
+  書いても動きますが、コンポーネントにトークンを直接消費させるほうが推奨されます。
+
+## インポート方法
+
+```ts
+// 正確なインポート（推奨、tree-shaking に優しい）
+import { sxToStyle, mergeSx } from '@lh-ui/share/core/shared/sx'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+
+// または集約エントリから
+import { sxToStyle } from '@lh-ui/share/core/shared'
+```
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `sxToStyle` | `(sx: LhSxProps) => Record<string, string>` | インラインスタイルオブジェクト | sx props パッケージを CSS スタイルに評価する |
+| `mergeSx` | `(...list: (LhSxProps \| undefined \| null)[]) => LhSxProps` | 結合後の sx | 後者が前者を上書き。UI 層が「デフォルト sx + 呼び出し側 sx」を組み合わせるために使う |
+
+### `sxToStyle` の優先度ルール
+
+**「単辺 > 軸組 > 省略形」で、キーの記述順とは無関係**です。実装は `省略形 → 軸組 → 単辺` の
+固定順でスタイルオブジェクトに書き込み、後から書いたものが先のものを上書きするため、キーの
+順序をどう並べても同じです：
+
+```ts
+sxToStyle({ m: 2, mt: 4 })   // { marginTop: '32px', marginRight: '16px', marginBottom: '16px', marginLeft: '16px' }
+sxToStyle({ mt: 4, m: 2 })   // 完全に同じ
+sxToStyle({ my: 2, mt: 4 })  // marginTop は単辺が勝利：32px；mb は依然 16px
+```
+
+このルールにより、コンポーネントライブラリは「デフォルトパッケージ + ユーザー上書き」を安全に
+書けます：ユーザーが渡した `mt` は必ずコンポーネント内部の `m` を圧倒します。
+
+### 数値と文字列
+
+- **数値は `×8px` で換算**：`mt: 4` → `32px`。8 は lh-ui の間隔基準です（`--lh-spacing-*`
+  トークンと同じ目盛り）。
+- **文字列はそのままパススルー**：`w: '50%'` → `50%`、`p: '1rem'` → `1rem`。
+- **レイアウト系のキーは換算しない**：`display` / `flex` / `flexDirection` / `alignItems` /
+  `justifyContent` の値は文字列としてそのまま書き込まれます（`flexDirection: 'column'` が
+  `columnpx` になることはありません）。
+- すべてのキーは一律 `!== undefined` で判定します：空文字列 `''` を渡すのは**明示的なクリア**と
+  みなされ、書き込まれます。
+
+## 型定義
+
+```ts
+export interface LhSxProps {
+  // サイズ
+  w?: string | number
+  h?: string | number
+  // 外マージン：単辺 / 軸組 / 省略形
+  mt?: string | number
+  mr?: string | number
+  mb?: string | number
+  ml?: string | number
+  my?: string | number
+  mx?: string | number
+  m?: string | number
+  // 内マージン：同構成
+  pt?: string | number
+  pr?: string | number
+  pb?: string | number
+  pl?: string | number
+  py?: string | number
+  px?: string | number
+  p?: string | number
+  // レイアウト
+  display?: string
+  flex?: string
+  flexDirection?: 'row' | 'column'
+  alignItems?: string
+  justifyContent?: string
+  // 下流のカスタムキーに対応；未知のキーは静かに破棄される
+  [key: string]: any
+}
+```
+
+インデックスシグネチャ `[key: string]: any` は意図的です：各 UI ライブラリは自身の
+`LhXxxProps` で `sx?: LhSxProps` とコンポーネント固有の属性を並べるため、インデックス
+シグネチャが型の衝突を防ぎます。未知のキーは評価時に破棄され、スタイルへ漏れ出すことは
+ありません。
+
+## 使用例
+
+### 純関数
+
+```ts
+sxToStyle({ mt: 2, px: 3, display: 'flex', alignItems: 'center' })
+// {
+//   marginTop: '16px',
+//   paddingLeft: '24px',
+//   paddingRight: '24px',
+//   display: 'flex',
+//   alignItems: 'center',
+// }
+```
+
+### 各端の配線
+
+```vue
+<!-- Vue3 / Vue2：そのまま :style に束縛 -->
+<template>
+  <lh-button :style="sxToStyle($props.sx)">ボタン</lh-button>
+</template>
+```
+
+```tsx
+// React
+<div style={sxToStyle({ my: 4, w: '100%' })} />
+```
+
+```ts
+// uniapp：sxToStyle の出力は普通のオブジェクトなので、そのまま style 束縛に入る
+// （数値の ×8px は非 h5 端ではプラットフォームに応じた換算が必要、UI 層が自ら処理する）
+```
+
+`mergeSx` の典型的な使い方は、コンポーネント内部でのデフォルト値の組み合わせです：
+
+```ts
+// コンポーネント内部
+const merged = mergeSx({ py: 2, px: 4 }, props.sx) // ユーザーの sx がデフォルトを上書き
+const style = sxToStyle(merged)                    // 評価は一度だけ、優先度ルールも一度だけ確定
+```
+
+## 注意事項
+
+- **`mergeSx` は浅い結合**（`Object.assign`）で、再帰しません。sx の値はすべてスカラーなので、
+  浅い結合で十分です。
+- **`sxToStyle` は偽値に対して `{}` を返す**：`sxToStyle(undefined)` は空オブジェクトなので、
+  UI 層は無条件に呼び出せます。
+- 数値換算の 8px 基準はトークン体系と揃えていますが、sx 自体は **CSS 変数を参照しません**——
+  生成するのは計算済みのリテラルで、「今回の呼び出しだけ少しずらしたい」場面に適し、
+  「テーマに追随して変わる」場面には適しません。
+- クロスプラットフォーム：uniapp の非 h5 端の rpx は UI 層で換算が必要で、sx のコアは px しか
+  出力しません。
+
+<FnPlayground module="sx" fn="sxToStyle" params='{"sx": {"mt": 4, "px": 3, "display": "flex"}}' />

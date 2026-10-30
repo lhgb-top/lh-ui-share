@@ -1,0 +1,156 @@
+---
+title: 'menu 메뉴 —— 내비게이션'
+description: 'toggleMenuOpen 아코디언/일반 듀얼 모드, 서브메뉴 aria-expanded 연동, @deprecated moveMenuFocus는 shared/keyboard로 수렴'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+메뉴는 웹사이트의 뼈대 내비게이션입니다: 상단 가로 메뉴, 사이드 세로 메뉴, 접을 수 있는 아이콘 메뉴. `dropdown`과의 차이는 **지속성과 계층**입니다——메뉴는 페이지에 상주하며 무한히 자식 레벨을 중첩할 수 있습니다; dropdown은 임시로 튀어나오는 작업 목록입니다. `core/menu`가 관리하는 것은 펼침 상태의 기록과 접근성 의미이며, 레이아웃과 위치 지정은 모두 SCSS에 있습니다.
+
+## 사용 시기
+
+- 각 단말에서 `<LhMenu>` / `<LhSubMenu>` / `<LhMenuItem>` 구현: 웹사이트 주 내비게이션, 백엔드 사이드바, 문서 사이트 목차.
+- **2단계 이상의 계층**이 필요한 내비게이션.
+- **사용하면 안 되는 경우**: 한 줄에 나열된 작업 버튼(`space` + `button` 사용); 임시 팝업 작업 메뉴(`dropdown` 사용); 탭 형식의 콘텐츠 전환(`tabs` 사용).
+
+## 가져오기
+
+```ts
+import {
+  getMenuClassNames,
+  getMenuItemClassNames,
+  getSubMenuClassNames,
+  getMenuItemGroupClassNames,
+  toggleMenuOpen,
+  isMenuOpen,
+  moveMenuFocus,
+  getMenuAria,
+  getMenuItemAria,
+  getSubMenuAria,
+} from '@lh-ui/share/core/menu'
+import type { LhMenuMode } from '@lh-ui/share/core/menu'
+```
+
+## 설계 의도
+
+**아코디언 모드는 0개 열림을 허용**: `uniqueOpened: true`일 때 `toggleMenuOpen`은 이미 펼쳐진 항목을 클릭하면 `[]`을 반환(전부 접힘), 펼쳐지지 않은 항목을 클릭하면 `[key]`를 반환(그것만 유지). 주의할 점은 "최소한 하나는 열어 두기"가 아니라는 것입니다——0개 열림이 허용되며, 이로 인해 "전부 접기"가 상호작용 가능한 상태가 됩니다.
+
+**일반 모드는 교체가 아니라 추가/제거**: 새 배열을 반환(`filter`로 제거 / 추가)하며 나머지 펼침 항목은 그대로 유지합니다——다단계 메뉴에서 여러 서브메뉴를 동시에 여는 것은 흔한 수요입니다.
+
+**`moveMenuFocus`는 @deprecated 래퍼**: 순환 내비게이션 알고리즘은 이미 `core/shared/keyboard`의 `getNextListIndex`로 수렴했으며, 이 함수는 예전 시그니처(DOM 요소 배열을 받음)를 하위 호환을 위해 유지합니다. 하는 일은: `tabIndex === -1`을 걸러내고(커널의 비활성 항목과 동등), 현재 요소가 목록에 없으면 첫 항목으로 폴백합니다. **새 코드는 `getNextListIndex`를 직접 사용하세요**.
+
+**aria 3종 세트**: 컨테이너 `role="menu"`, 잎 항목 `role="menuitem"`, 서브메뉴 제목 `role="menuitem"` + `aria-expanded` + `aria-controls`. 주의——**서브메뉴 제목은 menuitem의 자식 role이 아닙니다**——APG의 menu 구조에서 펼칠 수 있는 메뉴 항목도 여전히 menuitem이며, 펼침 상태는 aria-expanded로 표현합니다.
+
+**클래스명과 상태의 분리**: `--active` / `--disabled` / `--opened`는 모두 독립적인 불리언 클래스이며 SCSS가 스타일을 조합합니다. `--collapse`(접힘 상태)는 컨테이너 수준의 클래스명으로, 모든 자식 항목의 렌더링 방식에 영향을 줍니다(아이콘 메뉴는 아이콘만 표시, tooltip이 텍스트를 보충).
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getMenuClassNames` | `(state: { mode, collapse }) => string[]` | 클래스명 | 레이아웃 모드 + 접힘 상태 |
+| `getMenuItemClassNames` | `(state: { active, disabled }) => string[]` | 클래스명 | 잎 항목 |
+| `getSubMenuClassNames` | `(state: { active, disabled, opened }) => string[]` | 클래스명 | 서브메뉴 |
+| `getMenuItemGroupClassNames` | `() => string[]` | 클래스명 | 그룹 컨테이너 |
+| `toggleMenuOpen` | `(openeds, key, uniqueOpened) => string[]` | 새 배열 | 펼치기/접기(불변) |
+| `isMenuOpen` | `(openeds, key) => boolean` | 펼침 여부 | includes 조회 |
+| `moveMenuFocus` ⚠️ | `(items, currentEl, direction) => HTMLElement \| null` | 타깃 요소 | ↑/↓ 포커스 이동 |
+| `getMenuAria` | `(id?) => LhAriaAttrs` | aria 패키지 | role=menu |
+| `getMenuItemAria` | `(state: { disabled? }) => LhAriaAttrs` | aria 패키지 | menuitem |
+| `getSubMenuAria` | `(options: { opened, disabled?, menuId? }) => LhAriaAttrs` | aria 패키지 | menuitem + expanded |
+
+⚠️ `@deprecated` 호환 래퍼이며, 새 코드는 `shared/keyboard`의 `getNextListIndex`를 사용하세요.
+
+## 타입 정의
+
+```ts
+export type LhMenuMode = 'horizontal' | 'vertical'
+```
+
+## 접근성
+
+```ts
+getMenuAria('menu-1')            // { role: 'menu', id: 'menu-1' }
+getMenuItemAria({ disabled: true })  // { role: 'menuitem', 'aria-disabled': true }
+getSubMenuAria({ opened: true, menuId: 'menu-1' })
+// { role: 'menuitem', 'aria-expanded': true, 'aria-controls': 'menu-1' }
+getSubMenuAria({ opened: false })
+// { role: 'menuitem', 'aria-expanded': false }
+```
+
+- **aria-expanded의 거짓값도 출력**: `{ 'aria-expanded': false }`에는 의미가 있습니다——"이 서브메뉴는 접혀 있다"는 것을 스크린 리더에게 명시적으로 알려 줍니다. 이것은 `shared/a11y`의 규약을 따릅니다: undefined(미전달)일 때만 생략되며, false는 합법적인 상태값입니다.
+- **키보드 내비게이션의 모드 분기**: 가로 메뉴는 ←/→, 세로 메뉴는 ↑/↓를 사용하는 것이 APG의 menu 모드 규약입니다. 스크린 리더 사용자는 방향키를 눌렀을 때 그에 맞는 동작을 기대합니다——`moveMenuFocus`는 세로 방향의 1/-1만 제공하며, 가로 메뉴의 ←/→는 UI 계층이 매핑한 뒤 동일하게 호출합니다.
+- **aria-current로 현재 페이지 표시**: 활성 메뉴 항목은 `--active` 클래스명 외에 UI 계층에서 `aria-current="page"`를 추가하는 것을 권장합니다(`breadcrumb`의 마지막 항목과 의미가 동일), 스크린 리더가 "현재 페이지"로 읽어 줍니다.
+- **접힌 메뉴의 텍스트 보충**: `collapse` 모드에서는 아이콘만 표시되므로, 메뉴 항목의 텍스트는 `aria-label`이나 hover tooltip에 넣어야 합니다——그렇지 않으면 아이콘 버튼이 스크린 리더에 이름 없이 남습니다.
+- **비활성 항목 건너뛰기**: `--disabled` 항목은 클릭에 반응하지 않지만(UI 계층이 차단) 여전히 DOM에 있습니다. 키보드 내비게이션은 반드시 건너뛰어야 합니다(`moveMenuFocus`의 tabIndex 필터).
+
+## 사용 예시
+
+```ts
+import { toggleMenuOpen, isMenuOpen } from '@lh-ui/share/core/menu'
+
+toggleMenuOpen(['a', 'b'], 'b', false)  // ['a'](일반 모드, b 접기)
+toggleMenuOpen(['a'], 'b', false)       // ['a', 'b'](b 펼치기)
+toggleMenuOpen(['a'], 'a', true)        // [](아코디언: 다시 클릭하여 접기, 0개 열림 허용)
+toggleMenuOpen(['a'], 'b', true)        // ['b'](아코디언: b만 유지)
+
+isMenuOpen(['a', 'b'], 'a')  // true
+isMenuOpen(['a'], 'c')       // false
+```
+
+```ts
+// 제어형 펼침 상태(UI 계층): openeds는 Set이 아닌 배열, 직렬화와 v-model에 편리
+const openeds = ref<string[]>([])
+function onSubMenuClick(key: string) {
+  openeds.value = toggleMenuOpen(openeds.value, key, props.uniqueOpened)
+}
+```
+
+```vue
+<!-- Vue3: 사이드 세로 메뉴 -->
+<template>
+  <LhMenu mode="vertical" :collapse="collapsed" :unique-opened="true">
+    <LhSubMenu index="1">
+      <template #title><LhIcon name="settings" /><span>시스템 설정</span></template>
+      <LhMenuItem index="1-1" @click="go('/users')">사용자 관리</LhMenuItem>
+      <LhMenuItem index="1-2" disabled>권한 관리</LhMenuItem>
+    </LhSubMenu>
+    <LhMenuItem index="2" @click="go('/profile')">내 정보</LhMenuItem>
+  </LhMenu>
+</template>
+```
+
+```tsx
+// React: openeds는 useState<string[]>; 메뉴 항목 클릭은 navigate;
+// 접힘 상태는 context로 서브메뉴에 전달(각 층마다 props를 관통시키지 않음)
+```
+
+```ts
+// uniapp: <view> + catchtap; 접힘 모드는 미니프로그램 환경에서 px 고정 너비 트랜지션 애니메이션
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-menu` | 컨테이너 |
+| `.lh-menu--{horizontal\|vertical}` | 레이아웃 모드 |
+| `.lh-menu--collapse` | 접힘 상태(아이콘만) |
+| `.lh-menu-item` | 잎 항목 |
+| `.lh-menu-item--active` / `--disabled` | 활성 / 비활성 |
+| `.lh-sub-menu` / `--active` / `--disabled` / `--opened` | 서브메뉴 제목 |
+| `.lh-sub-menu__popup` | 팝업형 자식(가로 메뉴) |
+| `.lh-menu-item-group` | 그룹(그룹 제목 포함) |
+
+활성 항목 배경 `--lh-menu-item-active-background`, 텍스트 색상 `--lh-menu-item-color`(라이트 토큰은 var-dark에서 명시적으로 반전해야 함, 루트 AGENTS.md의 "다크 모드 함정" 참조); 높이 토큰 `--lh-menu-item-height`.
+
+## 주의 사항
+
+- **openeds는 객체가 아닌 배열**: 순서는 무관하지만 중복 제거가 필요합니다; `toggleMenuOpen`이 유일성을 보장합니다. 라우트 query나 localStorage에 직렬화할 때는 배열이 더 직관적입니다.
+- **아코디언은 같은 레벨만 제어**: `uniqueOpened`은 **같은 menu 아래**의 직속 서브메뉴만 상호 배타적으로 만듭니다; 손자 레벨 서브메뉴 사이에는 영향을 주지 않습니다(각자 자신의 openeds를 유지).
+- **가로 메뉴의 자식은 팝업형**: 1단계가 가로로 나열되고 2단계는 아래로 튀어나옵니다(클래스 `lh-sub-menu__popup`, 위치 지정은 `shared/popper`); 세로 메뉴의 자식은 인라인 펼침(아래 콘텐츠를 밀어냄). 두 모드의 DOM 구조가 다르며 mode가 구동합니다.
+- **`--active`는 라우트 동기화 필요**: 메뉴의 활성 상태는 보통 현재 라우트를 따르며, UI 계층이 라우트 변화를 감시해 active index를 갱신합니다——core은 라우트에 손대지 않습니다.
+- **접힘 상태의 tooltip**: `collapse: true`일 때 메뉴 항목은 아이콘만 남으므로, 텍스트는 `tooltip`으로 보충해야 합니다(호버 시 표시). 이것은 두 컴포넌트의 협업 지점입니다.
+- **`moveMenuFocus`의 DOM 의존**: `HTMLElement[]`를 받으므로 브라우저 환경에서만 호출할 수 있습니다(SSR은 건너뜀); 또한 disabled 클래스명이 아니라 tabIndex를 기준으로 필터링합니다——UI 계층은 비활성 항목의 tabIndex가 -1임을 보장해야 합니다.
+- **menu vs dropdown은 role이 같아도 용법이 다름**: 둘 다 `role="menu"`를 사용합니다. menu는 지속적 내비게이션, dropdown은 임시 작업 목록——dropdown으로 웹사이트 내비게이션을 흉내 내지 마세요(새로고침하면 사라지고 딥 링크가 불가).
+
+<FnPlayground module="menu" fn="toggleMenuOpen" params='{"openeds": ["a"], "key": "b", "uniqueOpened": true}' />

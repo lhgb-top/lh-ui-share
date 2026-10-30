@@ -1,0 +1,197 @@
+---
+title: 'virtual-list 仮想リスト —— 設定'
+description: '定高 computeRange と動的高度 build/patch/find の 2 モード、NaN サニタイズによる白画面防止、table と同じ中核アルゴリズムを共有'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+仮想リストは「万件データのレンダリング方案」です：ビューポート内の数十件だけをレンダリングし、スクロール時に動的に差し替えます。10 万行のデータをすべてレンダリングするとブラウザがフリーズしますが、仮想リストは DOM ノード数を一定に保ちます。代償は**高さが予測可能でなければならない**ことです——定高モードは直接計算し、動的高度モードは事前に測定します。`core/virtual-list` は 2 つのモードをカプセル化し、`table` の仮想スクロールと `shared/virtual` の同じ中核アルゴリズムを共有します。
+
+## いつ使うか
+
+- 各端が `<LhVirtualList>` を実装する：長いメッセージリスト、ログストリーム、連絡先、大規模データのドロップダウン項目。
+- データ量が**ビューポートの許容量の 5 倍以上**で、かつ各項目のレンダリングコストが低くないときにようやく価値があります。
+- **使うべきでない**：数十〜数百件のデータ（そのままレンダリングする。仮想化の測定 / 位置決めコストに見合いません）；項目の高さが**完全に予測不可能で測定もしない**場合（定高を受け入れるか測定能力を提供しなければなりません）；全量の DOM が必要なケース（全選択や Ctrl+F のブラウザ検索、ページ全体の印刷——仮想リストの外の内容は DOM になく、検索できません）。
+
+## インポート方法
+
+```ts
+import {
+  LH_VIRTUAL_ITEM_SIZE,
+  LH_VIRTUAL_OVERSCAN,
+  computeWindow,
+  computeVirtualRange,
+  buildVirtualItems,
+  patchMeasuredSize,
+  findVirtualRange,
+  getItemOffset,
+  getVirtualListClassNames,
+} from '@lh-ui/share/core/virtual-list'
+import type { LhVirtualItem, LhVirtualRange } from '@lh-ui/share/core/virtual-list'
+```
+
+## 設計意図
+
+**2 つのモード**：定高（`computeRange`、O(1) で区間を計算）と動的高度（`buildVirtualItems` + `patchMeasuredSize` + `findVirtualRange`、測定が必要）。定高がデフォルトの推奨です——シンプルで、ちらつきがない。動的高度は内容の高さが本当に均一でないケース（長さの異なるチャットメッセージなど）に使います。
+
+**table との同じ中核の共有**：`shared/virtual` のコメントに歴史が記録されています——定高アルゴリズムはもともと virtual-list と table に**それぞれ 1 つずつ**あり、デフォルトのオーバースキャン量すら異なって（2 vs 3）おり、片方の修正がもう片方へ同期されませんでした。唯一のアルゴリズムとして抽出した後、両者は薄いラッパーになりました。`LH_TABLE_OVERSCAN = 3` は table 側のカスタム値で、virtual-list はデフォルトの `LH_VIRTUAL_OVERSCAN = 2` を使います。
+
+**NaN のサニタイズは白画面防止**：`computeRange` のコメントにはっきりと書かれています——NaN の scrollTop が `Math.max` / `Math.floor` に入ると NaN のウィンドウが産出され、`array.slice(NaN)` が空の配列を返して → **白画面**になります。すべての入力引数で `Number.isFinite` のサニタイズを行います。`findVirtualRange` はさらに一歩進みます：`items[NaN].offset` は直接 TypeError でレンダリングを中断します。
+
+**`first` を `total - 1` にクランプ**：データが縮小した（行が削除された）あとの、scrollTop がまだクランプされていないその 1 フレームで、`first` が total を超える可能性があり、`start > end` → slice が空を返す → 白画面になります。このクランプは競合状態の修正です。
+
+**`patchMeasuredSize` はその場で変更する**：動的高度で本当の高さを測定したあと、**元の配列を変更**しつつ後続のすべての項の offset をずらし、サイズの変化量 delta を返します。`buildVirtualItems` の全量再構築（O(n) の新規配列 + 全 diff の発生）と比べ、一度だけ走査し、変化のない項の再レンダリングを起こしません。コメントにこの取捨選択が書かれています——イミュータビリティはここではパフォーマンスに譲ります。
+
+**`getItemOffset` の定高の近道**：定高モードで第 N 項へスクロールするには直接 `N * itemHeight` でよく、items 配列は不要です——関数のドキュメントにも動的モードでだけ使うと明記されています。
+
+**`computeWindow` は軸非依存バージョン**：水平仮想スクロール（scrollLeft / viewportWidth / itemWidth）と縦向きで同じアルゴリズムを共有し、フィールド名が offsetY から offset に変わるだけです。`LhAxisRange` と `LhVirtualRange` は同義です。
+
+## 関数表
+
+| 関数 / 定数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `computeRange`（`computeVirtualRange` 経由） | `(scrollTop, viewportHeight, itemHeight, total, overscan?) => LhVirtualRange` | 可視区間 | 定高モード |
+| `computeWindow` | `(scrollOffset, viewportSize, itemSize, total, overscan?) => LhAxisRange` | 軸非依存の区間 | 水平仮想化 |
+| `buildVirtualItems` | `(count, sizes, defaultSize?) => { items, totalHeight }` | 項配列 | 動的高度の事前計算 |
+| `patchMeasuredSize` | `(items, index, size, defaultSize?) => number` | delta | 実測サイズの差分更新 |
+| `findVirtualRange` | `(items, scrollTop, viewportHeight, overscan?) => LhVirtualRange` | 可視区間 | 動的高度の二分探索 |
+| `getItemOffset` ⚠️ | `(items, index) => number` | オフセット | 指定項へのスクロール |
+| `getVirtualListClassNames` | `() => string[]` | クラス名 | コンテナ |
+
+定数：`LH_VIRTUAL_ITEM_SIZE = 40`（デフォルトの推定項目高さ）、`LH_VIRTUAL_OVERSCAN = 2`（デフォルトのオーバースキャン）。
+
+⚠️ `computeVirtualRange` / `getItemOffset` は `@deprecated`（非推奨）の互換エイリアスで、新しいコードは直接 `shared/virtual` の `computeRange` / `getItemOffsetAt` を使います。
+
+## 型定義
+
+```ts
+export interface LhVirtualItem {
+  size: number      // その項の推定 / 実測の高さ
+  offset: number    // その項のリスト先頭からのオフセット
+}
+
+export interface LhVirtualRange {
+  start: number     // 開始インデックス（含む）
+  end: number       // 終了インデックス（含まない）
+  offsetY: number   // ウィンドウのオフセット px（スクロールバーを支えるプレースホルダーの高さ）
+  totalHeight: number  // 全量の高さ px（スクロールバーを出す）
+}
+```
+
+## アクセシビリティ
+
+仮想リストはスクリーンリーダーにとって**目に見えない難問**です：DOM の中には数十項目しかなく、スクリーンリーダーは「第 3000 項、全 10000 項」と読み上げることができません。
+
+- **aria-rowcount / aria-rowindex**：コンテナに `aria-rowcount`（総項目数）を設定し、各項目に `aria-rowindex`（実際のインデックス + 1）を設定します。これはテーブルの仮想スクロール（`table`）のやり方で、リストのケースにも応用できます。**この属性は UI 層がレンダリングし**、core は区間だけを計算します。
+- **スクロール時のフォーカス保持**：ユーザーがキーボードで特定の項目にフォーカスしてからスクロールすると、その項目が DOM から外れてフォーカスを失います。UI 層はアンマウント前にフォーカスの index を記録し、再マウント後に復元する必要があります——これが仮想リストのキーボード操作性の中核の難しさです。
+- **仮想リストでセマンティクスを持つリストを作らない**：スクリーンリーダーの「要素ごとのトラバーサル」は DOM に存在する項目しか辿れません。純粋な表示用の大規模データストリーム（ログ、メッセージ）は仮想化に適しています；**読み上げで項目ごとにアクセスさせたいリストは慎重に**（商品リストを一つずつ聴きたいユーザーなど）。
+- **検索による位置決め**：仮想リストの外の内容は DOM に存在しないため、ブラウザの Ctrl+F では見つかりません。「第 N 項へジャンプ」「検索フィルタ」の機能を補償として提供してください。
+
+## 使用例
+
+```ts
+import {
+  computeRange, buildVirtualItems, patchMeasuredSize, findVirtualRange,
+} from '@lh-ui/share/core/virtual-list'
+
+// 定高モード
+computeRange(800, 400, 50, 1000)
+// { start: 14, end: 26, offsetY: 700, totalHeight: 50000 }
+// （first = floor(800/50) = 16、start = 16-2 = 14、visible = ceil(400/50) = 8、
+//   end = 14 + 8 + 4 = 26）
+
+computeRange(0, 400, 50, 10)   // { start: 0, end: 10, offsetY: 0, totalHeight: 500 }
+computeRange(NaN, 400, 50, 10) // { start: 0, end: 10, offsetY: 0, totalHeight: 500 }（NaN サニタイズ）
+computeRange(0, 400, 0, 10)    // { start: 0, end: 0, offsetY: 0, totalHeight: 0 }（itemHeight が不正）
+```
+
+```ts
+// 動的高度モード
+const { items, totalHeight } = buildVirtualItems(5, [30, 0, 60], 40)
+// items: [{ size: 30, offset: 0 }, { size: 40, offset: 30 }, { size: 60, offset: 70 },
+//         { size: 40, offset: 130 }, { size: 40, offset: 170 }]
+// totalHeight: 210（sizes の欠落項目は defaultSize=40 で推定）
+
+const delta = patchMeasuredSize(items, 1, 50)  // 10（40 → 50 の変化量）
+// items[2..4].offset を +10 ずらす；items[1].size = 50
+
+findVirtualRange(items, 100, 200)
+// 二分探索でビューポート区間を見つけ、{ start, end, offsetY, totalHeight } を返す
+```
+
+```ts
+// UI 層：定高モードのレンダリング
+const range = ref<LhVirtualRange>({ start: 0, end: 0, offsetY: 0, totalHeight: 0 })
+
+function onScroll() {
+  range.value = computeRange(
+    container.value!.scrollTop,
+    container.value!.clientHeight,
+    props.itemHeight,
+    props.data.length,
+  )
+}
+const visibleData = computed(() => props.data.slice(range.value.start, range.value.end))
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <div class="lh-virtual-list" @scroll.passive="onScroll">
+    <div class="lh-virtual-list__phantom" :style="{ height: range.totalHeight + 'px' }">
+      <div class="lh-virtual-list__window" :style="{ transform: `translateY(${range.offsetY}px)` }">
+        <div v-for="item in visibleData" :key="item.id" class="lh-virtual-list__item">
+          {{ item.text }}
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+```
+
+```ts
+// 動的高度モード：レンダリング後に各 item の本当の高さを測定
+function onItemMounted(index: number, el: HTMLElement) {
+  const height = el.getBoundingClientRect().height
+  const delta = patchMeasuredSize(items.value, index, height)
+  if (delta !== 0) {
+    // 高さの変化は totalHeight と後続の offset を変えるため、区間を再計算する
+    range.value = findVirtualRange(items.value, scrollTop.value, viewportHeight.value)
+  }
+}
+```
+
+```tsx
+// React：useRef で items 配列を持たせる（patchMeasuredSize はその場で変更するため、setState による
+// 測定チェーンの再レンダリングを起こさない）。スクロールイベントは throttle か requestAnimationFrame で調流
+```
+
+```ts
+// uniapp：<scroll-view scroll-y :scroll-top> + ノードクエリ（createSelectorQuery）で
+// 高さを測定；小程序の scroll イベントはすでに調流されているが、scroll-view のスクロール同期は h5 より一拍遅い
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-virtual-list` | スクロールコンテナ（固定高さ + overflow: auto） |
+| `.lh-virtual-list__phantom` | プレースホルダー要素（高さ = totalHeight、スクロールバーを出す） |
+| `.lh-virtual-list__window` | 可視ウィンドウ（transform: translateY(offsetY)） |
+| `.lh-virtual-list__item` | 単一項目 |
+
+コンテナの高さは業務が決めます（`height: 400px` か flex で充填）；`will-change: transform` がウィンドウの移動性能を最適化します。
+
+## 注意事項
+
+- **定高モードは本当に定高でなければならない**：内容の折り返しやアイコンサイズの違いで項目の高さが均一でなくなり、定高モードでは位置がずれます（項目が truncate されたり重なったり）。不確実なら動的高度モードにするか、CSS の `white-space: nowrap; overflow: hidden; text-overflow: ellipsis` で強制的に単行の定高にします。
+- **`overscan` の意味**：ビューポートの上下にそれぞれ 2 項目多くレンダリングし、高速スクロール時の空白のちらつきを防ぎます。値が大きいほど滑らかですがレンダリング量も増えます——2 は経験的なデフォルト値で、table は 3 を使います（テーブル行のほうが複雑なため）。
+- **動的高度のちらつき問題**：初回画面は推定高さでレンダリングされ、測定後に本当の高さが異なると → リストが一瞬跳ねます。緩和策：推定値をできるだけ正確に（履歴の平均高さを使う）するか、初回画面のレンダリング時に同期的に測定します。
+- **`patchMeasuredSize` の delta の用途**：返された高さの差は **scrollTop の補正**に使います——サイズが変化した後、スクロール位置がもとの内容と一致しなくなる可能性があり、UI 層はこれに基づいてスクロール量を補償します。
+- **key の安定性**：`v-for` の key は安定した業務 id でなければなりません（index ではない）——仮想リストは項目の追加・削除が頻発し、index を key にすると間違った DOM が再利用されます。
+- **水平仮想化には `computeWindow`**：横向きスクロールのカルーセル、タイムラインには軸非依存バージョンを使い、アルゴリズムは同じものです。
+- **`@deprecated` エイリアス**：`computeVirtualRange` / `getItemOffset` は旧名で、`shared/virtual` に委譲します——新しいコードは直接中核（`@lh-ui/share/core/shared/virtual`）を import し、下流の vue2 はまだ旧名を参照しているため、削除する前にまず下流を直してください。
+- **測定タイミングの循環依存**：レンダリングは区間に依存し → 区間は高さに依存し → 高さはレンダリング後の測定に依存します。解決策：初回画面は推定高さでレンダリングし、測定後に一度更新します。測定コールバックの中で同期的な強制レイアウトをしないでください（`getBoundingClientRect` はすでに一度リフローしています）。
+- **仮想リストの中で複雑なアニメーションを作らない**：項目が頻繁にマウント / アンマウントされ、登場 / 退場アニメーションはちらつきます。アニメーションが必要な場合は FLIP を使うか、アニメーションを項目の内側で作ります。
+
+<FnPlayground module="virtual-list" fn="computeRange" params='{"scrollTop": 800, "viewportHeight": 400, "itemHeight": 50, "total": 1000}' />

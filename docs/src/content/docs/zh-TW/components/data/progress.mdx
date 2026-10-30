@@ -1,0 +1,205 @@
+---
+title: progress —— 進度條
+description: 'clampPercent 鉗制、resolveStatus 滿額自動 success、getProgressColor 狀態取色、progressbar 語義'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+進度條表達「某件事完成到多少了」：上傳、下載、安裝、審核。它是純展示元件——值驅動一切。`core/progress` 管的是百分比鉗制、狀態推導（滿額自動 success）、圓形進度的周長換算、以及 APG progressbar 語義。
+
+## 何時使用
+
+- 各端實作 `LhProgress`：檔案上傳進度、任務執行進度、載入耗時提示、容量佔用。
+- 有明確「目前值 / 總量」比例的場景。
+- **不該用它**：無確定進度的載入（用 `spinner` / `loading`，它們表達「在轉」而非「到哪了」）；步驟導航（用 `steps`）。
+
+## 匯入方式
+
+```ts
+import {
+  clampPercent,
+  resolveStatus,
+  getProgressClassNames,
+  getCircleCircumference,
+  getProgressColor,
+  formatPercentText,
+  getProgressAria,
+} from '@lh-ui/share/core/progress'
+import type { LhProgressType, LhProgressStatus, LhProgressState } from '@lh-ui/share/core/progress'
+```
+
+## 設計意圖
+
+**`resolveStatus` 的自動推導**：`status` 為預設的 `'normal'` 時，`value >= 100` 自動變 `'success'`。這是「約定優於設定」——滿了就是成功了，使用者不必每個進度條都寫 `:status="value >= 100 ? 'success' : 'normal'"`。但**顯式指定的狀態不被覆蓋**：傳了 `warning` 就一直是 warning，即使 100%。
+
+**`clampPercent` 的 NaN 歸零**：NaN 傳回 0 而非傳播。進度值常來自非同步計算（`loaded / total`，total 為 0 時是 NaN），歸零讓 UI 顯示「0%」而非崩潰或顯示 `NaN%`。
+
+**圓形周長的換算**：`getCircleCircumference(width, strokeWidth)` = `2π × (width - strokeWidth) / 2`。這是 SVG `stroke-dasharray` 的標準演算法：`stroke-dasharray = 周長`、`stroke-dashoffset = 周長 × (1 - percent/100)`。半徑要**先減去描邊寬度的一半**，否則圓會比畫布大一圈。
+
+**`getProgressColor` 的三級優先**：使用者傳入的 color（函式或字串）> 狀態對應 token > 預設主色。函式形式（`(percentage) => string`）支援**漸變進度條**（如 0-50 綠色、50-80 黃色、80+ 紅色）。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `clampPercent` | `(value: number) => number` | [0,100] | NaN 歸零 |
+| `resolveStatus` | `(value, status) => LhProgressStatus` | 狀態 | normal 且 ≥100 → success |
+| `getProgressClassNames` | `(state: LhProgressState) => string[]` | 類別名 | 類型/狀態/文字 |
+| `getCircleCircumference` | `(width, strokeWidth) => number` | 周長 | SVG dash 計算 |
+| `getProgressColor` | `(status, color?, percentage?) => string` | 顏色 | 三級優先 |
+| `formatPercentText` | `(percentage) => string` | `'50%'` | 取整文案 |
+| `getProgressAria` | `(options: { percentage, label? }) => LhAriaAttrs` | aria 屬性包 | progressbar 語義 |
+
+## 類型定義
+
+```ts
+export type LhProgressType = 'line' | 'circle'
+export type LhProgressStatus = 'normal' | 'success' | 'warning' | 'exception'
+
+export interface LhProgressState {
+  type: LhProgressType
+  status: LhProgressStatus
+  showText: boolean
+  strokeWidth: number   // line 為高度 px，circle 為 SVG stroke 寬度
+  width: number         // 圓形畫布寬度 px
+}
+```
+
+## 無障礙
+
+```ts
+getProgressAria({ percentage: 60, label: '上传进度' })
+// { role: 'progressbar', 'aria-valuenow': 60, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-label': '上传进度' }
+
+getProgressAria({ percentage: 100 })
+// { role: 'progressbar', 'aria-valuenow': 100, 'aria-valuemin': 0, 'aria-valuemax': 100 }
+```
+
+- `role="progressbar"` 是 APG 的標準角色，讀屏軟體播報「進度條 60%」。
+- **`aria-label` 在無可見文字時必需**：`showText: false` 的進度條對讀屏使用者完全不可見，必須有可達名稱。有可見文字時可以省略（文字本身就是名稱）。
+- 進度條是 `aria-readonly` 的（預設隱含），不需要額外宣告。
+- **動態進度的播報節流**：每秒更新幾十次的進度條，`aria-valuenow` 頻繁變化會讓讀屏軟體刷屏。UI 層更新 `aria-valuenow` 的頻率應降到約每秒一次（視覺動畫不受影響，只降 aria 更新頻率）。
+
+## 使用範例
+
+```ts
+import { clampPercent, resolveStatus, getProgressColor, getCircleCircumference } from '@lh-ui/share/core/progress'
+
+clampPercent(50)       // 50
+clampPercent(150)      // 100
+clampPercent(-10)      // 0
+clampPercent(NaN)      // 0
+
+resolveStatus(100, 'normal')    // 'success'（滿額自動）
+resolveStatus(100, 'warning')   // 'warning'（顯式狀態不覆蓋）
+resolveStatus(50, 'normal')     // 'normal'
+
+getProgressColor('normal')                 // 'var(--lh-primary-color)'
+getProgressColor('success')                // 'var(--lh-success-color)'
+getProgressColor('warning')                // 'var(--lh-warning-color)'
+getProgressColor('exception')              // 'var(--lh-danger-color)'
+getProgressColor('normal', '#f00')         // '#f00'（字串優先）
+getProgressColor('normal', (p) => p > 80 ? 'var(--lh-danger-color)' : 'var(--lh-success-color)', 90)
+// 'var(--lh-danger-color)'（函數按當前百分比取色）
+
+getCircleCircumference(120, 8)  // 2π × 56 ≈ 351.86
+formatPercentText(49.6)         // '50%'（取整）
+```
+
+```ts
+// 漸變色配置（函數 color）
+const color = (percentage: number) =>
+  percentage < 30 ? 'var(--lh-success-color)'
+  : percentage < 70 ? 'var(--lh-warning-color)'
+  : 'var(--lh-danger-color)'
+```
+
+```vue
+<!-- Vue3：線性 -->
+<div :class="getProgressClassNames({ type: 'line', status, showText, strokeWidth, width })">
+  <div
+    class="lh-progress__bar"
+    role="progressbar"
+    :aria-valuenow="clamped"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    :aria-label="showText ? undefined : label"
+  >
+    <div
+      class="lh-progress__fill"
+      :style="{ width: clamped + '%', height: strokeWidth + 'px', background: barColor }"
+    />
+  </div>
+  <span v-if="showText" class="lh-progress__text">{{ formatPercentText(clamped) }}</span>
+</div>
+```
+
+```vue
+<!-- Vue3：圓形 -->
+<div :class="getProgressClassNames({ type: 'circle', status, showText, strokeWidth, width })">
+  <svg :width="width" :height="width" :viewBox="`0 0 ${width} ${width}`">
+    <circle
+      :cx="width / 2" :cy="width / 2"
+      :r="(width - strokeWidth) / 2"
+      :stroke-width="strokeWidth"
+      fill="none"
+      class="lh-progress__circle-track"
+    />
+    <circle
+      :cx="width / 2" :cy="width / 2"
+      :r="(width - strokeWidth) / 2"
+      :stroke-width="strokeWidth"
+      fill="none"
+      :stroke="barColor"
+      stroke-linecap="round"
+      :stroke-dasharray="circumference"
+      :stroke-dashoffset="circumference * (1 - clamped / 100)"
+      :transform="`rotate(-90 ${width / 2} ${width / 2})`"
+    />
+  </svg>
+  <span v-if="showText" class="lh-progress__circle-text">{{ formatPercentText(clamped) }}</span>
+</div>
+```
+
+```ts
+const clamped = computed(() => clampPercent(props.percentage))
+const status = computed(() => resolveStatus(clamped.value, props.status))
+const barColor = computed(() => getProgressColor(status.value, props.color, clamped.value))
+const circumference = computed(() => getCircleCircumference(props.width, props.strokeWidth))
+```
+
+```tsx
+// React：圓形用 stroke-dashoffset 動畫（CSS transition 在該屬性上）
+```
+
+```ts
+// uniapp：線性用 <view> 寬度百分比；圓形需 <canvas> 或 SVG（部分端支援有限），
+// 簡化方案是用線性進度條替代圓形
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-progress` / `--line` / `--circle` | 基礎類 / 類型 |
+| `.lh-progress--success` / `--warning` / `--exception` | 狀態（文字色 + 填充色） |
+| `.lh-progress--no-text` | 無文字（去掉右側文字槽位） |
+| `.lh-progress__bar` | 軌道 |
+| `.lh-progress__fill` | 填充（寬度百分比） |
+| `.lh-progress__text` | 線性文字 |
+| `.lh-progress__circle-track` | 圓形軌道 |
+| `.lh-progress__circle-text` | 圓形中心文字 |
+
+軌道色 `--lh-fill-color`，填充預設 `--lh-primary-color`，狀態色取 `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`。
+
+## 注意事項
+
+- **`strokeWidth` 的雙重含義**：line 模式下是填充的**高度**（px），circle 模式下是 SVG 的**描邊寬度**。同一個 prop 兩種語義，UI 層按 `type` 分別消費。
+- **圓形的 `width` 與 `strokeWidth` 關係**：`strokeWidth` 不能大於 `width`，否則半徑為負，周長算出負數，`stroke-dashoffset` 行為未定義。
+- **`showText: false` 時必須給 `aria-label`**——這是無障礙的硬性要求，不是可選項。
+- **動畫的邊界**：填充寬度從 0 跳到 80% 時 CSS transition 會補間動畫；但 `clamped` 從 NaN 歸零的瞬間會閃一下，UI 層可在值穩定前不渲染。
+- **`resolveStatus` 與 UI 層狀態連動**：如果業務希望「100% 但仍在處理中」保持 normal，顯式傳 `status="normal"` 會被自動覆蓋（因為自動推導只在 normal 時觸發，且 normal → success 是單向的）——此時改用 `exception` 或自訂顏色繞開。
+- **百分比大於 100 的業務語義**：`clampPercent` 直接鉗到 100。若業務要表達「超額完成」（如 120%），不要用 progress，用 `statistic` 展示數字。
+- **`formatPercentText` 取整**：`49.6` 顯示 `50%`，丟失精度；需要小數的業務自行格式化（core 不提供參數，保持函式最小）。
+
+<FnPlayground module="progress" fn="getProgressColor" params='{"status": "normal", "percentage": 90}' />

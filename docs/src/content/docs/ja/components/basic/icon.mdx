@@ -1,0 +1,131 @@
+---
+title: icon —— アイコン
+description: 'getIconSize がサイズを換算、getIconSvg が内蔵 SVG path を取得、getIconAria が装飾 / セマンティクスの 2 モードのアクセシビリティ属性パックを出力'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`core/icon` は 33 個の中華風ミニマル SVG アイコンを内蔵し、「サイズの段階」を SVG の `width/height` に換算し、「装飾 or セマンティクス」の意思決定を aria 属性パックに落とす役目を担います。アイコンコンポーネント自体は props の状態機械を持ちません——それは**レンダリング関数のパラメータ群**です。
+
+## いつ使うか
+
+- 各端が `LhIcon` を実装する：`name` → path、`size` → ピクセル、`color` → インライン `color`。
+- テキストの横にアイコンを置きたいあらゆる場所。**圧倒的多数のアイコンは装飾的**（`decorative: true`、デフォルト値）であるべきで、スクリーンリーダーはそれを読み上げません。
+- アイコンにセマンティクスを持たせたい場合（「削除」ボタンにテキストがなくアイコンしかないなど）、必ず `decorative: false` + `label` を渡してください。そうでないとスクリーンリーダーが読むのは沈黙の图形です。
+
+## インポート方法
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+import type { LhIconState, LhIconName } from '@lh-ui/share/core/icon'
+import { LH_ICON_SVGS_CONST } from '@lh-ui/share/core/icon'
+```
+
+## 設計意図
+
+アイコンのサイズには 2 つの来源があります：**プリセット段階**（`'small'` / `'medium'` …）と**任意の数値**です。`getIconSize` は両者を `number` に統一します。SVG の `width` / `height` 属性は数値しか受け取らない（単位は属性自体が決まる）ため、UI 層が「段階かピクセルか」を判断する必要はありません。
+
+アクセシビリティには APG の「装飾 vs セマンティクス」の二分を採用します：
+
+- 装飾アイコン（デフォルト）：`aria-hidden="true"` でアクセシビリティツリーから外す。テキストと並ぶアイコンは常にこちらを使います。
+- セマンティクスアイコン：`role="img"` + `aria-label` で、読み上げ可能な图形にする。
+- 3 つ目のケース：`decorative: false` かつ `label` を与えない——隠しもせずセマンティクスも与えず、空のオブジェクトを返す。これは「アイコンボタンの label は外側の aria-label が提供する」というケースのためにあり、重複読み上げを避けます。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getIconSize` | `(size: string \| number \| undefined) => number` | ピクセル数値 | 段階のマッピング、未知の値は 16 にフォールバック |
+| `getIconSvg` | `(name: LhIconName \| undefined) => string \| null` | path `d` または null | 内蔵アイコンを取得。見つからない場合は null を返し、エラーを投げない |
+| `getIconStyle` | `(state: LhIconState) => Record<string, string>` | インラインスタイル | width / height は常に出力、color は必要に応じて |
+| `getIconAria` | `(options?: { decorative?: boolean; label?: string }) => LhAriaAttrs` | aria 属性パック | 装飾 / セマンティクスの 2 モード |
+
+サイズ段階のマッピング：`mini: 12` / `small: 14` / `medium: 16` / `large: 20` / `x-large: 24`。未知の文字列は 16 にフォールバックし、falsy（`0` を含む）も 16 にフォールバックします。
+
+## 型定義
+
+```ts
+export interface LhIconState {
+  size: string | number | undefined
+  color: string | undefined
+  name?: LhIconName
+}
+
+export type LhIconName =
+  | 'star' | 'search' | 'check' | 'close' | 'warning' | 'error' | 'info'
+  | 'loading' | 'plus' | 'minus' | 'edit' | 'delete' | 'setting' | 'user'
+  | 'home' | 'menu' | 'more' | 'download' | 'upload' | 'refresh' | 'folder'
+  | 'file' | 'date' | 'clock' | 'email' | 'phone' | 'location' | 'image'
+  | 'share' | 'bell' | 'filter' | 'eye' | 'link'
+```
+
+## アクセシビリティ
+
+`getIconAria` が本コンポーネントの aria 属性パック関数です：
+
+```ts
+getIconAria()                            // { 'aria-hidden': true }  装飾
+getIconAria({ label: '削除' })            // { 'aria-label': '削除', role: 'img' }
+getIconAria({ decorative: false })        // {}  label は外側が提供
+```
+
+`aria-hidden` の値が `true`（真偽値）である点に注意してください。`LhAriaAttrs` は真偽値と文字列の共存を許し、各端が v-bind する際にフレームワークが `"true"` に変換します。
+
+## 使用例
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+
+getIconSize('large')          // 20
+getIconSize(32)               // 32
+getIconSvg('check')           // 'M...'  path データ
+getIconSvg('not-exist')       // null（エラーを投げない。UI 層は空の svg かプレースホルダーをレンダリング）
+getIconStyle({ size: 'large', color: 'var(--lh-primary-color)' })
+// { width: '20px', height: '20px', color: 'var(--lh-primary-color)' }
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="['lh-icon', { 'lh-icon--loading': name === 'loading' }]"
+  viewBox="0 0 1024 1024"
+  :width="px" :height="px"
+  v-bind="getIconAria({ decorative, label })"
+>
+  <path :d="path" />
+</svg>
+```
+
+```tsx
+// React
+const px = getIconSize(size)
+const aria = getIconAria({ decorative: !label, label })
+return (
+  <svg className="lh-icon" viewBox="0 0 1024 1024" width={px} height={px} {...aria}>
+    <path d={getIconSvg(name) ?? ''} />
+  </svg>
+)
+```
+
+```ts
+// uniapp：非 h5 端はインライン svg をサポートせず、UI 層は path を事前に画像リソースとしてレンダリングする；
+// getIconSize の数値は引き続き画像サイズの制御に使われる
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-icon` | ベースクラス：`display: inline-block`、`vertical-align` の位置補正 |
+| `.lh-icon--loading` | 読み込みアイコンの無限回転アニメーション |
+
+アイコンの色はデフォルトで親の文字色を継承し（`fill: currentColor`）、テーマ色が必要な場合は `getIconStyle` の `color` で明示的に注入します。
+
+## 注意事項
+
+- `getIconSvg` は存在しない名前に対し**エラーを投げず null を返します**——UI 層はこの分岐を処理すべきです。さもないと空の `<svg>` がレンダリングされます。
+- 内蔵アイコンセットは**中華風ミニマル**で、サードパーティのアイコンライブラリ（element-plus の fontawesome クラス名など）とは互換性がありません。業務アイコンが必要な場合、各端の `LhIcon` は通常 `path` を渡すかスロットで自作することをサポートします。
+- `loading` アイコンの回転アニメーションは CSS 層（`.lh-icon--loading`）にあり、core にはありません——core はクラス名だけを出力します。
+- アイコンをテキストと並べる場合はデフォルトの装飾状態を保ち、「アイコン単独で操作を担う」場合にだけ label を渡してください。
+
+<FnPlayground module="icon" fn="getIconSize" params='{"size": "large"}' />

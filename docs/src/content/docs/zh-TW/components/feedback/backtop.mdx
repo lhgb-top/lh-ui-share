@@ -1,0 +1,171 @@
+---
+title: backtop —— 回到頂部
+description: 'resolveScrollTarget 捲動根解析、prefers-reduced-motion 降級、scrollend 特性探測與防抖兜底'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+長頁面捲到底部，使用者想回頂部只能瘋狂滾輪。`backtop` 是一個右下角的浮動按鈕，捲到一定距離才出現、點了平滑回頂。它邏輯不複雜，但**捲動 API 的相容性坑特別多**——捲動根是誰、平滑捲動怎麼降級、捲動結束怎麼探測，`core/backtop` 把這些全收了。
+
+## 何時使用
+
+- 各端實作 `<LhBackTop>`：長清單、長文件、後臺資料表格的回頂入口。
+- 頁面高度明顯超過一螢幕（通常 2~3 螢幕以上）時才值得出現。
+- **不該用它**：短頁面（一螢幕都不到，按鈕永遠不出現還佔程式碼）；本身就是滾輪/手勢能快速回頂的行動端原生頁（行動端系統手勢已覆蓋，h5 內嵌頁視情況）。
+
+## 匯入方式
+
+```ts
+import {
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  LH_BACKTOP_SCROLLEND_DELAY,
+  getBackTopClassNames,
+  resolveScrollTarget,
+  getScrollTop,
+  backToTop,
+  isBackTopVisible,
+  supportsScrollEnd,
+} from '@lh-ui/share/core/backtop'
+```
+
+## 設計意圖
+
+**捲動根的優先級**：`document.scrollingElement` 優先於 `document.documentElement`。這不是潔癖——有些頁面（用了 `body { overflow }` 的）真正捲動的是 body，`documentElement.scrollTop` 恆為 0，可見性判定會徹底失效。`scrollingElement` 是 W3C 為統一這個混亂發明的標準屬性。
+
+**`getScrollTop` 用 `instanceof HTMLElement` 而非 `instanceof Window`**：註解寫了「跨 realm 安全」——如果頁面有 iframe，iframe 傳入的 Window 物件**不等於**目前 realm 的 `Window` 建構函式，`x instanceof Window` 會誤判為 false。用 HTMLElement 判定（元素不會有這個問題）就規避了。這是很細節但真實存在的坑。
+
+**平滑捲動的兩級降級**：① `prefers-reduced-motion` 開啟時降級為 `auto`（無動畫）——前庭功能障礙使用者對持續捲動會眩暈，這是無障礙硬要求；② 目標元素沒有 `scrollTo` 方法（舊 jsdom 等環境）時直接寫 `scrollTop = 0`。
+
+**`supportsScrollEnd` 的特性探測**：`scrollend` 事件是 Chromium 114+ / Safari 18.2+ 才有的——用它可以在捲動**真正靜止**時精確重新整理可見狀態（捲動中頻繁讀 scrollTop 有效能成本）。不支援時由呼叫方退回 `scroll` 事件 + `LH_BACKTOP_SCROLLEND_DELAY`（150ms）防抖模擬。
+
+**可見性是純函式**：`isBackTopVisible(scrollTop, height)` 只比較數值——UI 層自己監聽捲動、自己存 scrollTop，core 不持有任何響應式狀態。這也讓單測可以直接斷言數值邊界。
+
+## 函式表
+
+| 函式 / 常數 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getBackTopClassNames` | `(state: { visible }) => string[]` | 類別名 | 可見狀態驅動顯隱動畫 |
+| `resolveScrollTarget` | `(target?: string \| HTMLElement) => HTMLElement \| Window` | 捲動目標 | 選擇器未命中回退 window |
+| `getScrollTop` | `(target) => number` | 捲動距離 | 容器/視區自適應 |
+| `backToTop` | `(target, smooth) => void` | 無 | 平滑回頂（含降級） |
+| `isBackTopVisible` | `(scrollTop, visibilityHeight) => boolean` | 是否可見 | 閾值判定 |
+| `supportsScrollEnd` | `(target) => boolean` | 是否支援 | 特性探測 |
+
+常數：`LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT = 200`、`LH_BACKTOP_SCROLLEND_DELAY = 150`。
+
+## 類型定義
+
+```ts
+export interface LhBackTopState {
+  visible: boolean      // 當前是否可見（驅動顯隱類別名）
+  target?: string | HTMLElement
+  visibilityHeight?: number
+  smooth?: boolean      // 是否平滑捲動（預設 true）
+}
+```
+
+## 無障礙
+
+```ts
+// 按鈕的無障礙屬性在 UI 層組合：
+const aria = {
+  type: 'button',
+  'aria-label': '回到顶部',   // 圖示按鈕無文本，必須給標籤
+}
+```
+
+- **`type="button"`**：回頂按鈕如果落在 `<form>` 裡，預設 `type="submit"` 會觸發表單提交——這是最常見的小 bug。
+- **aria-label 必填**：純圖示按鈕（上箭頭）對螢幕閱讀器是無名的，`aria-label="回到顶部"` 讓它可被播報。
+- **aria-hidden 與可見性同步**：不可見時從可訪問性樹移除（`aria-hidden="true"` 或直接 `v-if` 卸載），避免螢幕閱讀器導航到一個看不見的按鈕。
+- **鍵盤可達**：按鈕就是原生 `<button>`，Tab 聚焦 + Enter/Space 觸發，天然支援。不要做成 `<div @click>`。
+- **prefers-reduced-motion 的雙重意義**：既是無障礙要求（前庭安全），也避免低階裝置上平滑捲動卡頓。`backToTop` 內部已處理，UI 層無需判斷。
+
+## 使用範例
+
+```ts
+import {
+  resolveScrollTarget, getScrollTop, isBackTopVisible, backToTop, supportsScrollEnd,
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT, LH_BACKTOP_SCROLLEND_DELAY,
+} from '@lh-ui/share/core/backtop'
+
+isBackTopVisible(200, 200)  // true（>= 閾值）
+isBackTopVisible(199, 200)  // false
+isBackTopVisible(0, 200)    // false
+
+supportsScrollEnd(window)         // 現代瀏覽器 true
+supportsScrollEnd(someEl)         // Chromium 114+ / Safari 18.2+ 才 true
+```
+
+```ts
+// 監聽策略：支援 scrollend 就只在靜止時判定，否則 scroll + 防抖
+const target = resolveScrollTarget(props.target)
+let visible = ref(false)
+
+function refresh() {
+  visible.value = isBackTopVisible(
+    getScrollTop(target),
+    props.visibilityHeight ?? LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  )
+}
+
+if (supportsScrollEnd(target)) {
+  target.addEventListener('scrollend', refresh)
+} else {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  target.addEventListener('scroll', () => {
+    clearTimeout(timer)
+    timer = setTimeout(refresh, LH_BACKTOP_SCROLLEND_DELAY)
+  })
+}
+
+function onClick() {
+  backToTop(target, props.smooth ?? true)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <button
+    type="button"
+    class="lh-backtop"
+    :class="getBackTopClassNames({ visible })"
+    aria-label="回到顶部"
+    :aria-hidden="!visible"
+    @click="backToTop(target, true)"
+  >
+    <LhIcon name="arrow-up" />
+  </button>
+</template>
+```
+
+```tsx
+// React：useEffect 註冊/卸載捲動監聽（依賴 target 與 visibilityHeight）；
+// smooth 由 props 控制，reduced-motion 由 core 內部處理
+```
+
+```ts
+// uniapp：<button open-type?> 不適用；用 <view> + @tap；
+// 小程序端頁面捲動用 onPageScroll（uniapp 內置），元素捲動用 scroll-view 的 scroll 事件
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-backtop` | 按鈕容器（fixed 右下角） |
+| `.lh-backtop--visible` | 可見（驅動淡入/上滑入場動畫） |
+
+預設隱藏是 `opacity: 0; visibility: hidden`（用 visibility 而非 display，保留過渡動畫）；圓形按鈕 `--lh-backtop-size`（如 40px）；底色 `--lh-bg-color` + 陰影 `--lh-box-shadow-base`；z-index `--lh-z-index-backtop`。
+
+## 注意事項
+
+- **捲動監聽要卸載**：元件銷毀時 `removeEventListener`，否則引用著已移除的 DOM 導致記憶體漏失。Vue 的 `onUnmounted` / React 的 useEffect 清理函式。
+- **`window` 監聽的特殊性**：`scroll` 事件在 window 上是被動且高頻的，必須防抖或用 scrollend；直接每次讀 `getScrollTop` 在超長頁面上會卡。
+- **目標元素自己捲的場景**：表格內部捲（不是頁面捲）要把 `target` 指向表格容器——否則按鈕的可見性跟著頁面捲動走，與實際要回頂的容器無關。
+- **平滑捲動被 CSS 覆蓋**：如果頁面有 `html { scroll-behavior: smooth }`，`scrollTo({ behavior: 'auto' })` 會被 CSS 覆蓋——`backToTop` 的 reduced-motion 降級會失效。需要嚴格降級時 UI 層要臨時去掉該 CSS。
+- **iOS Safari 的捲動慣性**：iOS 的捲動有慣性，scrollend 在慣性結束才觸發；防抖兜底的 150ms 在快速滑動時可能過早重新整理可見狀態（按鈕閃一下）。這是已知的折中。
+- **可見閾值 200 的含義**：約半螢幕高度（視視區高度而定）。文件類頁面可以調小（100），工具類頁面調大（500）——`visibilityHeight` prop 就是幹這個的。
+- **按鈕不要遮擋內容**：fixed 定位 + 右下角，行動端要避開底部導覽列（留出安全區高度）。
+
+<FnPlayground module="backtop" fn="isBackTopVisible" params='{"scrollTop": 300, "visibilityHeight": 200}' />

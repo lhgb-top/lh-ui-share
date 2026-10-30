@@ -1,0 +1,138 @@
+---
+title: sx —— اختصار الأنماط
+description: 'يحول sxToStyle خاصية sx بأسلوب Tailwind إلى أنماط مضمَّنة، بأولوية ثابتة: الجانب الواحد > مجموعة المحور > الاختصار'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`sx` هو **اختزال الأنماط المضمَّنة** في lh-ui: فبدلًا من `style="margin-top: 32px"` نكتب `mt: 4`، وبدلًا من كتابة الأضلاع الأربعة لـ padding دفعة واحدة نكتب `p: 2`. وليس هذا Tailwind (فهو لا يولّد أسماء أصناف ولا يستحضر CSS)، بل يُقيِّم حزمة الخصائص وقت التشغيل مباشرةً إلى `Record<string, string>`، لتربطها طبقة واجهة المستخدم بـ `:style`.
+
+## متى يُستخدم
+
+- داخل مكتبة المكوّنات: يُغني `sx` عن إضافة prop جديد في طبقة «ضبط التخطيط الدقيق»—فـ `<LhButton sx={{ mt: 2 }} />` يُبعد المسافة العلوية.
+- المسافات التي تتغير ديناميكيًا مع البيانات: فتحويل الرقم إلى px (`×8`) يمنح دلالات مثل «قرِّبني قليلًا» مقياسًا ثابتًا.
+- **لا ينبغي استخدامه**: في التصميم البصري المنهجي. فsx هو «ضبط مؤقت عند نقطة الاستدعاء»، أما رموز التصميم كألوان السمة وارتفاع عناصر التحكم فتسير عبر متغيرات CSS (راجع [نظام السمات](/ar/theme/overview))؛ وإن كان كتابة `color: 'var(--lh-primary-color)'` داخل sx تعمل، إلا أنه يُفضَّل أن يستهلك المكوّن الرموز مباشرةً.
+
+## طريقة الاستيراد
+
+```ts
+// استيراد دقيق (موصى به، ملائم لـ tree-shaking)
+import { sxToStyle, mergeSx } from '@lh-ui/share/core/shared/sx'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+
+// أو من مدخل التجميع
+import { sxToStyle } from '@lh-ui/share/core/shared'
+```
+
+## جدول الدوال
+
+| الدالة | التوقيع | المُعادة | الدور |
+| --- | --- | --- | --- |
+| `sxToStyle` | `(sx: LhSxProps) => Record<string, string>` | كائن الأنماط المضمَّنة | تقييم حزمة خصائص sx إلى أنماط CSS |
+| `mergeSx` | `(...list: (LhSxProps \| undefined \| null)[]) => LhSxProps` | sx بعد الدمج | المتأخر يغطي المتقدم، لكي تجمع طبقة واجهة المستخدم «sx الافتراضي + sx المستدعي» |
+
+### قواعد الأولوية في `sxToStyle`
+
+**«الجانب الواحد > مجموعة المحور > الاختصار»، بصرف النظر عن ترتيب كتابة المفاتيح**. فمن حيث التنفيذ تُكتب القيم في كائن الأنماط بترتيب ثابت `الاختصار ← مجموعة المحور ← الجانب الواحد`، والمتأخر يغطي المتقدم، وعليه أياً كان ترتيب مفاتيحك:
+
+```ts
+sxToStyle({ m: 2, mt: 4 })   // { marginTop: '32px', marginRight: '16px', marginBottom: '16px', marginLeft: '16px' }
+sxToStyle({ mt: 4, m: 2 })   // مطابقة تمامًا
+sxToStyle({ my: 2, mt: 4 })  // الجانب الواحد mt يفوز: 32px؛ وmb يبقى 16px
+```
+
+وهذه القاعدة تتيح لمكتبة المكوّنات أن تكتب بأمان «حزمة افتراضية + تغطية المستخدم»: فقيمة `mt` التي يمررها المستخدم ستطغى حتمًا على `m` الداخلي للمكوّن.
+
+### الأرقام والسلاسل
+
+- **تُحوَّل الأرقام وفق `×8px`**: `mt: 4` ← `32px`. والرقم 8 هو معيار التباعد في lh-ui (بنفس مقياس رموز `--lh-spacing-*`).
+- **تُمرَّر السلاسل كما هي**: `w: '50%'` ← `50%`، و`p: '1rem'` ← `1rem`.
+- **مفاتيح التخطيط لا تُحوَّل**: تُكتب قيم `display` / `flex` / `flexDirection` / `alignItems` / `justifyContent` كسلاسل مباشرةً (فلن يتحول `flexDirection: 'column'` إلى `columnpx`).
+- تُحكم جميع المفاتيح بواسطة `!== undefined` بشكل موحد: فتمرير سلسلة فارغة `''` يُعد **تفريغًا صريحًا** ويُكتب.
+
+## تعريف الأنواع
+
+```ts
+export interface LhSxProps {
+  // الأبعاد
+  w?: string | number
+  h?: string | number
+  // الهامش الخارجي: جانب واحد / مجموعة محور / اختصار
+  mt?: string | number
+  mr?: string | number
+  mb?: string | number
+  ml?: string | number
+  my?: string | number
+  mx?: string | number
+  m?: string | number
+  // الهامش الداخلي: بالبنية نفسها
+  pt?: string | number
+  pr?: string | number
+  pb?: string | number
+  pl?: string | number
+  py?: string | number
+  px?: string | number
+  p?: string | number
+  // التخطيط
+  display?: string
+  flex?: string
+  flexDirection?: 'row' | 'column'
+  alignItems?: string
+  justifyContent?: string
+  // استيعاب المفاتيح المخصصة للمصب؛ والمفاتيح المجهولة تُتجاهل بصمت
+  [key: string]: any
+}
+```
+
+وكون توقيع الفهرسة `[key: string]: any` مقصودًا: فستضع كل مكتبة واجهة مستخدم `sx?: LhSxProps` إلى جوار الخصائص الخاصة بالمكوّن داخل `LhXxxProps` خاصتها، ويتيح توقيع الفهرسة عدم تعارض الأنواع؛ وتُهمَل المفاتيح المجهولة عند التقييم فلا تتسرب إلى الأنماط.
+
+## أمثلة الاستخدام
+
+### دالة نقية
+
+```ts
+sxToStyle({ mt: 2, px: 3, display: 'flex', alignItems: 'center' })
+// {
+//   marginTop: '16px',
+//   paddingLeft: '24px',
+//   paddingRight: '24px',
+//   display: 'flex',
+//   alignItems: 'center',
+// }
+```
+
+### التوصيل في كل طرف
+
+```vue
+<!-- Vue3 / Vue2: اربط :style مباشرة -->
+<template>
+  <lh-button :style="sxToStyle($props.sx)">زر</lh-button>
+</template>
+```
+
+```tsx
+// React
+<div style={sxToStyle({ my: 4, w: '100%' })} />
+```
+
+```ts
+// uniapp: ما يُخرجه sxToStyle كائن عادي، يدخل ربط style مباشرة
+// (ويحتاج تحويل الرقم ×8px إلى وحدة المنصة لدى الأطراف غير h5، وتتولاه طبقة واجهة المستخدم)
+```
+
+والاستخدام النموذجي لـ `mergeSx` هو جمع القيم الافتراضية داخل المكوّن:
+
+```ts
+// داخل المكوّن
+const merged = mergeSx({ py: 2, px: 4 }, props.sx) // sx الخاص بالمستخدم يغطي الافتراضي
+const style = sxToStyle(merged)                    // تقييم واحد، وتُحسب قواعد الأولوية مرة واحدة
+```
+
+## ملاحظات
+
+- **`mergeSx` دمج سطحي** (`Object.assign`) بلا تعمق؛ وقيم sx كلها قيم قياسية، فيكفي الدمج السطحي.
+- **`sxToStyle` تُعيد `{}` للقيمة الكاذبة**: فـ `sxToStyle(undefined)` كائن فارغ، تستدعيه طبقة واجهة المستخدم دون تفكير.
+- معيار 8px لتحويل الأرقام منسجم مع نظام الرموز، لكن sx ذاته **لا يشير إلى متغيرات CSS**—فمخرجاته قيم حرفية محسوبة، تصلح لسيناريو «هذه الاستدعائية تريد انحرافًا قليلًا» ولا تصلح لسيناريو «يتغير مع السمة».
+- متعدد الأطراف: يحتاج rpx في أطراف uniapp غير h5 إلى التحويل في طبقة واجهة المستخدم، أما نواة sx فلا تُخرج سوى px.
+
+<FnPlayground module="sx" fn="sxToStyle" params='{"sx": {"mt": 4, "px": 3, "display": "flex"}}' />

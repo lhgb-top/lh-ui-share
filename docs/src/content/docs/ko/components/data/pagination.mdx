@@ -1,0 +1,194 @@
+---
+title: pagination —— 페이지 매김
+description: 'getPaginationRange 창 수축 알고리즘(첫끝 상주 + 양쪽 생략 기호), clampPage 범위 초과 정규화, aria-current=page'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+페이지 매김은 '데이터량이 한 화면을 넘을 때'의 표준 내비게이션입니다. 핵심 난점은 페이지를 넘기는 것이 아니라 **페이지 번호 구간의 표시**입니다: 100페이지일 때 100개의 버튼을 모두 그릴 수 없고, 어떻게 첫끝 페이지 + 현재 창 + 생략 기호로 위치를 표현하면서 빠른 이동을 제공할지가 각 라이브러리마다의 알고리즘입니다. `core/pagination`은 널리 쓰이는 '창 수축' 알고리즘을 구현하고, 각종 잘못된 입력을 정규화합니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhPagination`을 구현할 때: 표 하단 페이지 매김, 검색 결과 페이지 매김, 앨범 페이지 매김.
+- 데이터를 페이지로 나눌 수 있고 사용자가 페이지 번호를 명시적으로 제어해야 하는 장면.
+- **사용하면 안 되는 곳**: 무한 스크롤 로딩(`virtual-list`나 스크롤 감시 사용); 데이터량이 적어 한 화면에 담기는 경우(페이지를 나누지 않는 것이 더 단순).
+
+## 가져오기
+
+```ts
+import {
+  getPageCount,
+  clampPage,
+  getPaginationRange,
+  getPaginationItemAria,
+  formatMessage,
+} from '@lh-ui/share/core/pagination'
+import type {
+  LhPaginationRangeItem,
+  LhPaginationRangeState,
+  LhPaginationMessageParams,
+} from '@lh-ui/share/core/pagination'
+```
+
+## 설계 의도
+
+**`getPageCount`의 두 매개변수 정제**: `total`과 `pageSize`는 모두 `shared/sanitize.sanitizeNumber`를 거칩니다. NaN / Infinity가 NaN 페이지 수로 뚫고 지나가지 않습니다. 이 방어는 불필요하지 않습니다: `total`은 비동기 인터페이스에서 오는 경우가 많고, 로딩 중에는 undefined일 수 있으며, `Math.ceil(undefined / 10)`은 NaN이고 NaN은 `clampPage`와 구간 알고리즘을 모두 무력화합니다.
+
+**`clampPage`의 NaN과 Infinity의 차별**: NaN은 잘못된 값으로 보고 첫 페이지로 되돌립니다; **±Infinity는 클램프에 맡깁니다**. `Infinity`는 마지막 페이지로, `-Infinity`는 첫 페이지로 떨어집니다. 이 구분은 실제 의미가 있습니다: 제어 모드에서 외부가 넘긴 잘못된 값(NaN)은 안전한 위치로 돌아가야 하고, '마지막 페이지로 가기'를 Infinity로 표현하는 것은 유효한 사용법입니다.
+
+**구간 알고리즘의 흡착 논리**: `getPaginationRange`의 `current`는 먼저 `clampPage`로 정규화합니다. 주석이 실제 장면을 기록하고 있습니다: UI 계층이 그대로 전달하는 `innerCurrent`가 일시적으로 범위를 넘을 수 있습니다(제어 모드에서 외부 값과 내부 값이 다르거나, 총수가 줄어든 후 current가 동기화되지 않음). 클램프하지 않으면 현재 페이지가 표시 창 바깥에 떨어지고 생략 기호 판정이 뒤집힙니다.
+
+**생략 기호는 진짜로 간격이 생길 때만 출력**: `showLeftEllipsis = leftSibling > 2`이지 `> 1`이 아닙니다. 창이 첫 페이지에 바짝 붙었을 때(current=3, siblingCount=1 등) 왼쪽에 '2' 페이지 하나만 생략되며, 이때 생략 기호를 넣기보다 연속된 1, 2, 3, 4, 5를 보여주는 것이 더 명확합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getPageCount` | `(total, pageSize) => number` | 총 페이지 수(최소 1) | 두 매개변수 정제 |
+| `clampPage` | `(page, pageCount) => number` | 클램프된 페이지 | NaN→1, Infinity→마지막 페이지 |
+| `getPaginationRange` | `(state: LhPaginationRangeState) => LhPaginationRangeItem[]` | 구간 항목 배열 | 창 수축 알고리즘 |
+| `getPaginationItemAria` | `(options: { page, current, labelTemplate? }) => LhAriaAttrs` | aria 속성 묶음 | aria-current / aria-label |
+| `formatMessage` | `shared/format`에서 재내보내기 | 보간 문구 | 기존 가져오기 경로 유지 |
+
+## 타입 정의
+
+```ts
+export type LhPaginationRangeItemType = 'page' | 'ellipsis'
+
+export interface LhPaginationRangeItem {
+  type: LhPaginationRangeItemType
+  page: number    // ellipsis 항목은 항상 0, 위치 자체가 의미
+}
+
+export interface LhPaginationRangeState {
+  current: number       // 현재 페이지(1부터)
+  pageCount: number
+  siblingCount?: number // 현재 페이지 양쪽의 페이지 수, 기본 1
+}
+
+export type LhPaginationMessageParams = Record<string, string | number>
+```
+
+## 접근성
+
+```ts
+getPaginationItemAria({ page: 3, current: 3, labelTemplate: '페이지 {page}' })
+// { 'aria-current': 'page', 'aria-label': '페이지 3' }
+
+getPaginationItemAria({ page: 5, current: 3, labelTemplate: '페이지 {page}' })
+// { 'aria-label': '페이지 5' }
+
+getPaginationItemAria({ page: 5, current: 3 })
+// {} (템플릿이 없으면 aria-label 출력하지 않음; 버튼 안의 숫자 자체가 읽을 수 있음)
+```
+
+- 현재 페이지는 `aria-current="page"`를 출력합니다. 이것은 페이지 매김의 APG 표준 규칙으로, 스크린 리더가 페이지 번호를 일반 링크로 취급하지 않고 '현재 페이지'로 읽어줍니다.
+- **생략 기호 버튼**에는 `aria-label`(예: '앞으로 5페이지 건너뛰기')이 있거나 `disabled`여야 합니다. 순수한 `…` 텍스트는 스크린 리더에게 정보가 전혀 없으며, 이것이 가장 흔한 페이지 매김 접근성 결함입니다.
+- 페이지 매김 전체는 `<nav aria-label="페이지 매김">`으로 감싸서 페이지의 다른 내비게이션과 구분해야 합니다.
+- `labelTemplate`은 언어 팩(`pagination.page` 등)에서 오고, `{page}` 자리표시자는 이 함수가 바꿔 넣습니다.
+
+## 사용 예
+
+```ts
+import { getPageCount, clampPage, getPaginationRange } from '@lh-ui/share/core/pagination'
+
+getPageCount(100, 10)    // 10
+getPageCount(105, 10)    // 11
+getPageCount(0, 10)      // 1 (최소 1페이지)
+getPageCount(NaN, 10)    // 1 (total이 0으로 정제되고 Math.max(1, …)가 1로 올림)
+getPageCount(100, NaN)   // 100 (pageSize가 기본값 1로 정제됨, 즉 페이지당 1건)
+
+clampPage(5, 10)    // 5
+clampPage(0, 10)    // 1
+clampPage(15, 10)   // 10
+clampPage(NaN, 10)  // 1
+clampPage(Infinity, 10)  // 10 (Infinity는 마지막 페이지로)
+
+// siblingCount 기본 1, 총 슬롯 = 1*2 + 5 = 7
+getPaginationRange({ current: 1, pageCount: 10 })
+// [1, 2, 3, …, 10]
+getPaginationRange({ current: 5, pageCount: 10 })
+// [1, …, 4, 5, 6, …, 10]
+getPaginationRange({ current: 10, pageCount: 10 })
+// [1, …, 8, 9, 10]
+getPaginationRange({ current: 5, pageCount: 5 })
+// [1, 2, 3, 4, 5] (페이지 수가 슬롯보다 적으면 모두 표시, 생략 기호 없음)
+getPaginationRange({ current: 99, pageCount: 10 })
+// [1, …, 8, 9, 10] (current가 범위를 넘어 클램프됨)
+```
+
+```vue
+<!-- Vue3 -->
+<nav class="lh-pagination" aria-label="페이지 매김">
+  <button type="button" class="lh-pagination__prev" :disabled="current <= 1" @click="go(current - 1)">
+    이전
+  </button>
+  <template v-for="(item, i) in range" :key="i">
+    <span v-if="item.type === 'ellipsis'" class="lh-pagination__ellipsis">…</span>
+    <button
+      v-else
+      type="button"
+      class="lh-pagination__item"
+      :class="{ 'is-active': item.page === current }"
+      v-bind="getPaginationItemAria({ page: item.page, current, labelTemplate: t('pagination.page') })"
+      @click="go(item.page)"
+    >
+      {{ item.page }}
+    </button>
+  </template>
+  <button type="button" class="lh-pagination__next" :disabled="current >= pageCount" @click="go(current + 1)">
+    다음
+  </button>
+  <select v-model="pageSize" class="lh-pagination__sizes">
+    <option :value="10">10건/페이지</option>
+    <option :value="20">20건/페이지</option>
+    <option :value="50">50건/페이지</option>
+  </select>
+  <span class="lh-pagination__total">총 {{ total }}건</span>
+</nav>
+```
+
+```ts
+const pageCount = computed(() => getPageCount(props.total, pageSize.value))
+const range = computed(() =>
+  getPaginationRange({ current: current.value, pageCount: pageCount.value }),
+)
+function go(page: number) {
+  const next = clampPage(page, pageCount.value)
+  if (next !== current.value) emit('update:current', next)
+}
+```
+
+```tsx
+// React: 제어형 페이지 매김, current는 부모 컴포넌트가 보유; go 안에서 clampPage 후 콜백
+```
+
+```ts
+// uniapp: <view> + <view>로 구간 항목 순회; 페이지 이동은 <input type="number"> + 이동 버튼 사용
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-pagination` | 기본 클래스(flex 가운데 정렬) |
+| `.lh-pagination__prev` / `__next` | 이전/다음 버튼 |
+| `.lh-pagination__item` | 페이지 번호 버튼 |
+| `.lh-pagination__item.is-active` | 현재 페이지(주색 배경) |
+| `.lh-pagination__ellipsis` | 생략 기호 |
+| `.lh-pagination__sizes` | 페이지당 건수 선택기 |
+| `.lh-pagination__total` / `__jump` | 총수 텍스트 / 이동 입력 |
+
+현재 페이지는 `--lh-primary-color` 배경 + `--lh-color-on-primary` 글자; 비활성 버튼 `--lh-text-disabled`; 버튼 간격은 `--lh-gap-small`이 제어합니다.
+
+## 주의사항
+
+- **페이지 번호는 1부터**: `current`, `page`, `pageCount`는 모두 1부터이며 `table`의 행 인덱스(0부터)와 다릅니다. 혼용하면 오류가 생기기 쉽습니다.
+- **`pageCount`와 `total`의 관계**: UI 계층은 보통 `getPageCount(total, pageSize)`로 계산하지만, `pageCount`를 직접 넘길 수도 있습니다(서버가 총 페이지 수를 이미 알 때). 두 출처를 동시에 쓰지 마세요. 일치하지 않게 됩니다.
+- **`pageSize`가 변할 때 `current`의 수렴**: 50건/페이지에서 10건/페이지로 바꾸면 현재 페이지가 새 `pageCount`를 넘을 수 있습니다. `watch(pageSize)`에서 `clampPage`를 한 번 호출하세요. 그렇지 않으면 빈 페이지가 표시됩니다.
+- **생략 기호의 상호작용**: 생략 기호를 클릭하면 보통 5페이지를 건너뜁니다(`current ± 5`); core는 이 동작을 내장하지 않으며, UI 계층이 직접 구현하고 생략 기호 버튼에 `aria-label`을 줍니다.
+- **`siblingCount`와 슬롯**: `totalSlots = siblingCount * 2 + 5`(첫끝 페이지 + 현재 페이지 + 두 생략 기호 자리 + 양쪽 형제). `pageCount <= totalSlots`일 때 모두 표시하고 생략 기호가 없습니다. `siblingCount: 2`로 설정하면 문턱이 9페이지입니다.
+- **제어 모드의 일시적 범위 초과**: `getPaginationRange` 내부에서 이미 `current`를 클램프하므로 렌더링은 오류가 나지 않습니다; 단 `aria-current`는 클램프된 페이지에 붙고, 외부 상태가 동기화되면 자연스럽게 일치합니다.
+- **`formatMessage`의 재내보내기**: 이 모듈은 `shared/format`의 같은 바인딩에서 `formatMessage`를 재내보내기 하며, 이는 하위의 기존 가져오기 경로(`pagination.total` 같은 `{total}` 자리표시자 문구 보간)를 유지하기 위함입니다. 새 코드는 `core/shared/format`에서 직접 가져오세요.
+
+<FnPlayground module="pagination" fn="getPaginationRange" params='{"state": {"current": 5, "pageCount": 20, "siblingCount": 1}}' />

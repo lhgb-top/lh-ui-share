@@ -1,0 +1,173 @@
+---
+title: backtop —— Volver arriba
+description: 'resolveScrollTarget para resolver la raíz de desplazamiento, degradación con prefers-reduced-motion, detección de scrollend y antirrebote de respaldo'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Al llegar al fondo de una página larga, quien quiere volver arriba solo tiene la opción de hacer girar la rueda como un loco. `backtop` es un botón flotante en la esquina inferior derecha: aparece cuando se ha recorrido cierta distancia y, al pulsarlo, regresa suavemente a la cima. Su lógica no es compleja, pero **la compatibilidad de las APIs de desplazamiento está llena de trampas**: quién es la raíz del desplazamiento, cómo degradar el desplazamiento suave, cómo detectar el final del desplazamiento. `core/backtop` se encarga de todo ello.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `<LhBackTop>`: la entrada para volver arriba en las listas largas, los documentos largos y las tablas de datos de los backends.
+- Solo vale la pena que aparezca cuando la altura de la página supera claramente una pantalla (normalmente más de 2 o 3).
+- **No usarlo para**: páginas cortas (ni siquiera llega a una pantalla: el botón nunca aparece y, de paso, pesa en el código); las páginas nativas móviles donde la rueda o los gestos ya permiten volver arriba rápidamente (los gestos del sistema móvil ya lo cubren; en las páginas h5 incrustadas, según el caso).
+
+## Importación
+
+```ts
+import {
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  LH_BACKTOP_SCROLLEND_DELAY,
+  getBackTopClassNames,
+  resolveScrollTarget,
+  getScrollTop,
+  backToTop,
+  isBackTopVisible,
+  supportsScrollEnd,
+} from '@lh-ui/share/core/backtop'
+```
+
+## Intención de diseño
+
+**La prioridad de la raíz de desplazamiento**: `document.scrollingElement` tiene prioridad sobre `document.documentElement`. No es un capricho: en algunas páginas (las que usan `body { overflow }`) quien realmente se desplaza es el body y `documentElement.scrollTop` es siempre 0, con lo que la detección de visibilidad fallaría por completo. `scrollingElement` es la propiedad estándar que el W3C inventó para unificar este caos.
+
+**`getScrollTop` usa `instanceof HTMLElement` y no `instanceof Window`**: el comentario lo explica como «seguro entre realms»: si la página tiene un iframe, el objeto Window que este pasa **no es igual** al constructor `Window` del realm actual y `x instanceof Window` lo juzgaría erróneamente como false. Usar la comprobación con HTMLElement (los elementos no tienen este problema) lo evita. Es un detalle muy fino, pero el problema es real.
+
+**La doble degradación del desplazamiento suave**: ① cuando `prefers-reduced-motion` está activado se degrada a `auto` (sin animación): las personas con trastornos vestibulares pueden marearse con un desplazamiento continuo, y este es un requisito firme de accesibilidad; ② si el elemento destino no tiene el método `scrollTo` (entornos como los jsdom antiguos), se escribe directamente `scrollTop = 0`.
+
+**La detección de características de `supportsScrollEnd`**: el evento `scrollend` solo existe a partir de Chromium 114+ / Safari 18.2+: gracias a él se puede refrescar el estado de visibilidad con precisión cuando el desplazamiento **está realmente quieto** (leer scrollTop sin parar durante el desplazamiento tiene un coste de rendimiento). Cuando no se soporta, quien llama retrocede a un evento `scroll` + un antirrebote de `LH_BACKTOP_SCROLLEND_DELAY` (150 ms) como simulación.
+
+**La visibilidad es una función pura**: `isBackTopVisible(scrollTop, height)` solo compara valores numéricos. La capa UI escucha el desplazamiento por su cuenta y almacena su propio scrollTop; el core no mantiene ningún estado reactivo. Esto además permite que las pruebas unitarias afirmen directamente sobre las fronteras numéricas.
+
+## Tabla de funciones
+
+| Función / constante | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `getBackTopClassNames` | `(state: { visible }) => string[]` | nombres de clase | el estado de visibilidad dirige la animación de aparición/desaparición |
+| `resolveScrollTarget` | `(target?: string \| HTMLElement) => HTMLElement \| Window` | objetivo del desplazamiento | si el selector no coincide, retrocede a window |
+| `getScrollTop` | `(target) => number` | distancia recorrida | se adapta a contenedor o a viewport |
+| `backToTop` | `(target, smooth) => void` | nada | regreso suave a la cima (con degradación) |
+| `isBackTopVisible` | `(scrollTop, visibilityHeight) => boolean` | si es visible | la comparación con el umbral |
+| `supportsScrollEnd` | `(target) => boolean` | si se soporta | detección de características |
+
+Constantes: `LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT = 200`, `LH_BACKTOP_SCROLLEND_DELAY = 150`.
+
+## Definiciones de tipos
+
+```ts
+export interface LhBackTopState {
+  visible: boolean      // si es visible ahora mismo (dirige las clases de visibilidad)
+  target?: string | HTMLElement
+  visibilityHeight?: number
+  smooth?: boolean      // si el desplazamiento es suave (true por defecto)
+}
+```
+
+## Accesibilidad
+
+```ts
+// Los atributos de accesibilidad del botón se ensamblan en la capa UI:
+const aria = {
+  type: 'button',
+  'aria-label': 'Volver arriba',   // un botón de icono no tiene texto: la etiqueta es obligatoria
+}
+```
+
+- **`type="button"`**: si el botón de volver arriba cae dentro de un `<form>`, el `type="submit"` por defecto provocaría el envío del formulario: este es el pequeño bug más común.
+- **aria-label es obligatorio**: un botón formado únicamente por un icono (una flecha hacia arriba) no tiene nombre para los lectores de pantalla; el `aria-label="Volver arriba"` permite que se anuncie.
+- **aria-hidden sincronizado con la visibilidad**: cuando no es visible, se retira del árbol de accesibilidad (`aria-hidden="true"` o directamente `v-if` para desmontarlo), para evitar que los lectores de pantalla naveguen hasta un botón invisible.
+- **Accesible por teclado**: el botón es un `<button>` nativo, se enfoca con Tab y se activa con Enter/Espacio: soporte NATIVO. No lo construyas como un `<div @click>`.
+- **La doble significación de prefers-reduced-motion**: es tanto un requisito de accesibilidad (seguridad vestibular) como una forma de evitar los tirones del desplazamiento suave en los dispositivos modestos. `backToTop` ya lo trata internamente y la capa UI no tiene que comprobarlo.
+
+## Ejemplos de uso
+
+```ts
+import {
+  resolveScrollTarget, getScrollTop, isBackTopVisible, backToTop, supportsScrollEnd,
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT, LH_BACKTOP_SCROLLEND_DELAY,
+} from '@lh-ui/share/core/backtop'
+
+isBackTopVisible(200, 200)  // true (>= umbral)
+isBackTopVisible(199, 200)  // false
+isBackTopVisible(0, 200)    // false
+
+supportsScrollEnd(window)         // true en los navegadores modernos
+supportsScrollEnd(someEl)         // true solo a partir de Chromium 114+ / Safari 18.2+
+```
+
+```ts
+// Estrategia de escucha: si se soporta scrollend, solo se comprueba cuando está quieto;
+// en caso contrario, scroll + antirrebote
+const target = resolveScrollTarget(props.target)
+let visible = ref(false)
+
+function refresh() {
+  visible.value = isBackTopVisible(
+    getScrollTop(target),
+    props.visibilityHeight ?? LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  )
+}
+
+if (supportsScrollEnd(target)) {
+  target.addEventListener('scrollend', refresh)
+} else {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  target.addEventListener('scroll', () => {
+    clearTimeout(timer)
+    timer = setTimeout(refresh, LH_BACKTOP_SCROLLEND_DELAY)
+  })
+}
+
+function onClick() {
+  backToTop(target, props.smooth ?? true)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <button
+    type="button"
+    class="lh-backtop"
+    :class="getBackTopClassNames({ visible })"
+    aria-label="Volver arriba"
+    :aria-hidden="!visible"
+    @click="backToTop(target, true)"
+  >
+    <LhIcon name="arrow-up" />
+  </button>
+</template>
+```
+
+```tsx
+// React: useEffect registra y elimina el escuchador de desplazamiento (depende de target y de visibilityHeight);
+// smooth lo controlan las props; el movimiento reducido lo trata el core internamente
+```
+
+```ts
+// uniapp: <button open-type?> no aplica; usa <view> + @tap;
+// en el lado del mini programa, el desplazamiento de página usa onPageScroll (integrado en uniapp)
+// y el desplazamiento de un elemento, el evento scroll del scroll-view
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-backtop` | contenedor del botón (fijo, esquina inferior derecha) |
+| `.lh-backtop--visible` | visible (dirige la animación de entrada con fundido y deslizamiento hacia arriba) |
+
+El ocultamiento por defecto es `opacity: 0; visibility: hidden` (se usa visibility y no display, para conservar la animación de transición); el botón circular mide `--lh-backtop-size` (por ejemplo 40 px); el fondo es `--lh-bg-color` con la sombra `--lh-box-shadow-base`; el z-index es `--lh-z-index-backtop`.
+
+## Notas
+
+- **El escuchador de desplazamiento hay que retirarlo**: al destruir el componente, `removeEventListener`, o la referencia a un DOM ya retirado provocará una fuga de memoria. En Vue, `onUnmounted`; en React, la función de limpieza del useEffect.
+- **La particularidad de escuchar en `window`**: el evento `scroll` en window es pasivo y de alta frecuencia: es obligatorio el antirrebote o el uso de scrollend; leer `getScrollTop` en cada disparo atasca las páginas muy largas.
+- **El escenario en el que el elemento objetivo se desplaza por sí mismo**: en el desplazamiento interno de una tabla (y no el de la página), `target` debe apuntar al contenedor de la tabla; de lo contrario, la visibilidad del botón responde al desplazamiento de la página, totalmente desconectada del contenedor al que en realidad se quiere volver.
+- **El desplazamiento suave sobrescrito por CSS**: si la página lleva `html { scroll-behavior: smooth }`, `scrollTo({ behavior: 'auto' })` queda sobrescrito por el CSS y la degradación de `backToTop` para el movimiento reducido falla. Cuando la degradación sea estricta, la capa UI debe retirar temporalmente ese CSS.
+- **La inercia del desplazamiento en iOS Safari**: el desplazamiento de iOS tiene inercia y scrollend solo se dispara cuando aquella termina; el antirrebote de respaldo de 150 ms puede refrescar el estado de visibilidad demasiado pronto en los deslizamientos rápidos (el botón parpadea un instante). Es un compromiso conocido.
+- **La implicación del umbral de visibilidad 200**: más o menos la altura de media pantalla (depende de la altura del viewport). Las páginas de tipo documentación pueden bajarlo (100) y las de tipo herramienta subirlo (500): para eso está la prop `visibilityHeight`.
+- **Que el botón no tape el contenido**: posicionamiento fijo + esquina inferior derecha; en el lado móvil debe esquivar la barra de navegación inferior (reservando la altura de la zona segura).
+
+<FnPlayground module="backtop" fn="isBackTopVisible" params='{"scrollTop": 300, "visibilityHeight": 200}' />

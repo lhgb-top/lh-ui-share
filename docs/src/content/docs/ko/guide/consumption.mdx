@@ -1,0 +1,169 @@
+---
+title: 각 단말에서의 사용
+description: Vue3 / Vue2 / React / uniapp의 4개 단말이 share의 순수 함수를 각자의 반응성 메커니즘에 연결하는 예제
+---
+
+# 각 단말에서의 사용
+
+share의 core는 순수 함수이며, 반응성을 전혀 포함하지 않습니다. 각 단말의 UI 라이브러리가 하는 일은 하나뿐입니다: **순수 함수의 출력을 템플릿에 묶고, 사용자의 입력을 순수 함수로 되돌려 보내는 것**. 아래는 4개 단말의 연결 형태입니다.
+
+## 공통 패턴
+
+모든 컴포넌트의 연결은 이 3단계입니다:
+
+1. 프레임워크 측이 state 하나를 유지합니다(`ref` / `useState` / 반응형 data)
+2. 사용자 상호작용 → core 순수 함수를 호출해 새 state를 계산 → 되돌려 씁니다
+3. 템플릿에서 클래스명 / aria 속성 팩 순수 함수를 호출해 렌더링합니다
+
+```ts
+// core 측(프레임워크 비종속, 이 저장소)
+export function getSwitchClasses(state: LhSwitchState): string
+export function getSwitchAria(state: LhSwitchState): Record<string, string>
+export function toggleSwitch(state: LhSwitchState, checked: boolean): LhSwitchState
+```
+
+## Vue3(lh-ui-plus)
+
+```vue
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { getSwitchClasses, getSwitchAria, toggleSwitch } from '@lh-ui/share/core/switch'
+
+const checked = ref(false)
+const classes = computed(() => getSwitchClasses({ checked: checked.value, disabled: false }))
+const aria = computed(() => getSwitchAria({ checked: checked.value }))
+
+function onToggle() {
+  checked.value = toggleSwitch({ checked: checked.value }, !checked.value).checked
+}
+</script>
+
+<template>
+  <button :class="classes" v-bind="aria" @click="onToggle">
+    <span class="lh-switch__handle" />
+  </button>
+</template>
+
+<style lang="scss">
+@use '@lh-ui/share/styles/switch';
+</style>
+```
+
+스타일은 라이브러리 진입점에서 전체가 side-effect로 주입되기 때문에, 컴포넌트에서는 보통 직접 불러오지 않습니다([주입 전략](/ko/guide/injection) 참고).
+
+## Vue2(lh-ui-vue2)
+
+```vue
+<script lang="ts">
+import { getSwitchClasses, getSwitchAria, toggleSwitch } from '@lh-ui/share/core/switch'
+
+export default {
+  name: 'LhSwitch',
+  data() {
+    return { checked: false }
+  },
+  computed: {
+    classes() {
+      return getSwitchClasses({ checked: this.checked, disabled: false })
+    },
+    aria() {
+      return getSwitchAria({ checked: this.checked })
+    },
+  },
+  methods: {
+    onToggle() {
+      this.checked = toggleSwitch({ checked: this.checked }, !this.checked).checked
+    },
+  },
+}
+</script>
+```
+
+스타일은 사용자가 필요에 따라 불러옵니다:
+
+```ts
+import '@lh-ui/vue2/theme.css'
+import '@lh-ui/vue2/style/switch'
+```
+
+## React(lh-ui-react)
+
+`computed` 대신 `useMemo`를 사용합니다. state의 변화가 다시 렌더링을 일으키는 것은 본질적으로 반응성입니다:
+
+```tsx
+import { memo, useMemo, useState } from 'react'
+import {
+  getSwitchClasses,
+  getSwitchAria,
+  toggleSwitch,
+} from '@lh-ui/share/core/switch'
+import '@lh-ui/react/style/switch'
+
+export const LhSwitch = memo(function LhSwitch() {
+  const [checked, setChecked] = useState(false)
+
+  const classes = useMemo(
+    () => getSwitchClasses({ checked, disabled: false }),
+    [checked],
+  )
+  const aria = useMemo(() => getSwitchAria({ checked }), [checked])
+
+  return (
+    <button
+      type="button"
+      className={classes}
+      {...aria}
+      onClick={() => setChecked((c) => !c)}
+    >
+      <span className="lh-switch__handle" />
+    </button>
+  )
+})
+```
+
+## uniapp(lh-ui-uniapp)
+
+uniapp의 `<view>` / `<text>`에는 aria 속성을 자유롭게 묶을 수 없고, `getSwitchAria`의 산출물은
+미니프로그램 단말에서 필터링됩니다. app / h5 단말에서는 계속 사용할 수 있습니다. 클래스명 결합은
+`:class` 문자열이나 배열로 합니다:
+
+```vue
+<template>
+  <view :class="classes" @tap="onToggle">
+    <view class="lh-switch__handle" />
+  </view>
+</template>
+
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { getSwitchClasses, toggleSwitch } from '@lh-ui/share/core/switch'
+
+const checked = ref(false)
+const classes = computed(() => getSwitchClasses({ checked: checked.value }))
+function onToggle() {
+  checked.value = !checked.value
+}
+</script>
+```
+
+## 국제화: 하나의 에미터, 네 가지 구독
+
+LhLocale은 순수 이벤트 에미터이며, `version`은 언어가 바뀔 때마다 자동 증가합니다. 각 단말은 이것을 각자의 다시 렌더링 신호로 변환합니다:
+
+| 단말 | 연결 |
+| --- | --- |
+| vue2 / vue3 / uniapp | `ref(lhlocale.version)` + `lhlocale.subscribe(v => version.value = v)` |
+| react | `useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)` |
+
+```ts
+import { lhlocale } from '@lh-ui/share/locales'
+
+lhlocale.setLocale('en-US')          // 전환, version이 자동 증가하며 브로드캐스트
+const text = lhlocale.t('input.placeholder')
+```
+
+실시간 데모는 [국제화 레퍼런스](/ko/reference/locales)를 참고하세요.
+
+## 로컬 연동: share 소스를 고치면 즉시 반영
+
+패밀리 구성에서는 각 UI 라이브러리의 dev / test 설정이 같은 등급의 `lh-ui-share/`로 alias하므로, **dev 시에는 빌드 산출물이 아니라 TS / SCSS 소스가 사용됩니다**. 새로 추가한 깊은 파일(예: `core/foo/bar.ts`)은 dev 환경에서 즉시 사용할 수 있지만, `sync-exports`를 실행하지 않으면 npm 측에 대응하는 exports 키가 없습니다 —— **릴리스 전에 반드시 완전한 `pnpm build`를 실행하세요**. 그렇지 않으면 하위 저장소의 `pnpm up`에서 MODULE_NOT_FOUND가 발생합니다.

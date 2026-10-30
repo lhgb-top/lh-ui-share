@@ -1,0 +1,194 @@
+---
+title: Tokens de diseño
+description: '185 tokens claros + 118 sobrescrituras oscuras + 183 variables SCSS: los valores, la jerarquía y las relaciones de sobrescritura de las tres capas de tokens'
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+Un token (token) es el lenguaje de diseño convertido en variable: color, tamaño de fuente, espaciado, radio de
+borde, sombra y duración de las animaciones quedan nombrados como variables CSS `--lh-*`, y los componentes
+consumen el nombre sin escribir el valor a fuego. Cambiar de piel es cambiar los tokens.
+
+## Las tres capas de tokens
+
+| Capa | Ubicación | Cantidad | Momento de evaluación | Posibilidad de sobrescritura |
+| --- | --- | --- | --- | --- |
+| Variables CSS · claro | `:root` de `styles/theme/common/var.scss` | **185 entradas** | Tiempo de ejecución | ✅ se pueden sobrescribir a voluntad |
+| Variables CSS · oscuro | `[data-theme='dark'], .dark` de `styles/theme/common/var-dark.scss` | **118 entradas** | Tiempo de ejecución | ✅ |
+| Variables SCSS | `styles/theme/common/variables.scss` | **183** | **Tiempo de compilación** | ⚠️ solo se puede cambiar el código fuente y recompilar |
+
+### Tokens claros (var.scss)
+
+```scss
+:root {
+  --lh-primary-color: #2B4C7C;
+  --lh-text-primary: rgba(0, 0, 0, 0.88);
+  --lh-bg-color: #FAF6F0;
+  --lh-border-color: #e5e6eb;
+  --lh-radius-base: 6px;
+  --lh-spacing-base: 8px;
+  // ... 185 entradas
+}
+```
+
+### Sobrescritura oscura (var-dark.scss)
+
+```scss
+[data-theme='dark'],
+.dark {
+  --lh-bg-color: #2A2520;
+  --lh-text-primary: #E8E0D8;
+  --lh-border-color: #3A3530;
+  // ... 118 entradas
+}
+```
+
+El modo oscuro es una **capa de sobrescritura**, no un conjunto independiente: solo se escriben las 118 entradas
+que necesitan invertirse; el resto sigue utilizando los valores claros.
+
+### Variables SCSS (variables.scss)
+
+```scss
+$lh-primary-color: #2B4C7C !default;
+$lh-border-radius-base: 6px !default;
+// ... 183
+```
+
+El cometido de las variables SCSS es **participar en los cálculos de tiempo de compilación**: mezclas de color
+(`mix()` / `shade()`), composición de sombras (suma de varias capas de shadow), cosas que las variables CSS no
+pueden hacer. El precio es que **se hornean en tiempo de compilación** — en modo oscuro no se invierten
+automáticamente.
+
+## La estructura jerárquica de los tokens
+
+Los tokens se dividen en tres niveles; los dos primeros están en los archivos de tema globales y el tercero, en
+el estilo propio de cada componente:
+
+```scss
+// 1. Variables SCSS (variables.scss, tiempo de compilación)
+$lh-primary: #2B4C7C !default;
+$lh-text-primary: #2C2C2C !default;
+
+// 2. Variables CSS globales (el :root de var.scss, 190 entradas)
+--lh-primary-color: #{$lh-primary};
+--lh-text-primary: #{$lh-text-primary};
+--lh-bg-color: #FAF6F0;
+
+// 3. Variables a nivel de componente (el scss del propio componente; el alcance es la raíz BEM del componente)
+.lh-card {
+  --lh-card-bg: var(--lh-bg-color, #FAF6F0);
+  --lh-card-border-radius: calc(var(--lh-border-radius-base, 2px) + 2px);
+}
+```
+
+Mecanismos clave:
+
+- **Entre los niveles 1 y 2 hay interpolación en tiempo de compilación, no una cadena de referencias var()**: el
+  valor de `--lh-primary-color` se hornea dentro del build a partir de `$lh-primary`; cambiar la variable SCSS
+  en tiempo de ejecución no sirve (habría que recompilar). En el proyecto **no existe** una capa intermedia de
+  «paleta base» — no hay variables de escalas de color del tipo `--lh-blue-6`; los tokens semánticos se generan
+  directamente a partir de las variables SCSS.
+- **Los dos puntos de palanca para cambiar de piel**: cambiar las variables SCSS de `variables.scss` y recompilar
+  (afecta a todos los tokens semánticos), o sobrescribir en tiempo de ejecución las variables CSS del `:root`
+  (los themeVars del `ConfigProvider` van por este camino, con efecto inmediato).
+- **El nivel 3 referencia por defecto al nivel 2**: el valor por defecto de las variables a nivel de componente
+  suele ser una referencia `var()` a un token global (con respaldo), de modo que se mantiene el enlace con el tema
+  y a la vez los themeVars pueden sobrescribir un componente concreto de forma dirigida.
+
+## Dominios semánticos
+
+Los dominios semánticos principales (la agrupación completa está en la tabla de tokens más abajo):
+
+| Dominio | Tokens representativos | Uso |
+| --- | --- | --- |
+| Color principal | `--lh-primary-color` / `-hover` / `-active` / `-bg` / `-border` | El quinteto del color principal de marca |
+| Texto | `--lh-text-primary` / `-secondary` / `-tertiary` / `-disabled` | Cuatro niveles de jerarquía de texto |
+| Fondo | `--lh-bg-color` / `-page` / `-secondary` / `-overlay` | Página / contenedores / capa de cobertura |
+| Borde | `--lh-border-color` / `-light` / `-dark` | Los trazos |
+| Estado | `--lh-success-color` / `-warning` / `-error` / `-danger` / `-info` | Los cinco colores semánticos |
+| Radio | `--lh-radius-small` / `-base` / `-large` / `-circle` | Cuatro escalas de radio |
+| Espaciado | `--lh-spacing-*` | La escala de base 8px |
+| Tamaño de fuente | `--lh-font-size-*` | La escalera de tamaños de fuente |
+| Sombra | `--lh-shadow-*` | Los niveles de sombra |
+| Animación | `--lh-animation-duration-*` / `-timing-function` | El ritmo de las transiciones |
+| Decoración | `--lh-decoration-color` | El color decorativo de estilo chino |
+
+## Tabla completa de tokens
+
+<TokenTable />
+
+(Los datos los genera `scripts/gen-docs-data.mjs` parseando los tres archivos de tokens, con aserciones de
+cantidad: 190 claros, 118 oscuros y 188 SCSS; cualquier falta de coincidencia da error.)
+
+## Sobrescribir tokens
+
+### En tiempo de ejecución (recomendado)
+
+```ts
+// Los themeVars del ConfigProvider (la clave abreviada recibe el prefijo --lh- automáticamente)
+<lh-config-provider :theme-vars="{ 'primary-color': '#1677ff' }">
+```
+
+O escribe CSS en la entrada de la aplicación:
+
+```css
+:root {
+  --lh-primary-color: #1677ff;
+  --lh-primary-color-hover: #4096ff;
+  --lh-primary-color-active: #0958d9;
+}
+```
+
+Véase [Personalización en tiempo de ejecución](/es/theme/customization).
+
+### En tiempo de compilación (variables SCSS)
+
+```scss
+// El scss de entrada del proyecto; la sobrescritura va antes del @use
+$lh-primary-color: #1677ff;
+
+@use '@lh-ui/share/styles';
+```
+
+La semántica de `!default` es «si ya tiene valor, no se sobrescribe», de modo que basta con asignar antes del
+`@use`. **Ten en cuenta**: esto solo afecta a la parte que se hornea en tiempo de compilación; las variables CSS
+en tiempo de ejecución siguen necesitando una sobrescritura aparte.
+
+## Brechas de tokens conocidas
+
+El «especial de tokens de altura» ya ha aterrizado (nuevos tokens
+`--lh-control-height-mini/small/medium/large/x-large`; button / select / input-number / cascader / tree-select /
+date-picker / time-picker / input referencian todos los tokens; input pasa de derivarse del padding a una altura
+fija; el `padding-top: 16px` asimétrico de has-label, el desplazamiento fijo del check de checkbox y el
+`translate(-50%,-50%)` repetido y codificado de forma rígida de switch se han corregido de paso). Lo que sigue
+pendiente:
+
+1. Las escalas de tamaño del spinner y del icono con el mismo nombre no coinciden (small 16 vs 14, medium 24 vs
+   16, etc.). Cambiar cualquiera de los dos lados afecta a toda la biblioteca (message / notification / loading /
+   todos los iconos); condición de disparo: una queja visual por mezclar LhIcon / LhSpinner en la misma ranura;
+   entonces se abrirá un proyecto dedicado.
+2. Las escalas de size no están alineadas: select / switch solo tienen 3 escalas; el validator de date /
+   time-picker está recortado; tree-select / rate / segmented / pagination no tienen size; mini y x-large están
+   casi sin dibujar en la capa CSS (en toda la biblioteca solo avatar tiene x-large). Es un cambio de la capa de
+   la API y está desacoplado de los tokens de altura.
+
+## Notas
+
+- **Los componentes no pueden declarar `--lh-*` por su cuenta**: solo pueden consumirlos con
+  `var(--lh-*, fallback)` (línea roja del AGENTS.md raíz). Los tokens nuevos se añaden en `var.scss`.
+- **El respaldo es obligatorio**: `var(--lh-primary-color, #1677ff)` — si falta el token, sigue habiendo un valor
+  por defecto aceptable; lo custodia la verificación 2 de `verify:styles` (var fallback).
+- **Completitud del modo oscuro**: al añadir un token nuevo, pregúntate «en el modo oscuro, ¿tiene que
+  invertirse?», y si es así, añade la sobrescritura en `var-dark.scss`; lo custodia la verificación 7 de
+  `verify:styles`.
+- **Los tokens cuyo valor tiene la forma `#{$lh-foo}` están horneados en tiempo de compilación**: en modo oscuro
+  no se invierten automáticamente y hay que reorientarlos explícitamente (véase
+  [Modo oscuro](/es/theme/dark-mode#la-trampa-del-horneado-en-tiempo-de-compilación)).
+
+## Documentos relacionados
+
+- [Resumen del sistema de temas](/es/theme/overview)
+- [Presets de tema](/es/theme/presets)
+- [Personalización en tiempo de ejecución](/es/theme/customization)
+- [Modo oscuro](/es/theme/dark-mode)
+- [Fuente de estilos](/es/reference/styles)

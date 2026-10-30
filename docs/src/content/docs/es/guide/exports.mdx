@@ -1,0 +1,125 @@
+---
+title: Entradas del paquete y subrutas
+description: 'La tabla completa de las 77 claves exports de @lh-ui/share y la práctica del import a demanda'
+---
+
+# Entradas del paquete y subrutas
+
+El campo `exports` de `package.json` define las **rutas de importación legítimas** — cualquier ruta que no esté
+listada aquí (por ejemplo `@lh-ui/share/es/core/button/logic.js` directamente) será rechazada por Node y los
+empaquetadores. Este paquete tiene **77 claves** en total.
+
+## Resumen de las claves de nivel superior
+
+| Clave | Apunta a | Uso |
+| --- | --- | --- |
+| `.` | `es/index.js` / `lib/index.js` | Import directo completo |
+| `./package.json` | `./package.json` | Lectura del número de versión por herramientas |
+| `./core` | `es/core/index.js` | Agregado de todas las funciones puras de core |
+| `./core/<componente>/*` | `es/core/<componente>/*` | **56 componentes**, uno a uno y a demanda |
+| `./core/shared/*` | `es/core/shared/*` | 12 módulos del núcleo compartido |
+| `./constants` | `es/constants/index.js` | Constantes `LH_*` |
+| `./locales` | `es/locales/index.js` | lhlocale + zhCN / enUS |
+| `./locales/lang/*` | `es/locales/lang/*` | 6 paquetes de idioma por separado |
+| `./theme` | `es/theme/index.js` | Primitivas de tema en tiempo de ejecución + presets |
+| `./types` | `es/types/index.d.ts` | **Solo tipos**, sin implementación |
+| `./types/components/*` | `es/types/components/*.d.ts` | Tipos de Props de componentes (solo tipos) |
+| `./utils` | `es/utils/index.js` | Utilidades puras: createNamespace / deepMerge, etc. |
+| `./utils/*` | `es/utils/*` | Utilidades importadas por archivo |
+| `./theme.css` | `dist/theme/index.css` | Tokens claros |
+| `./theme-dark.css` | `dist/theme/index-dark.css` | Sobrescritura oscura |
+| `./styles.css` | `dist/styles/index.css` | Tokens + todos los estilos de componentes |
+| `./dist/*` | `dist/*` | Acceso directo a los artefactos de dist |
+| `./styles/*` | `styles/<name>/index.scss` | **Código fuente SCSS de un componente** |
+| `./styles/index.scss` | `styles/index.scss` | Agregado SCSS completo |
+| `./styles/theme/index.scss` | `styles/theme/index.scss` | Agregado SCSS del tema |
+| `./styles/theme/common/*` | `styles/theme/common/*.scss` | Tokens / patrones / mixins de transición |
+
+## Exportación con tres condiciones
+
+Salvo el CSS / SCSS puro y la clave `types`, cada clave JS ofrece tres condiciones a la vez:
+
+```json
+"./core/button/*": {
+  "types": "./es/core/button/*.d.ts",
+  "import": "./es/core/button/*.js",
+  "require": "./lib/core/button/*.js"
+}
+```
+
+- `import` —— artefacto ESM (`es/`); preserveModules refleja la estructura del código fuente, y el import a demanda solo empaqueta ese archivo.
+- `require` —— artefacto CJS (`lib/`), para escenarios donde Node ejecuta directamente, jest, etc.
+- `types` —— `.d.ts`; `import type` va por aquí, a coste cero en tiempo de ejecución.
+
+## Las 56 subrutas de core
+
+```
+affix · alert · anchor · avatar · backtop · badge · breadcrumb · button ·
+calendar · card · cascader · checkbox · collapse · config · date-picker ·
+descriptions · dialog · divider · drawer · dropdown · empty · form · grid ·
+icon · image · input · input-number · loading · menu · message ·
+notification · pagination · popconfirm · popover · progress · radio · rate ·
+segmented · select · skeleton · slider · space · spinner · statistic ·
+steps · switch · table · tabs · tag · time-picker · timeline · tooltip ·
+transfer · tree · upload · virtual-list
+```
+
+La superficie de exportación de cada subruta es la «tabla de funciones» de la página del componente, consultable
+página por página (véase «API de componentes» en la navegación de la izquierda).
+
+## Las 12 subrutas del núcleo compartido
+
+```
+core/shared/a11y · date · delay · focus-trap · format · keyboard ·
+popper · pt · sanitize · sx · types · virtual
+```
+
+Esta es la capa que más referencian las bibliotecas UI de cada plataforma. La documentación de cada módulo está en
+«Núcleo compartido» a la izquierda.
+
+## tree-shaking y sideEffects
+
+```json
+"sideEffects": ["**/*.css", "**/*.scss"]
+```
+
+Solo los archivos de estilos tienen side effects. Las subrutas JS puras admiten tree-shaking de forma segura:
+
+- ✅ `import { getButtonClasses } from '@lh-ui/share/core/button'` solo empaqueta button.
+- ✅ `import type { LhSxProps } from '@lh-ui/share/core/shared/sx` se borra en tiempo de compilación.
+- ⚠️ `import '@lh-ui/share/styles.css'` es **completo** y no se puede tree-shake — para los estilos, compila tú
+  mismo el código fuente SCSS `./styles/<name>`, o usa los artefactos a demanda de cada biblioteca UI.
+
+## Las dos formas de las subrutas de styles
+
+`./styles/*` apunta al **código fuente SCSS** (`styles/<name>/index.scss`), no a un artefacto compilado:
+
+```scss
+@use '@lh-ui/share/styles/button';   // ✅ el empaquetador compila el SCSS
+```
+
+```ts
+import '@lh-ui/share/styles/button'   // ❌ necesita la extensión .scss y el empaquetador no la reconoce
+```
+
+Si no quieres compilar SCSS en tu proyecto, importa `./styles.css` (completo) o usa los artefactos ya compilados
+por cada biblioteca UI: `es/<name>/style/index.css` (lh-ui-plus) / `es/components/<name>/style/index.css`
+(lh-ui-vue2).
+
+## Enlace local (desarrollo dentro de la familia)
+
+Dentro de la familia, las bibliotecas UI no dependen de npm: la configuración de dev / test aplica un alias de
+`@lh-ui/share/**` al código fuente del `lh-ui-share/` hermano **con un guardián de existencia**:
+
+| Import | Apunta a (disposición de la familia) |
+| --- | --- |
+| `@lh-ui/share/styles/**` | `lh-ui-share/styles/**` (código fuente SCSS, compilado en tiempo real por vite) |
+| `@lh-ui/share/core/**` | `lh-ui-share/src/core/**` |
+| `@lh-ui/share/{utils,constants,theme,locales,types}/**` | `lh-ui-share/src/$1/**` |
+| `@lh-ui/share` (directo) | `lh-ui-share/src/index.ts` |
+
+Cuando el repositorio hermano share no existe, el guardián devuelve un array vacío y se retrocede
+automáticamente al paquete npm instalado — **tanto el clone de un solo repositorio como la disposición de la
+familia funcionan**. Esta regla también se aplica a la publicación: si tras añadir un archivo profundo en share
+no se ejecuta `pnpm build` (que incluye sync-exports), no existe la clave exports correspondiente en el lado npm,
+y el `pnpm up` de quien depende dará MODULE_NOT_FOUND.

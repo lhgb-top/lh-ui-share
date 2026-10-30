@@ -1,0 +1,250 @@
+---
+title: date-picker —— اختيار التاريخ
+description: 'شبكة ستة أسابيع في generateCalendarDays، واجهة محوّل التواريخ LhDateAdapter، خمسة أنماط، ودلالة dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+اختيار التاريخ من أعقد عناصر التحكم في مكتبات الواجهات: فعليه أن يعبّر في شبكة 6×7 واحدة عن ست حالات في آن واحد هي «تاريخ الشهر الحالي / حشو الشهر السابق والتالي / اليوم / محدد / إبراز المجال / معطّل». يحوّل `core/date-picker` توليد شبكة التقويم، ولوحات الأشهر والسنوات، و**واجهة محوّل التواريخ** إلى دوال نقيدة، ولا تتجاوز طبقة UI العرض والتوصيل.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `LhDatePicker`: تاريخ الميلاد، الجداول الزمنية، تواريخ الطلبات، مجالات التاريخ من-إلى.
+- عندما تكون القيمة «تاريخاً» أو «مجالاً من التواريخ».
+- **لا ينبغي استخدامه**: عند الحاجة إلى الوقت فقط (استخدم `time-picker`)؛ عند ترك المستخدم يحرّر نص تاريخ حر (استخدم `input` مع تحقق ذاتي، فهو أكثر مرونة).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  generateCalendarDays,
+  generateMonths,
+  generateYears,
+  getDatePickerClassNames,
+  getDatePickerTriggerAria,
+  getDatePickerPanelAria,
+  // الأوليات العامة للتواريخ (يعاد تصديرها من shared/date لضمان بقاء مسارات الاستيراد الحالية)
+  parseDate,
+  formatDate,
+  compareDate,
+  isSameDay,
+  isSameMonth,
+  isDateDisabled,
+  getDaysInMonth,
+  getFirstDayOfMonth,
+} from '@lh-ui/share/core/date-picker'
+import type {
+  LhDatePickerMode,
+  LhDatePickerDayData,
+  LhDatePickerMonthData,
+  LhDatePickerYearData,
+  LhDatePickerState,
+  LhFirstDayOfWeek,
+  LhDateAdapter,
+} from '@lh-ui/share/core/date-picker'
+```
+
+## القصد التصميمي
+
+**المحوّل هو جوهر التصميم في هذه الوحدة**. `LhDateAdapter` واجهة (seam) تُحافَظ عمداً على صغرها (سبع دوال: parse / format / getDaysInMonth / getFirstDayOfMonth / compare / isSameDay / addDays): التنفيذ الافتراضي يغلّف الخوارزميات المكتوبة بخط اليد في `core/shared/date`، وعند الحاجة لربط dayjs / date-fns / `Intl` يكفي تنفيذ الواجهة، **ولا تعتمد طبقة core على أي مكتبة تواريخ**.
+
+وللحقن مساران:
+
+- معامل صريح (مُستحسَن): `generateCalendarDays(year, month, …, firstDayOfWeek, myAdapter)`—لا يلوّث الحالة العامة، والنسخ المتعددة لا تتداخل.
+- `setDateAdapter(adapter)` (**@deprecated**):singleton على مستوى الوحدة. وسبب وضع علامة الإهمال هو **التسريب بين النسخ**—ففي صفحة بها محوّلا تاريخ، سيلوّث أحدهما الآخر. ويُحتفظ به فقط لتوافق المستدعين الحاليين، دون إضافة مستهلكين جدد.
+
+**تفكيك الاعتماد الدائري**: في فترة سابقة كان `logic.ts` و`adapter.ts` يستورد كل منهما الآخر، والآن هُبِّطت الأوليات العامة إلى `core/shared/date`، فمحوّل يعتمد على النواة فقط ولم يعد يستورد logic عكسياً، فانكسرت الحلقة (انظر الإيداع 9e21865).
+
+**محاذاة حشو الشبكة**: يضمن `totalCells = Math.ceil(days.length / 7) * 7` أن يكون مجموع الخلايا من مضاعفات 7 (خمسة أو ستة أسطر)، ويحسب `firstDayOfWeek` المقاعد الأمامية الفارغة عبر `(firstDay - firstDayOfWeek + 7) % 7`—أما `+7` فتفادياً لباقي القسمة السالب.
+
+**المقارنة على مستوى اليوم في المجالات**: تاريخ الخلية هو منتصف الليل المحلي 00:00، بينما قد يحمل `rangeStart` / `rangeEnd` وقتاً، فالمقارنة المباشرة ستجعل «يوم الانتهاء» يُحكم عليه بأنه `isInRange` في الوقت نفسه. ولذا يُستخدم `adapter.compare` موحَّداً للمقارنة على مستوى اليوم.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `generateCalendarDays` | `(year, month, selected, rangeStart, rangeEnd, today, firstDayOfWeek?, adapter?) => LhDatePickerDayData[]` | 42 أو 35 خلية | شبكة ست حالات |
+| `generateMonths` | `(year, selected) => LhDatePickerMonthData[]` | 12 عنصراً | لوحة الأشهر |
+| `generateYears` | `(startYear, selected) => LhDatePickerYearData[]` | لوحة السنوات | اختيار السنة |
+| `getDatePickerClassNames` | `(state: { size, disabled, visible }) => string[]` | أسماء الأصناف | الحجم/التعطيل/التوسّع |
+| `getDatePickerTriggerAria` | `(visible, panelId?) => LhAriaAttrs` | حزمة سمات aria | haspopup dialog |
+| `getDatePickerPanelAria` | `(id?) => LhAriaAttrs` | حزمة سمات aria | role=dialog |
+| `parseDate` / `formatDate` | `(value, format) => Date \| null` / `(date, format) => string` | عكس أحدهما للآخر | رموز ثابتة العرض |
+| `compareDate` | `(a, b) => number` | مقارنة على مستوى اليوم | تجاهل الوقت |
+| `isSameDay` / `isSameMonth` | `(a, b) => boolean` | هل هو اليوم نفسه/الشهر نفسه | حكم التحديد |
+| `isDateDisabled` | `(date, min, max, disabledDate?) => boolean` | هل هو معطّل | دمج ثلاثة مصادر |
+| `getDaysInMonth` / `getFirstDayOfMonth` | `(year, month) => number` | عدد الأيام/أول يوم في الأسبوع | حساب الشبكة |
+
+## تعريفات الأنواع
+
+```ts
+export type LhDatePickerMode = 'date' | 'month' | 'year' | 'datetime' | 'range'
+export type LhFirstDayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6  // 0=الأحد (افتراضياً)
+
+export interface LhDatePickerDayData {
+  date: Date
+  day: number
+  month: number        // يبدأ من 0
+  year: number
+  isCurrentMonth: boolean  // الشهر الحالي مقابل حشو الشهرين السابق والتالي
+  isToday: boolean
+  isSelected: boolean
+  isInRange: boolean   // لنمط range فقط، مجال مفتوح
+  isStart: boolean
+  isEnd: boolean
+}
+
+export interface LhDatePickerMonthData { month: number; year: number; isSelected: boolean }
+export interface LhDatePickerYearData  { year: number; isSelected: boolean }
+
+export interface LhDateAdapter {
+  parse(value: string, format: string): Date | null
+  format(date: Date, format: string): string
+  getDaysInMonth(year: number, month: number): number
+  getFirstDayOfMonth(year: number, month: number): number
+  compare(a: Date, b: Date): number
+  isSameDay(a: Date, b: Date): boolean
+  addDays(date: Date, amount: number): Date
+}
+```
+
+## إمكانية الوصول
+
+تنبثق لوحة التاريخ بصفتها **dialog**، وتتشارك الدلالة مع time-picker في الأصل (كلاهما يمر عبر `getPopupTriggerAria`، `haspopup: 'dialog'`):
+
+```ts
+getDatePickerTriggerAria(true, 'lh-date-panel')
+// { 'aria-expanded': true, 'aria-haspopup': 'dialog', 'aria-controls': 'lh-date-panel' }
+
+getDatePickerPanelAria('lh-date-panel')
+// { role: 'dialog', id: 'lh-date-panel' }
+```
+
+يجب أن تحمل الشبكة نفسها `role="grid"`، وكل صف `role="row"`، وكل خلية `role="gridcell"`؛ وتستخدم لوحتا الأشهر والسنوات `role="listbox"`. تفاعل لوحة المفاتيح (تنفّذه طبقة UI):
+
+- داخل اللوحة يتنقّل ↑/↓/←/→ بين الخلايا (`adapter.addDays(date, ±1|±7)`)، ويُحدَّد بالضغط Enter؛
+- خلايا الحشو (`isCurrentMonth: false`) تقلّب الشهر **تلقائياً** عند الانتقال إليها؛
+- يُغلق Esc اللوحة ويعود التركيز إلى العنصر المُطلِق؛
+- الخلايا التي تُعيد `disabledDate` القيمة true يجب أن تحمل `aria-disabled="true"` وألا تكون قابلة للتحديد.
+
+## أمثلة الاستخدام
+
+```ts
+import { generateCalendarDays, parseDate, formatDate, isDateDisabled } from '@lh-ui/share/core/date-picker'
+
+// أكتوبر 2026 (الشهر يبدأ من 0)، بداية الأسبوع الأحد
+const days = generateCalendarDays(2026, 9, parseDate('2026-10-12', 'yyyy-MM-dd'), null, null, new Date(), 0)
+days.length        // 35 أو 42
+days.filter((d) => d.isCurrentMonth).length  // 31
+days[0]            // 2026-09-27 من الحشو الأمامي (الأحد)
+days.find((d) => d.isToday)?.day   // 12 (إذا كان اليوم ضمن 2026-10)
+
+parseDate('2026-10-12', 'yyyy-MM-dd')  // Date(2026, 9, 12)
+formatDate(new Date(2026, 9, 12), 'yyyy-MM-dd')  // '2026-10-12'
+parseDate('not a date', 'yyyy-MM-dd')  // null
+isSameDay(new Date(2026, 9, 12, 5), new Date(2026, 9, 12, 23))  // true
+```
+
+```ts
+// ربط محوّل dayjs (معامل صريح، دون تلويث الحالة العامة)
+import type { LhDateAdapter } from '@lh-ui/share/core/date-picker'
+import dayjs from 'dayjs'
+import customParseFormat from 'dayjs/plugin/customParseFormat'
+dayjs.extend(customParseFormat)
+
+const dayjsAdapter: LhDateAdapter = {
+  parse: (v, f) => { const d = dayjs(v, f, true); return d.isValid() ? d.toDate() : null },
+  format: (d, f) => dayjs(d).format(f),
+  getDaysInMonth: (y, m) => dayjs(new Date(y, m, 1)).daysInMonth(),
+  getFirstDayOfMonth: (y, m) => dayjs(new Date(y, m, 1)).day(),
+  compare: (a, b) => dayjs(a).startOf('day').valueOf() - dayjs(b).startOf('day').valueOf(),
+  isSameDay: (a, b) => dayjs(a).isSame(dayjs(b), 'day'),
+  addDays: (d, n) => dayjs(d).add(n, 'day').toDate(),
+}
+
+const days = generateCalendarDays(2026, 9, null, null, null, new Date(), 1, dayjsAdapter)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getDatePickerClassNames({ size, disabled, visible })">
+  <input
+    class="lh-date-picker__input"
+    :value="value ? formatDate(value, format) : ''"
+    v-bind="getDatePickerTriggerAria(visible, panelId)"
+    @click="open"
+  />
+  <div v-if="visible" class="lh-date-picker__panel" v-bind="getDatePickerPanelAria(panelId)">
+    <div class="lh-date-picker__header">
+      <button type="button" class="lh-date-picker__prev" @click="prevMonth">‹</button>
+      <span class="lh-date-picker__title">{{ year }} / {{ month + 1 }}</span>
+      <button type="button" class="lh-date-picker__next" @click="nextMonth">›</button>
+    </div>
+    <div class="lh-date-picker__body" role="grid">
+      <div v-for="row in weekRows" :key="row[0].date.getTime()" class="lh-date-picker__row" role="row">
+        <button
+          v-for="cell in row"
+          :key="cell.date.getTime()"
+          type="button"
+          class="lh-date-picker__cell"
+          :class="{
+            'is-other-month': !cell.isCurrentMonth,
+            'is-today': cell.isToday,
+            'is-selected': cell.isSelected,
+            'is-in-range': cell.isInRange,
+            'is-start': cell.isStart,
+            'is-end': cell.isEnd,
+          }"
+          role="gridcell"
+          :aria-disabled="isDateDisabled(cell.date, minDate, maxDate, disabledDate)"
+          @click="onPick(cell)"
+        >
+          {{ cell.day }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+```tsx
+// React: الاختيار على مرحلتين في نمط range
+// الضغطة الأولى تضبط rangeStart (يُفرَّغ rangeEnd)، والثانية تضبط rangeEnd (إن سبق start يُتبادَل)
+// يُعاد حساب generateCalendarDays عند كل عرض، ويُبرز isInRange المقطع الأوسط تلقائياً
+```
+
+```ts
+// uniapp: <picker mode="date"> مكوّن مدمج (يحدّ start/end النطاق)؛
+// أما اللوحة المخصّصة فبـ <scroll-view> + شبكة، وتُستخدم generateCalendarDays من core كما هي
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-date-picker` | الصنف الأساسي |
+| `.lh-date-picker--{small\|large}` | حجم معياري |
+| `.lh-date-picker--disabled` | معطّل |
+| `.lh-date-picker__input` | صندوق الإدخال المُطلِق |
+| `.lh-date-picker__panel` | اللوحة المنبثقة |
+| `.lh-date-picker__header` / `__prev` / `__next` / `__title` | التنقّل العلوي |
+| `.lh-date-picker__body` | منطقة الشبكة |
+| `.lh-date-picker__row` | أسبوع واحد |
+| `.lh-date-picker__cell` | خلية يوم (مُعدِّلات الحالة بالبادئة is-) |
+| `.lh-date-picker__cell.is-other-month` / `.is-today` / `.is-selected` / `.is-in-range` / `.is-start` / `.is-end` | الحالات الست |
+| `.lh-date-picker__footer` | شريط الاختصارات (اليوم/المسح) |
+
+التحديد `--lh-primary-color`، والمجال `--lh-primary-color` بشفافية منخفضة، واليوم بإطار `--lh-primary-color`، ونص حشو الشهرين السابق والتالي `--lh-text-disabled`.
+
+## ملاحظات
+
+- **الشهر يبدأ دائماً من 0** (موافق لـ `Date` الأصلي)، مع `+1` في عرض طبقة UI. وهو المصدر الأكثر شيوعاً لأخطاء الحدود بفارق واحد (off-by-one).
+- **ارتباط `firstDayOfWeek` بحزمة اللغة**: `zh-CN` عادة 1 (الاثنين)، و`en-US` عادة 0 (الأحد)؛ اكتبه في ConfigProvider أو locale، ولا ترمّزه ثابتاً.
+- **تسريب `setDateAdapter` بين النسخ**: في الصفحات التي تتواجد فيها عدة محوّلات تواريخ لا تستخدم الحقن العام، بل المعامل الصريح.
+- **رموز `parseDate` / `formatDate` الثابتة العرض**: `yyyy` / `MM` / `dd` / `HH` / `mm` / `ss`، وهي **حساسة لحالة الأحرف** (`mm` هي الدقائق، و`MM` هو الشهر). ويجب أن يستخدم parse و format سلسلة format نفسها، وإلا انكسر الذهاب والإياب.
+- **النمط `datetime`**: تُدمج أعمدة time-picker داخل اللوحة، ويُستخدم لجزء الوقت دوال `core/time-picker`؛ وعند دمج القيم انتبه إلى أن `compareDate` **يتجاهل الوقت**، فاستخدم `isSameDay` لمقارنة حالة التحديد.
+- **التبديل في النمط `range`**: لا يتحمّل core قاعدة التفاعل «الضغطة الثانية أقدم من الأولى تُتبادَل»، بل تحكم بها طبقة UI.
+- **العلاقة بين `disabledDate` وmin/max هي دمج**: `isDateDisabled(date, min, max, disabledDate)` يكفي تحقق مصدر واحد منها للتعطيل.
+- **ستة أسطر مقابل خمسة**: يُقرَّب `totalCells` إلى أعلى مضاعف لـ 7، فبعض الأشهر 35 خلية (5 أسطر) وبعضها 42 خلية (6 أسطر)، ويجب أن يتسع ارتفاع اللوحة لستة أسطر، وإلا ستقفز اللوحة عند تبديل الشهر.
+
+<FnPlayground module="date-picker" fn="parseDate" params='{"value": "2026-10-12", "format": "yyyy-MM-dd"}' />

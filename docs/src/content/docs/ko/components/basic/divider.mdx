@@ -1,0 +1,152 @@
+---
+title: divider —— 구분선
+description: 'getDividerRole가 separator/presentation 의미를 구분, needsAriaOrientation이 수직 방향 선언을 결정, borderStyle이 dashed보다 우선'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+구분선은 가장 '얇은' 컴포넌트이지만, 그 접근성 의미가 오히려 가장 따질 만합니다: 영역을 가르는 선 하나가 스크린 리더에게 **유용한 구조**일까, 아니면 **노이즈**일까요? `core/divider`는 `getDividerRole`로 이 결정을 명시화합니다. 글자가 있는 구분선은 진짜 `separator`이고, 순수 장식선은 `presentation`입니다(접근성 트리에서 제거).
+
+## 언제 사용할까
+
+- 각 단말이 `LhDivider`를 구현할 때: 클래스명, 의미 역할, 방향 선언을 모두 core가 계산합니다.
+- 폼 영역 나누기, 카드 콘텐츠 그룹화, 글 단락 구분.
+- **사용하면 안 되는 곳**: 레이아웃 간격을 위해 사용하는 것. 간격은 `LhSpace`나 padding의 책임이고, 구분선은 **의미적** 요소입니다.
+
+## 가져오기
+
+```ts
+import {
+  getDividerClassNames,
+  getDividerRole,
+  needsAriaOrientation,
+} from '@lh-ui/share/core/divider'
+import type {
+  LhDividerState,
+  LhDividerDirection,
+  LhDividerLabelPosition,
+  LhDividerRole,
+} from '@lh-ui/share/core/divider'
+```
+
+## 설계 의도
+
+구분선에는 '점선' 표현이 두 가지 있습니다: 예전 `dashed` 불리언 prop과 새로운 `borderStyle` 문자열. `getDividerClassNames`의 우선순위는 **`borderStyle`이 명시적으로 비어 있지 않음 > `dashed`**이며, `'dashed'` / `'dotted'`만 대응하는 스타일 클래스가 있습니다. `'solid'`나 임의의 잘못된 값을 넘겨도 더러운 클래스를 산출하지 않고 기본 실선으로 렌더링합니다. 이것은 점진적 마이그레이션을 위한 설계입니다: 예전 코드가 `dashed`를 넘겨도 여전히 동작하고, 새 코드는 `borderStyle`로 더 풍부한 테두리 스타일을 표현할 수 있습니다.
+
+`needsAriaOrientation`의 조건은 `hasContent && direction === 'vertical'`이며 두 조건 모두 필요합니다:
+
+- 가로는 APG에서 separator의 **기본 방향**이므로 `aria-orientation="horizontal"`을 선언하는 것은 중복 정보입니다.
+- 글자가 없을 때 역할은 `presentation`이고 요소가 접근성 트리에서 제거되었으므로 방향을 선언할 받는 쪽이 없습니다.
+
+세로도 가로와 마찬가지로 글자를 지원합니다(세로 글자는 선분의 위아래에 배치) - 따라서 '글자가 있고 세로'는 도달 가능한 상태입니다; `labelPosition`은 가로의 의미이며 세로 글자는 항상 가운데 정렬되므로, `getDividerClassNames`는 세로에 대해 `--label-*` 수정자 클래스를 산출하지 않습니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getDividerClassNames` | `(state: LhDividerState) => string[]` | 클래스명 배열 | 방향, 점선, 글자 수정자 클래스 |
+| `getDividerRole` | `(hasContent: boolean) => LhDividerRole` | `'separator'` / `'presentation'` | 의미 역할 |
+| `needsAriaOrientation` | `(direction: 'horizontal' \| 'vertical', hasContent: boolean) => boolean` | 불리언 | aria-orientation 선언이 필요한지 |
+
+출력 예:
+
+```ts
+getDividerClassNames({ direction: 'horizontal', dashed: false, hasContent: true, labelPosition: 'center', borderStyle: null })
+// ['lh-divider', 'lh-divider--horizontal', 'lh-divider--with-text', 'lh-divider--label-center']
+
+getDividerRole(true)   // 'separator'
+getDividerRole(false)  // 'presentation'
+needsAriaOrientation('vertical', true)   // true
+needsAriaOrientation('vertical', false)  // false
+```
+
+## 타입 정의
+
+```ts
+export type LhDividerDirection = 'horizontal' | 'vertical'
+export type LhDividerLabelPosition = 'left' | 'center' | 'right'
+export type LhDividerRole = 'separator' | 'presentation'
+
+export interface LhDividerState {
+  direction: LhDividerDirection
+  dashed: boolean
+  hasContent: boolean
+  labelPosition: LhDividerLabelPosition
+  borderStyle?: string        // 명시 지정 시 dashed보다 우선
+}
+```
+
+## 접근성
+
+구분선의 접근성은 세 부분으로 조립되며, UI 계층은 그대로 사용해야 합니다:
+
+```ts
+const role = getDividerRole(hasContent)              // 'separator' | 'presentation'
+const orientation = needsAriaOrientation(direction, hasContent)
+const aria = { role, ...(orientation ? { 'aria-orientation': 'vertical' } : {}) }
+```
+
+- **글자가 있는 구분선**: `role="separator"`, 스크린 리더는 '구분자'를 읽어주고 콘텐츠를 두 단락으로 나눈다고 인식합니다.
+- **순수 장식선**: `role="presentation"`, 접근성 트리에서 제거합니다.
+- **세로 + 글자 있음**: 추가로 `aria-orientation="vertical"`, 세로는 기본 방향이 아니기 때문입니다.
+
+## 사용 예
+
+```ts
+import { getDividerClassNames, getDividerRole } from '@lh-ui/share/core/divider'
+
+getDividerClassNames({ direction: 'vertical', dashed: true, hasContent: false, labelPosition: 'left', borderStyle: null })
+// ['lh-divider', 'lh-divider--vertical', 'lh-divider--dashed']
+```
+
+```vue
+<!-- Vue3 -->
+<div
+  :class="getDividerClassNames({ direction, dashed, hasContent: !!slots.default, labelPosition, borderStyle })"
+  :role="getDividerRole(!!slots.default)"
+  :aria-orientation="needsAriaOrientation(direction, !!slots.default) ? 'vertical' : undefined"
+>
+  <span v-if="slots.default" class="lh-divider__label"><slot /></span>
+</div>
+```
+
+```tsx
+// React
+const hasContent = !!children
+const cls = getDividerClassNames({ direction, dashed, hasContent, labelPosition, borderStyle })
+return (
+  <div
+    className={cls.join(' ')}
+    role={getDividerRole(hasContent)}
+    aria-orientation={needsAriaOrientation(direction, hasContent) ? 'vertical' : undefined}
+  >
+    {hasContent && <span className="lh-divider__label">{children}</span>}
+  </div>
+)
+```
+
+```ts
+// uniapp: role/aria는 h5가 아닌 단말에서 지원이 제한적이므로 클래스명만 렌더링하도록 저하할 수 있습니다(시각 일치 우선)
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-divider` | 기본 클래스: 위치, 테두리 색 |
+| `.lh-divider--horizontal` / `.lh-divider--vertical` | 방향(테두리가 어느 쪽에 오는지 결정) |
+| `.lh-divider--dashed` | 점선(예전 dashed prop과의 호환) |
+| `.lh-divider--with-text` | 글자 있음: 테두리가 가운데 자리를 비워줌 |
+| `.lh-divider--label-{left\|center\|right}` | 글자 정렬 위치 |
+| `.lh-divider__label` | 글자 노드(양쪽 간격과 배경으로 테두리를 가림) |
+
+테두리 색은 `var(--lh-border-color)`를 사용하며, 다크 모드에서 자동으로 뒤집힙니다.
+
+## 주의사항
+
+- `borderStyle`이 `dashed`보다 우선하며 `'dashed'` / `'dotted'`만 유효합니다. 이것은 임의의 CSS border-style을 모두 prop으로 노출하지 않으려는 의도적 억제입니다.
+- 수직 구분선은 부모 컨테이너가 명확한 높이를 가져야 합니다(보통 flex 행). 그렇지 않으면 높이가 0으로 무너집니다.
+- `role="presentation"`과 `role="none"`은 APG에서 동등하며, 이 컴포넌트는 `presentation`을 씁니다(역사적 호환성이 더 좋음).
+- `hasContent`를 판정할 때 '빈 슬롯만 렌더링된' 경우에 주의하세요. Vue에서는 `!!slots.default?.()`가 더 안전합니다.
+
+<FnPlayground module="divider" fn="getDividerClassNames" params='{"state": {"direction": "horizontal", "dashed": false, "hasContent": true, "labelPosition": "center", "borderStyle": null}}' />

@@ -1,0 +1,224 @@
+---
+title: form —— Formulaire
+description: 'validateFormField, moteur de règles (l’asynchrone ne court-circute pas) ; getFormFieldValue, récupération de valeur par chemin pointillé ; getFormFieldAria, association des erreurs'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Le contrôle de formulaire ne collecte pas de données lui-même — **la validation et l'association des erreurs** sont la valeur centrale d'un formulaire. `core/form` fournit trois choses : un moteur de règles (`validateFormField`), un accesseur de valeurs (`getFormFieldValue`, qui gère les chemins pointillés), et un ensemble de paquets d'attributs d'association d'erreurs (`getFormFieldAria`). Il ne contient **volontairement aucune orchestration globale du formulaire** (enregistrement des champs, timing de la soumission, réinitialisation) : ce sont les responsabilités du composant `LhForm` de la couche UI.
+
+## Quand l'utiliser
+
+- Chaque framework implémente `LhForm` / `LhFormItem` : tout scénario de saisie exigeant une validation.
+- Les situations où il faut associer les erreurs de validation à un lecteur d'écran (`aria-invalid` + `aria-describedby`).
+- **À ne pas utiliser pour** : une validation simple d'un champ unique sans dépendance transversale (le `required` intégré au composant peut suffire) ; en cas de graphe complexe de dépendances entre champs (du type « quand A vaut x, B est obligatoire et C doit être égal à D »), exprimez-le avec une fonction `validator` personnalisée, n'essayez pas de combiner plusieurs règles intégrées.
+
+## Import
+
+```ts
+import {
+  getFormFieldValue,
+  isEmptyValue,
+  validateFormField,
+  getFormFieldErrorId,
+  getFormFieldAria,
+} from '@lh-ui/share/core/form'
+import type { LhFormRule, LhFormState } from '@lh-ui/share/core/form'
+```
+
+## Intentions de conception
+
+**Les trois décisions clés du moteur de règles** :
+
+1. **Les valeurs vides ne concernent que required** — une valeur vide non obligatoire **saute toutes les règles** , ce qui est cohérent avec les conventions des bibliothèques courantes (Element / Ant Design) : rien n'a été saisi, donc aucune erreur. Cela signifie qu'un `type: 'email'` ne signalera pas « format d'adresse e-mail incorrect » pour une chaîne vide — l'obligation s'exprime via `required`.
+
+2. **Les règles asynchrones ne sont pas court-circuitées** — c'est l'écart de comportement avec l'ancienne implémentation, et le point le plus subtil du module. Un `validator` peut renvoyer une Promise. L'ancienne implémentation, dès qu'elle rencontrait un élément thenable, **sautait toutes les règles suivantes** , si bien que « la validation de longueur qui suit une vérification asynchrone d'unicité de l'e-mail était avalée ». La nouvelle implémentation enveloppe chaque règle dans une fonction d'évaluation paresseuse (`RuleCheck`) : lorsqu'elle rencontre un thenable, elle se met en attente et **continue d'évaluer les règles suivantes** , pour finalement fusionner toutes les erreurs dans une seule Promise. La première erreur synchrone est toujours renvoyée immédiatement (court-circuit des erreurs synchrones, pas des règles asynchrones).
+
+3. **Un validator qui lève une exception synchrone est traité comme un échec de validation** — on prend `error.message` comme texte de l'erreur, sans la propager en exception non interceptée. Quand on écrit un validateur personnalisé de travers (qui lève un TypeError), le formulaire affiche « échec de validation de ce champ » plutôt que de crasher la page.
+
+**La priorité du texte de required** : en cas de valeur vide, on cherche en priorité « la règle required qui fournit explicitement un message », sinon on prend la première règle required. Ce traitement corrige un bug réel — la couche composant (form item), quand l'attribut `required` est vrai, **synthétise une règle `{ required: true }` sans message** ; si elle se trouve avant les règles de l'utilisateur portant un message, `find` trouve la règle synthétisée et recule sur le texte générique, **avalant le texte personnalisé de l'utilisateur**.
+
+**Le chemin pointillé de `getFormFieldValue`** : `'user.address.city'` est réduit couche par couche ; si on rencontre en cours de route une valeur qui n'est pas un objet (null / valeur primitive), on renvoie undefined sans lever d'exception. Cela permet aux champs du formulaire de se lier directement à un modèle imbriqué, sans que la couche UI n'aplatisse les données à la main.
+
+**Le critère d'`isEmptyValue`** : undefined / null / chaîne vide / tableau vide sont considérés vides ; **une chaîne d'espaces et un objet vide ne le sont pas** — la sémantique des espaces est gérée par la couche composant (trim au besoin avant transmission), core ne prend pas cette décision à la place du métier.
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getFormFieldValue` | `(model, prop: string) => unknown` | valeur du champ | chemin pointillé ; si absent, undefined |
+| `isEmptyValue` | `(value: unknown) => boolean` | vide ? | quatre sortes de vide |
+| `validateFormField` | `(value, rules?, model, requiredMessage?) => string \| undefined \| Promise<string \| undefined>` | texte de l'erreur / undefined | moteur de règles |
+| `getFormFieldErrorId` | `(prop: string) => string` | id de l'élément | correspond à aria-describedby |
+| `getFormFieldAria` | `(options: { prop, error?, required? }) => LhAriaAttrs` | paquet d'attributs aria | invalid + describedby + required |
+
+## Définitions de types
+
+```ts
+export interface LhFormRule {
+  required?: boolean
+  message?: string
+  trigger?: string  // timing du déclenchement (blur / change / submit) ; core ne l'interprète pas, la couche UI filtre les règles selon l'événement
+  /** Validation de type intégré ; les valeurs vides sont sautées (même règle que required) */
+  type?: 'string' | 'number' | 'boolean' | 'array' | 'email' | 'url'
+  pattern?: string | RegExp       // expression rationnelle (uniquement pour les valeurs chaînes)
+  min?: number                    // borne inférieure numérique, ou longueur minimale de string/array
+  max?: number                    // borne supérieure numérique, ou longueur maximale de string/array
+  len?: number                    // longueur exacte (string/array)
+  /** Validateur personnalisé : renvoie le texte de l'erreur, rien si validé ; asynchrone supporté */
+  validator?: (value: unknown, model: Record<string, unknown>) => string | undefined | Promise<string | undefined>
+}
+
+export interface LhFormState {
+  model: Record<string, unknown>
+  rules?: Record<string, LhFormRule[]>
+}
+```
+
+**La double sémantique de `min` / `max`** est une commodité de conception : pour une valeur numérique, on compare la grandeur ; pour une chaîne ou un tableau, on compare la longueur. Le prix est un typage moins précis, mais le gain en concision de la configuration des règles l'emporte (`{ min: 6, message: '6 caractères minimum' }` fonctionne aussi bien pour un mot de passe que pour un nombre de personnes).
+
+## Accessibilité
+
+`getFormFieldAria` est le **dernier kilomètre** de l'accessibilité des formulaires : en cas d'échec de validation, elle associe le message d'erreur au contrôle, et le lecteur d'écran annonce « saisie invalide, l'erreur est… ».
+
+```ts
+getFormFieldAria({ prop: 'username', error: 'Le nom d'utilisateur est obligatoire', required: true })
+// { 'aria-invalid': true, 'aria-describedby': 'lh-form-error-username', 'aria-required': true }
+
+getFormFieldAria({ prop: 'username', required: true })
+// { 'aria-required': true } (en l'absence d'erreur, pas d'association vers un élément vide)
+
+getFormFieldAria({ prop: 'username' })
+// {} (objet vide en l'absence d'état)
+```
+
+Conventions associées :
+
+- L'élément de message d'erreur doit être rendu avec l'id `getFormFieldErrorId(prop)` — c'est lui que `aria-describedby` désigne.
+- **Le timing de `aria-describedby`** : l'attribut n'est produit que lorsque error a une valeur (pour éviter de référencer un élément vide inexistant) ; le paquet d'attributs et le texte de l'erreur doivent donc être mis à jour dans la même image.
+- Le champ `required` produit `aria-required`, afin que le lecteur d'écran annonce « obligatoire » dès l'entrée dans le contrôle.
+- La signification d'accessibilité de `trigger` : une validation déclenchée au blur ne doit pas interrompre l'utilisateur en pleine saisie (signaler une erreur à chaque caractère est une mauvaise expérience) ; le déclenchement au change convient aux scénarios légers de « validation en cours de saisie ».
+
+## Exemples d'utilisation
+
+```ts
+import { validateFormField, isEmptyValue, getFormFieldValue } from '@lh-ui/share/core/form'
+
+isEmptyValue('')           // true
+isEmptyValue([])           // true
+isEmptyValue('  ')         // false (une chaîne d'espaces n'est pas vide)
+isEmptyValue({})           // false (un objet vide n'est pas vide)
+isEmptyValue(0)            // false (0 est une valeur valide !)
+
+getFormFieldValue({ user: { name: 'lh' } }, 'user.name')   // 'lh'
+getFormFieldValue({ user: null }, 'user.name')             // undefined (valeur non-objet en cours de route)
+getFormFieldValue({}, 'missing')                           // undefined
+```
+
+```ts
+// Obligatoire
+validateFormField('', [{ required: true, message: 'Le nom d'utilisateur est obligatoire' }], {})
+// 'Le nom d'utilisateur est obligatoire'
+
+// Valeur vide non obligatoire : saute toutes les règles
+validateFormField('', [{ required: false, type: 'email', message: 'Format d’adresse e-mail incorrect' }], {})
+// undefined
+
+// Type intégré + longueur
+validateFormField('ab', [{ min: 6, message: '6 caractères minimum' }], { username: 'ab' })
+// '6 caractères minimum'
+
+// Expression rationnelle
+validateFormField('123', [{ pattern: /^\d{4}$/, message: '4 chiffres' }], {})
+// '4 chiffres'
+
+// Validateur synchrone personnalisé
+validateFormField('abc', [{
+  validator: (v) => (v as string).includes('@') ? undefined : 'Doit contenir @',
+}], {})
+// 'Doit contenir @'
+
+// Validateur personnalisé qui lève une exception : traité comme un échec de validation
+validateFormField('x', [{ validator: () => { throw new Error('Le validateur a explosé') } }], {})
+// 'Le validateur a explosé'
+
+// Validateur asynchrone (pas de court-circuit : les règles synchrones suivantes sont
+// encore évaluées)
+validateFormField('ab', [
+  { validator: async (v) => await checkUnique(v) ? undefined : 'Déjà utilisé', message: 'x' },
+  { min: 6, message: '6 caractères minimum' },
+], {})
+// Promise<[la première erreur parmi 'Déjà utilisé', '6 caractères minimum']>
+```
+
+```vue
+<!-- Vue3 : le câblage typique d'un form-item -->
+<script setup>
+const error = ref('')
+async function validate(trigger: string) {
+  const rules = (props.rules ?? []).filter((r) => !r.trigger || r.trigger === trigger)
+  error.value = (await validateFormField(
+    getFormFieldValue(props.model, props.prop),
+    rules,
+    props.model,
+    t('form.required'),
+  )) ?? ''
+}
+</script>
+
+<template>
+  <div class="lh-form-item" :class="{ 'is-error': error }">
+    <label class="lh-form-item__label" :for="inputId">{{ label }}</label>
+    <div class="lh-form-item__content">
+      <slot :aria-props="getFormFieldAria({ prop, error, required })" />
+      <p
+        v-if="error"
+        :id="getFormFieldErrorId(prop)"
+        class="lh-form-item__error"
+        role="alert"
+      >
+        {{ error }}
+      </p>
+    </div>
+  </div>
+</template>
+```
+
+```tsx
+// React : transmettre le paquet d'attributs au contrôle enveloppé
+// <input {...getFormFieldAria({ prop, error, required })} aria-describedby={error ? getFormFieldErrorId(prop) : undefined} />
+```
+
+```ts
+// uniapp : la couche core est pleinement utilisable ; notez que hors h5, le support des
+// attributs aria est limité, le message d'erreur s'appuie principalement sur le visuel +
+// role="alert"
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-form` | conteneur du formulaire |
+| `.lh-form--inline` | disposition en ligne (label et contrôle sur la même ligne) |
+| `.lh-form--label-top` / `--label-left` / `--label-right` | position du label |
+| `.lh-form-item` | élément de champ |
+| `.lh-form-item.is-error` | échec de validation (cadre rouge du contrôle) |
+| `.lh-form-item__label` | étiquette (l'astérisque obligatoire est rendu par `::before`) |
+| `.lh-form-item__content` | zone du contrôle |
+| `.lh-form-item__error` | message d'erreur (`role="alert"`) |
+| `.lh-form-item__required` | astérisque obligatoire |
+
+Couleur d'erreur `--lh-danger-color` ; l'astérisque obligatoire est de la même couleur. La largeur du label est contrôlée par le jeton `--lh-form-label-width` (référence d'alignement pour l'alignement à droite).
+
+## Remarques
+
+- **`0` / `false` ne sont pas des valeurs vides** : `isEmptyValue(0)` renvoie false. C'est le piège le plus facile à rencontrer — « quantité 0 » est une saisie valide, et `required` ne devrait pas signaler d'erreur. De même, `false` est une valeur valide pour une case à cocher.
+- **Le second paramètre de `validator` est le modèle tout entier** : pour une validation transversale (comme la confirmation du mot de passe), utilisez-le ; ne capturez pas l'ancienne valeur dans une fermeture.
+- **L'anti-rebond des validations asynchrones** : quand un `validator` émet une requête, la couche UI doit prévoir l'anti-rebond (généralement 300ms) et gérer la concurrence « la valeur du champ a changé quand la réponse arrive » — la couche core ne gère pas cela, renvoyer un texte d'erreur périmé relève de la responsabilité de l'appelant.
+- **`trigger` est interprété par la couche UI** : core ne fait qu'enregistrer la déclaration, sans la consommer. La couche composant filtre les règles selon l'événement (blur/change/submit) avant de transmettre à `validateFormField`.
+- **`requiredMessage` est le texte générique de repli** : généralement issu du paquet de langue (`form.required`), il n'est utilisé que lorsque le `message` de la règle est undefined ; une chaîne vide explicite `message: ''` est également utilisée telle quelle (elle n'est pas considérée comme manquante).
+- **La première erreur parmi plusieurs règles** : les règles synchrones sont court-circuitées (la première qui s'applique est renvoyée), les règles asynchrones sont toutes évaluées et c'est la première erreur résolue qui est prise. L'ordre d'affichage des erreurs correspond à l'ordre du tableau de règles.
+- **La prop d'un champ imbriqué** : `'user.name'` sert à la fois à la récupération de la valeur et à la génération de l'id de l'erreur (`lh-form-error-user.name`) — les points dans l'id doivent être échappés dans les sélecteurs CSS ; soyez attentifs lors de l'utilisation de `document.getElementById` ou `querySelector`.
+
+<FnPlayground module="form" fn="validateFormField" params='{"value": "ab", "rules": [{"min": 6, "message": "6 caractères minimum"}], "model": {}}' />

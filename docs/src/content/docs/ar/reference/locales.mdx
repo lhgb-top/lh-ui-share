@@ -1,0 +1,192 @@
+---
+title: locales —— التدويل
+description: 'lhlocale المفرد: t / tm / use / add / setLocale / subscribe، و38 مفتاح نصوص علوي وعشر لغات'
+---
+
+import LocaleInspector from '../../../../components/LocaleInspector.astro'
+
+التدويل في عائلة lh-ui عبارة عن **باعث أحداث خالص**: لا يحمل `lhlocale` أي تفاعلية
+لأي إطار عمل، وتحوّل طبقة التكييف في كل مكتبة واجهة رقم إصداره `version` إلى إشارة
+إعادة تصيير خاصة بإطارها. وبذلك تخدم حزمة لغة واحدة في الوقت نفسه كلًّا من
+Vue3 / Vue2 / React / uniapp، دون أن تعتمد طبقة core على أي إطار.
+
+## المفرد والاستيراد
+
+```ts
+import { lhlocale, zhCN, enUS, formatMessage } from '@lh-ui/share/locales'
+import type { LhLocalePath, LhLocaleType, LhLocaleMessages } from '@lh-ui/share/locales'
+```
+
+## جدول الأعضاء
+
+| العضو | التوقيع | الدور |
+| --- | --- | --- |
+| `version` | `get version(): number` | رقم الإصدار: يتزايد عند أي تغيير في اللغة (تشترك طبقة تكييف واجهة المستخدم فيه لإطلاق إعادة التصيير) |
+| `subscribe` | `(listener: LhLocaleListener) => () => void` | الاشتراك في تغييرات اللغة؛ يُعيد دالة إلغاء الاشتراك |
+| `use` | `(options: { locale: LhLocaleType; messages: LhLocaleMessages }) => void` | تسجيل لغة والتبديل إليها |
+| `t` | `(path: LhLocalePath, fallbackOrParams?) => string` | جلب النص المُترجَم وفق المسار |
+| `tm` | `(path: string, fallback?: string[]) => string[]` | جلب النصوص المصفوفية (أسماء الأشهر / أيام الأسبوع) |
+| `getLocale` | `() => LhLocaleType` | جلب اللغة الحالية |
+| `setLocale` | `(locale: LhLocaleType) => void` | تبديل اللغة الحالية |
+| `add` | `(locale: string, messages: LhLocaleMessages) => void` | إضافة حزمة لغة مخصصة (دمج عميق) |
+
+## تفاصيل سلوك كل دالة
+
+### t —— الإكمال التلقائي للمفاتيح الحرفية
+
+```ts
+const t = lhlocale.t   // خاصية دالة سهمية، لا تفقد this عند التفكيك
+
+t('pagination.total')                       // '共 {total} 条'
+t('pagination.total', { total: 42 })        // '共 42 条'
+t('not.exists', 'نص احتياطي')               // 'نص احتياطي'
+t('not.exists')                             // 'not.exists' (يعود إلى المسار نفسه)
+```
+
+نوع `path` هو `LhLocalePath` —— اتحاد **جميع مسارات الأوراق النصية** المشتق من بنية
+`as const` لحزمة لغة `zh-CN` (مثل `'input.placeholder'`). ومن ثم يُخطئ المحرّر عند كتابة
+اسم مفتاح خاطئ. أما تجميع المسار ديناميكيًا (`t(\`pagination.\${key}\`)`) فيمرّ عبر
+تحميل مرن، ويُرخى النوع إلى `string`.
+
+للمعامل الثاني شكلان: **سلسلة نصية** كقيمة احتياطية؛ **وكائن** كمعاملات الاستيفاء
+`{key}` (يُحال التنفيذ إلى [formatMessage](/ar/core/format)).
+
+### tm —— النصوص المصفوفية
+
+```ts
+lhlocale.tm('datepicker.months')
+// ['1月', '2月', …, '12月']
+
+lhlocale.tm('datepicker.weeks')   // ← خطأ: weeks كائن لا مصفوفة
+lhlocale.tm('datepicker.weeks.sun', ['الأحد'])   // ← خطأ أيضًا: لا تُبلغ أوراق الكائن النصية إلا عبر t()
+```
+
+لا يُعيد `t()` سوى السلاسل النصية؛ وتُجلَب الأوراق المصفوفية (`months`) عبر `tm()`.
+وعند عدم الإصابة أو إذا لم تكن القيمة مصفوفة يُعاد `fallback` (والقيمة الافتراضية `[]`).
+
+### use مقابل add —— دالتان يسهل الخلط بينهما
+
+| | `use` | `add` |
+| --- | --- | --- |
+| الإجراء | تسجيل **ثم تبديل** | تسجيل فقط (يُبث فقط عند كونها اللغة الحالية) |
+| تخزين messages | يُسجَّل في سجل المستخدم `userLocales`، **دون الكتابة فوق السجل الداخلي** | نفس الشيء |
+| طريقة الدمج | تُضبط الحزمة كاملةً | **دمج عميق** في «الحزمة النافذة حاليًا» |
+
+لماذا يكون `add` دمجًا عميقًا: فجانب العمل عادةً يريد تغيير بضعة مفاتيح فقط (تغيير
+«确认» إلى «提交») مع بقاء بقية المفاتيح متاحة من الحزمة الداخلية. أما التنفيذ القديم
+فكان يستبدل الحزمة كاملةً، فتختفي كل المفاتيح التي لم تُمرَّر.
+
+لماذا لا يكتب `use` فوق السجل الداخلي: كان التنفيذ القديم `locales[locale] = messages`
+**يدمِّر حزمة اللغة الداخلية تدميرًا دائمًا** (لا يمكن العودة لاحقًا عبر `setLocale`).
+أما الآن فالحزم الداخلية للقراءة فقط، وحزم المستخدم لها الأولوية.
+
+### دلالة «عدم الانفصال» في setLocale
+
+```ts
+lhlocale.setLocale('en-US')   // حزمة اللغة غير مُسجَّلة من قبل
+lhlocale.getLocale()          // 'en-US'  ← يُبلِغ عن اللغة المطلوبة
+lhlocale.t('pagination.total')// نص الحزمة الافتراضية الداخلية، لا نص en-US
+```
+
+يبدو متناقضًا، لكنه مقصود: ترتيب الحل هو `userLocales ?? locales الداخلية ?? الحزمة الافتراضية`.
+عند عدم التسجيل يُبلِغ `getLocale()` عن اللغة المطلوبة ويستخدم `t()` محتوى الحزمة
+الافتراضية —— **فلا تنفصل إحداهما عن الأخرى** (ولا يظهر مزيج غريب مثل «الإبلاغ عن
+الإنجليزية بينما النصوص صينية»)؛ ويدرك جانب العمل عندئذٍ أنه عليه استخدام `add` أو `use`.
+
+### version و subscribe
+
+```ts
+const unsubscribe = lhlocale.subscribe((version: number) => {
+  // تغيّرت اللغة، أطلِق إعادة التصيير
+})
+unsubscribe()   // يُستدعى عند فصل المكوّن
+```
+
+يُعيد `subscribe` دالة إلغاء الاشتراك (على نمط RxJS). ويُعزل `bump()` داخليًا المشتركين
+السيئين عبر try/catch ويطبع `[lhlocale] listener error:`، فخطأ مستمع مكوّن ما لا يؤثر
+في المكوّنات الأخرى.
+
+## كيف يشترك كل طرف في version
+
+```ts
+// Vue3 / Vue2 / uniapp
+const version = ref(lhlocale.version)
+lhlocale.subscribe(() => (version.value = lhlocale.version))
+// يعتمد القالب على version، فإذا تغيّر أعاد التصيير
+
+// React
+useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)
+```
+
+## ملفات اللغات
+
+| الملف | الحالة |
+| --- | --- |
+| `zh-CN.ts` | ✅ اللغة الافتراضية (`as const`، مصدر اشتقاق `LhLocalePath`)، المصدر الأصلي |
+| `zh-TW.ts` / `en-US.ts` / `ja-JP.ts` / `ko-KR.ts` / `es.ts` / `ar.ts` (RTL) / `fr-FR.ts` / `ru.ts` | ✅ كاملة (اللغات التسع، متوافقة مع جميع مواقع التوثيق؛ والمصطلحات وفق `docs/i18n/glossary.md` للعائلة) |
+| `de-DE.ts` | ✅ كاملة (حزمة لغة **امتداد وقت التشغيل**: يوفّرها وقت تشغيل مكتبة المكوّنات فقط، ولا توجد محتويات ألمانية في مواقع التوثيق) |
+
+الاستيراد عبر مسار فرعي: `@lh-ui/share/locales/lang/zh-CN`. يتطابق هيكل مفاتيح كل
+حزمة لغة تمامًا مع `zh-CN.ts` (يُفرض ذلك بحالة المرآة في `tests/unit/locales.spec.ts`)،
+ويمكن التبديل إلى أي منها مباشرةً عبر `setLocale`.
+
+### 38 مفتاحًا علويًا
+
+`common` / `input` / `datepicker` / `timepicker` / `cascader` / `tag` / `badge` / `select` / `form` / `switch` / `slider` / `progress` / `avatar` / `descriptions` / `empty` / `alert` / `dialog` / `message` / `breadcrumb` / `pagination` / `tabs` / `steps` / `popconfirm` / `drawer` / `notification` / `loading` / `collapse` / `rate` / `backtop` / `image` / `menu` / `table` / `tree` / `treeSelect` / `transfer` / `upload` / `anchor` / `ariaLabels`
+
+عدد المفاتيح العليا متطابق في ملفات اللغات العشر (38 لكل ملف)، والبنية محاذاتها. ومن
+بينها `ariaLabels` مفاتيح نصوص إمكانية الوصول (نحو 40 عنصرًا)، يقرؤها كل مكوّن ليولِّد
+aria-label.
+
+نصوص الاستيفاء النموذجية:
+
+```ts
+pagination.total: '共 {total} 条'
+pagination.sizeChanger: '{size} 条/页'
+pagination.page: '第 {page} 页'
+steps.step: '第 {index} 步'
+rate.stars: '{n} 星'
+cascader.columnLabel: '第 {n} 级'
+collapse.toggle: '展开或折叠 {title}'
+datepicker.panelTitle: '{year}年{month}'
+menu.submenuLabel: '子菜单 {title}'
+```
+
+## إضافة لغة جديدة
+
+ثلاث خطوات (يوجد شرح مماثل في `src/locales/lang/README.md`):
+
+1. أنشئ `src/locales/lang/<lang>.ts` يُصدِّر بنية `LhLocaleMessages` (يجب أن تُحاذا
+   المفاتيح العليا الـ 38، ويمكن التحقق عبر `satisfies`).
+2. أضِف ثابتًا إلى `LH_LANGUAGE_CONST` في `src/constants/index.ts`.
+3. ثبِّت الحزمة في السجل الداخلي `locales` ضمن `src/locales/locale.ts`.
+
+ثم شغّل `pnpm test` (يوجد لدى `theme.spec` والحالات المتعلقة بـ locale اختبارات ارتجاع
+لاتساق البنية).
+
+## الأنواع ذات الصلة
+
+| النوع | التعريف | الاستخدام |
+| --- | --- | --- |
+| `LhLocaleType` | مُشتق من `LH_LANGUAGE_CONST` | اتحاد رموز اللغات المدعومة |
+| `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | نوع حزمة اللغة كاملةً |
+| `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | العقد الورقية لحزمة اللغة (قراءة فقط بشكل تعاودي) |
+| `LhLeaves<T>` | اشتقاق عودي | يستنتج اتحاد مسارات النقاط لجميع الأوراق النصية من بنية حزمة اللغة |
+| `LhLocalePath` | `LhLeaves<typeof zhCN>` | نوع المفتاح الحرفي لـ `t()` |
+| `LhTranslate` | نوع التحميل الزائد | توقيع استدعاء `t()` |
+| `LhTranslateArray` | `(path: string, fallback?: string[]) => string[]` | توقيع استدعاء `tm()` |
+| `LhLocaleListener` | `(version: number) => void` | مستمع تغيير اللغة |
+| `LhLocaleOptions` | `{ locale: LhLocaleType; messages: LhLocaleMessages }` | مدخل `use()` |
+
+## ملاحظات
+
+- **يُعيد `LhLeaves` القيمة `never` لمفاتيح المصفوفات**: `datepicker.months` مصفوفة لا
+  تُخاطَب بالمفتاح، ولا يمكن لمسار النقاط في `t()` بلوغها —— المصفوفات تُجلَب حصرًا
+  عبر `tm()`.
+- **يمكن تفكيك `t`**: فهي خاصية دالة سهمية، ولا يفقد `const t = lhlocale.t` قيمة this.
+- **لا تستدعي مكوّنات core جسم `lhlocale` مباشرةً**: يستعين rate / pagination بـ
+  [formatMessage](/ar/core/format) لمعالجة الاستيفاء، بينما يتم الانتهاء من البحث عن
+  مفاتيح النصوص في طبقة واجهة المستخدم — فلا تعتمد core على أثر المفرد الجانبي.
+- **`add` دمج عميق**: يغطي المفاتيح التي مررتها فقط، ويُبقي البقية كما هي.
+
+<LocaleInspector />

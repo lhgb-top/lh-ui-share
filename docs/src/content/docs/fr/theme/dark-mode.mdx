@@ -1,0 +1,176 @@
+---
+title: Mode sombre
+description: "Le mécanisme de bascule data-theme=dark, le piège de la cuisson à la compilation et la gate d'accessibilité sombre de la vérification 7 de verify:styles"
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+Tous les composants de lh-ui **prennent en charge le mode clair et le mode sombre par défaut**. Ce n'est pas un thème ajouté après coup, c'est un postulat de conception du système de jetons.
+
+## Le mécanisme de bascule
+
+L'interrupteur du mode sombre est un sélecteur CSS, pas du JS :
+
+```scss
+// styles/theme/common/var-dark.scss
+[data-theme='dark'],
+.dark {
+  --lh-bg-color: #2A2520;
+  --lh-text-primary: #E8E0D8;
+  // ... 118 surcharges
+}
+```
+
+Deux façons de le déclencher :
+
+```html
+<!-- Méthode 1 : l'attribut data (recommandé, la sémantique est claire) -->
+<html data-theme="dark">
+
+<!-- Méthode 2 : la classe (compatibilité avec le code ancien / les bibliothèques de bascule tierces) -->
+<body class="dark">
+```
+
+La couche UI (le ConfigProvider de chaque bibliothèque, ou le code métier) se contente de basculer cet attribut / cette classe : **tous les composants changent de couleur immédiatement** — les variables CSS sont évaluées à l'exécution, sans aucun coût de nouveau rendu.
+
+```ts
+function toggleDark(isDark: boolean) {
+  document.documentElement.dataset.theme = isDark ? 'dark' : 'light'
+}
+```
+
+## Le mode sombre est une couche de surcharge
+
+Le fichier sombre ne définit que **118 entrées**, et non l'ensemble complet des 185. Il ne surcharge que les jetons qui doivent se retourner ; les autres conservent la valeur claire.
+
+Le principe directeur est la **redirection des jetons sémantiques, et non la réécriture composant par composant** :
+
+```scss
+// ✅ La bonne pratique : en mode sombre, pointer vers un jeton sémantique sombre
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);
+  --lh-table-cell-color: var(--lh-text-primary);
+}
+
+// ❌ La mauvaise pratique : inscrire en dur une couleur concrète en mode sombre
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: rgba(255, 255, 255, 0.85);   // Déconnecté de text-primary ; le prochain réglage de palette devra changer deux endroits
+}
+```
+
+## Le piège de la cuisson à la compilation
+
+C'est le **piège le plus facile à rencontrer** en mode sombre, et la raison d'être de la vérification 7 de `verify:styles`.
+
+### Le mécanisme du piège
+
+Dans `var.scss`, les jetons dont la valeur est de la forme `#{$lh-foo}` :
+
+```scss
+// var.scss
+:root {
+  --lh-menu-item-color: #{$lh-menu-item-color};   // La variable SCSS est remplacée par la valeur claire concrète à la compilation
+}
+```
+
+La variable SCSS est **cuite à la compilation en une valeur littérale**, ce qui équivaut à :
+
+```scss
+:root {
+  --lh-menu-item-color: rgba(0, 0, 0, 0.88);   // Ne se retourne pas automatiquement en mode sombre !
+}
+```
+
+Résultat : en mode sombre, les textes des menus / tableaux / timelines conservent la valeur claire, **texte noir sur fond noir, invisible**. Une telle lacune s'est réellement produite ; le compte-rendu de la réparation est dans le changeset de 0.4.0.
+
+### La solution
+
+Rediriger explicitement, dans `var-dark.scss`, vers un jeton sémantique sombre :
+
+```scss
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);
+}
+```
+
+### Le repli en chaîne est évalué à l'exécution, il est sûr
+
+Le repli en chaîne dans les SCSS des composants :
+
+```scss
+.lh-button {
+  color: var(--lh-foo, var(--lh-bar, #333));
+}
+```
+
+Le repli d'un `var()` est **évalué à l'exécution** : dès qu'un seul jeton de la chaîne possède une surcharge sombre, toute la chaîne se retourne. **Aucune déclaration redondante n'est nécessaire**.
+
+La table de comparaison :
+
+| Écriture | Le moment de l'évaluation | Comportement en mode sombre |
+| --- | --- | --- |
+| `var(--lh-foo, fallback)` | À l'exécution | ✅ Se retourne dès qu'un jeton de la chaîne possède une surcharge sombre |
+| `#{$lh-foo}` (interpolation SCSS) | À la compilation | ❌ Cuit en valeur claire ; nécessite une redirection explicite dans var-dark |
+| `mix($lh-a, $lh-b)` et autres fonctions SCSS | À la compilation | ❌ Idem |
+
+## L'éclaircissement en mode sombre des préréglages à primaire profonde
+
+Parmi les cinq préréglages intégrés, ceux dont la couleur primaire est profonde (青花瓷 (porcelaine bleue et blanche) / 朱砂 (cinabre) / 水墨 (encre de Chine)) voient leur couleur primaire « s'enfoncer » dans la couleur de fond de la page en mode sombre. `buildPresetDarkVars` s'en charge automatiquement :
+
+La règle de décision : si le contraste de `--lh-primary-color` par rapport au fond de page sombre `#1A1A2E` (`DARK_PAGE_BG`) est inférieur à 3 (`DARK_PRIMARY_CONTRAST_THRESHOLD`), la couleur primaire est jugée profonde, puis :
+
+```css
+[data-theme='dark'],
+.dark {
+  --lh-primary-color: color-mix(in srgb, <la valeur littérale> 55%, #fff);   /* Éclaircie à 55 % */
+  --lh-primary-color-hover: color-mix(in srgb, var(--lh-primary-color) 70%, #fff);
+  --lh-primary-color-active: color-mix(in srgb, var(--lh-primary-color) 85%, #000);
+  --lh-color-on-primary: #101410;   /* Une fois éclaircie, le texte blanc n'a plus assez de contraste ; on passe au texte encre */
+  --lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent);
+  --lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff);
+}
+```
+
+**Pourquoi l'éclaircissement de la couleur primaire utilise la valeur littérale et non `var()`** : `color-mix(in srgb, var(--lh-primary-color) 55%, #fff)` créerait une boucle d'auto-référence CSS (`--lh-primary-color` se référençant lui-même dans sa propre valeur). Cette ligne **substitue donc la valeur littérale**, les autres suivent la couleur primaire courante via `var()`.
+
+Les préréglages à primaire claire (松花绿 (vert pin) / 藤黄 (gamboge)) n'ont pas besoin d'éclaircissement, mais ils reçoivent eux aussi la redéfinition sombre de `--lh-primary-color-bg` et `--lh-selected-color`.
+
+## La sémantique d'ordre de l'injection des préréglages
+
+Le texte généré par `buildPresetStyleText` met le bloc `:root { ... }` en premier et le bloc `[data-theme='dark'], .dark { ... }` ensuite. **À spécificité égale, le second gagne** ; la valeur claire de `--lh-selected-color` déclarée dans `:root` par un préréglage à primaire claire ne fuit donc pas dans le mode sombre.
+
+C'est aussi la cause première du « uniquement des `<style>`, jamais de style inline » — la spécificité d'un style inline, 1,0,0,0, écrase tout le bloc de variables sombres de `var-dark.scss` et le mode sombre est purement et simplement désactivé (voir [Vue d'ensemble du système de thèmes](/fr/theme/overview#contrainte-dinjection--uniquement-des-style-jamais-de-style-inline)).
+
+## La table des jetons sombres
+
+<TokenTable />
+
+## Comment vérifier l'exhaustivité du mode sombre
+
+Trois moyens, du plus faible au plus fort :
+
+1. **La vérification 7 de `pnpm verify:styles` (l'accessibilité du mode sombre)** : un scan statique, qui retrouve les jetons « cuits en clair mais sans surcharge dans var-dark ». C'est la gate de CI.
+2. **`pnpm verify:theme` (AA 4.5:1)** : lit les artefacts `es/` et calcule le contraste des thèmes des préréglages, en clair comme en sombre. Nécessite un `pnpm build` préalable. La CI ne la lance pas ; à manualiser.
+3. **L'inspection visuelle** : sur le site de documentation / les playground de chaque bibliothèque, basculer en mode sombre et passer les composants en revue un par un.
+
+La check-list à soi-même lors de l'ajout d'un nouveau jeton :
+
+- [ ] Ce jeton doit-il se retourner en mode sombre ?
+- [ ] Si oui, la surcharge a-t-elle été ajoutée dans `var-dark.scss` ?
+- [ ] Sa valeur est-elle une interpolation `#{$lh-*}` ? (Si oui → la surcharge sombre est obligatoire)
+- [ ] Le composant qui le consomme utilise-t-il bien la chaîne `var(--lh-x, fallback)` ?
+
+## Les restes connus
+
+L'exhaustivité du mode sombre a fait l'objet d'un rattrapage systématique en 0.4.0 (le problème des textes invisibles des menus / tableaux / timelines, voir le changeset). Les éléments restants connus attendent le « chantier des jetons de hauteur » dans un changeset ultérieur.
+
+## Documentation connexe
+
+- [Vue d'ensemble du système de thèmes](/fr/theme/overview)
+- [Jetons de conception](/fr/theme/tokens)
+- [Préréglages de thème](/fr/theme/presets)
+- [La source des styles](/fr/reference/styles)
+- [Les six vérifications de verify:styles](/fr/development/verification)

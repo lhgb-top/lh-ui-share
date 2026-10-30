@@ -1,0 +1,172 @@
+---
+title: backtop —— Вернуться наверх
+description: 'resolveScrollTarget определение корня прокрутки, деградация prefers-reduced-motion, feature-проверка scrollend и запасная антидребезг-схема'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Пользователь открутил длинную страницу до самого низа, и чтобы вернуться наверх, ему остаётся только яростно крутить колёсико. `backtop` — плавающая кнопка в правом нижнем углу: появляется, когда прокрутил определённое расстояние, а по нажатию плавно возвращает наверх. Логика не сложная, но **ямы совместимости у API прокрутки особенно многочисленны** — кто является корнем прокрутки, как деградировать плавную прокрутку, как определить её окончание — `core/backtop` собирает всё это.
+
+## Когда использовать
+
+- Реализация `<LhBackTop>` на каждой платформе: точка входа «наверх» для длинных списков, длинных документов, таблиц с данными в админ-панели.
+- Стоит показывать, только если высота страницы явно превышает один экран (обычно от 2–3 экранов и больше).
+- **Не следует использовать**: короткие страницы (меньше одного экрана — кнопка никогда не появится, а код расходуется); мобильные нативные страницы, где и так можно быстро вернуться наверх жестом (системные жесты мобильных платформ уже покрывают этот случай; для вложенных h5-страниц — по ситуации).
+
+## Импорт
+
+```ts
+import {
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  LH_BACKTOP_SCROLLEND_DELAY,
+  getBackTopClassNames,
+  resolveScrollTarget,
+  getScrollTop,
+  backToTop,
+  isBackTopVisible,
+  supportsScrollEnd,
+} from '@lh-ui/share/core/backtop'
+```
+
+## Замысел
+
+**Приоритет корня прокрутки**: `document.scrollingElement` в приоритете над `document.documentElement`. Это не эстетская прихоть — на некоторых страницах (где используется `body { overflow }`) по-настоящему прокручивается именно body, а `documentElement.scrollTop` всегда равен 0, и определение видимости полностью ломается. `scrollingElement` — стандартное свойство, придуманное W3C, чтобы навести порядок в этом хаосе.
+
+**`getScrollTop` использует `instanceof HTMLElement`, а не `instanceof Window`**: в комментарии сказано «безопасность между realm» — если на странице есть iframe, объект Window, переданный из iframe, **не равен** конструктору `Window` текущего realm, и `x instanceof Window` ложно определит его как false. Проверка по HTMLElement (у элементов такой проблемы нет) позволяет этого избежать. Очень тонкая, но реальная ловушка.
+
+**Два уровня деградации плавной прокрутки**: ① при включённом `prefers-reduced-motion` идёт деградация до `auto` (без анимации) — пользователи с вестибулярными расстройствами могут испытывать головокружение от непрерывной прокрутки, это жёсткое требование доступности; ② если у целевого элемента нет метода `scrollTo` (старый jsdom и подобные окружения), напрямую пишется `scrollTop = 0`.
+
+**Feature-проверка в `supportsScrollEnd`**: событие `scrollend` появилось только в Chromium 114+ / Safari 18.2+ — благодаря ему можно точно обновлять состояние видимости, когда прокрутка **действительно остановилась** (постоянное чтение scrollTop во время прокрутки стоит производительности). Если событие не поддерживается, вызывающая сторона откатывается к событию `scroll` + антидребезгу через `LH_BACKTOP_SCROLLEND_DELAY` (150 мс).
+
+**Видимость — чистая функция**: `isBackTopVisible(scrollTop, height)` просто сравнивает числа — UI-слой сам слушает прокрутку и сам хранит scrollTop, core не держит никакого реактивного состояния. Это же позволяет модульным тестам напрямую проверять числовые границы.
+
+## Таблица функций
+
+| Функция / константа | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getBackTopClassNames` | `(state: { visible }) => string[]` | классы | состояние видимости управляет анимацией появления |
+| `resolveScrollTarget` | `(target?: string \| HTMLElement) => HTMLElement \| Window` | цель прокрутки | при промахе селектора откат к window |
+| `getScrollTop` | `(target) => number` | расстояние прокрутки | контейнер/порт просмотра |
+| `backToTop` | `(target, smooth) => void` | нет | плавный возврат наверх (с деградацией) |
+| `isBackTopVisible` | `(scrollTop, visibilityHeight) => boolean` | виден ли | пороговое условие |
+| `supportsScrollEnd` | `(target) => boolean` | поддерживается | feature-проверка |
+
+Константы: `LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT = 200`, `LH_BACKTOP_SCROLLEND_DELAY = 150`.
+
+## Определения типов
+
+```ts
+export interface LhBackTopState {
+  visible: boolean      // виден ли в данный момент (управляет классами появления)
+  target?: string | HTMLElement
+  visibilityHeight?: number
+  smooth?: boolean      // плавная ли прокрутка (по умолчанию true)
+}
+```
+
+## Доступность
+
+```ts
+// Атрибуты доступности кнопки собираются на UI-слое:
+const aria = {
+  type: 'button',
+  'aria-label': 'Вернуться наверх',   // у кнопки-иконки нет текста, метка обязательна
+}
+```
+
+- **`type="button"`**: если кнопка возврата наверх оказалась внутри `<form>`, значение по умолчанию `type="submit"` вызовет отправку формы — это самый частый мелкий баг.
+- **aria-label обязателен**: для кнопки из одной иконки (стрелка вверх) считывающее программы не видит имени, а `aria-label="Вернуться наверх"` позволяет её озвучить.
+- **aria-hidden синхронизирован с видимостью**: в скрытом состоянии элемент убирается из дерева доступности (`aria-hidden="true"` или размонтирование через `v-if`), чтобы скринридер не навигировался на невидимую кнопку.
+- **Достижимость с клавиатуры**: кнопка — это нативный `<button>`, фокус по Tab + срабатывание по Enter/Space, поддержка из коробки. Не нужно делать `<div @click>`.
+- **Двойной смысл prefers-reduced-motion**: это и требование доступности (вестибулярная безопасность), и защита от рывков плавной прокрутки на слабых устройствах. Всё это уже обработано внутри `backToTop`, UI-слою проверять ничего не нужно.
+
+## Примеры использования
+
+```ts
+import {
+  resolveScrollTarget, getScrollTop, isBackTopVisible, backToTop, supportsScrollEnd,
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT, LH_BACKTOP_SCROLLEND_DELAY,
+} from '@lh-ui/share/core/backtop'
+
+isBackTopVisible(200, 200)  // true (>= порога)
+isBackTopVisible(199, 200)  // false
+isBackTopVisible(0, 200)    // false
+
+supportsScrollEnd(window)         // в современных браузерах true
+supportsScrollEnd(someEl)         // true только в Chromium 114+ / Safari 18.2+
+```
+
+```ts
+// Стратегия слушателя: если поддерживается scrollend, состояние считается только в покое,
+// иначе scroll + антидребезг
+const target = resolveScrollTarget(props.target)
+let visible = ref(false)
+
+function refresh() {
+  visible.value = isBackTopVisible(
+    getScrollTop(target),
+    props.visibilityHeight ?? LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  )
+}
+
+if (supportsScrollEnd(target)) {
+  target.addEventListener('scrollend', refresh)
+} else {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  target.addEventListener('scroll', () => {
+    clearTimeout(timer)
+    timer = setTimeout(refresh, LH_BACKTOP_SCROLLEND_DELAY)
+  })
+}
+
+function onClick() {
+  backToTop(target, props.smooth ?? true)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <button
+    type="button"
+    class="lh-backtop"
+    :class="getBackTopClassNames({ visible })"
+    aria-label="Вернуться наверх"
+    :aria-hidden="!visible"
+    @click="backToTop(target, true)"
+  >
+    <LhIcon name="arrow-up" />
+  </button>
+</template>
+```
+
+```tsx
+// React: в useEffect регистрируем/снимаем слушатель прокрутки (зависит от target и visibilityHeight);
+// smooth управляется props, reduced-motion обрабатывается внутри core
+```
+
+```ts
+// uniapp: <button open-type?> не подходит; используем <view> + @tap;
+// прокрутка страницы в минипрограмме — onPageScroll (встроено в uniapp), прокрутка элемента — событие scroll у scroll-view
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-backtop` | контейнер кнопки (fixed, правый нижний угол) |
+| `.lh-backtop--visible` | виден (управляет анимацией появления: плавное появление + подъём) |
+
+Скрытие по умолчанию — `opacity: 0; visibility: hidden` (используется visibility, а не display, чтобы сохранить переход); круглая кнопка `--lh-backtop-size` (например, 40px); фон `--lh-bg-color` + тень `--lh-box-shadow-base`; z-index `--lh-z-index-backtop`.
+
+## Замечания
+
+- **Слушатель прокрутки нужно снимать**: при уничтожении компонента делается `removeEventListener`, иначе ссылка на удалённый DOM приведёт к утечке памяти. Используйте `onUnmounted` во Vue или функцию очистки в useEffect React.
+- **Особенность слушателя на `window`**: событие `scroll` на window пассивное и высокочастотное, обязательна антидребезг-подавление или scrollend; прямой вызов `getScrollTop` при каждом событии на сверхдлинных страницах приведёт к рывкам.
+- **Сценарий, когда прокручивается сам целевой элемент**: прокрутка внутри таблицы (а не страницы) требует указать `target` на контейнер таблицы — иначе видимость кнопки будет следовать за прокруткой страницы и не будет связана с контейнером, который действительно нужно вернуть наверх.
+- **Плавная прокрутка, перекрытая CSS**: если на странице есть `html { scroll-behavior: smooth }`, вызов `scrollTo({ behavior: 'auto' })` будет перекрыт CSS — деградация по reduced-motion в `backToTop` сломается. Если нужна строгая деградация, UI-слой должен временно убирать это CSS-правило.
+- **Инерция прокрутки в iOS Safari**: прокрутка в iOS имеет инерцию, и scrollend срабатывает только после окончания инерции; запасная антидребезг-задержка 150 мс при быстром свайпе может обновить состояние видимости слишком рано (кнопка мигнёт). Это известный компромисс.
+- **Смысл порога видимости 200**: примерно половина высоты экрана (зависит от высоты viewport). Для документационных страниц можно уменьшить (100), для инструментальных — увеличить (500) — для этого и существует prop `visibilityHeight`.
+- **Кнопка не должна перекрывать содержимое**: fixed-позиционирование в правом нижнем углу; на мобильных нужно обходить нижнюю панель навигации (оставить высоту безопасной зоны).
+
+<FnPlayground module="backtop" fn="isBackTopVisible" params='{"scrollTop": 300, "visibilityHeight": 200}' />

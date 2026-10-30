@@ -1,0 +1,145 @@
+---
+title: constants —— 常數
+description: 'LH_TYPES_CONST / LH_SIZE_CONST / LH_LANGUAGE_CONST 與兩個 DEFAULT 常數，全部 as const 凍結'
+---
+
+`src/constants/` 是全家族的**執行時常數唯一源**：元件類型語義色、尺寸檔位、語言程式碼。全部 `as const` 凍結，並被 `core/shared/types` 的聯合類型推導引用（見 [core/types](/core/types)）。
+
+## 匯入方式
+
+```ts
+import {
+  LH_TYPES_CONST,
+  LH_SIZE_CONST,
+  LH_LANGUAGE_CONST,
+  LH_SIZE_DEFAULT,
+  LH_LANGUAGE_DEFAULT,
+} from '@lh-ui/share/constants'
+```
+
+## 常數表
+
+| 常數 | 值 | 用途 |
+| --- | --- | --- |
+| `LH_TYPES_CONST` | `{ success, warning, error, info, danger }` | 元件類型（五個語義色） |
+| `LH_SIZE_CONST` | `{ small, medium, large, mini, old: 'x-large' }` | 元件尺寸檔位 |
+| `LH_SIZE_DEFAULT` | `'medium'`（= `LH_SIZE_CONST.medium`） | 預設尺寸 |
+| `LH_LANGUAGE_CONST` | `{ zhCN: 'zh-CN', enUS: 'en-US', jaJP: 'ja-JP', koKR: 'ko-KR', deDE: 'de-DE', frFR: 'fr-FR' }` | 語言程式碼 |
+| `LH_LANGUAGE_DEFAULT` | `'zh-CN'`（= `LH_LANGUAGE_CONST.zhCN`） | 預設語言 |
+
+## LH_TYPES_CONST —— 五個語義色
+
+```ts
+export const LH_TYPES_CONST = {
+  success: 'success',   // 成功
+  warning: 'warning',   // 警告
+  error: 'error',       // 錯誤
+  info: 'info',         // 資訊
+  danger: 'danger',     // 危險
+} as const
+```
+
+每個成員帶 `@alias` JSDoc（成功 / 警告 / 錯誤 / 資訊 / 危險），懸停有提示。`LhComponentType` 在此基礎上**額外補 `'default' | 'primary'`**（基礎外觀色，不是狀態語義）。
+
+### error 與 danger 的區別
+
+兩者都是「出錯了」的紅色系，語義略有分工，各元件可自行選擇：
+
+- `error` —— 驗證失敗（表單的 input 紅框）、操作失敗（上傳失敗）。
+- `danger` —— 破壞性操作（刪除按鈕的紅色強調）。
+
+這是約定不是強制規則；大多數元件只用其中一個，以各元件文件為準。
+
+## LH_SIZE_CONST —— 五檔尺寸
+
+```ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',     // 預設
+  large: 'large',
+  mini: 'mini',         // 內聯緊湊場景（表格內的操作按鈕）
+  old: 'x-large',       // 老年人專用
+} as const
+```
+
+### `old` 鍵名與 `'x-large'` 值不一致
+
+這是**刻意的命名取捨**：
+
+- **鍵名 `old`** 是內部「老年人模式」的語義識別，`LhBaseProps.old?: boolean` 用它做開關。
+- **值 `'x-large'`** 是對外的尺寸列舉值，`LhComponentSize` 聯合裡出現的是它。
+
+對外使用者感知到的是 `size="x-large"`（或 `old` prop 開關），內部常數鍵名不暴露給使用者。寫程式碼時注意：`Object.keys(LH_SIZE_CONST)` 拿到的是鍵，`Object.values(...)` 拿到的是類型列舉值，別混用。
+
+### 各檔的用途
+
+| 檔位 | 場景 |
+| --- | --- |
+| `mini` | 表格行內的操作按鈕、密集表單 |
+| `small` | 緊湊版面配置、工具列 |
+| `medium` | **預設**，常規表單與內容區 |
+| `large` | 獨立註冊 / 登入頁的主按鈕 |
+| `x-large` | 無障礙老年人模式：大字級、大觸控區，配合 `old` 布林開關 |
+
+**不是所有元件都支援全部五檔**：`mini` / `x-large` 只在部分元件上實作，以各元件文件為準。
+
+## LH_LANGUAGE_CONST —— 六門語言
+
+```ts
+export const LH_LANGUAGE_CONST = {
+  zhCN: 'zh-CN',
+  enUS: 'en-US',
+  jaJP: 'ja-JP',
+  koKR: 'ko-KR',
+  deDE: 'de-DE',
+  frFR: 'fr-FR',
+} as const
+```
+
+鍵名是 [zhCN / enUS 這類約定俗成的 locale 命名](/guide/naming#豁免登記)，值是 BCP 47 語言程式碼。`LhLocaleType` 與 `LhComponentLanguage` 均由此推導。
+
+**注意語言檔案的啟用狀態**：`ja-JP` / `ko-KR` / `de-DE` / `fr-FR` 目前是**預留語言骨架，以英文兜底翻譯**（見 [locales](/reference/locales)）。常數裡登記了不等於文案完備。
+
+## 為什麼用常數而不是列舉
+
+`as const` 物件 + 聯合類型推導，比 TS `enum` 有三個好處：
+
+1. **零執行時開銷**：`enum` 會生成額外程式碼（反向映射），`as const` 物件只有一份。
+2. **可遍歷**：`Object.values(LH_TYPES_CONST)` 直接拿到全部列舉值做執行時驗證；`enum` 的遍歷在 `preserveConstEnums` 關閉時不可靠。
+3. **可逐個補 JSDoc**：每個成員的 `@alias` 提示在 IDE 裡可見。
+
+## 使用範例
+
+### 元件 props 的預設值
+
+```ts
+import { LH_SIZE_DEFAULT } from '@lh-ui/share/constants'
+
+props: {
+  size: { type: String, default: LH_SIZE_DEFAULT },   // 'medium'
+}
+```
+
+### 執行時值驗證
+
+```ts
+const TYPE_VALUES = Object.values(LH_TYPES_CONST)
+
+const isValidType = (v: string): v is LhComponentType =>
+  TYPE_VALUES.includes(v as never) || v === 'default' || v === 'primary'
+```
+
+### 遍歷生成工具函式
+
+```ts
+// theme / docs 頁面遍歷所有語言生成切換列表
+Object.entries(LH_LANGUAGE_CONST).forEach(([key, code]) => {
+  // key: 'zhCN'  code: 'zh-CN'
+})
+```
+
+## 注意事項
+
+- **常數是凍結的**：`as const` 使類型為字面量聯合，執行時仍是普通物件（沒有 `Object.freeze`）——別在執行時改它，下游的類型推導不會跟著變。
+- **`LH_SIZE_DEFAULT` / `LH_LANGUAGE_DEFAULT` 引用常數的成員**，不是獨立的字面量——改常數預設值自動跟著改。
+- **`old` 鍵別直接暴露給使用者**：對外是 `size="x-large"` 或 `old` 布林開關。

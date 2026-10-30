@@ -1,0 +1,270 @@
+---
+title: table —— Tableau
+description: 'sortTableRows avec les valeurs vides en bout de course, buildHeaderCells pour l’\’’expansion des en-têtes multi-niveaux, getStickyOffsets pour le décalage des colonnes fixes, computeVisibleRange pour le défilement virtuel'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Le tableau est l'artillerie lourde de la présentation de données : tri, filtrage, en-têtes multi-niveaux, colonnes fixes, défilement virtuel, redimensionnement des colonnes — chaque sujet est un défi algorithmique en soi. `core/table` extrait tout cela en fonctions pures — la couche UI se contente de lier les résultats au DOM. C'est l'un des modules de composants les plus riches en fonctions de ce package.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhTable` : listes d'administration, rapports de données, tableaux avec opérations par lot.
+- Scénarios où des données structurées nécessitent un tri / filtrage / colonnes fixes / en-têtes multi-niveaux.
+- **À ne pas utiliser pour** : des volumes de données minuscules sans interaction (un simple `descriptions` ou un tableau écrit à la main est plus léger) ; les flux d'informations en cartes (utilisez la disposition `card`).
+
+## Importation
+
+```ts
+import {
+  LH_TABLE_ROW_HEIGHT,
+  LH_TABLE_OVERSCAN,
+  LH_TABLE_MIN_COL_WIDTH,
+  computeVisibleRange,
+  cycleSortOrder,
+  sortTableRows,
+  getCellValue,
+  getColumnWidth,
+  getGridTemplate,
+  getStickyOffsets,
+  getTableClassNames,
+  getTableCellClassNames,
+  flattenLeafColumns,
+  buildHeaderCells,
+  getHeaderStickyOffsets,
+  filterTableRows,
+  clampColumnWidth,
+  getTableSortAria,
+} from '@lh-ui/share/core/table'
+import type {
+  LhTableAlign,
+  LhTableColumn,
+  LhTableFilterOption,
+  LhTableHeaderCell,
+  LhTableRow,
+  LhTableSortOrder,
+  LhTableVisibleRange,
+  LhTableCellSticky,
+} from '@lh-ui/share/core/table'
+```
+
+## Intentions de conception
+
+**Les valeurs vides en bout de course** : `sortTableRows` traite `null` / `undefined` / `NaN` de manière uniforme — ils ne participent pas aux comparaisons normales et sont toujours placés en fin, **y compris en desc**. C'est une décision produit explicite : les lignes à données manquantes ne doivent pas, parce que l'ordre est inversé, se retrouver en première position et masquer les données valides.
+
+**La sécurité DAG des en-têtes multi-niveaux** : `flattenLeafColumns` et `buildHeaderCells` utilisent un **seen global** plutôt qu'un seen par chaîne d'ancêtres — parce qu'un même objet column peut être partagé en DAG (une même colonne sous deux groupes), et la déduplication globale garantit qu'il n'est émis qu'une seule fois, pour que le nombre de colonnes du corps corresponde au nombre de cellules feuilles de l'en-tête. Le `leafSpan` de `buildHeaderCells` utilise « le nombre de feuilles réellement émises par la récursion » et non un comptage a priori, justement pour éviter qu'un sous-arbre partagé soit compté deux fois et décale les colonnes.
+
+**L'héritage sticky des en-têtes de groupe** : `getHeaderStickyOffsets` ne laisse un en-tête de groupe hériter du décalage de la première/dernière feuille que lorsque « toutes les colonnes feuilles de l'intervalle sont fixed du même côté » — un en-tête de groupe à cheval entre zone fixe et zone fluide ne peut pas être positionné avec un seul décalage, on préfère alors ne pas le fixer.
+
+**La surcharge isomorphique de `clampColumnWidth`** : `nombre en entrée, nombre en sortie ; chaîne en entrée, chaîne en sortie`, l'appelant n'a pas à faire de conversion de type pour une transformation isomorphique ; NaN renvoie directement la limite inférieure (des coordonnées NaN peuvent apparaître pendant le glissement).
+
+**`computeVisibleRange` est @deprecated** : l'algorithme de défilement virtuel a été consolidé dans le noyau partagé `core/shared/virtual` via `computeRange` (même origine que VirtualList) ; cette fonction est conservée comme alias de compatibilité pour les références existantes en aval telles que vue2.
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `computeVisibleRange` | `(scrollTop, viewportHeight, rowHeight, total, overscan?) => LhTableVisibleRange` | Intervalle visible | **@deprecated**, délègue à `computeRange` |
+| `cycleSortOrder` | `(current?) => LhTableSortOrder \| undefined` | État de tri suivant | aucun → asc → desc → aucun |
+| `sortTableRows` | `(rows, prop, order, sorter?) => LhTableRow[]` | Nouveau tableau | Valeurs vides en bout de course |
+| `getCellValue` | `(row, column) => string` | Valeur affichée | formatter prioritaire |
+| `getColumnWidth` | `(column) => string` | `'120px'` / `'1fr'` | Répartition égale sans largeur |
+| `getGridTemplate` | `(columns) => string` | Modèle grid | Pour la disposition CSS grid |
+| `getStickyOffsets` | `(columns) => LhTableCellSticky[]` | Décalages gauche/droite | Cumul des colonnes fixes |
+| `getTableClassNames` | `(state: { stripe, border, size, virtual }) => string[]` | Classes | Quatre modificateurs |
+| `getTableCellClassNames` | `(state) => string[]` | Classes | Alignement / colonne fixe / redimensionnement |
+| `flattenLeafColumns` | `(columns) => LhTableColumn[]` | Colonnes feuilles | Pour le corps en en-têtes multi-niveaux |
+| `buildHeaderCells` | `(columns) => LhTableHeaderCell[]` | Cellules d'en-tête aplaties | Inclut rowspan/colspan |
+| `getHeaderStickyOffsets` | `(leafColumns, headerCells) => LhTableCellSticky[]` | Décalages d'en-tête | Héritage conditionnel des groupes |
+| `filterTableRows` | `(rows, filters) => LhTableRow[]` | Nouveau tableau | AND entre colonnes, OR dans une colonne |
+| `clampColumnWidth` | `(width: number \| string) => number \| string` | Largeur clampée | Limite basse 40 px |
+| `getTableSortAria` | `(options: { sortOrder?, sortable? }) => LhAriaAttrs` | Paquet d'attributs aria | aria-sort |
+
+Constantes : `LH_TABLE_ROW_HEIGHT = 48` (hauteur de ligne par défaut), `LH_TABLE_OVERSCAN = 3` (lignes de tampon de défilement), `LH_TABLE_MIN_COL_WIDTH = 40` (limite basse du redimensionnement).
+
+## Définitions de types
+
+```ts
+export type LhTableAlign = 'left' | 'center' | 'right'
+export type LhTableSortOrder = 'asc' | 'desc'
+export type LhTableRow = Record<string, any>
+
+export interface LhTableColumn {
+  prop: string
+  label: string
+  width?: number | string          // Un nombre correspond à des px
+  align?: LhTableAlign
+  fixed?: 'left' | 'right'         // Doit être combiné avec width
+  sortable?: boolean
+  slot?: string                    // Nom de l'emplacement de cellule personnalisé
+  formatter?: (row: LhTableRow, value: any) => string
+  children?: LhTableColumn[]       // La configuration produit des en-têtes multi-niveaux
+  filters?: LhTableFilterOption[]  // Ne s'applique qu'aux colonnes feuilles
+  filterMethod?: (value: string | number, row: LhTableRow) => boolean
+  filterMultiple?: boolean         // true par défaut
+  resizable?: boolean              // Réservé aux colonnes feuilles avec une width numérique
+}
+
+export interface LhTableHeaderCell {
+  column: LhTableColumn
+  level: number          // Niveau de l'en-tête, à partir de 0
+  leafStart: number      // Début de la séquence de colonnes feuilles
+  leafSpan: number       // Nombre de colonnes feuilles couvertes
+  rowspan: number        // Complété jusqu'à la profondeur maximale
+  colspan: number        // = leafSpan
+  isLeaf: boolean
+}
+
+export interface LhTableVisibleRange { start: number; end: number; offsetY: number; totalHeight: number }
+export interface LhTableCellSticky { left?: number; right?: number }
+```
+
+## Accessibilité
+
+`getTableSortAria` produit `aria-sort`, strictement aligné avec la machine à états de `cycleSortOrder` :
+
+```ts
+getTableSortAria({ sortable: true, sortOrder: 'asc' })    // { 'aria-sort': 'ascending' }
+getTableSortAria({ sortable: true, sortOrder: 'desc' })   // { 'aria-sort': 'descending' }
+getTableSortAria({ sortable: true })                      // { 'aria-sort': 'none' }
+getTableSortAria({ sortable: false })                     // {} (les colonnes non triables ne produisent rien)
+```
+
+Notez le troisième cas : non trié produit `aria-sort="none"` au lieu d'être omis — c'est une exigence explicite des APG, **déclarer explicitement « cette colonne est triable mais currently non triée »**, afin que le lecteur d'écran indique à l'utilisateur qu'une opération de tri est possible sur cette colonne.
+
+Autres conventions (à implémenter par la couche UI) : les en-têtes utilisent `<th scope="col">` ; les colonnes fixes ne doivent pas utiliser de `tabindex` créant des focus supplémentaires ; la zone de pagination est un `nav` indépendant ; la case à cocher de sélection de ligne nécessite un `aria-label` (par exemple « Sélectionner la ligne 3 »).
+
+## Exemples d'utilisation
+
+```ts
+import { cycleSortOrder, sortTableRows, filterTableRows, buildHeaderCells } from '@lh-ui/share/core/table'
+
+cycleSortOrder(undefined)  // 'asc'
+cycleSortOrder('asc')      // 'desc'
+cycleSortOrder('desc')     // undefined (tri annulé)
+
+const rows = [
+  { name: 'Martin', age: 30 },
+  { name: 'Durand', age: null },
+  { name: 'Petit', age: 20 },
+]
+sortTableRows(rows, 'age', 'asc')
+// Petit 20 → Martin 30 → Durand null (les valeurs vides toujours en fin)
+sortTableRows(rows, 'age', 'desc')
+// Martin 30 → Petit 20 → Durand null (en ordre inversé, les valeurs vides restent en fin)
+sortTableRows(rows, 'age', undefined)  // Copie dans l'ordre d'origine
+
+filterTableRows(rows, [{ column: { prop: 'name' }, values: ['Petit'] }])
+// [{ name: 'Petit', age: 20 }]
+filterTableRows(rows, [])  // Copie intégrale (aucun filtre actif)
+
+// En-têtes multi-niveaux
+const columns = [
+  { label: 'Informations de base', children: [{ prop: 'name', label: 'Nom' }, { prop: 'age', label: 'Âge' }] },
+  { prop: 'city', label: 'Ville' },
+]
+flattenLeafColumns(columns)  // [Nom, Âge, Ville] (le corps est rendu selon ceci)
+buildHeaderCells(columns)
+// Informations de base (level 0, leafStart 0, colspan 2), Nom (rowspan 2 pour compléter),
+// Âge (rowspan 2), Ville (level 0, rowspan 2)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTableClassNames({ stripe, border, size, virtual })">
+  <div class="lh-table__wrapper">
+    <div class="lh-table__header" :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }">
+      <div
+        v-for="cell in headerCells"
+        :key="`${cell.level}-${cell.leafStart}`"
+        class="lh-table__header-cell"
+        :style="cellStyle(cell)"
+        v-bind="getTableSortAria({ sortOrder: sortState[cell.column.prop], sortable: cell.column.sortable })"
+        @click="onSort(cell.column)"
+      >
+        {{ cell.column.label }}
+        <span v-if="cell.column.sortable" class="lh-table__sort-indicator">
+          {{ sortState[cell.column.prop] === 'asc' ? '↑' : sortState[cell.column.prop] === 'desc' ? '↓' : '↕' }}
+        </span>
+      </div>
+    </div>
+    <div class="lh-table__body">
+      <div
+        v-for="row in displayRows"
+        :key="row.id"
+        class="lh-table__row"
+        :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }"
+      >
+        <div
+          v-for="column in leafColumns"
+          :key="column.prop"
+          :class="getTableCellClassNames({ align: column.align ?? 'left', fixed: column.fixed })"
+        >
+          {{ getCellValue(row, column) }}
+        </div>
+      </div>
+    </div>
+  </div>
+  <LhPagination :total="total" v-model:current="current" v-model:page-size="pageSize" />
+</div>
+```
+
+```ts
+// Câblage du tri (contrôlé)
+function onSort(column: LhTableColumn) {
+  if (!column.sortable) return
+  const next = cycleSortOrder(sortState.value[column.prop])
+  if (next) sortState.value = { ...sortState.value, [column.prop]: next }
+  else delete sortState.value[column.prop]
+}
+
+const displayRows = computed(() =>
+  filterTableRows(
+    sortTableRows(props.data, sortProp.value, sortOrder.value),
+    activeFilters.value,
+  ),
+)
+```
+
+```tsx
+// React : défilement virtuel
+// const range = computeRange(scrollTop, viewportHeight, rowHeight, rows.length, 3)
+// Rendu de range.start..range.end ; le conteneur extérieur est dimensionné par totalHeight,
+// le conteneur intérieur est translaté de translateY(range.offsetY)
+```
+
+```ts
+// uniapp : <scroll-view scroll-y> + calcul de l'intervalle visible ; CSS grid est
+// partiellement supporté selon les cibles, repli possible en flex ;
+// les fonctions de tri / filtrage / expansion d'en-tête de core sont indépendantes de la cible
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-table` / `--{small\|medium\|large}` | Classe de base / tailles (hauteur de ligne et remplissage) |
+| `.lh-table--stripe` / `--border` / `--virtual` | Rayures / bordure / défilement virtuel |
+| `.lh-table__header` / `__header-cell` | En-tête |
+| `.lh-table__body` / `__row` | Corps |
+| `.lh-table__cell` / `--{left\|center\|right}` | Cellule / alignement |
+| `.lh-table__cell--fixed-left` / `--fixed-right` | Colonne fixe (sticky) |
+| `.lh-table__cell--fixed-left-last` / `--fixed-right-first` | Bordure de colonne fixe (séparation par ombre) |
+| `.lh-table__cell--resizable` | Colonne redimensionnable |
+| `.lh-table__empty` | État vide |
+
+La hauteur de ligne par défaut est de 48 px (`LH_TABLE_ROW_HEIGHT`) et doit être identique au paramètre `rowHeight` de l'algorithme de défilement virtuel, sous peine de décalage de la fenêtre. Couleur de fond de l'en-tête `--lh-fill-color`, bordures `--lh-border-color`, ligne au survol `--lh-fill-color-light`.
+
+## Remarques
+
+- **La cohérence de la hauteur de ligne est la condition préalable au défilement virtuel** : `computeRange` suppose que chaque ligne a la même hauteur ; si le contenu d'une ligne la rend plus haute (long texte revenant à la ligne), le défilement virtuel se décale — n'activez pas `virtual` pour des tableaux aux hauteurs irrégulières.
+- **Les colonnes fixes doivent déclarer une `width`** : `getStickyOffsets` ne calcule un décalage que pour les px numériques ou les chaînes `'Npx'` ; les unités comme `'20%'` ne sont pas converties, sont cumulées comme 0 et les colonnes fixes finissent empilées.
+- **Les prérequis de `resizable`** : il faut obligatoirement une **colonne feuille avec une width numérique** ; après redimensionnement, utilisez `clampColumnWidth` pour clamper à la limite basse avant de réécrire la configuration de colonne.
+- **Le `prop` de tri et les clés des données** : `sortTableRows` lit la valeur via `row[prop]` ; les champs imbriqués (`user.name`) ne sont pas pris en charge automatiquement, utilisez un `sorter` personnalisé.
+- **Le OR intra-colonne du filtrage** : plusieurs valeurs sélectionnées d'une même colonne sont en relation « ou », entre différentes colonnes c'est « et » — c'est la sémantique courante, cohérente avec Element.
+- **L'ordre des colonnes du corps en en-têtes multi-niveaux** : le corps doit utiliser `flattenLeafColumns(columns)` et non `columns`, sinon le nombre de colonnes ne correspond pas au nombre de cellules feuilles de l'en-tête.
+- **Les colonnes partagées en DAG** : lorsqu'un même objet column est référencé sous deux groupes, le seen global garantit une émission unique — mais **l'effet de bord à référencer le même objet est qu'une modification à un endroit modifie les deux** ; si vous avez besoin de « même nom, configuration différente », faites une copie profonde.
+- **Le tri sur de gros volumes est en O(n log n)** : trier des dizaines de milliers de lignes à chaque image provoque des ralentissements, envisagez un tri côté serveur (`sortable: 'custom'` est à la discrétion de la couche UI).
+- **Le `aria-sort` de `getTableSortAria` est attaché au `<th>`**, et non à chaque cellule de la colonne.
+
+<FnPlayground module="table" fn="cycleSortOrder" params='{"current": "asc"}' />

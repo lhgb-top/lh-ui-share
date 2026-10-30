@@ -1,0 +1,146 @@
+---
+title: rate —— 評価
+description: 'clampRate のクランプ、stepRate のハーフスターのステップ、getStarFill の星ごとの充填バリエーション、slider セマンティクスの属性パック'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+評価は「スコアをつける」ことを**離散的な星選択**に変えます：ユーザーは数字を入力するのではなく、星を点亮します。`core/rate` が管理するのは星ごとの充填バリエーション（全星 / 半星 / 空）、半星ステップと浮動小数点の蓄積、そして APG の slider セマンティクスです——評価コントロールはアクセシビリティの観点ではラジオボタングループではなくスライダーです。
+
+## いつ使うか
+
+- 各端の `LhRate` 実装：商品 / サービス評価、難易度のマーク、満足度調査。
+- 値域が 1～N の整数（または半星を許容する 0.5 ステップ）のシーン。
+- **使うべきでない**：精密な小数や任意の範囲の連続値が必要なら `slider` か `input-number` を使います；読み取り専用で表示のみであれば rate を使ってもよいですが、`readonly` 状態に切り替えるべきです。
+
+## インポート方法
+
+```ts
+import {
+  LH_RATE_MAX_DEFAULT,
+  clampRate,
+  stepRate,
+  getStarFill,
+  getRateAriaText,
+  getRateClassNames,
+  getRateAria,
+} from '@lh-ui/share/core/rate'
+import type { LhRateState } from '@lh-ui/share/core/rate'
+```
+
+## 設計意図
+
+`stepRate` は加減の後に `Math.round(next * 10) / 10` を行います——これは余計なものではなく、**浮動小数点蓄積への防御**です：0.5 ステップは JS では `0.5 → 1.0 → 1.5` と問題ないものの、`0.1 + 0.2 !== 0.3` のような罠が他のステップ値で現れるため、一律に小数第 1 位を残して結果を綺麗な小数に固定します。`getStarFill` の判定順序は `full → half → empty` です：先に整星を判定し、その後に半星を判定することで、`value=2.5` のとき第 3 星目が `empty` ではなく `half` になることを保証します。
+
+`getRateAriaText` は `formatMessage` で `{n}` を補間し、メッセージテンプレートは言語パック（`rate.ariaText`）から取得します。数値は事前に同じ round を行ってから文字列にします——aria のメッセージと視覚的な充填は、必ず同一の正規化された値に基づかなければなりません。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `clampRate` | `(value: number \| undefined, max: number) => number` | クランプ値 | 非数値は 0、上限は max |
+| `stepRate` | `(value, direction: 1 \| -1, allowHalf, max) => number` | ステップ値 | 半星は 0.5 ステップ、小数第 1 位 |
+| `getStarFill` | `(value, index, allowHalf) => 'full' \| 'half' \| 'empty'` | 充填バリエーション | 第 index 番目の星（1 始まり） |
+| `getRateAriaText` | `(value, template: string) => string` | aria メッセージ | `{n}` を補間して星の数に |
+| `getRateClassNames` | `(state: LhRateState & { readonly, disabled }) => string[]` | クラス名 | 読み取り専用 / 無効の修飾 |
+| `getRateAria` | `(options: { value, max, disabled?, ariaValueText? }) => LhAriaAttrs` | aria 属性パック | slider セマンティクス |
+
+## 型定義
+
+```ts
+export interface LhRateState {
+  max: number
+  value: number
+  allowHalf: boolean
+}
+
+export const LH_RATE_MAX_DEFAULT = 5
+```
+
+## アクセシビリティ
+
+`getRateAria` は **slider セマンティクス**（radiogroup ではない）を出力します：評価の値は連続的に調整可能（特に半星モード）で、APG の rating パターンはしばしば slider として実装されます。キーボード操作は slider の規約に従います：←/→ で 1 ステップ減 / 増。
+
+```ts
+getRateAria({ value: 4.5, max: 5 })
+// { role: 'slider', 'aria-valuenow': 4.5, 'aria-valuemin': 0, 'aria-valuemax': 5 }
+
+getRateAria({ value: 0, max: 5, disabled: true, ariaValueText: '0 星' })
+// { role: 'slider', 'aria-valuenow': 0, 'aria-valuemin': 0, 'aria-valuemax': 5,
+//   'aria-disabled': true, 'aria-valuetext': '0 星' }
+```
+
+`aria-valuetext` は**valuenow より優先して読み上げ**られます——スクリーンリーダーは「4.5」ではなく「星 4 つ半」と読み上げます。各星のボタンには別途 `aria-label` が必要です（UI 層が `getRateAriaText(value, t('rate.ariaText'))` で生成します）。
+
+## 使用例
+
+```ts
+import { getStarFill, stepRate, clampRate } from '@lh-ui/share/core/rate'
+
+getStarFill(3.5, 3, true)   // 'full'
+getStarFill(3.5, 4, true)   // 'half'
+getStarFill(3.5, 4, false)  // 'empty'（整星モードでは 3.5 の第 4 星は空）
+getStarFill(3.5, 5, true)   // 'empty'
+stepRate(3, 1, true, 5)     // 3.5
+stepRate(3.5, 1, true, 5)   // 4
+stepRate(0, -1, true, 5)    // 0（クランプ）
+clampRate(undefined, 5)     // 0
+clampRate(9, 5)             // 5
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getRateClassNames({ max, value, allowHalf, readonly, disabled })">
+  <div
+    class="lh-rate__star-list"
+    v-bind="getRateAria({ value, max, disabled, ariaValueText: getRateAriaText(value, t('rate.ariaText')) })"
+    tabindex="0"
+    @keydown.left="onStep(-1)"
+    @keydown.right="onStep(1)"
+  >
+    <button
+      v-for="i in max"
+      :key="i"
+      type="button"
+      class="lh-rate__star"
+      :class="`lh-rate__star--${getStarFill(value, i, allowHalf)}`"
+      @click="onSelect(i)"
+    >
+      <LhIcon :name="getStarFill(value, i, allowHalf) === 'empty' ? 'star' : 'star-fill'" />
+    </button>
+  </div>
+</div>
+```
+
+```tsx
+// React：半星モードでは hover 状態で value を決定し、モバイルでは星全体のクリックを使う
+// ステップ：const next = stepRate(value, dir, allowHalf, max); onChange(clampRate(next, max))
+```
+
+```ts
+// uniapp：<view> で max 個の星をループ；非 h5 端では aria サポートが限られ、getRateAria の undefined 属性は無視される
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-rate` | 基底クラス |
+| `.lh-rate--readonly` | 読み取り専用（hover ハイライトを非表示、ポインタを無効化） |
+| `.lh-rate--disabled` | 無効 |
+| `.lh-rate__star-list` | 星グループのコンテナ（tabindex とキーボードイベントはここに掛ける） |
+| `.lh-rate__star` | 星 1 つのボタン |
+| `.lh-rate__star--full` / `--half` / `--empty` | 充填バリエーション（半星は半分隠す重ね合わせで表現） |
+| `.lh-rate__text` | スコアのメッセージ（「3.5 点」など） |
+
+星の色は `--lh-warning-color`（黄）、空の星は `--lh-fill-color` / `--lh-border-color` です。
+
+## 注意事項
+
+- **`getStarFill` の index は 1 始まり**です。ループには `v-for="i in max"`（max を含む）を使い、`v-for="i in max - 1"` ではありません。
+- **半星と整星の一貫性**：`allowHalf` を変えた後、`stepRate` と `getStarFill` には必ず同じ値を渡さなければなりません。さもなくばクリックとキーボードステップのバリエーションが合わなくなります。
+- **読み取り専用のセマンティクス**：`readonly` はクラス名を切り替えるだけ（視覚的にインタラクションを無効化）で、`getRateAria` は `aria-disabled` を出力しません——読み取り専用の評価は引き続きスクリーンリーダーに理解可能な評価値として認識されるべきで（`aria-valuetext` による）、ここが disabled との違いです。
+- **`max` の境界**：`LH_RATE_MAX_DEFAULT` は 5 です；UI 層は max を変更可能ですが、星が多すぎると（20 など）狭い画面で溢れるため、独自に折り返してください。
+- **value が小数なのに allowHalf が false**：core はこの組み合わせを検証せず、`getStarFill` は 3.5 を「星 3 つ full + 第 4 星は empty」として扱います——呼び出し側の設定ミスであり、視覚的には切り詰めとして現れます。
+
+<FnPlayground module="rate" fn="getStarFill" params='{"value": 3.5, "index": 4, "allowHalf": true}' />

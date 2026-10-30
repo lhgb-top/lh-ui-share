@@ -1,0 +1,179 @@
+---
+title: dialog —— 대화상자
+description: 'canClose 이스케이프 게이트, shouldTrapFocus 포커스 트랩 결정, getDialogStyle 세 가지 위치 지정, dialog 의미'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+대화상자는 "현재 흐름을 중단하고 사용자가 먼저 이 일을 처리하도록 요구"하는 모달 레이어입니다: 삭제 확인, 폼 작성, 상세 정보 표시. 핵심은 시각이 아니라 **포커스와 스크롤 잠금**입니다——모달이라는 것은 배경 페이지를 조작할 수 없다는 뜻입니다. `core/dialog`는 "닫을 수 있는지", "포커스를 가둘지", "위치 지정 스타일"을 순수 함수로 수렴하고, 실제 포커스 가두기는 `core/shared/focus-trap`이 실행합니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhDialog`: 위험한 작업 확인, 독립 폼(드로어보다 더 집중됨), 중요 정보 표시.
+- **모달**이 필요한(주 흐름을 중단하고 먼저 처리해야 하는) 상황.
+- **사용하면 안 되는 경우**: 비모달 가벼운 알림(`message` / `notification` 사용); 옆으로 미끄러지는 상세 패널(`drawer` 사용, 화면을 가리지 않음); 단순한 확인(`popconfirm` 사용, 더 가벼움).
+
+## 임포트 방법
+
+```ts
+import {
+  canClose,
+  getDialogStyle,
+  getDialogPopperClass,
+  shouldTrapFocus,
+  getDialogAria,
+} from '@lh-ui/share/core/dialog'
+import type { LhDialogState } from '@lh-ui/share/core/dialog'
+```
+
+## 설계 의도
+
+**`canClose`의 두 기본값이 비대칭입니다**:
+
+- `closeOnClickModal` 기본 **false**(마스크 클릭으로 닫지 않음)——대화상자는 보통 사용자의 명확한 조작이 필요한 폼이나 확인을 담고 있어, 마스크를 실수로 터치해 닫으면 입력을 잃게 됩니다.
+- `closeOnPressEscape` 기본 **true**(Esc로 닫기 가능)——키보드 사용자에게는 탈출구가 필요하며, 이는 APG dialog 패턴의 관례입니다.
+
+이 비대칭은 의도된 경험 설계입니다: **잘못된 터치를 막되 빠져나갈 길은 남깁니다**.
+
+**`shouldTrapFocus`는 결정만 합니다**: "포커스 트랩을 활성화할지"를 반환하고, 실제 가두기는 UI 계층이 `core/shared/focus-trap`과 연동해 구현합니다(열릴 때 saveActiveElement + focusFirst, keydown 시 trapTabKey, inert는 setInertOutside가 처리, 닫힐 때 restoreActiveElement로 포커스 반환). core 계층은 DOM을 건드리지 않습니다.
+
+**`getDialogStyle`의 위치 지정 분담**: `top` / `center` / `bottom`은 컨테이너의 flexbox 정렬로 처리하고, `marginTop`은 `position: 'top'`이거나 설정되지 않았을 때만 적용됩니다——center/bottom에서 marginTop을 겹치면 flexbox와 충돌합니다.
+
+**`getDialogPopperClass`의 visible 클래스**: 전환 애니메이션의 시작/끝 상태에 사용되고, 표시/숨김을 제어하지 않습니다(표시/숨김은 `v-if`/`v-show`가 관리합니다).
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `canClose` | `(state, reason: 'modalClick' \| 'escape') => boolean` | 닫기 허용 여부 | 이스케이프 게이트 |
+| `getDialogStyle` | `(state: { top?, zIndex?, position? }) => Record<string, string>` | 스타일 | 위치 지정과 층위 |
+| `getDialogPopperClass` | `(state: LhDialogState) => string[]` | 클래스명 | visible 상태 |
+| `shouldTrapFocus` | `(state: { visible, lockScroll }) => boolean` | 포커스 가둘지 | 결정 (DOM 미접촉) |
+| `getDialogAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | aria 속성 팩 | dialog 의미 |
+
+## 타입 정의
+
+```ts
+export interface LhDialogState {
+  visible: boolean
+  lockScroll: boolean
+  closeOnClickModal: boolean   // 기본값 false
+  closeOnPressEscape: boolean  // 기본값 true
+  width: string | number | undefined
+  top: string | undefined
+  zIndex: number | undefined
+  position: 'top' | 'center' | 'bottom' | undefined
+}
+```
+
+## 접근성
+
+`getDialogAria`는 APG modal dialog 의미를 출력합니다:
+
+```ts
+getDialogAria({ id: 'lh-dialog-1', titleId: 'lh-dialog-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-dialog-1', 'aria-labelledby': 'lh-dialog-title' }
+
+getDialogAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true`는 스크린 리더에게 배경에 접근할 수 없음을 알립니다(inert / focus-trap과 결합해야 비로소 완전합니다).
+- **제목이 있을 때는 반드시 `titleId`를 전달**합니다; 제목이 없으면 `aria-labelledby`를 출력하지 않는데, 이때 UI 계층은 `aria-label`로 폴백해야 합니다——접근 가능한 이름이 없는 대화상자는 스크린 리더에서 빈 "대화상자"로 읽힙니다.
+- 포커스 관리(UI 계층): 열릴 때 포커스가 대화상자로 들어가고(첫 번째 포커스 가능 요소 또는 콘텐츠 영역), 닫힐 때 **트리거 요소로 반환**합니다——이것은 포커스 트랩의 표준 관례이며, 반환을 빠뜨리면 키보드 사용자가 위치를 잃게 됩니다.
+- **`aria-modal`은 대체재가 아닙니다**: 이것은 선언일 뿐이며, 진짜 배경 격리는 `core/shared/focus-trap`의 inert 구현에 달려 있습니다. 선언만 하고 격리하지 않는 "가짜 모달"은 흔한 결함입니다.
+- 대화상자 안에 폼이 있을 때, 엔터 제출 / Esc 닫기의 의미를 명확히 해야 합니다(Esc 닫기 전에 저장하지 않은 수정이 있으면 재확인해야 합니다).
+
+## 사용 예시
+
+```ts
+import { canClose, shouldTrapFocus, getDialogStyle } from '@lh-ui/share/core/dialog'
+
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'modalClick')  // false
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'escape')      // true
+canClose({}, 'escape')        // true (기본적으로 Esc로 닫기 가능)
+canClose({}, 'modalClick')    // false (기본적으로 마스크 클릭으로 닫기 불가)
+
+shouldTrapFocus({ visible: true, lockScroll: true })   // true
+shouldTrapFocus({ visible: true, lockScroll: false })  // false
+shouldTrapFocus({ visible: false, lockScroll: true })  // false
+
+getDialogStyle({ top: '15vh', position: 'top', zIndex: 2000 })
+// { marginTop: '15vh', zIndex: '2000' }
+getDialogStyle({ top: '15vh', position: 'center' })
+// {} (center는 flexbox로 가운데 정렬, marginTop 겹치지 않음)
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-dialog-fade">
+    <div v-if="visible" class="lh-dialog__wrapper" :style="{ zIndex }">
+      <div class="lh-dialog__mask" @click="onMaskClick" />
+      <div
+        :class="getDialogPopperClass({ visible })"
+        :style="getDialogStyle({ top, zIndex, position })"
+        v-bind="getDialogAria({ id: dialogId, titleId })"
+      >
+        <header class="lh-dialog__header">
+          <h3 class="lh-dialog__title" :id="titleId">{{ title }}</h3>
+          <button v-if="showClose" type="button" class="lh-dialog__close" aria-label="닫기" @click="close">✕</button>
+        </header>
+        <div class="lh-dialog__body"><slot /></div>
+        <footer class="lh-dialog__footer"><slot name="footer" /></footer>
+      </div>
+    </div>
+  </transition>
+</teleport>
+```
+
+```ts
+function onMaskClick() {
+  if (canClose({ closeOnClickModal, closeOnPressEscape }, 'modalClick')) close()
+}
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && canClose({ closeOnClickModal, closeOnPressEscape }, 'escape')) close()
+}
+
+// 포커스 트랩 (shared/focus-trap과 연동)
+watch(visible, async (v) => {
+  if (v) { savedFocus = saveActiveElement(); await nextTick(); focusFirst(dialogRef.value) }
+  else { restoreActiveElement(savedFocus) }
+})
+```
+
+```tsx
+// React: 전환은 CSSTransition 또는 headless 방식을 사용; 포커스 트랩은 같은 focus-trap 코어 사용
+```
+
+```ts
+// uniapp: <view> + fixed 위치 지정; 스크롤 잠금은 UI 계층이 처리
+// (미니 프로그램에는 잠글 body 스크롤이 없으므로 scroll-view로 콘텐츠 영역을 감싸 제어);
+// core의 canClose / getDialogAria는 그대로 사용
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-dialog__wrapper` | 외부 레이어 (flex 가운데 정렬 + zIndex) |
+| `.lh-dialog__mask` | 마스크 (반투명 검정) |
+| `.lh-dialog__popper` | 대화상자 본체 |
+| `.lh-dialog__popper--visible` | 펼침 상태 (전환 끝점) |
+| `.lh-dialog__header` / `__title` / `__close` | 헤더 |
+| `.lh-dialog__body` | 콘텐츠 영역 |
+| `.lh-dialog__footer` | 하단 버튼 영역 |
+
+마스크 `rgba(0, 0, 0, 0.5)`; 본체 `--lh-bg-color` + `--lh-radius-base` 둥근 모서리 + 그림자; 너비는 `width` 프로퍼티로 제어 (기본값 50%).
+
+## 주의사항
+
+- **`closeOnClickModal`과 폼의 충돌**: 폼이 있는 대화상자는 명시적으로 `false`로 설정하는 것을 권장합니다(이것이 기본값이기도 합니다), 사용자가 마스크를 실수로 터치해 입력을 잃지 않도록.
+- **`lockScroll`과 포커스 트랩의 관계**: `shouldTrapFocus`는 `lockScroll`도 true여야 합니다——스크롤 잠금은 보통 완전한 모달을 의미하며, 이때 포커스 트랩은 함께 오는 동작입니다. 스크롤만 잠그고 포커스를 가두지 않으면 "Tab이 배경 페이지로 달아나는" 끊긴 경험이 됩니다.
+- **중첩 대화상자**: 내부 대화상자의 zIndex는 외부보다 높아야 합니다(자증 카운터로 관리), 그리고 포커스 트랩도 중첩 저장해야 합니다(내부가 닫힐 때 내부의 트리거 요소로 반환, 가장 바깥이 아님).
+- **`zIndex` 관리**: core는 전달된 값을 스타일에 쓸 뿐 자증하지 않습니다. UI 계층은 전역 zIndex 카운터를 사용해야 합니다 (message / notification과의 층위 충돌 회피).
+- **전환 애니메이션의 마운트 시점**: `v-if` 토글은 즉시 DOM을 언마운트합니다, 닫기 애니메이션은 `<transition>`과 함께 동작해야 합니다; 애니메이션 중 DOM이 파괴되면 포커스 반환에 실패합니다——`@after-leave`로 실제 언마운트 로직을 늦추세요.
+- **`position: 'bottom'`**: 하단 위치의 대화상자(모바일 action sheet 스타일)는 flexbox의 flex-end 정렬로 처리되며, `top`은 효과가 없습니다.
+- **`width`가 퍼센트인 경우**: `'50%'`는 마스크 너비에 대한 비율입니다, 모바일 좁은 화면에서는 `'90%'`나 구체적인 px로 바꾸는 것을 권장합니다.
+
+<FnPlayground module="dialog" fn="canClose" params='{"state": {"closeOnClickModal": false, "closeOnPressEscape": true}, "reason": "escape"}' />

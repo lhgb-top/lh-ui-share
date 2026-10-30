@@ -1,0 +1,128 @@
+---
+title: パッケージエントリとサブパス
+description: '@lh-ui/share の 77 個の exports キー全表とオンデマンドインポートの実践'
+---
+
+# パッケージエントリとサブパス
+
+`package.json` の `exports` フィールドが**唯一の正規インポートパス**を定義します——ここに
+列挙されていないパス（たとえば `@lh-ui/share/es/core/button/logic.js` を直接指定するなど）は
+Node / バンドラーに拒否されます。本パッケージは合計 **77 個のキー**を持ちます。
+
+## トップレベルキー一覧
+
+| キー | 参照先 | 用途 |
+| --- | --- | --- |
+| `.` | `es/index.js` / `lib/index.js` | 全体のベアインポート |
+| `./package.json` | `./package.json` | ツールがバージョン番号を読むため |
+| `./core` | `es/core/index.js` | すべての core 純関数の集約 |
+| `./core/<コンポーネント>/*` | `es/core/<コンポーネント>/*` | **56 個のコンポーネント**を 1 つずつオンデマンドで |
+| `./core/shared/*` | `es/core/shared/*` | 12 個の共有コアモジュール |
+| `./constants` | `es/constants/index.js` | `LH_*` 定数 |
+| `./locales` | `es/locales/index.js` | lhlocale + zhCN / enUS |
+| `./locales/lang/*` | `es/locales/lang/*` | 6 つの言語パックを個別に読み込む |
+| `./theme` | `es/theme/index.js` | テーマランタイムプリミティブ + プリセット |
+| `./types` | `es/types/index.d.ts` | **型のみ**、実装なし |
+| `./types/components/*` | `es/types/components/*.d.ts` | コンポーネント Props 型（型のみ） |
+| `./utils` | `es/utils/index.js` | createNamespace / deepMerge などの純ユーティリティ |
+| `./utils/*` | `es/utils/*` | ユーティリティをファイル単位で読み込む |
+| `./theme.css` | `dist/theme/index.css` | 明色トークン |
+| `./theme-dark.css` | `dist/theme/index-dark.css` | 暗色の上書き |
+| `./styles.css` | `dist/styles/index.css` | トークン + コンポーネントスタイル全体 |
+| `./dist/*` | `dist/*` | dist 成果物への直通 |
+| `./styles/*` | `styles/<name>/index.scss` | **単一コンポーネントの SCSS ソース** |
+| `./styles/index.scss` | `styles/index.scss` | SCSS 全体の集約 |
+| `./styles/theme/index.scss` | `styles/theme/index.scss` | テーマ SCSS の集約 |
+| `./styles/theme/common/*` | `styles/theme/common/*.scss` | トークン / 紋様 / トランジション mixin |
+
+## 3 条件エクスポート
+
+純粋な CSS / SCSS と `types` キーを除き、すべての JS キーは同時に 3 つの条件を提供します：
+
+```json
+"./core/button/*": {
+  "types": "./es/core/button/*.d.ts",
+  "import": "./es/core/button/*.js",
+  "require": "./lib/core/button/*.js"
+}
+```
+
+- `import` —— ESM 成果物（`es/`）。preserveModules がソース構造をミラーし、オンデマンド
+  インポートではその 1 ファイルだけがバンドルされます。
+- `require` —— CJS 成果物（`lib/`）。Node で直接実行する場合や jest などのシナリオ向けです。
+- `types` —— `.d.ts`。`import type` はこれを通り、ランタイムコストはゼロです。
+
+## 56 個の core サブパス
+
+```
+affix · alert · anchor · avatar · backtop · badge · breadcrumb · button ·
+calendar · card · cascader · checkbox · collapse · config · date-picker ·
+descriptions · dialog · divider · drawer · dropdown · empty · form · grid ·
+icon · image · input · input-number · loading · menu · message ·
+notification · pagination · popconfirm · popover · progress · radio · rate ·
+segmented · select · skeleton · slider · space · spinner · statistic ·
+steps · switch · table · tabs · tag · time-picker · timeline · tooltip ·
+transfer · tree · upload · virtual-list
+```
+
+各サブパスのエクスポート範囲はコンポーネントページの「関数表」が基準で、ページごとに確認
+できます（左のサイドバー「コンポーネント」を参照）。
+
+## 12 個の共有コアサブパス
+
+```
+core/shared/a11y · date · delay · focus-trap · format · keyboard ·
+popper · pt · sanitize · sx · types · virtual
+```
+
+これは各端の UI ライブラリから最も頻繁に参照される層です。各モジュールのドキュメントは
+左のサイドバー「共有コア」を参照してください。
+
+## tree-shaking と sideEffects
+
+```json
+"sideEffects": ["**/*.css", "**/*.scss"]
+```
+
+副作用があるのはスタイルファイルだけです。純粋な JS サブパスは安全に tree-shaking できます：
+
+- ✅ `import { getButtonClasses } from '@lh-ui/share/core/button'` は button のみをバンドル。
+- ✅ `import type { LhSxProps } from '@lh-ui/share/core/shared/sx'` はコンパイル時に消去。
+- ⚠️ `import '@lh-ui/share/styles.css'` は**全体**で、tree-shake できません——
+  スタイルをオンデマンドで使いたい場合は `./styles/<name>` の SCSS ソースを自分でコンパイルするか、
+  各 UI ライブラリのオンデマンド成果物を使用してください。
+
+## styles サブパスの 2 つの形態
+
+`./styles/*` が指すのは**SCSS ソース**（`styles/<name>/index.scss`）であり、コンパイル済み
+成果物ではありません：
+
+```scss
+@use '@lh-ui/share/styles/button';   // ✅ バンドラーが SCSS をコンパイル
+```
+
+```ts
+import '@lh-ui/share/styles/button'   // ❌ .scss 拡張子が必要で、バンドラーも認識しない
+```
+
+プロジェクト内で SCSS をコンパイルしたくない場合は、`./styles.css`（全体）を読み込むか、
+各 UI ライブラリがビルド済みの `es/<name>/style/index.css`（lh-ui-plus） /
+`es/components/<name>/style/index.css`（lh-ui-vue2）を使用してください。
+
+## ローカル連携（ファミリー内開発）
+
+ファミリー内の各 UI ライブラリは npm に依存しません：dev / test 構成が**存在性ガード**付きで
+`@lh-ui/share/**` を同階層の `lh-ui-share/` のソースへ alias します：
+
+| インポート | ファミリー構成下での参照先 |
+| --- | --- |
+| `@lh-ui/share/styles/**` | `lh-ui-share/styles/**`（SCSS ソース、vite がリアルタイムでコンパイル） |
+| `@lh-ui/share/core/**` | `lh-ui-share/src/core/**` |
+| `@lh-ui/share/{utils,constants,theme,locales,types}/**` | `lh-ui-share/src/$1/**` |
+| `@lh-ui/share`（ベア） | `lh-ui-share/src/index.ts` |
+
+同階層の share リポジトリが存在しない場合、ガードは空配列を返し、インストール済みの npm
+パッケージへ自動フォールバックします——**単一リポジトリの clone でもファミリー構成でも動作
+します**。同じルールはリリースにも適用されます：share に深いファイルを追加した後 `pnpm build`
+（sync-exports を含む）を実行していないと、npm 側に対応する exports キーが存在せず、下流の
+`pnpm up` が MODULE_NOT_FOUND になります。

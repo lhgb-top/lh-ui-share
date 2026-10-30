@@ -1,0 +1,172 @@
+---
+title: 各端如何消費
+description: Vue3 / Vue2 / React / uniapp 四端把 share 純函式接到各自響應式機制上的接線範例
+---
+
+# 各端如何消費
+
+share 的 core 是純函式，不含任何響應式。各端 UI 庫只做一件事：**把純函式的輸出綁到
+模板，把使用者的輸入餵回純函式**。下面是四端的接線形態。
+
+## 通用模式
+
+每個元件的接線都是這三步：
+
+1. 框架側持有一份 state（`ref` / `useState` / 響應式 data）
+2. 使用者互動 → 呼叫 core 純函式算出新 state → 寫回
+3. 模板裡呼叫類別名 / aria 屬性包純函式渲染
+
+```ts
+// core 側（框架無關，本倉）
+export function getSwitchClasses(state: LhSwitchState): string
+export function getSwitchAria(state: LhSwitchState): Record<string, string>
+export function toggleSwitch(state: LhSwitchState, checked: boolean): LhSwitchState
+```
+
+## Vue3（lh-ui-plus）
+
+```vue
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { getSwitchClasses, getSwitchAria, toggleSwitch } from '@lh-ui/share/core/switch'
+
+const checked = ref(false)
+const classes = computed(() => getSwitchClasses({ checked: checked.value, disabled: false }))
+const aria = computed(() => getSwitchAria({ checked: checked.value }))
+
+function onToggle() {
+  checked.value = toggleSwitch({ checked: checked.value }, !checked.value).checked
+}
+</script>
+
+<template>
+  <button :class="classes" v-bind="aria" @click="onToggle">
+    <span class="lh-switch__handle" />
+  </button>
+</template>
+
+<style lang="scss">
+@use '@lh-ui/share/styles/switch';
+</style>
+```
+
+樣式在庫入口全量 side-effect 注入，元件裡一般不用自己引（見[注入策略](/guide/injection)）。
+
+## Vue2（lh-ui-vue2）
+
+```vue
+<script lang="ts">
+import { getSwitchClasses, getSwitchAria, toggleSwitch } from '@lh-ui/share/core/switch'
+
+export default {
+  name: 'LhSwitch',
+  data() {
+    return { checked: false }
+  },
+  computed: {
+    classes() {
+      return getSwitchClasses({ checked: this.checked, disabled: false })
+    },
+    aria() {
+      return getSwitchAria({ checked: this.checked })
+    },
+  },
+  methods: {
+    onToggle() {
+      this.checked = toggleSwitch({ checked: this.checked }, !this.checked).checked
+    },
+  },
+}
+</script>
+```
+
+樣式需使用者按需引：
+
+```ts
+import '@lh-ui/vue2/theme.css'
+import '@lh-ui/vue2/style/switch'
+```
+
+## React（lh-ui-react）
+
+`useMemo` 替代 `computed`；state 變化觸發重新渲染天然是響應式的：
+
+```tsx
+import { memo, useMemo, useState } from 'react'
+import {
+  getSwitchClasses,
+  getSwitchAria,
+  toggleSwitch,
+} from '@lh-ui/share/core/switch'
+import '@lh-ui/react/style/switch'
+
+export const LhSwitch = memo(function LhSwitch() {
+  const [checked, setChecked] = useState(false)
+
+  const classes = useMemo(
+    () => getSwitchClasses({ checked, disabled: false }),
+    [checked],
+  )
+  const aria = useMemo(() => getSwitchAria({ checked }), [checked])
+
+  return (
+    <button
+      type="button"
+      className={classes}
+      {...aria}
+      onClick={() => setChecked((c) => !c)}
+    >
+      <span className="lh-switch__handle" />
+    </button>
+  )
+})
+```
+
+## uniapp（lh-ui-uniapp）
+
+uniapp 的 `<view>` / `<text>` 上不能隨意綁 aria 屬性，`getSwitchAria` 的產物在
+小程序端會被過濾；app / h5 端仍可用。類別名綁定走 `:class` 字串或陣列：
+
+```vue
+<template>
+  <view :class="classes" @tap="onToggle">
+    <view class="lh-switch__handle" />
+  </view>
+</template>
+
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { getSwitchClasses, toggleSwitch } from '@lh-ui/share/core/switch'
+
+const checked = ref(false)
+const classes = computed(() => getSwitchClasses({ checked: checked.value }))
+function onToggle() {
+  checked.value = !checked.value
+}
+</script>
+```
+
+## 國際化：同一個 emitter，四種訂閱
+
+LhLocale 是純事件發射器，`version` 在任何語言變更時自增。各端把它轉成各自的重新渲染訊號：
+
+| 端 | 接線 |
+| --- | --- |
+| vue2 / vue3 / uniapp | `ref(lhlocale.version)` + `lhlocale.subscribe(v => version.value = v)` |
+| react | `useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)` |
+
+```ts
+import { lhlocale } from '@lh-ui/share/locales'
+
+lhlocale.setLocale('en-US')          // 切換，version 自增並廣播
+const text = lhlocale.t('input.placeholder')
+```
+
+即時演示見[國際化參考](/reference/locales)。
+
+## 本地連動：改 share 原始碼即時生效
+
+家族配置下，各 UI 庫的 dev / test 設定 alias 到同級 `lh-ui-share/`，**dev 期走的是
+TS / SCSS 原始碼而非構建產物**。新增深檔案（如 `core/foo/bar.ts`）在 dev 期立即可用，
+但 `sync-exports` 未跑則 npm 側沒有對應 exports 鍵——**發版前務必走完整 `pnpm build`**，
+否則下游 `pnpm up` 後 MODULE_NOT_FOUND。

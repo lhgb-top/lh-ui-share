@@ -1,0 +1,140 @@
+---
+title: card —— カード
+description: 'getCardInteractivity が interactive / static のセマンティクスを区別、isCardInteractive がインタラクション可否を判定、shadow は 3 段階のモディファイアクラス'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+カードは「コンテンツの容器」ですが、現代のコンポーネントライブラリのカードはしばしば**カード全体がクリック可能**です。このときそれはもはや普通の `<div>` ではありません——button のセマンティクス、キーボードでフォーカス可能、Enter / Space での起動が必要です。`core/card` は `getCardInteractivity` によってこの「ボタンかどうか」の意思決定を明示化し、UI 層がそれに従って tabindex と role を取り付けられるようにします。
+
+## いつ使うか
+
+- 各端が `LhCard` を実装する：クラス名とインタラクションのセマンティクスは core が計算する。
+- 情報の集約表示：カバー + タイトル + 説明 + 操作エリア。
+- **使うべきでない**：フォームコントロールが必要な場合、複雑な入れ子インタラクションが必要な場合。カードの中にさらにボタンを置くこと（操作エリア）は許容されますが、**カード全体がクリック可能 + カード内にボタン**は入れ子インタラクションのアクセシビリティ問題を引き起こすため避けるべきです。
+
+## インポート方法
+
+```ts
+import { getCardClassNames, isCardInteractive, getCardInteractivity } from '@lh-ui/share/core/card'
+import type { LhCardState, LhCardShadow, LhCardInteractivity } from '@lh-ui/share/core/card'
+```
+
+## 設計意図
+
+`isCardInteractive` の判定は `clickable && !loading` です：読み込み中のカードはインタラクションできません。この `&&` は当たり前に見えますが、実際の問題を解決しています——カードの読み込み中は通常スケルトンを表示し、このときクリックは未準備の操作を発生させるのではなく飲み込まれるべきです。
+
+`getCardInteractivity` が真偽値ではなく `'interactive'` / `'static'` を返すのは、UI 層のコードが 2 種類の**要素**を扱っているかのように読めるようにするためです：
+
+- `interactive`：レンダリング時に `role="button"`、`tabindex="0"` を取り付け、キーボードの Enter / Space を監視し、`@click` を取り付ける。
+- `static`：セマンティクスを何も付けず、単なるコンテナとする。
+
+このレイヤー分けは必要です：UI 層に直接 `v-if="clickable"` と書かせると、role / tabindex / キーボードイベントの 3 箇所の分岐がそれぞれ独自に進化し、抜けが生じやすくなります。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getCardClassNames` | `(state: LhCardState) => string[]` | クラス名配列 | shadow の段階、クリック可能、読み込みモディファイアクラス |
+| `isCardInteractive` | `(state: LhCardState) => boolean` | 真偽値 | `clickable && !loading` |
+| `getCardInteractivity` | `(state: LhCardState) => LhCardInteractivity` | `'interactive'` / `'static'` | セマンティクスロールの意思決定 |
+
+出力例：
+
+```ts
+getCardClassNames({ shadow: 'hover', clickable: true, loading: false })
+// ['lh-card', 'lh-card--shadow-hover', 'lh-card--clickable']
+
+getCardInteractivity({ shadow: 'hover', clickable: true, loading: false })  // 'interactive'
+getCardInteractivity({ shadow: 'always', clickable: false, loading: false }) // 'static'
+```
+
+## 型定義
+
+```ts
+export type LhCardShadow = 'always' | 'hover' | 'never'
+export type LhCardInteractivity = 'interactive' | 'static'
+
+export interface LhCardState {
+  shadow: LhCardShadow
+  clickable: boolean
+  loading: boolean
+}
+```
+
+## アクセシビリティ
+
+このコンポーネントの核心です。カード全体がクリック可能な場合は APG の button パターンに従って実装しなければならず、UI 層の 3 つの作業のどれも欠かせません：
+
+```vue
+<div
+  :class="getCardClassNames({ shadow, clickable, loading })"
+  :role="interactivity === 'interactive' ? 'button' : undefined"
+  :tabindex="interactivity === 'interactive' ? 0 : undefined"
+  @click="interactivity === 'interactive' && emit('click')"
+  @keydown.enter="interactivity === 'interactive' && emit('click')"
+  @keydown.space.prevent="interactivity === 'interactive' && emit('click')"
+>
+```
+
+Space キーの `.prevent` に注意してください：ネイティブの button は Space のデフォルトのスクロール動作を阻止しますが、div でシミュレートする場合は手動で阻止しなければなりません。そうでないとカードがスクロールされつつ起動されてしまいます。
+
+手抜きのためにクリック可能なカードを `<button>` としてレンダリング**しない**でください：button のデフォルトスタイル（inline、テキスト中央揃え）はカードのレイアウトと衝突し、button の内側にブロックレベルのコンテンツを置くと古いブラウザで問題が起きます。div + role は APG が認める等価な実装です。
+
+## 使用例
+
+```ts
+import { getCardClassNames, getCardInteractivity } from '@lh-ui/share/core/card'
+
+getCardClassNames({ shadow: 'never', clickable: false, loading: true })
+// ['lh-card', 'lh-card--shadow-never', 'lh-card--loading']
+```
+
+```tsx
+// React
+const interactivity = getCardInteractivity({ shadow, clickable, loading })
+const interactive = interactivity === 'interactive'
+return (
+  <div
+    className={getCardClassNames({ shadow, clickable, loading }).join(' ')}
+    role={interactive ? 'button' : undefined}
+    tabIndex={interactive ? 0 : undefined}
+    onClick={interactive ? onClick : undefined}
+    onKeyDown={interactive ? (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() }
+    } : undefined}
+  >
+    {loading ? <Skeleton /> : children}
+  </div>
+)
+```
+
+```ts
+// uniapp：view は hover-class をサポートし、:hover-class で hover 影をシミュレートできる；
+// キーボードイベントは h5 端でのみ有効で、非 h5 端は tap にのみ応答する
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-card` | ベースクラス：角丸、枠線、背景、遷移 |
+| `.lh-card--shadow-{always\|hover\|never}` | 影の 3 段階：常時表示 / ホバー時に表示 / 一切表示しない |
+| `.lh-card--clickable` | クリック可能：hover で浮き上がり + ポインタカーソル + active で沈み込み |
+| `.lh-card--loading` | 読み込み状態：コンテンツエリアがスケルトンで覆われる |
+| `.lh-card__header` / `.lh-card__title` / `.lh-card__extra` | ヘッダー：タイトル + 右側の操作スペース |
+| `.lh-card__cover` | カバー画像エリア（全幅の角丸接続） |
+| `.lh-card__body` | メインコンテンツエリア |
+| `.lh-card__footer` | 下部の操作エリア |
+| `.lh-card__loading-line` / `--narrow` / `--wide` | スケルトンプレースホルダー行 |
+
+影と角丸は `--lh-shadow-*` / `--lh-radius-*` トークンで進み、ConfigProvider で上書きできます。
+
+## 注意事項
+
+- **入れ子インタラクションの罠**：カード全体が `role="button"` のとき、カード内のボタンやリンクは button の子孫となり、スクリーンリーダーはそれらを読み飛ばします（button の内側にインタラクティブな内容は許可されないため）。両方を同時に存在させる必要がある場合は、カード全体のクリック可能性を諦め、クリックエリアを明確な 1 つの要素に限定してください。
+- `shadow` にデフォルト値のフォールバックはありません：型は必須となっており、UI 層の props のデフォルト値は通常 `'hover'` を与えます。
+- 読み込み状態のスケルトンは `.lh-card__loading-line` がスタイル層で実装し、core は `--loading` クラスだけを出力します。
+- `clickable` が true でも click イベントをバインドしないことは合法です（見た目がクリック可能なだけ）。これは呼び出し側の問題であって core の問題ではありません。
+
+<FnPlayground module="card" fn="getCardClassNames" params='{"state": {"shadow": "hover", "clickable": true, "loading": false}}' />

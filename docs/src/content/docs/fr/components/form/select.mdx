@@ -1,0 +1,156 @@
+---
+title: select —— Liste déroulante
+description: 'findSelectOption la correspondance exacte, getSelectOptionId les id déterministes, trois paquets d’attributs d’accessibilité combobox / listbox / option'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La liste déroulante est l'implémentation la plus simple du modèle « déclencheur + liste flottante ». `core/select` gère la recherche d'options, la génération déterministe des id d'option, ainsi que les trois paquets d'attributs d'accessibilité du pattern combobox de l'APG. **Le calcul du positionnement n'est pas ici** — les coordonnées de la couche flottante sont prises en charge par `core/shared/popper` (voir [popper](/fr/core/popper)).
+
+## Quand l'utiliser
+
+- Chaque framework implémente `LhSelect`.
+- Les scénarios à sélection unique ; pour la sélection multiple, utilisez le sélecteur en cascade ou un groupe de cases à cocher.
+- **À ne pas utiliser pour** : les options nécessitant une hiérarchie en arbre (`cascader`), ou un nombre d'options de plusieurs centaines (envisagez la virtualisation avec `virtual-list`).
+
+## Import
+
+```ts
+import {
+  findSelectOption,
+  getNextEnabledIndex,
+  getSelectOptionId,
+  getSelectTriggerAria,
+  getSelectListboxAria,
+  getSelectOptionAria,
+} from '@lh-ui/share/core/select'
+import type { LhSelectOption, LhSelectState } from '@lh-ui/share/core/select'
+```
+
+## Intentions de conception
+
+Le « déterminisme » de `getSelectOptionId(listboxId, index)` est la condition préalable au fonctionnement du pattern combobox de l'APG : le déclencheur référence l'élément actuellement mis en surbrillance via `aria-activedescendant`, et les deux doivent pointer vers **le même identifiant DOM**. Plutôt que de laisser la couche UI générer les id au hasard puis chercher à les synchroniser, la couche core impose `${listboxId}-option-${index}`, les deux côtés appliquant cette même règle.
+
+Ses gardes sont tout aussi importantes : `listboxId` vide, index non entier, ou `index < 0` (-1 signifie aucune surbrillance) renvoient **undefined** — les propriétés undefined sont ignorées par le v-bind du framework, et ne produisent donc pas d'`aria-activedescendant` pointant vers un élément inexistant.
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `findSelectOption` | `(options: LhSelectOption[], value: unknown) => LhSelectOption \| undefined` | option | correspondance exacte de value par `Object.is` |
+| `getNextEnabledIndex` | `(options: LhSelectOption[], currentIndex: number, direction: 1 \| -1) => number` | index | **@deprecated**, délègue à `shared/keyboard.getNextListIndex` |
+| `getSelectOptionId` | `(listboxId: string \| undefined, index: number) => string \| undefined` | id | concaténation déterministe, entrées illégales → undefined |
+| `getSelectTriggerAria` | `(options: { visible: boolean; listboxId?: string; highlightedIndex: number }) => LhAriaAttrs` | paquet d'attributs aria | déclencheur combobox |
+| `getSelectListboxAria` | `(id?: string) => LhAriaAttrs` | paquet d'attributs aria | conteneur listbox |
+| `getSelectOptionAria` | `(options: { listboxId?: string; index: number; selected: boolean; disabled?: boolean }) => LhAriaAttrs` | paquet d'attributs aria | option unique |
+
+## Définitions de types
+
+```ts
+export interface LhSelectOption {
+  label: string
+  value: unknown
+  disabled?: boolean
+}
+
+export interface LhSelectState {
+  options: LhSelectOption[]
+  highlightedIndex: number
+}
+```
+
+## Accessibilité
+
+Les trois paquets d'attributs constituent le pattern combobox complet :
+
+```ts
+// Déclencheur : aria-haspopup="listbox" + aria-expanded + aria-controls
+getSelectTriggerAria({ visible: true, listboxId: 'my-listbox', highlightedIndex: 2 })
+// { role: 'combobox', 'aria-expanded': true, 'aria-controls': 'my-listbox',
+//   'aria-haspopup': 'listbox', 'aria-activedescendant': 'my-listbox-option-2' }
+
+// Liste flottante : role="listbox" + id (en correspondance avec le aria-controls du déclencheur)
+getSelectListboxAria('my-listbox')  // { role: 'listbox', id: 'my-listbox' }
+
+// Option : role="option" + id + aria-selected
+getSelectOptionAria({ listboxId: 'my-listbox', index: 2, selected: true })
+// { role: 'option', id: 'my-listbox-option-2', 'aria-selected': true }
+```
+
+La boucle complète de l'interaction clavier (mise en œuvre par la couche UI, les algorithmes fournis par core) : ArrowDown/Up déplace `highlightedIndex` (via `shared/keyboard.getNextListIndex`, avec circulation entre le premier et le dernier élément et saut des éléments désactivés), Enter sélectionne, Esc ferme. **La surbrillance visuelle doit avoir la même source que `highlightedIndex`**, sinon on aboutit à « aria pointe vers A, les yeux voient B ».
+
+## Exemples d'utilisation
+
+```ts
+import { findSelectOption, getSelectOptionId, getSelectTriggerAria } from '@lh-ui/share/core/select'
+
+const options = [
+  { label: 'Porcelaine bleue et blanche', value: 'cerblue' },
+  { label: 'Encre de Chine', value: 'shuimo', disabled: true },
+]
+findSelectOption(options, 'cerblue')   // { label: 'Porcelaine bleue et blanche', value: 'cerblue' }
+findSelectOption(options, 'nope')      // undefined
+getSelectOptionId('lb', 0)             // 'lb-option-0'
+getSelectOptionId('lb', -1)            // undefined (aucune surbrillance)
+getSelectOptionId(undefined, 0)        // undefined
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-select', `lh-select--${size}`, { 'lh-select--open': visible, 'lh-select--disabled': disabled }]">
+  <button
+    class="lh-select__trigger"
+    v-bind="getSelectTriggerAria({ visible, listboxId, highlightedIndex })"
+    @click="toggle"
+  >
+    <span class="lh-select__value" :class="{ 'lh-select__value--placeholder': !selected }">
+      {{ selected ? selected.label : placeholder }}
+    </span>
+    <LhIcon class="lh-select__arrow" name="more" :size="12" />
+  </button>
+  <div v-if="visible" :id="listboxId" class="lh-select__dropdown" v-bind="getSelectListboxAria(listboxId)">
+    <div
+      v-for="(opt, i) in options"
+      :key="i"
+      class="lh-select__option"
+      :class="{ 'lh-select__option--highlighted': i === highlightedIndex, 'lh-select__option--selected': i === selectedIdx, 'lh-select__option--disabled': opt.disabled }"
+      v-bind="getSelectOptionAria({ listboxId, index: i, selected: i === selectedIdx, disabled: opt.disabled })"
+      @click="choose(opt)"
+    >{{ opt.label }}</div>
+  </div>
+</div>
+```
+
+```tsx
+// React : l'état visible + un useRef pour conserver listboxId (useId génère un id stable)
+```
+
+```ts
+// uniapp : la liste flottante est positionnée de manière absolue par un view ;
+// aria-activedescendant n'est pas supporté sur les autres cibles que h5,
+// la navigation clavier dégénère en un simple déplacement du focus, et le lecteur
+// d'écran s'appuie sur l'événement focus pour l'annonce
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-select` | classe de base |
+| `.lh-select--{small\|large}` / `--disabled` / `--open` | modificateurs d'état |
+| `.lh-select__trigger` | bouton déclencheur |
+| `.lh-select__value` / `--placeholder` | valeur affichée / état réservé |
+| `.lh-select__arrow` / `__clear` / `__actions` | flèche / effacement / zone d'actions |
+| `.lh-select__dropdown` / `--teleported` | liste flottante (teleported = téléportée vers le body) |
+| `.lh-select__option` / `--highlighted` / `--selected` / `--disabled` | les quatre états des options |
+| `.lh-select__empty` | espace réservé sans option |
+| `.lh-select-fade-*` | transitions d'entrée / sortie de la liste flottante (classes Vue3, alignées par mixin côté Vue2) |
+
+## Remarques
+
+- **`Object.is` plutôt que `===`** : `findSelectOption` utilise `Object.is`, qui traite correctement les cas limites comme `NaN` et `-0` (même si les valeurs d'options réelles y recourent rarement).
+- **`getNextEnabledIndex` est obsolète** : l'implémentation a converge vers `shared/keyboard.getNextListIndex`, cette fonction ne fait que déléguer afin de préserver l'ancienne signature. Le nouveau code importe directement le noyau.
+- **Stabilité de l'id** : `listboxId` ne doit pas changer durant le cycle de vie du composant (sinon `aria-activedescendant` pointe vers un id périmé), utilisez le générateur d'id stable de chaque cible.
+- **Le portail (teleport)** : lorsque la liste flottante est téléportée vers le body, `aria-controls` reste valable (même document), mais il faut **veiller à la gestion du focus** — après un clic sur une option, le focus doit revenir au déclencheur.
+
+<FnPlayground module="select" fn="findSelectOption" params='{"options": [{"label": "青花瓷", "value": "cerblue"}, {"label": "水墨", "value": "shuimo"}], "value": "cerblue"}' />

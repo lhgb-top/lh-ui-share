@@ -1,0 +1,221 @@
+---
+title: form —— 폼
+description: 'validateFormField 규칙 엔진 (비동기 단락 없음), getFormFieldValue 점 경로 값 가져오기, getFormFieldAria 오류 연결'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+폼 컨트롤 자체는 데이터를 수집하지 않습니다——**검증과 오류 연결**이 폼의 핵심 가치입니다. `core/form`은 세 가지를 제공합니다: 규칙 엔진 (`validateFormField`), 값 가져오기 (`getFormFieldValue`, 점 경로 지원), 오류 연결 속성 팩 모음 (`getFormFieldAria`). 의도적으로 **폼 전체 편성은 포함하지 않습니다** (필드 등록, 제출 시점, 리셋), 그것들은 UI 계층 `LhForm` 컴포넌트의 책임입니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhForm` / `LhFormItem`: 검증이 필요한 모든 입력 상황.
+- 검증 오류를 스크린 리더에 연결해야 하는 (`aria-invalid` + `aria-describedby`) 상황.
+- **사용하면 안 되는 경우**: 단일 필드, 다른 필드와의 의존이 없는 단순 검증 (컴포넌트에 내장된 `required`면 충분할 수 있음); 복잡한 크로스 필드 의존 그래프 (예: "A가 x일 때 B는 필수이고 C는 D와 같아야 함")가 필요할 때, 여러 내장 규칙을 조합하려 하지 말고 `validator` 커스텀 함수로 표현하세요.
+
+## 임포트 방법
+
+```ts
+import {
+  getFormFieldValue,
+  isEmptyValue,
+  validateFormField,
+  getFormFieldErrorId,
+  getFormFieldAria,
+} from '@lh-ui/share/core/form'
+import type { LhFormRule, LhFormState } from '@lh-ui/share/core/form'
+```
+
+## 설계 의도
+
+**규칙 엔진의 세 가지 핵심 결정**:
+
+1. **빈 값은 required만 신경 씁니다**——필수가 아니고 값이 비면 **모든 규칙을 건너뜁니다**, 주류 라이브러리 (Element / Ant Design) 관례와 동일합니다: 입력하지 않았으면 오류가 없습니다. 즉 `type: 'email'`이 빈 문자열에 대해 "이메일 형식 오류"를 보고하지 않습니다——필수 의도는 `required`로 표현합니다.
+
+2. **비동기 규칙은 단락하지 않습니다**——이것은 옛 구현과의 동작 차이이며 이 모듈에서 가장 미묘한 부분입니다. `validator`는 Promise를 반환할 수 있습니다. 옛 구현은 첫 번째 thenable을 만난 뒤 **뒤의 모든 규칙을 건너뛰어** "비동기 이메일 중복 검사 이후의 길이 검증이 삼켜지는" 문제가 있었습니다. 새 구현은 각 규칙을 지연 평가 함수 (`RuleCheck`)로 감싸고, thenable을 만나면 매달아 둔 채 **뒤의 규칙 평가를 계속**하며, 마지막에 모든 오류를 같은 Promise에 모읍니다. 첫 번째 동기 오류는 여전히 즉시 반환됩니다 (동기 오류는 단락, 비동기 규칙은 단락하지 않음).
+
+3. **동기적으로 예외를 던지는 validator는 검증 실패로 취급**——`error.message`를 오류 문구로 취하며, 미처리 예외로 관통하지 않습니다. 사용자가 커스텀 검증기를 잘못 작성했을 때 (안에서 TypeError를 던지면) 폼은 "페이지가 깨짐"이 아니라 "해당 필드 검증 실패"로 나타납니다.
+
+**required 문구의 우선순위**: 빈 값일 때 "명시적으로 message를 제공한 필수 규칙"을 우선하고, 그 외에는 첫 번째 필수 규칙을 취합니다. 이 처리는 실제 버그를 고치기 위한 것입니다——컴포넌트 계층 (form item)이 `required` 속성이 참일 때 message 없는 `{ required: true }` 규칙을 **합성**하는데, 사용자가 message를 단 규칙보다 앞에 있으면 `find`가 합성 규칙에 hit하여 범용 문구로 폴백하고, **사용자의 커스텀 문구를 삼켜버립니다**.
+
+**`getFormFieldValue`의 점 경로**: `'user.address.city'`를 단계별로 reduce하며, 도중에 객체가 아닌 것 (null / 원시값)을 만나면 예외를 던지지 않고 undefined를 반환합니다. 이것이 폼 필드가 중첩 모델에 직접 바인딩되게 하며, UI 계층이 수동으로 데이터를 평탄화할 필요가 없습니다.
+
+**`isEmptyValue`의 기준**: undefined / null / 빈 문자열 / 빈 배열을 빈 값으로 간주; **공백 문자열과 빈 객체는 빈 값이 아닙니다**——공백의 의미 처리는 컴포넌트 계층이 필요에 따라 전달하기 전에 trim하고, core가 비즈니스를 대신해 이 결정을 내리지 않습니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getFormFieldValue` | `(model, prop: string) => unknown` | 필드값 | 점 경로, 누락 시 undefined 반환 |
+| `isEmptyValue` | `(value: unknown) => boolean` | 빈값 여부 | 네 가지 빈 상태 |
+| `validateFormField` | `(value, rules?, model, requiredMessage?) => string \| undefined \| Promise<string \| undefined>` | 오류 문구 / undefined | 규칙 엔진 |
+| `getFormFieldErrorId` | `(prop: string) => string` | 요소 id | aria-describedby와 대응 |
+| `getFormFieldAria` | `(options: { prop, error?, required? }) => LhAriaAttrs` | aria 속성 팩 | invalid + describedby + required |
+
+## 타입 정의
+
+```ts
+export interface LhFormRule {
+  required?: boolean
+  message?: string
+  trigger?: string  // 트리거 시점 (blur / change / submit); core는 해석하지 않고 UI 계층이 이벤트로 규칙을 걸러냄
+  /** 내장 타입 검증; 빈 값은 건너뜀 (required와 같은 규칙) */
+  type?: 'string' | 'number' | 'boolean' | 'array' | 'email' | 'url'
+  pattern?: string | RegExp       // 정규 (문자열 값에만 적용)
+  min?: number                    // 숫자 하한, 또는 string/array의 최소 길이
+  max?: number                    // 숫자 상한, 또는 string/array의 최대 길이
+  len?: number                    // 정확한 길이 (string/array)
+  /** 커스텀 검증기: 오류 문구를 반환, 통과 시 반환하지 않음; 비동기 지원 */
+  validator?: (value: unknown, model: Record<string, unknown>) => string | undefined | Promise<string | undefined>
+}
+
+export interface LhFormState {
+  model: Record<string, unknown>
+  rules?: Record<string, LhFormRule[]>
+}
+```
+
+**`min` / `max`의 이중 의미**는 설계상의 편의입니다: 숫자 값은 크기로 비교하고, 문자열/배열은 길이로 비교합니다. 타입이 덜 정확해지는 대가지만 규칙 설정의 간결함 수익이 더 큽니다 (`{ min: 6, message: '최소 6자' }`가 비밀번호와 인원 수 모두에 성립).
+
+## 접근성
+
+`getFormFieldAria`는 폼 접근성의 **마지막 한 마디**입니다: 검증 실패 시 오류 힌트를 컨트롤에 연결하여, 스크린 리더가 "유효하지 않은 입력, 오류는 …"라고 읽어줍니다.
+
+```ts
+getFormFieldAria({ prop: 'username', error: '사용자 이름은 필수입니다', required: true })
+// { 'aria-invalid': true, 'aria-describedby': 'lh-form-error-username', 'aria-required': true }
+
+getFormFieldAria({ prop: 'username', required: true })
+// { 'aria-required': true } (오류가 없으면 빈 힌트 요소를 연결하지 않음)
+
+getFormFieldAria({ prop: 'username' })
+// {} (상태 없으면 빈 객체)
+```
+
+짝짓기 관례:
+
+- 오류 힌트 요소는 반드시 `getFormFieldErrorId(prop)`를 id로 렌더링해야 합니다——`aria-describedby`가 그것을 가리킵니다.
+- **`aria-describedby`의 시점**: error에 값이 있을 때만 이 속성을 출력하므로 (존재하지 않는 빈 요소를 참조하지 않도록), 속성 팩과 오류 문구는 반드시 같은 프레임에 갱신되어야 합니다.
+- `required` 필드는 `aria-required`를 출력하여, 스크린 리더가 컨트롤에 진입할 때 "필수"를 읽어주게 합니다.
+- `trigger`의 접근성 의미: blur 트리거 검증은 사용자 입력 도중에 끊지 않아야 합니다 (문자 하나를 칠 때마다 오류가 뜨는 것은 나쁜 경험); change 트리거는 "입력 즉시 검증"의 가벼운 상황에 적합합니다.
+
+## 사용 예시
+
+```ts
+import { validateFormField, isEmptyValue, getFormFieldValue } from '@lh-ui/share/core/form'
+
+isEmptyValue('')           // true
+isEmptyValue([])           // true
+isEmptyValue('  ')         // false (공백 문자열은 빈 값 아님)
+isEmptyValue({})           // false (빈 객체는 빈 값 아님)
+isEmptyValue(0)            // false (0은 유효한 값!)
+
+getFormFieldValue({ user: { name: 'lh' } }, 'user.name')   // 'lh'
+getFormFieldValue({ user: null }, 'user.name')             // undefined (도중에 객체 아님)
+getFormFieldValue({}, 'missing')                           // undefined
+```
+
+```ts
+// 필수
+validateFormField('', [{ required: true, message: '사용자 이름은 필수입니다' }], {})
+// '사용자 이름은 필수입니다'
+
+// 필수가 아닌 빈 값: 모든 규칙 건너뜀
+validateFormField('', [{ required: false, type: 'email', message: '이메일 형식 오류' }], {})
+// undefined
+
+// 내장 타입 + 길이
+validateFormField('ab', [{ min: 6, message: '최소 6자' }], { username: 'ab' })
+// '최소 6자'
+
+// 정규
+validateFormField('123', [{ pattern: /^\d{4}$/, message: '4자리 숫자' }], {})
+// '4자리 숫자'
+
+// 커스텀 동기 검증기
+validateFormField('abc', [{
+  validator: (v) => (v as string).includes('@') ? undefined : '@를 포함해야 합니다',
+}], {})
+// '@를 포함해야 합니다'
+
+// 커스텀 검증기 예외: 검증 실패로 취급
+validateFormField('x', [{ validator: () => { throw new Error('검증기 오류') } }], {})
+// '검증기 오류'
+
+// 비동기 검증기 (단락 없음: 뒤의 동기 규칙도 평가됨)
+validateFormField('ab', [
+  { validator: async (v) => await checkUnique(v) ? undefined : '이미 사용 중', message: 'x' },
+  { min: 6, message: '최소 6자' },
+], {})
+// Promise<['이미 사용 중', '최소 6자'] 중 첫 번째 오류>
+```
+
+```vue
+<!-- Vue3: form-item의 전형적인 배선 -->
+<script setup>
+const error = ref('')
+async function validate(trigger: string) {
+  const rules = (props.rules ?? []).filter((r) => !r.trigger || r.trigger === trigger)
+  error.value = (await validateFormField(
+    getFormFieldValue(props.model, props.prop),
+    rules,
+    props.model,
+    t('form.required'),
+  )) ?? ''
+}
+</script>
+
+<template>
+  <div class="lh-form-item" :class="{ 'is-error': error }">
+    <label class="lh-form-item__label" :for="inputId">{{ label }}</label>
+    <div class="lh-form-item__content">
+      <slot :aria-props="getFormFieldAria({ prop, error, required })" />
+      <p
+        v-if="error"
+        :id="getFormFieldErrorId(prop)"
+        class="lh-form-item__error"
+        role="alert"
+      >
+        {{ error }}
+      </p>
+    </div>
+  </div>
+</template>
+```
+
+```tsx
+// React: 속성 팩을 감싸인 컨트롤에 그대로 전달
+// <input {...getFormFieldAria({ prop, error, required })} aria-describedby={error ? getFormFieldErrorId(prop) : undefined} />
+```
+
+```ts
+// uniapp: core 계층은 완전히 사용 가능; h5가 아닌 말단에서는 aria 속성 지원이 제한적이며 오류 문구는 주로 시각 + role="alert"에 의존
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-form` | 폼 컨테이너 |
+| `.lh-form--inline` | 인라인 레이아웃 (label과 컨트롤이 같은 줄) |
+| `.lh-form--label-top` / `--label-left` / `--label-right` | label 위치 |
+| `.lh-form-item` | 필드 항목 |
+| `.lh-form-item.is-error` | 검증 실패 (컨트롤 빨간 테두리) |
+| `.lh-form-item__label` | 레이블 (필수 별표는 `::before`가 렌더링) |
+| `.lh-form-item__content` | 컨트롤 영역 |
+| `.lh-form-item__error` | 오류 힌트 (`role="alert"`) |
+| `.lh-form-item__required` | 필수 별표 |
+
+오류 색 `--lh-danger-color`; 필수 별표도 같은 색. label 너비는 `--lh-form-label-width` 토큰으로 제어 (오른쪽 정렬 시의 정렬 기준).
+
+## 주의사항
+
+- **`0` / `false`는 빈 값이 아닙니다**: `isEmptyValue(0)`는 false를 반환합니다. 이것이 가장 흔하게 밟는 함정입니다——"수량 0"은 유효한 입력이며 `required`가 오류를 내서는 안 됩니다. 마찬가지로 `false`도 checkbox에 대해 유효한 값입니다.
+- **`validator`의 두 번째 매개변수는 model 전체**: 크로스 필드 검증 (예: 비밀번호 확인)에 이것을 사용하고, 클로저에 옛 값을 capture하지 마세요.
+- **비동기 검증의 디바운스**: `validator`에서 요청을 보낼 때 UI 계층은 디바운스해야 (보통 300ms) "요청이 돌아왔을 때 필드 값이 이미 바뀌어 있는" 경합을 처리해야 합니다——core는 이것을 관리하지 않으며, 만료된 오류 문구를 반환하는 것은 호출자의 책임입니다.
+- **`trigger`는 UI 계층이 해석**: core는 선언을 담을 뿐 소비하지 않습니다. 컴포넌트 계층이 이벤트 (blur/change/submit)로 규칙을 걸러낸 뒤 `validateFormField`에 전달합니다.
+- **`requiredMessage`는 범용 폴백 문구**: 보통 언어팩 (`form.required`)에서 오며, 규칙의 `message`가 undefined일 때만 사용; 빈 문자열 `message: ''`을 명시적으로 제공해도 그대로 사용 (누락으로 간주하지 않음).
+- **여러 규칙의 첫 번째 오류**: 동기 규칙은 단락 (첫 hit 즉시 반환), 비동기 규칙은 전부 평가 후 첫 resolve 오류를 취합니다. 오류 표시 순서는 규칙 배열 순서와 일치합니다.
+- **중첩 필드의 prop**: `'user.name'`은 값 가져오기와 error id 생성에 모두 쓰입니다 (`lh-form-error-user.name`)——id 안의 점은 CSS 선택자에서 이스케이프해야 하므로 `document.getElementById`나 `querySelector`를 쓸 때 주의하세요.
+
+<FnPlayground module="form" fn="validateFormField" params='{"value": "ab", "rules": [{"min": 6, "message": "최소 6자"}], "model": {}}' />

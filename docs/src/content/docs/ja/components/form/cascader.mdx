@@ -1,0 +1,229 @@
+---
+title: cascader —— カスケードセレクト
+description: 'findNode / findPathByValues のツリー検索とパス復元、normalizeCascaderNodes の一括正規化、searchNodes は祖先チェイン付きで検索'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+カスケードセレクトは「省 > 市 > 区」のような**階層を追って選ぶ**データを扱います：上の階層を選んで初めて下の階層が現れます。`core/cascader` は share で最も重い core モジュールの一つです——ツリーデータの検索、パス復元、パネル生成、検索、正規化をすべて純関数にし、UI 層はパネル項目を列としてレンダリングするだけです。
+
+## いつ使うか
+
+- 各端の `LhCascader` 実装：多階層カテゴリ、地域選択、組織構造。
+- データがツリー（またはツリーに正規化可能）で、各階層が排他的に選ばれる。
+- **使うべきでない**：単一階層の選択なら `select`；親をチェックすれば子もチェックされるカスケードチェックが必要なら `tree`（`checkStrictly` セマンティクスあり）。
+
+## インポート方法
+
+```ts
+import {
+  findNode,
+  findPathByValues,
+  getField,
+  getChildren,
+  getPanelItems,
+  searchNodes,
+  getSelectedLabelPath,
+  getCascaderClassNames,
+  getPanelClassNames,
+  expandLastValue,
+  isLeafNode,
+  normalizeCascaderNodes,
+  flattenNodes,
+  getCascaderTriggerAria,
+  getCascaderColumnAria,
+  getCascaderItemAria,
+} from '@lh-ui/share/core/cascader'
+import type {
+  LhCascaderNode,
+  LhCascaderPath,
+  LhCascaderPanelItem,
+  LhCascaderState,
+  LhCascaderSearchResult,
+  LhCascaderItemConfig,
+} from '@lh-ui/share/core/cascader'
+```
+
+## 設計意図
+
+いくつかの重要な設計：
+
+- **検索重複排除は祖先チェインで行い、グローバルな visited は使わない**：ツリー操作では一般に循環参照の保護が必要です。ここでは「祖先チェイン」で重複を判定し（`ancestors` パラメータを階層ごとに受け渡す）、モジュールドローやグローバルな Set は使いません——代償は保護が**単一呼び出し内でしか有効でない**こと、利点は DAG で正当に共有されるサブツリーを誤ってスキップしないことと、インスタンスを跨ぐ状態漏洩がないことです。
+- **`getField` でフィールドのエイリアスを本当に効かせる**：バックエンドのデータは `value` / `label` / `children` という名前とは限りません（`id` / `name` / `subList` の可能性もある）。`LhCascaderItemConfig` がエイリアスマッピングを宣言し、すべてのツリー操作が `getField` 経由で読み取ります。
+- **正規化は 1 回、あとは標準構造**：`normalizeCascaderNodes` が任意のフィールド構造の生ツリーを `LhCascaderNode[]` に変換し、以降のすべての関数は標準構造を扱います。正規化せずに itemConfig を直接渡すこともでき、両経路は等価です（ただし正規化後のほうがパフォーマンスが良く、階層ごとのエイリアス検索が不要です）。
+- **検索結果は完全な祖先チェインを携える**：`searchNodes` が返す各結果には `path`（値の配列）、`nodes`（ノード配列）、`pathLabels`（ラベル配列）が含まれ、UI は「浙江省 / 杭州市 / 西湖」の 1 行をそのままレンダリングでき、再検索の必要がありません。
+- **プログラマティックな値反映は無効項目をフィルタしない**：`findPathByValues` は意図的に**無効な子ノードをフィルタしません**——無効化は UI 層のクリック制約であり、プログラマティックな値反映（`v-model` の初期値など）は任意のパスを復元できるべきです。さもなくば「後から無効化した値が反映時に失われる」ことが起きます。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `findNode` | `(nodes, value, strict?, ancestors?, itemConfig?) => { node, path } \| null` | ノード + 祖先チェイン | 再帰検索 |
+| `getField` | `<T>(node, standard: string, configKey?: string) => T` | フィールド値 | エイリアスでノードの属性を読み取る |
+| `findPathByValues` | `(nodes, values, itemConfig?) => LhCascaderPath \| null` | パス | 値の配列から階層を追って復元 |
+| `getChildren` | `(node, itemConfig?) => LhCascaderNode[]` | 子の配列 | ダーティーデータは `[]` にフォールバック |
+| `getPanelItems` | `(nodes, expandedValues?, itemConfig?) => LhCascaderPanelItem[]` | パネル項目 | ツリー → パネル項目マッピング |
+| `searchNodes` | `(nodes, keyword, results?, itemConfig?, maxResults?) => LhCascaderSearchResult[]` | 検索結果 | 大文字小文字を区別しない、デフォルト上限 50 |
+| `getSelectedLabelPath` | `(nodes, values, itemConfig?) => string` | `"浙江省 / 杭州市"` | 選択中ラベル文字列 |
+| `expandLastValue` | `(nodes, value, itemConfig?) => (string\|number)[] \| null` | パス配列 | `emitPath: false` のとき単一値からパスを復元 |
+| `isLeafNode` | `(node, itemConfig?) => boolean` | 真偽値 | 明示的な `leaf` を優先、さもなくば children で判定 |
+| `normalizeCascaderNodes` | `(nodes: readonly unknown[], itemConfig?) => LhCascaderNode[]` | 標準ツリー | 一括で正規化 |
+| `flattenNodes` | `(nodes, itemConfig?) => {node, path, pathValues}[]` | 平坦化リスト | 各項目がパスを携える |
+| `getCascaderClassNames` | `(state) => string[]` | クラス名 | コンテナ |
+| `getPanelClassNames` | `(state) => string[]` | クラス名 | パネル（`--hover-mode`） |
+
+## 型定義
+
+```ts
+export interface LhCascaderNode {
+  value: string | number
+  label: string
+  disabled?: boolean
+  leaf?: boolean
+  children?: LhCascaderNode[]
+}
+
+export interface LhCascaderPath {
+  path: (string | number)[]      // 選択された値の配列
+  nodes: LhCascaderNode[]        // 対応するノードの配列
+}
+
+export interface LhCascaderPanelItem {
+  value: string | number
+  label: string
+  isDisabled: boolean
+  isExpanded: boolean
+  hasChildren: boolean
+}
+
+export interface LhCascaderSearchResult {
+  path: (string | number)[]
+  nodes: LhCascaderNode[]
+  pathLabels: string[]
+}
+
+export interface LhCascaderItemConfig {
+  value?: string    // value フィールドのエイリアス
+  label?: string
+  children?: string
+  disabled?: string
+  leaf?: string
+}
+
+export interface LhCascaderState {
+  options: LhCascaderNode[]
+  size: LhComponentSize
+  disabled: boolean
+  clearable: boolean
+  placeholder: string
+  visible: boolean
+  checkStrictly: boolean   // 親子を連動させない（任意の階層を選択可能）
+  emitPath: boolean        // true なら値はパス配列、false なら最下層の値のみ
+  multiple: boolean
+  cascading: boolean
+  value: (string | number)[]
+  selectedValue: (string | number)[] | null
+}
+```
+
+## アクセシビリティ
+
+3 層の属性パック：
+
+```ts
+// トリガー：listbox セマンティクスでポップアップ
+getCascaderTriggerAria(true, 'my-panel')
+// { 'aria-expanded': true, 'aria-controls': 'my-panel', 'aria-haspopup': 'listbox' }
+
+// 各列：role="listbox" + aria-level で深さを示す（1 始まり）
+getCascaderColumnAria('col-2', 2)  // { role: 'listbox', id: 'col-2', 'aria-level': 2 }
+
+// 項目：role="option" + 必要に応じて aria-expanded / selected / disabled
+getCascaderItemAria({ selected: true, expanded: true, hasChildren: true })
+// { role: 'option', 'aria-expanded': true, 'aria-selected': true }
+```
+
+`getCascaderItemAria` は**子がないとき `aria-expanded` を出力しない**点に注意してください——葉の選択肢に `aria-expanded="false"` を宣言するのは APG としては許容されるものの冗長で、スクリーンリーダーに「展開できるが今は展開されていない」と誤認させます。
+
+## 使用例
+
+```ts
+import { findPathByValues, getSelectedLabelPath, getPanelItems } from '@lh-ui/share/core/cascader'
+
+const tree = [
+  {
+    value: 'zj', label: '浙江省', children: [
+      { value: 'hz', label: '杭州市', children: [{ value: 'xh', label: '西湖' }] },
+    ],
+  },
+]
+
+findPathByValues(tree, ['zj', 'hz', 'xh'])
+// { path: ['zj','hz','xh'], nodes: [浙江省, 杭州市, 西湖] }
+
+getSelectedLabelPath(tree, ['zj', 'hz', 'xh'])  // '浙江省 / 杭州市 / 西湖'
+getSelectedLabelPath(tree, ['nope'])            // ''（見つからない場合は空文字列）
+
+getPanelItems(tree, new Set(['zj']))
+// [{ value:'zj', label:'浙江省', isExpanded:true, hasChildren:true },
+//  { value:'hz', label:'杭州市', isExpanded:false, hasChildren:true }]
+```
+
+フィールドのエイリアス：
+
+```ts
+const raw = [{ id: 'zj', name: '浙江省', subList: [{ id: 'hz', name: '杭州市' }] }]
+const cfg = { value: 'id', label: 'name', children: 'subList' }
+const standard = normalizeCascaderNodes(raw, cfg)
+// [{ value:'zj', label:'浙江省', children:[{ value:'hz', label:'杭州市' }] }]
+findPathByValues(standard, ['zj', 'hz'])  // 正常に動作
+```
+
+```vue
+<!-- Vue3：各列が 1 階層の panelItems をレンダリング -->
+<div :class="getCascaderClassNames({ size, disabled, visible, readonly })">
+  <button class="lh-cascader__input" v-bind="getCascaderTriggerAria(visible, panelId)">
+    {{ getSelectedLabelPath(options, value) || placeholder }}
+  </button>
+  <div v-if="visible" class="lh-cascader-panel" :class="getPanelClassNames({ hoverMode })">
+    <div
+      v-for="(col, ci) in columns"
+      :key="ci"
+      class="lh-cascader-panel__column"
+      v-bind="getCascaderColumnAria(`col-${ci}`, ci + 1)"
+    >
+      <div
+        v-for="item in col"
+        class="lh-cascader-panel__item"
+        v-bind="getCascaderItemAria({ selected: ..., expanded: item.isExpanded, disabled: item.isDisabled, hasChildren: item.hasChildren })"
+        @click="select(item, ci)"
+      >{{ item.label }}</div>
+    </div>
+  </div>
+</div>
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-cascader` / `--disabled` / `--visible` | コンテナ |
+| `.lh-cascader__input` / `__input-inner` | トリガーの入力領域 |
+| `.lh-cascader__tags` / `__tag` / `__tag-more` | 複数選択タグ（はみ出しを折りたたむ） |
+| `.lh-cascader__clear` | クリアボタン |
+| `.lh-cascader-panel` / `--hover-mode` | パネル（hover モード：ホバーで次階層を展開） |
+| `.lh-cascader-panel__column` / `__column-header` | 列と列ヘッダー |
+| `.lh-cascader-panel__item` / `--active` / `--disabled` | 列項目 |
+| `.lh-cascader-panel__search` / `__search-item` | 検索結果領域 |
+| `.lh-cascader-panel__empty` | 結果なしのプレースホルダー |
+| `.lh-cascader-panel-*` トランジションクラス | パネルの出入りアニメーション |
+
+## 注意事項
+
+- **`searchNodes` のデフォルト上限は 50**：巨大なツリーで高頻度の入力があると、1 キーストロークごとに O（全ノード）かかりカクつくため、上限はパフォーマンスの保険です。さらに結果が必要な場合は UI 層が「結果が多すぎます。キーワードを絞り込んでください」と案内します。
+- **循環参照保護のスコープ**：祖先チェインによる重複排除は単一呼び出し内でのみ有効で、**呼び出しを跨いではキャッシュされません**。`findNode` の結果をキャッシュして再利用しようとしないでください——ツリーが変われば再計算です。
+- **`expandLastValue` は `emitPath: false` 専用**：このモードでは `v-model` が最下層の値しか渡さないため、値反映時に単一値から完全な展開パスを復元する必要があります。
+- **`getChildren` のダーティーデータのフォールバック**：null ノード、非オブジェクトノード、children が配列でない場合はすべて `[]` を返し、TypeError を投げません。これによりカスケードはバックエンドのダーティーデータをのみ込めます（children の空を null で書くのはよくあることです）。
+- **`checkStrictly` と `emitPath` の組み合わせ**：`checkStrictly` は任意の階層の選択を許可するもので、その際はよく `emitPath: false`（最下層の値のみ）と組み合わせます。両者は直交します。
+
+<FnPlayground module="cascader" fn="getSelectedLabelPath" params='{"nodes": [{"value": "zj", "label": "浙江省", "children": [{"value": "hz", "label": "杭州市"}]}], "values": ["zj", "hz"]}' />

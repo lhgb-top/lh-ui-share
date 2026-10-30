@@ -1,0 +1,198 @@
+---
+title: notification —— Уведомления
+description: 'группировка по четырём углам groupNotificationsByPosition, смещение стопки computeStackOffsets, более тяжёлый, чем message, слой уведомлений'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Уведомление — это «тяжеловесная версия» сообщения: с заголовком, закрепляется в одном из четырёх углов экрана, живёт дольше, поддерживает переход по клику. Применяется для **системных или асинхронных событий** — приход новых сообщений, завершение задачи, результат фоновой операции. `core/notification` занимается группировкой по четырём углам и смещением стопки — в этом его ключевое отличие от `message` (один столбец сверху по центру).
+
+## Когда использовать
+
+- В каждой платформе реализован `LhNotification` (сервисный API): системные уведомления, результаты асинхронных задач, события, которые можно посмотреть позже.
+- Сценарии с объёмным содержимым (заголовок + основной текст), требующие перехода пользователя.
+- **Не использовать для**: мгновенной обратной связи по действию (используйте `message`, он легче); подтверждений, требующих немедленной обработки (используйте `dialog`); постоянных подсказок на странице (используйте `alert`).
+
+## Импорт
+
+```ts
+import {
+  LH_NOTIFICATION_DURATION_DEFAULT,
+  LH_NOTIFICATION_GAP_DEFAULT,
+  getNotificationIconName,
+  getNotificationClassNames,
+  isTopPosition,
+  isRightPosition,
+  groupNotificationsByPosition,
+  computeStackOffsets,
+  getNotificationRole,
+  getNotificationAria,
+} from '@lh-ui/share/core/notification'
+import type {
+  LhNotificationType,
+  LhNotificationPosition,
+  LhNotificationRecord,
+} from '@lh-ui/share/core/notification'
+```
+
+## Замысел дизайна
+
+**Группировка по четырём углам, а не один столбец**: `groupNotificationsByPosition` разрезает очередь на четыре группы по позициям, а сервисный слой рендерит группы в угловые контейнеры. В комментарии зафиксирован откат на случай непредвиденных данных: неизвестная позиция (грязные данные со стороны JS) **падает в заданный по умолчанию top-right**, и одна грязная запись не роняет всю группировку очереди.
+
+**Направление накопления `computeStackOffsets`**: возвращается смещение каждой записи относительно **края окна просмотра** — первая, прижатая к краю, получает 0, а последующие накапливают «высота предыдущих записей + промежуток». **Контейнеры, прижатые к низу, обращают направление сами** — core не знает, с какой стороны находится контейнер, и считает только «далеко от края».
+
+**Длительность по умолчанию больше, чем у message**: `LH_NOTIFICATION_DURATION_DEFAULT = 4500` против 3000 у message — по своей природе уведомление «можно посмотреть позже», поэтому более долгий показ разумен.
+
+**Строковые проверки `isTopPosition` / `isRightPosition`**: `position.startsWith('top')` / `endsWith('right')` — раскладывают составные позиции вроде `'top-left'` на семантические флаги, по которым UI-слой определяет позиционирование контейнера и направление анимации появления (прижатые к верху въезжают сверху, прижатые к низу — снизу).
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `getNotificationIconName` | `(type) => LhIconName` | имя значка | четыре семантических типа |
+| `getNotificationClassNames` | `(state: { type, showClose, clickable }) => string[]` | имена классов | тип / возможность закрытия / кликабельность |
+| `isTopPosition` | `(position) => boolean` | прижата ли к верху | позиционирование контейнера и направление въезда |
+| `isRightPosition` | `(position) => boolean` | прижата ли к правому краю | позиционирование контейнера |
+| `groupNotificationsByPosition` | `(items) => Record<Position, T[]>` | четыре группы | неизвестная позиция откатывается в top-right |
+| `computeStackOffsets` | `(heights: number[], gap?) => number[]` | массив смещений | накопление высот + промежутки |
+| `getNotificationRole` | `(type) => 'alert' \| 'status'` | роль live region | та же парадигма, что у message |
+| `getNotificationAria` | `(type) => LhAriaAttrs` | пакет aria-атрибутов | role |
+
+Константы: `LH_NOTIFICATION_DURATION_DEFAULT = 4500`, `LH_NOTIFICATION_GAP_DEFAULT = 16`.
+
+## Определения типов
+
+```ts
+export type LhNotificationType = 'info' | 'success' | 'warning' | 'danger' | 'error'  // без loading
+export type LhNotificationPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left'
+
+export interface LhNotificationRecord {
+  id: number
+  type: LhNotificationType
+  title: string
+  content: string
+  duration: number       // 0 означает «не закрывать автоматически»
+  position: LhNotificationPosition
+  showClose: boolean
+  sx?: LhSxProps
+  onClick?: () => void
+  onClose?: () => void
+}
+```
+
+## Доступность
+
+```ts
+getNotificationAria('danger')   // { role: 'alert' }
+getNotificationAria('success')  // { role: 'status' }
+```
+
+- Отображение ролей — та же парадигма, что у `message` / `alert`: warning/danger/error зачитываются немедленно, info/success — в очереди.
+- **Зачитывание заголовка**: у уведомления есть заголовок; рекомендуется рендерить его как `<h4>` (или `role="heading"`), и программа чтения экрана обработает его по иерархии заголовков; live region зачитывает только content, а заголовок доходит через семантику DOM.
+- **Кликабельные уведомления**: в состоянии `clickable` вся карточка кликабельна и ведёт по ссылке — оборачивайте её в `<button>` или `role="link"`, не вешайте на `<div>` только onclick, иначе пользователи клавиатуры не смогут её активировать.
+- **Кнопка закрытия**: у значка-кнопки должен быть `aria-label`.
+
+## Примеры использования
+
+```ts
+import {
+  groupNotificationsByPosition, computeStackOffsets, isTopPosition,
+} from '@lh-ui/share/core/notification'
+
+isTopPosition('top-right')   // true
+isTopPosition('bottom-left') // false
+isRightPosition('top-right')  // true
+isRightPosition('top-left')   // false
+
+groupNotificationsByPosition([
+  { position: 'top-right' }, { position: 'bottom-left' }, { position: 'top-right' },
+])
+// { 'top-right': [2 записи], 'top-left': [], 'bottom-right': [], 'bottom-left': [1 запись] }
+
+groupNotificationsByPosition([{ position: 'middle' as never }])
+// неизвестная позиция → откат в 'top-right'
+
+computeStackOffsets([40, 60, 30])
+// [0, 76, 152]  ← 0, 40+16, 40+16+60+16
+computeStackOffsets([40])  // [0]
+```
+
+```ts
+// Сервисный слой: четыре угловых контейнера, каждый ведёт свою очередь
+const groups = computed(() => {
+  const byPos = groupNotificationsByPosition(queue.value)
+  return Object.entries(byPos).map(([position, items]) => ({
+    position: position as LhNotificationPosition,
+    items,
+    // Смещение стопки: для контейнеров, прижатых к низу, нужно обратное направление
+    // (первая прижата к низу, следующие складываются вверх)
+    offsets: computeStackOffsets(items.map((i) => heights.value[i.id] ?? 60)),
+  }))
+})
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <div
+    v-for="group in groups"
+    :key="group.position"
+    class="lh-notification"
+    :class="[`lh-notification--${group.position}`]"
+  >
+    <transition-group :name="isTopPosition(group.position) ? 'lh-notification-slide-top' : 'lh-notification-slide-bottom'" tag="div">
+      <div
+        v-for="(record, i) in group.items"
+        :key="record.id"
+        :class="getNotificationClassNames({ type: record.type, showClose: record.showClose, clickable: !!record.onClick })"
+        :role="getNotificationRole(record.type)"
+        :style="{ transform: `translateY(${(isTopPosition(group.position) ? 1 : -1) * group.offsets[i]}px)` }"
+        @click="record.onClick?.()"
+      >
+        <LhIcon :name="getNotificationIconName(record.type)" />
+        <div class="lh-notification__main">
+          <h4 class="lh-notification__title">{{ record.title }}</h4>
+          <p class="lh-notification__content">{{ record.content }}</p>
+        </div>
+        <button v-if="record.showClose" type="button" aria-label="Закрыть" @click.stop="close(record.id)">✕</button>
+      </div>
+    </transition-group>
+  </div>
+</teleport>
+```
+
+```tsx
+// React: высоты нужно измерить после рендеринга (ref + useCallbackLayoutEffect),
+// затем считать смещение стопки; первый кадр использует оценочную высоту,
+// а после точного измерения обновляем
+```
+
+```ts
+// uniapp: <view> + фиксированное позиционирование по четырём углам;
+// измерение высот через createSelectorQuery
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-notification` | контейнер (fixed в четырёх углах) |
+| `.lh-notification--{top-right\|top-left\|bottom-right\|bottom-left}` | позиция |
+| `.lh-notification__item` | отдельная карточка |
+| `.lh-notification__item--{info\|success\|warning\|danger\|error}` | семантический тип |
+| `.lh-notification__item--closable` / `--clickable` | можно закрыть / кликабельно (подсветка при hover + указатель) |
+| `.lh-notification__main` / `__title` / `__content` | основная область / заголовок / основной текст |
+
+Фиксированная ширина (например, 320–360 px), фон `--lh-bg-color` + тень; четыре семантических цвета применяются к значку и левой цветовой полосе.
+
+## Замечания
+
+- **Для смещения стопки нужны реальные высоты**: `computeStackOffsets` принимает массив heights, и UI-слой должен измерять фактическую высоту рендера каждой записи. На первом кадре с оценочной высотой произойдёт смещение — после точного измерения обновите состояние один раз.
+- **Обращение направления для нижних контейнеров**: `computeStackOffsets` возвращает «расстояние от края», для контейнеров bottom его нужно умножить на -1 (вниз — положительное направление). Это ответственность вызывающей стороны, core не знает стороны контейнера.
+- **Уведомления с `duration: 0`**: не закрываются автоматически, подходят для таких случаев, как «непрочитанные сообщения», которые пользователь должен убрать сам — в сочетании с `showClose: true` или закрытием по клику.
+- **Конфликт событий `onClick` и `showClose`**: на кликабельной карточке кнопке закрытия нужен `@click.stop`, иначе клик по закрытию одновременно вызовет переход карточки.
+- **Количество контейнеров при смешанных позициях**: четыре угловых контейнера, даже пустые, обычно постоянно находятся в DOM (так нужно transition-group), а `v-if` сломает анимацию.
+- **Граница с message**: уведомление тяжелее (занимает угол, имеет заголовок, живёт дольше), для обратной связи по действию достаточно message. Оба могут сосуществовать (после действия выскакивает message, а системные уведомления идут через notification).
+- **Строгость типа `position`**: в TS неправильная позиция будет перехвачена, но вызывающая сторона на JS может передать что-то вроде `'topCenter'` — откат в top-right гарантирует, что ничего не сломается, но позиция окажется неожиданной, и вызывающей стороне нужно проверять себя.
+
+<FnPlayground module="notification" fn="groupNotificationsByPosition" params='{"items": [{"position": "top-right"}, {"position": "bottom-left"}, {"position": "top-right"}]}' />

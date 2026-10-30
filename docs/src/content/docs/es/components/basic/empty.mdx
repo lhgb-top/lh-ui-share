@@ -1,0 +1,116 @@
+---
+title: empty —— Estado vacío
+description: 'getEmptyClassNames distingue entre imagen personalizada e imagen de respaldo de tinta china por defecto; el contenido (título/descripción/acciones) lo compone la capa UI'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El estado vacío es el «estado de cero datos» de listas, tablas y resultados de búsqueda. El estado de `core/empty` es de lo más simple: un único booleano `hasImage`, porque su decisión visual central es «el usuario ha pasado una imagen o se usa la imagen de tinta china (水墨, tinta china) que trae la biblioteca», y ambos casos tienen layouts distintos: la imagen personalizada respeta el tamaño original, mientras que la imagen por defecto es una pintura de tinta china personalizada que ocupa todo lo ancho.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhEmpty`: tabla sin datos, búsqueda sin resultados, lista vaciada, aviso de permisos insuficientes.
+- Escenarios personalizados que necesiten reutilizar el aspecto del estado vacío de tinta china (水墨).
+- **No usarlo para**: el estado de carga. Esa es responsabilidad de `LhSkeleton` o `LhLoading`; el estado vacío significa «los datos son seguramente cero», no «todavía no han llegado».
+
+## Importación
+
+```ts
+import { getEmptyClassNames } from '@lh-ui/share/core/empty'
+import type { LhEmptyState } from '@lh-ui/share/core/empty'
+```
+
+## Intención de diseño
+
+Que `core/empty` tenga un único campo `hasImage` se debe a que todo lo demás (título, descripción, botones de acción) es **contenido**, no **estado**: el contenido se renderiza directamente desde slots/props y no necesita cálculo. Pasar el contenido también por core solo añadiría una capa de indirección sin beneficio.
+
+Esta frontera de «solo se calcula el estado, no el contenido» es un principio general de la capa core de lh-ui: la entrada de una función core debe ser algo que **cambia la salida**.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `getEmptyClassNames` | `(state: LhEmptyState) => string[]` | matriz de nombres de clase | distingue imagen personalizada de imagen por defecto |
+
+Salida de ejemplo:
+
+```ts
+getEmptyClassNames({ hasImage: true })   // ['lh-empty', 'lh-empty--custom-image']
+getEmptyClassNames({ hasImage: false })  // ['lh-empty']
+```
+
+## Definiciones de tipos
+
+```ts
+export interface LhEmptyState {
+  hasImage: boolean
+}
+```
+
+## Accesibilidad
+
+`core/empty` no emite un paquete de atributos aria. Los puntos clave de accesibilidad del estado vacío están en la capa UI:
+
+- Cuando aparece el estado vacío, la lista o tabla que lo precede debería usar `aria-live="polite"` o notificar de forma activa al terminar la carga de datos; de lo contrario, el usuario del lector de pantalla se queda con la idea anterior de «la lista tiene 0 elementos».
+- La imagen de tinta china (水墨) por defecto es **decorativa** y debe llevar `aria-hidden="true"` (al renderizar, en la capa UI).
+- El texto de descripción porta la verdadera información («No hay datos; pulsa el botón para recargar») y debe ser legible.
+- Si el estado vacío incluye botones de acción, estos pueden usar su semántica nativa.
+
+## Ejemplos de uso
+
+```ts
+import { getEmptyClassNames } from '@lh-ui/share/core/empty'
+
+getEmptyClassNames({ hasImage: false })  // ['lh-empty']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getEmptyClassNames({ hasImage: !!image })">
+  <div class="lh-empty__image">
+    <slot name="image">
+      <InkWash />   <!-- imagen de respaldo de tinta china por defecto, aria-hidden -->
+    </slot>
+  </div>
+  <p class="lh-empty__description">{{ description }}</p>
+  <div class="lh-empty__actions"><slot name="actions" /></div>
+</div>
+```
+
+```tsx
+// React
+const hasImage = !!image
+return (
+  <div className={getEmptyClassNames({ hasImage }).join(' ')}>
+    <div className="lh-empty__image">{image ?? <DefaultInkWash aria-hidden="true" />}</div>
+    <p className="lh-empty__description">{description}</p>
+    <div className="lh-empty__actions">{actions}</div>
+  </div>
+)
+```
+
+```ts
+// uniapp: la imagen de tinta china por defecto es svg; fuera de h5 hay que sustituirla por
+// un recurso de imagen (lo gestiona la capa UI de cada plataforma)
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-empty` | clase base: centrado, espaciado vertical |
+| `.lh-empty--custom-image` | imagen personalizada: libera del tamaño fijo de la imagen por defecto |
+| `.lh-empty__image` | zona de la imagen |
+| `.lh-empty__description` | texto de descripción (color de texto secundario) |
+| `.lh-empty__actions` | zona de botones de acción |
+| `.lh-empty__illustration` / `__ink-*` | elementos que componen la ilustración de tinta china por defecto (montañas lejanas, mancha de tinta, sello, marco) |
+
+La ilustración de tinta china por defecto es uno de los elementos distintivos del estilo chino (国风, estilo chino) de lh-ui: está dibujada íntegramente con CSS/SVG y tiene una paleta específica para el modo oscuro.
+
+## Notas
+
+- La decisión sobre `hasImage` corresponde a la capa UI: cualquier contenido que el usuario pase a través del prop `image` o del slot `image` cuenta como «imagen personalizada».
+- El estado vacío **debe aparecer en el lugar que ocupaban los datos** (dentro del cuerpo de la tabla, dentro del contenedor de la lista); no lo conviertas en un aviso global: no es un feedback, es un estado de los datos.
+- Escenarios como 404 o «sin permiso», que no son «datos vacíos», son semánticamente más cercanos a una advertencia; es más apropiado usar `LhResult` (si la plataforma lo tiene) o un layout personalizado que `LhEmpty`.
+
+<FnPlayground module="empty" fn="getEmptyClassNames" params='{"state": {"hasImage": false}}' />

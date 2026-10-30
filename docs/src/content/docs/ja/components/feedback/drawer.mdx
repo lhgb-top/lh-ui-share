@@ -1,0 +1,177 @@
+---
+title: drawer —— ドロワー
+description: 'normalizeDrawerSize のサイズ正規化、4 方向のパネルスタイル、canDrawerClose のエスケープゲート、dialog とのセマンティクスの違い'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ドロワーは画面の縁からスライドしてくるパネルです。ダイアログとの違いはコードではなく、**使われるセマンティクス**にあります：ダイアログは「中断し、必ず処理させる」、ドロワーは「横から表示し、いつでも離れられる」。そのためドロワーはデフォルトでフォーカスを trap せず、スクロールもロックしません（設定可能）。マスクはクリックで閉じることも、表示しないこともできます。
+
+## いつ使うか
+
+- 各端末で `LhDrawer` を実装するケース：詳細の横スライド、フィルターパネル、多段フォームのステップ分け、モバイルの全画面パネル。
+- 横からスライドしてきて、コンテンツがダイアログより長いシーン。
+- **使うべきでないケース**：強制的な処理が必要な確認（`dialog` を使う）；瞬間的な通知（`message` を使う）；純粋なテキストのヒント（`tooltip` を使う）。
+
+## インポート方法
+
+```ts
+import {
+  LH_DRAWER_DIRECTION_DEFAULT,
+  LH_DRAWER_SIZE_DEFAULT,
+  normalizeDrawerSize,
+  getDrawerPanelStyle,
+  getDrawerClass,
+  canDrawerClose,
+  shouldDrawerTrapFocus,
+  getDrawerAria,
+} from '@lh-ui/share/core/drawer'
+import type { LhDrawerDirection, LhDrawerState } from '@lh-ui/share/core/drawer'
+```
+
+## 設計意図
+
+**`canDrawerClose` のデフォルト値は dialog と対称だが異なる**：
+
+- `maskClosable` のデフォルトは **false**——ドロワーはしばしばフィルターや多段フォームを担い、マスクの誤タップで状態が失われます。
+- `closeOnEsc` のデフォルトは **true**——dialog と同じく、キーボードの脱出口を残します。
+
+コメントには歴史が記録されています：`closeOnEsc` は以前 state に宣言されるだけで logic はそれを読まず、**エスケープゲートが形同実亡**でした。計算可能な関数として整備されて初めて、Esc が本当にこのスイッチの制御を受けるようになりました。この種の「props は宣言したが logic が消費していない」という隙間は、状態モデルにおける最も典型的な暗黙のバグです。
+
+**`shouldDrawerTrapFocus` の命名にコンポーネントの接頭辞が付く**：dialog の `shouldTrapFocus` と同じシグネチャだがセマンティクスが異なります（state のフィールド名が `modelValue` と `visible` で異なる）。star の集約エクスポートで同名の曖昧さが TS に黙って破棄されるため、本倉庫の約束に従って明示的に区別します（`getDefaultDelay → getPopconfirmDefaultDelay` の扱いと同様）。
+
+**サイズの方向認識**：`getDrawerPanelStyle` は方向に応じて size を width（left/right）または height（top/bottom）に適用します——これは「size という 1 つの prop で 2 つの次元を表す」というトレードオフで、`width` / `height` の 2 つの prop よりシンプルです。
+
+**デフォルト値の定数**：`LH_DRAWER_DIRECTION_DEFAULT = 'right'`、`LH_DRAWER_SIZE_DEFAULT = '30%'`。UI 層の `withDefaults` / defaultProps が参照し、3 つの端末で一貫性を保ちます。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `normalizeDrawerSize` | `(size: string \| number \| undefined) => string` | サイズ文字列 | 数値 → px、空値 → デフォルト |
+| `getDrawerPanelStyle` | `(direction, size?) => Record<string, string>` | スタイル | 方向が width/height を決定 |
+| `getDrawerClass` | `(state: { direction }) => string[]` | クラス名 | 方向の修飾 |
+| `canDrawerClose` | `(state, reason: 'maskClick' \| 'escape') => boolean` | 閉じることを許可するか | エスケープゲート |
+| `shouldDrawerTrapFocus` | `(state: { modelValue, lockScroll }) => boolean` | trap するか | 判断（DOM に触れない） |
+| `getDrawerAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | aria 属性バッグ | dialog セマンティクス |
+
+## 型定義
+
+```ts
+export type LhDrawerDirection = 'right' | 'left' | 'top' | 'bottom'
+
+export interface LhDrawerState {
+  direction?: LhDrawerDirection
+  size?: string | number
+  modelValue?: boolean
+  title?: string
+  maskClosable?: boolean
+  showClose?: boolean
+  lockScroll?: boolean
+  closeOnEsc?: boolean
+}
+
+export const LH_DRAWER_DIRECTION_DEFAULT: LhDrawerDirection = 'right'
+export const LH_DRAWER_SIZE_DEFAULT = '30%'
+```
+
+## アクセシビリティ
+
+ドロワーはアクセシビリティの面では**引き続き dialog**です（APG に専用の drawer パターンはありません）：
+
+```ts
+getDrawerAria({ id: 'lh-drawer-1', titleId: 'lh-drawer-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-drawer-1', 'aria-labelledby': 'lh-drawer-title' }
+```
+
+- `aria-modal: true` は**無条件に出力**されることに注意してください——UI 層がマスクを表示せず、フォーカスも trap していなくてもです。もしドロワーが非モーダル（背景を覆わない）なら、UI 層は `aria-modal: false` に変更するか別のロールを使い、スクリーンリーダーが背景が到達不能だと誤解しないようにしてください。
+- フォーカス管理のトレードオフ：モーダルなドロワー（`lockScroll` かつマスクあり）はフォーカスを trap すべきです；非モーダルなドロワー（マスクなし、背景も同時に操作可能）は**trap すべきでありません**——`shouldDrawerTrapFocus` が false を返し、UI 層は focus-trap を有効にしません。
+- **スワイプジェスチャーとキーボード**：モバイルで縁から右スワイプして閉じるのはジェスチャーインタラクションで、そのキーボードの等価物が Esc です（`canDrawerClose` の `escape` ブランチ）。両者が同時に利用可能でなければなりません。さもないとキーボードのユーザーは閉じられません。
+- top/bottom 方向のドロワーはモバイルで幅いっぱいに広げるべきで、`aria-modal` とフォーカストラップは同様です。
+
+## 使用例
+
+```ts
+import { normalizeDrawerSize, getDrawerPanelStyle, canDrawerClose } from '@lh-ui/share/core/drawer'
+
+normalizeDrawerSize(300)      // '300px'
+normalizeDrawerSize('50%')    // '50%'
+normalizeDrawerSize(undefined) // '30%'（デフォルト）
+normalizeDrawerSize('')       // '30%'
+
+getDrawerPanelStyle('right', 300)   // { width: '300px' }
+getDrawerPanelStyle('bottom', '40%') // { height: '40%' }
+getDrawerPanelStyle('left')          // { width: '30%' }
+
+canDrawerClose({ maskClosable: false, closeOnEsc: true }, 'maskClick')  // false
+canDrawerClose({ maskClosable: false, closeOnEsc: true }, 'escape')     // true
+canDrawerClose({}, 'escape')   // true（デフォルトで Esc 閉じ可）
+canDrawerClose({}, 'maskClick') // false（デフォルトでマスククリック閉じ不可）
+
+getDrawerClass({ direction: 'right' })  // ['lh-drawer', 'lh-drawer--right']
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-drawer-fade">
+    <div v-if="visible" :class="getDrawerClass({ direction })">
+      <div v-if="showMask" class="lh-drawer__mask" @click="onMaskClick" />
+      <transition :name="`lh-drawer-slide-${direction}`">
+        <div
+          v-if="visible"
+          class="lh-drawer__panel"
+          :class="`lh-drawer__panel--${direction}`"
+          :style="getDrawerPanelStyle(direction, size)"
+          v-bind="getDrawerAria({ id: drawerId, titleId })"
+        >
+          <header class="lh-drawer__header">
+            <h3 class="lh-drawer__title" :id="titleId">{{ title }}</h3>
+            <button v-if="showClose" type="button" class="lh-drawer__close" aria-label="閉じる" @click="close">✕</button>
+          </header>
+          <div class="lh-drawer__body"><slot /></div>
+          <footer v-if="$slots.footer" class="lh-drawer__footer"><slot name="footer" /></footer>
+        </div>
+      </transition>
+    </div>
+  </transition>
+</teleport>
+```
+
+```tsx
+// React：4 方向それぞれに 1 つの slide transition；方向のクラス名が transform の起点を駆動
+// right: translateX(100%) → 0；bottom: translateY(100%) → 0
+```
+
+```ts
+// uniapp：fixed + transform のアニメーション；縁からのスワイプで閉じるのは @touchstart/@touchmove/@touchend で自分で判定
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-drawer` | 基本クラス |
+| `.lh-drawer--{right\|left\|top\|bottom}` | 方向（マスクのアニメーションとパネルの配置を決定） |
+| `.lh-drawer__mask` | マスク |
+| `.lh-drawer__panel` | パネル本体 |
+| `.lh-drawer__panel--{方向}` | パネルの配置（fixed + 対応する縁に贴合） |
+| `.lh-drawer__header` / `__title` / `__close` | ヘッダー |
+| `.lh-drawer__body` | コンテンツ領域（スクロール可能） |
+| `.lh-drawer__footer` | ボトム |
+
+パネル `--lh-bg-color`、マスク `rgba(0, 0, 0, 0.45)`（dialog よりやや薄い。セマンティクス上ドロワーはより弱いモーダル）。
+
+トランジションのクラス名は `styles/theme/common/transition.scss` の `lh-transition-ends` mixin に集約されています（端末をまたぐ `-leave-to` の差異）。コンポーネントスタイルはもう二重にクラス名を手書きしません（赤線 2）。
+
+## 注意事項
+
+- **`size` の単位**：数値は px、文字列はそのまま（`'30%'` / `'50vh'` をサポート）。`'50%'` は**ビューポート**に対する相対値で、トリガー要素に対するものではありません。
+- **top/bottom ドロワーのデフォルトサイズ**：`LH_DRAWER_SIZE_DEFAULT` は `'30%'` で、top/bottom 方向ならビューポート高さの 30% を意味します——モバイルの全画面ドロワーでは明示的に `'100%'` を渡してください。
+- **方向とトランジションアニメーション**：4 方向それぞれに 1 つの slide アニメーションが必要です（transform の起点が異なる）。UI 層が方向に応じて transition name を選び、core はアニメーションに関与しません。
+- **ネストしたドロワー**：右側のドロワーの中にさらに右側のドロワーを開くと、後者が前者を覆います。別の方向か zIndex で区別してください。フォーカスの返却は dialog と同様です（内側を閉じるときは内側のトリガー要素に返す）。
+- **コンテンツのスクロール**：ドロワーのコンテンツが極端に長いときは `__body` に `overflow: auto` を設定します；ボトムの footer はビューポート内に固定し（flex レイアウト）、footer がコンテンツに押し出されないようにします。
+- **`closeOnEsc` の歴史的な隙間**：旧バージョンではこの props は宣言されていても logic は読んでおらず、アップデート後ようやく本当に有効になりました——「Esc はいつでも閉じられる」という昔の挙動に依存している下流がある場合は、明示的に `closeOnEsc` を渡すよう注意してください。
+- **dialog との選定**：割り込むインタラクションには dialog（削除の確認）を、並列的に閲覧するものには drawer（注文の詳細）を使います。ユーザーが立ち止まって処理する必要のないことには、モーダルレイヤーを使うべきではありません。
+
+<FnPlayground module="drawer" fn="getDrawerPanelStyle" params='{"direction": "bottom", "size": "40%"}' />

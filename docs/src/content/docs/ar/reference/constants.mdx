@@ -1,0 +1,165 @@
+---
+title: constants —— الثوابت
+description: 'LH_TYPES_CONST / LH_SIZE_CONST / LH_LANGUAGE_CONST وثابتا DEFAULT، كلها مجمَّدة بـ as const'
+---
+
+`src/constants/` هو **المصدر الوحيد للثوابت في وقت التشغيل** للعائلة بأكملها: الألوان
+الsemantic لأنواع المكوّنات، ودرجات الأحجام، ورموز اللغات. كلها مجمّدة عبر `as const`،
+ويُشار إليها في اشتقاق الأنواع الموحّدة في `core/shared/types` (انظر [core/types](/ar/core/types)).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_TYPES_CONST,
+  LH_SIZE_CONST,
+  LH_LANGUAGE_CONST,
+  LH_SIZE_DEFAULT,
+  LH_LANGUAGE_DEFAULT,
+} from '@lh-ui/share/constants'
+```
+
+## جدول الثوابت
+
+| الثابت | القيمة | الاستخدام |
+| --- | --- | --- |
+| `LH_TYPES_CONST` | `{ success, warning, error, info, danger }` | أنواع المكوّنات (خمسة ألوان دلالية) |
+| `LH_SIZE_CONST` | `{ small, medium, large, mini, old: 'x-large' }` | درجات أحجام المكوّنات |
+| `LH_SIZE_DEFAULT` | `'medium'` (= `LH_SIZE_CONST.medium`) | الحجم الافتراضي |
+| `LH_LANGUAGE_CONST` | `{ zhCN: 'zh-CN', enUS: 'en-US', jaJP: 'ja-JP', koKR: 'ko-KR', deDE: 'de-DE', frFR: 'fr-FR' }` | رموز اللغات |
+| `LH_LANGUAGE_DEFAULT` | `'zh-CN'` (= `LH_LANGUAGE_CONST.zhCN`) | اللغة الافتراضية |
+
+## LH_TYPES_CONST —— خمسة ألوان دلالية
+
+```ts
+export const LH_TYPES_CONST = {
+  success: 'success',   // نجاح
+  warning: 'warning',   // تحذير
+  error: 'error',       // خطأ
+  info: 'info',         // معلومات
+  danger: 'danger',     // خطر
+} as const
+```
+
+يحمل كل عضو JSDoc من نوع `@alias` (نجاح / تحذير / خطأ / معلومات / خطر)، فتظهر تلميحات
+عند التحويم. ويُضيف `LhComponentType` فوق ذلك `'default' | 'primary'` **بشكل إضافي**
+(ألوان المظهر الأساسي، وليست دلالات حالة).
+
+### الفرق بين error و danger
+
+كلاهما أحمر يجمعهما معنى «حدث خطأ»، لكن دلالة كل منهما تتمايز قليلاً، ويختار كل مكوّن
+ما يناسبه:
+
+- `error` —— فشل التحقق (الإطار الأحمر لحقل input في النموذج)، وفشل العملية (فشل الرفع).
+- `danger` —— العمليات المدمِّرة (التأكيد الأحمر على زر الحذف).
+
+هذه اتفاقية لا قاعدة إلزامية؛ ومعظم المكوّنات تستخدم واحدًا منهما فقط، والمرجع هو وثائق
+كل مكوّن.
+
+## LH_SIZE_CONST —— خمس درجات أحجام
+
+```ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',     // الافتراضي
+  large: 'large',
+  mini: 'mini',         // المشاهد المضغوط المضمَّن (أزرار العمليات داخل الجدول)
+  old: 'x-large',       // مخصَّص لكبار السن
+} as const
+```
+
+### اسم المفتاح `old` يختلف عن القيمة `'x-large'`
+
+هذا **تنازل تسمية مقصود**:
+
+- **اسم المفتاح `old`** هو المعرّف الدلالي الداخلي لـ «وضع كبار السن»، ويستخدمه
+  `LhBaseProps.old?: boolean` كمفتاح تبديل.
+- **القيمة `'x-large'`** هي قيمة تعداد الأحجام المُعرَضة للخارج، وهي ما يظهر في الاتحاد
+  `LhComponentSize`.
+
+ما يُدركه المستخدم الخارجي هو `size="x-large"` (أو مفتاح التبديل `old`)، ولا يُكشَف اسم
+الثابت الداخلي للمستخدم. انتبه عند كتابة الكود: يعطيك `Object.keys(LH_SIZE_CONST)`
+المفاتيح، بينما يعطيك `Object.values(...)` قيم تعداد الأنواع، فلا تخلط بينهما.
+
+### استخدام كل درجة
+
+| الدرجة | المشهد |
+| --- | --- |
+| `mini` | أزرار العمليات داخل صفوف الجداول، النماذج الكثيفة |
+| `small` | التخطيطات المضغوطة، أشرطة الأدوات |
+| `medium` | **الافتراضي**، النماذج العادية ومناطق المحتوى |
+| `large` | الزر الرئيسي في صفحات التسجيل / تسجيل الدخول المستقلة |
+| `x-large` | وضع كبار السن لإمكانية الوصول: خط كبير ومنطقة لمس كبيرة، مع مفتاح التبديل `old` المنطقي |
+
+**ليست كل المكوّنات تدعم الدرجات الخمس جميعها**: تُطبَّق `mini` / `x-large` على جزء من
+المكوّنات فقط، والمرجع هو وثائق كل مكوّن.
+
+## LH_LANGUAGE_CONST —— ست لغات
+
+```ts
+export const LH_LANGUAGE_CONST = {
+  zhCN: 'zh-CN',
+  enUS: 'en-US',
+  jaJP: 'ja-JP',
+  koKR: 'ko-KR',
+  deDE: 'de-DE',
+  frFR: 'fr-FR',
+} as const
+```
+
+أسماء المفاتيح هي [تسميات locale متفق عليها مثل zhCN / enUS](/ar/guide/naming#تسجيل-الإعفاءات)،
+أما القيم فهي رموز اللغات وفق BCP 47. ويُشتق منها كل من `LhLocaleType` و`LhComponentLanguage`.
+
+**انتبه لحالة تفعيل ملفات اللغات**: `ja-JP` / `ko-KR` / `de-DE` / `fr-FR` هي حاليًا
+**هياكل لغات احتياطية، تُترجَم إلى fallback إنجليزي** (انظر [locales](/ar/reference/locales)).
+تسجيلها في الثوابت لا يعني اكتمال النصوص.
+
+## لماذا ثوابت وليست enums
+
+كائن `as const` + اشتقاق نوع موحّد له ثلاث مزايا على `enum` في TS:
+
+1. **صفر تكلفة في وقت التشغيل**: يُولِّد `enum` كودًا إضافيًا (تعيين عكسي)، بينما يبقى
+   كائن `as const` نسخة واحدة.
+2. **قابل للعبور**: يحصل `Object.values(LH_TYPES_CONST)` مباشرةً على كل قيم التعداد
+   للتحقق في وقت التشغيل؛ أما العبور في `enum` فغير موثوق عند إيقاف `preserveConstEnums`.
+3. **إمكانية إضافة JSDoc لكل عضو**: تلميحات `@alias` لكل عضو مرئية في IDE.
+
+## أمثلة استخدام
+
+### القيم الافتراضية لخصائص المكوّن
+
+```ts
+import { LH_SIZE_DEFAULT } from '@lh-ui/share/constants'
+
+props: {
+  size: { type: String, default: LH_SIZE_DEFAULT },   // 'medium'
+}
+```
+
+### التحقق من القيم في وقت التشغيل
+
+```ts
+const TYPE_VALUES = Object.values(LH_TYPES_CONST)
+
+const isValidType = (v: string): v is LhComponentType =>
+  TYPE_VALUES.includes(v as never) || v === 'default' || v === 'primary'
+```
+
+### العبور لتوليد دوال مساعدة
+
+```ts
+// تنتقل صفحات theme / docs على جميع اللغات لتوليد قائمة التبديل
+Object.entries(LH_LANGUAGE_CONST).forEach(([key, code]) => {
+  // key: 'zhCN'  code: 'zh-CN'
+})
+```
+
+## ملاحظات
+
+- **الثوابت مجمَّدة**: يجعل `as const` نوعها اتحادًا للقيم الحرفية، لكنها في وقت التشغيل
+  تبقى كائنًا عاديًا (دون `Object.freeze`) — لا تُعدِّلها في وقت التشغيل، إذ لن يتبعها
+  اشتقاق الأنواع في المستوى الأعلى.
+- **يشير `LH_SIZE_DEFAULT` / `LH_LANGUAGE_DEFAULT` إلى أعضاء الثابت**، وليسا قيمتين
+  حرفيتين مستقلتين — فتعديل قيمة الثابت الافتراضية يتبعه تلقائيًا.
+- **لا تُعرِض مفتاح `old` مباشرةً للمستخدم**: ما يظهر للخارج هو `size="x-large"` أو
+  مفتاح التبديل `old` المنطقي.

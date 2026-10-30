@@ -1,0 +1,174 @@
+---
+title: a11y —— aria 屬性建構器
+description: '統一的 aria 原子建構器與「假值省略」語義，彈出層觸發器與裝飾件屬性包開箱即用'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+aria 屬性的拼寫與取值是體力活：`aria-haspopup` 還是 `ariaHaspopup`？`'true'` 還是 `true`？假值要不要渲染？每個元件自己拼一遍，要嘛拼錯，要嘛忘記在值為空時省略（讀屏裡出現一堆 `aria-controls="undefined"`）。`shared/a11y` 用一組純函式把約定固化下來。
+
+## 核心約定：假值省略
+
+所有布林型 aria 建構器遵守同一規則：
+
+| 屬性 | 假值行為 | 理由 |
+| --- | --- | --- |
+| `aria-required: false` | 傳回 `{}`，不渲染 | 讀屏對「非必填」的顯式宣告是噪音 |
+| `aria-haspopup: false` | 傳回 `{}`，不渲染 | 同上 |
+| `aria-current: false` | 不會出現 | 建構器類型上就不收 `false`（多數讀屏會忽略它） |
+| `aria-controls` / `aria-labelledby` / `aria-describedby` | id 為空時傳回 `{}` | 渲染出 `aria-controls="undefined"` 是常見 bug |
+| **`aria-expanded: false`** | **原樣輸出** | 摺疊態需要被顯式播報 |
+| **`aria-invalid: false`** | **原樣輸出** | 「驗證通過」需要被顯式播報 |
+
+兩個「例外」是刻意的：`aria-expanded` / `aria-invalid` 的假值有語義資訊，讀屏會據此說「已摺疊」「輸入有效」。
+
+## 匯入方式
+
+```ts
+import {
+  generateAriaId,
+  ariaExpanded,
+  ariaControls,
+  ariaLabelledby,
+  ariaDescribedby,
+  ariaInvalid,
+  ariaRequired,
+  ariaCurrent,
+  ariaHaspopup,
+  getPopupTriggerAria,
+  getDecorativeAria,
+  type LhAriaAttrs,
+  type LhAriaHaspopup,
+} from '@lh-ui/share/core/shared/a11y'
+```
+
+## 類型
+
+```ts
+// aria 屬性包的形狀：鍵為 'aria-*' 或 'role'，直接 v-bind / {...spread}
+export type LhAriaAttrs = Record<string, string | number | boolean | undefined>
+
+// aria-haspopup 的合法取值（APG）
+export type LhAriaHaspopup =
+  | 'false' | 'true' | 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog' | 'combobox'
+```
+
+## 函式表
+
+| 函式 | 簽名 | 作用 |
+| --- | --- | --- |
+| `generateAriaId` | `(prefix = 'lh-aria') => string` | 生成 aria 關聯用的唯一 id |
+| `ariaExpanded` | `(expanded: boolean) => LhAriaAttrs` | 展開 / 收起態 |
+| `ariaControls` | `(id: string \| undefined) => LhAriaAttrs` | 引用所控制的面板 |
+| `ariaLabelledby` | `(id: string \| undefined) => LhAriaAttrs` | 引用可見文案作為可達名稱 |
+| `ariaDescribedby` | `(id: string \| undefined) => LhAriaAttrs` | 引用補充描述 |
+| `ariaInvalid` | `(invalid: boolean) => LhAriaAttrs` | 驗證失敗標記 |
+| `ariaRequired` | `(required: boolean) => LhAriaAttrs` | 必填語義 |
+| `ariaCurrent` | `(current: 'page' \| 'step' \| 'location' \| 'date' \| 'time' \| true \| undefined) => LhAriaAttrs` | 當前位置標記 |
+| `ariaHaspopup` | `(kind: LhAriaHaspopup \| boolean) => LhAriaAttrs` | 宣告彈出何種浮層 |
+| `getPopupTriggerAria` | `(options: { expanded; popupId?; haspopup? }) => LhAriaAttrs` | 彈出層觸發器**公共屬性包** |
+| `getDecorativeAria` | `(decorative = true) => LhAriaAttrs` | 裝飾性元素對輔助技術隱藏 |
+
+## 兩個組合屬性包
+
+### getPopupTriggerAria
+
+popover / popconfirm / select / cascader / date-picker / dropdown 的觸發器**全部**用它，一次拿到三件事：
+
+```ts
+getPopupTriggerAria({ expanded: true, popupId: 'lh-popover-1' })
+// {
+//   'aria-expanded': true,
+//   'aria-controls': 'lh-popover-1',
+//   'aria-haspopup': 'true',      // 預設值
+// }
+
+getPopupTriggerAria({ expanded: false, popupId: 'lh-popover-1', haspopup: 'menu' })
+// { 'aria-expanded': false, 'aria-controls': 'lh-popover-1', 'aria-haspopup': 'menu' }
+
+getPopupTriggerAria({ expanded: false })   // 沒傳 popupId
+// { 'aria-expanded': false, 'aria-haspopup': 'true' }   —— 不輸出 aria-controls
+```
+
+`haspopup` 預設 `'true'`。語義上更精確的值（下拉是 `listbox`、級聯是 `menu`、日曆是 `dialog`）會讓讀屏播報更準確，各元件按自己的語義傳。
+
+### getDecorativeAria
+
+```ts
+getDecorativeAria()       // { 'aria-hidden': true }
+getDecorativeAria(false)  // {}   —— 顯式取消隱藏
+```
+
+裝飾性元素（純分割線、loading 裝飾、骨架屏的幾何形狀）對輔助技術是噪音。注意**只對真正無資訊的元素用**——有文案的元素加 `aria-hidden` 是無障礙違規。傳 `false` 傳回空物件，用於「預設隱藏、某些場景要可見」的條件分支。
+
+## generateAriaId
+
+```ts
+const id = generateAriaId('lh-popover')  // 'lh-popover-1'、'lh-popover-2' ……
+```
+
+前綴固定為傳入值，模組內自增計數器保證同行程多實例不撞 id。SSR 安全（無 DOM 存取）。
+
+**注意**：計數器是**模組級可變狀態**，這個函式不是純函式——同樣的輸入在行程的不同時刻傳回不同輸出。伺服器端渲染時計數從 0 開始，用戶端注水時也從 0 開始，只要渲染順序一致 id 就一致；但若 SSR / CSR 渲染順序不同（非同步元件、條件渲染差異），可能出現 id 不匹配。各 UI 庫的彈層元件在用戶端才生成 id（`onMounted` 之後），規避了這個問題。
+
+## 使用範例
+
+### Vue3
+
+```vue
+<template>
+  <button
+    v-bind="getPopupTriggerAria({ expanded: open, popupId: panelId, haspopup: 'dialog' })"
+    @click="toggle"
+  >
+    打开
+  </button>
+  <div :id="panelId" role="dialog" v-show="open">……</div>
+</template>
+
+<script setup lang="ts">
+const panelId = generateAriaId('lh-popover')
+</script>
+```
+
+`v-bind` 一個傳回物件的函式是 Vue 的慣用寫法——屬性包裡的 `undefined` 值會被 Vue 自動跳過，與「假值省略」約定天然吻合。
+
+### React
+
+```tsx
+const panelId = generateAriaId('lh-popover')
+
+return (
+  <>
+    <button {...getPopupTriggerAria({ expanded: open, popupId: panelId })} onClick={toggle} />
+    {open && <div id={panelId} role="dialog">……</div>}
+  </>
+)
+```
+
+### 表單驗證
+
+```ts
+// input 元件
+const aria = {
+  ...ariaRequired(props.required),      // 非必填時整個屬性都不渲染
+  ...ariaInvalid(!!errorMessage.value), // 驗證通過也顯式播報
+  ...ariaDescribedby(errorMessage.value ? errorId : undefined),
+}
+```
+
+### 分頁 / 麵包屑的當前位置
+
+```ts
+ariaCurrent(isActive ? 'page' : undefined)   // 非當前頁不輸出，避免噪音
+ariaCurrent(isActive ? 'page' : undefined)   // 分頁用 'page'，步驟條用 'step'，日期用 'date'
+```
+
+## 注意事項
+
+- **`aria-controls` 的 id 必須真實存在**：本模組只負責拼屬性，id 對不對是元件的責任。浮層用 `v-if` 延遲渲染時，關閉態下面板不在 DOM 裡，`aria-controls` 指向不存在的元素——這是可接受的（讀屏會忽略），但比指向錯誤元素好。
+- **不要給有文案的元素加 `aria-hidden`**：這是無障礙硬違規。
+- **`ariaCurrent` 的取值按語義選**：分頁 `'page'`、步驟條 `'step'`、麵包屑 `'location'`、日曆 `'date'`。類型上收這些字面值 + `true`。
+- **組合屬性包不可與原子函式混用覆蓋**：`getPopupTriggerAria` 已經包含 `aria-haspopup`，外面再 spread `ariaHaspopup(...)` 會被後展開的覆蓋——按需選用一種。
+
+<FnPlayground module="a11y" fn="getPopupTriggerAria" params='{"options": {"expanded": true, "popupId": "lh-popover-demo", "haspopup": "menu"}}' />

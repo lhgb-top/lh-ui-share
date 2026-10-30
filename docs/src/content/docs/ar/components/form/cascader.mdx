@@ -1,0 +1,229 @@
+---
+title: cascader —— المحدد المتسلسل
+description: 'findNode/findPathByValues للبحث في الشجرة واستعادة المسار، normalizeCascaderNodes للتوحيد دفعة واحدة، searchNodes للبحث مع سلسلة الأسلاف'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+يتعامل المحدد المتسلسل مع بيانات **الاختيار طبقة طبقة** من نوع «المحافظة > المدينة > المنطقة»: تظهر الطبقة التالية فقط بعد اختيار السابقة. ويعتبر `core/cascader` من أثقل وحدات core في share—فالبحث في البيانات الشجرية، واستعادة المسار، وتوليد اللوحات، والبحث، والتوحيد، كلها دوال نقية، وطبقة UI لا تتجاوز عرض عناصر اللوحة على هيئة أعمدة.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `LhCascader`: التصنيفات متعددة المستويات، اختيار المناطق، الهيكل التنظيمي.
+- البيانات شجرية (أو قابلة للتوحيد إلى شجرة)، مع اختيار متباين في كل طبقة.
+- **لا ينبغي استخدامه**: للاختيار من طبقة واحدة استخدم `select`؛ وللتحديد المتسلسل (تحديد الأب يعني تحديد الأبناء) استخدم `tree` (لدى `checkStrictly` الدلالة المناسبة).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  findNode,
+  findPathByValues,
+  getField,
+  getChildren,
+  getPanelItems,
+  searchNodes,
+  getSelectedLabelPath,
+  getCascaderClassNames,
+  getPanelClassNames,
+  expandLastValue,
+  isLeafNode,
+  normalizeCascaderNodes,
+  flattenNodes,
+  getCascaderTriggerAria,
+  getCascaderColumnAria,
+  getCascaderItemAria,
+} from '@lh-ui/share/core/cascader'
+import type {
+  LhCascaderNode,
+  LhCascaderPath,
+  LhCascaderPanelItem,
+  LhCascaderState,
+  LhCascaderSearchResult,
+  LhCascaderItemConfig,
+} from '@lh-ui/share/core/cascader'
+```
+
+## القصد التصميمي
+
+عدة قرارات تصميمية رئيسية:
+
+- **استبعاد التكرار بسلسلة الأسلاف لا بـ visited عام**: تحتاج عمليات الشجرة عموماً إلى الحماية من المراجع الدائرية. وهنا يُستخدم «سلسلة الأسلاف» للاستبعاد (تُمرَّر المعلمة `ancestors` طبقة طبقة)، لا Set على مستوى الوحدة أو عاماً—والثمن أن الحماية **فعّالة ضمن استدعاء واحد فقط**، والفائدة أن الأشجار الفرعية المشتركة بشكل مشروع في الـ DAG لن تُخطَأ تجاوزها، ولا توجد تسريبات حالة بين النسخ.
+- **`getField` يجعل الأسماء البديلة للحقول فعّالة فعلاً**: لا تُسمّى بيانات الخلفية بالضرورة `value`/`label`/`children` (قد تكون `id`/`name`/`subList`). يُقرِّر `LhCascaderItemConfig` تعيين الأسماء البديلة، وتمرّ جميع عمليات الشجرة عبر `getField` للقراءة.
+- **التوحيد مرة واحدة، والاستخدام في كل مكان بالبنية المعيارية**: يحوّل `normalizeCascaderNodes` الشجرة الأصلية بأي بنية حقول إلى `LhCascaderNode[]`، وبعدها تواجه جميع الدوال البنية المعيارية. ويمكن أيضاً عدم التوحيد وتمرير itemConfig مباشرة، وكلا المسارين متكافئ (لكن الأداء أفضل بعد التوحيد، إذ لا حاجة لفحص الأسماء البديلة في كل طبقة).
+- **تحمل نتائج البحث لسلسلة أسلاف كاملة**: يحتوي كل سجل في نتائج `searchNodes` على `path` (مصفوفة قيم)، و`nodes` (مصفوفة عُقَد)، و`pathLabels` (مصفوفة وسوم)، فيعرضها UI مباشرة كسطر «تشجيانغ / هانغتشو / بحيرة شيهو» دون الحاجة لاستعلام عكسي.
+- **الاستعادة البرمجية لا تُصفِّي المعطّلة**: يتعمّد `findPathByValues` **عدم تصفية العقد الفرعية المعطّلة**—فالتعطيل قيد على النقر في طبقة UI، ومن المفترض أن تتمكن الاستعادة البرمجية (مثل القيمة الابتدائية لـ `v-model`) من استعادة أي مسار، وإلا لضاعت القيم في سيناريو «تعطيل أولاً ثم استعادة».
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `findNode` | `(nodes, value, strict?, ancestors?, itemConfig?) => { node, path } \| null` | عقدة + سلسلة أسلاف | بحث تكراري |
+| `getField` | `<T>(node, standard: string, configKey?: string) => T` | قيمة الحقل | قراءة خصائص العقدة وفق الاسم البديل |
+| `findPathByValues` | `(nodes, values, itemConfig?) => LhCascaderPath \| null` | المسار | استعادة طبقة طبقة وفق مصفوفة القيم |
+| `getChildren` | `(node, itemConfig?) => LhCascaderNode[]` | مصفوفة الأبناء | احتياطي للبيانات القذرة يُعيد `[]` |
+| `getPanelItems` | `(nodes, expandedValues?, itemConfig?) => LhCascaderPanelItem[]` | عناصر اللوحة | تحويل الشجرة → عناصر اللوحة |
+| `searchNodes` | `(nodes, keyword, results?, itemConfig?, maxResults?) => LhCascaderSearchResult[]` | نتائج البحث | غير حساس لحالة الأحرف، والحد الافتراضي 50 |
+| `getSelectedLabelPath` | `(nodes, values, itemConfig?) => string` | `"تشجيانغ / هانغتشو"` | سلسلة الوسوم المختارة |
+| `expandLastValue` | `(nodes, value, itemConfig?) => (string\|number)[] \| null` | مصفوفة المسار | استعادة المسار من قيمة واحدة عند `emitPath: false` |
+| `isLeafNode` | `(node, itemConfig?) => boolean` | قيمة منطقية | `leaf` الصريح مقدَّم، وإلا يُحكم من children |
+| `normalizeCascaderNodes` | `(nodes: readonly unknown[], itemConfig?) => LhCascaderNode[]` | شجرة معيارية | توحيد دفعة واحدة |
+| `flattenNodes` | `(nodes, itemConfig?) => {node, path, pathValues}[]` | قائمة مسطّحة | يحمل كل عنصر مساره |
+| `getCascaderClassNames` | `(state) => string[]` | أسماء الأصناف | الحاوية |
+| `getPanelClassNames` | `(state) => string[]` | أسماء الأصناف | اللوحة (`--hover-mode`) |
+
+## تعريفات الأنواع
+
+```ts
+export interface LhCascaderNode {
+  value: string | number
+  label: string
+  disabled?: boolean
+  leaf?: boolean
+  children?: LhCascaderNode[]
+}
+
+export interface LhCascaderPath {
+  path: (string | number)[]      // مصفوفة القيم المختارة
+  nodes: LhCascaderNode[]        // مصفوفة العقد المطابقة
+}
+
+export interface LhCascaderPanelItem {
+  value: string | number
+  label: string
+  isDisabled: boolean
+  isExpanded: boolean
+  hasChildren: boolean
+}
+
+export interface LhCascaderSearchResult {
+  path: (string | number)[]
+  nodes: LhCascaderNode[]
+  pathLabels: string[]
+}
+
+export interface LhCascaderItemConfig {
+  value?: string    // الاسم البديل لحقل value
+  label?: string
+  children?: string
+  disabled?: string
+  leaf?: string
+}
+
+export interface LhCascaderState {
+  options: LhCascaderNode[]
+  size: LhComponentSize
+  disabled: boolean
+  clearable: boolean
+  placeholder: string
+  visible: boolean
+  checkStrictly: boolean   // عدم ربط الأب بالأبناء (اختيار أي طبقة)
+  emitPath: boolean        // true القيمة هي مصفوفة المسار، false تُعطى قيمة الطبقة الأخيرة فقط
+  multiple: boolean
+  cascading: boolean
+  value: (string | number)[]
+  selectedValue: (string | number)[] | null
+}
+```
+
+## إمكانية الوصول
+
+ثلاث طبقات من حزم السمات:
+
+```ts
+// العنصر المُطلِق: ينبثق بدلالة listbox
+getCascaderTriggerAria(true, 'my-panel')
+// { 'aria-expanded': true, 'aria-controls': 'my-panel', 'aria-haspopup': 'listbox' }
+
+// كل عمود: role="listbox" + aria-level يحدد العمق (ابتداءً من 1)
+getCascaderColumnAria('col-2', 2)  // { role: 'listbox', id: 'col-2', 'aria-level': 2 }
+
+// العنصر: role="option" + aria-expanded/selected/disabled حسب الحاجة
+getCascaderItemAria({ selected: true, expanded: true, hasChildren: true })
+// { role: 'option', 'aria-expanded': true, 'aria-selected': true }
+```
+
+لاحظ أن `getCascaderItemAria` **لا يُخرِج `aria-expanded` عند عدم وجود أبناء**—فالإقران بـ `aria-expanded="false"` لعنصر طرفي مسموح به في APG ولكنه زائد، ويوحي لقارئ الشاشة بأنه «قابل للتوسيع لكنه غير موسّع الآن».
+
+## أمثلة الاستخدام
+
+```ts
+import { findPathByValues, getSelectedLabelPath, getPanelItems } from '@lh-ui/share/core/cascader'
+
+const tree = [
+  {
+    value: 'zj', label: 'تشجيانغ', children: [
+      { value: 'hz', label: 'هانغتشو', children: [{ value: 'xh', label: 'بحيرة شيهو' }] },
+    ],
+  },
+]
+
+findPathByValues(tree, ['zj', 'hz', 'xh'])
+// { path: ['zj','hz','xh'], nodes: [تشجيانغ, هانغتشو, بحيرة شيهو] }
+
+getSelectedLabelPath(tree, ['zj', 'hz', 'xh'])  // 'تشجيانغ / هانغتشو / بحيرة شيهو'
+getSelectedLabelPath(tree, ['nope'])            // '' (عدم العثور يُعيد سلسلة فارغة)
+
+getPanelItems(tree, new Set(['zj']))
+// [{ value:'zj', label:'تشجيانغ', isExpanded:true, hasChildren:true },
+//  { value:'hz', label:'هانغتشو', isExpanded:false, hasChildren:true }]
+```
+
+الأسماء البديلة للحقول:
+
+```ts
+const raw = [{ id: 'zj', name: 'تشجيانغ', subList: [{ id: 'hz', name: 'هانغتشو' }] }]
+const cfg = { value: 'id', label: 'name', children: 'subList' }
+const standard = normalizeCascaderNodes(raw, cfg)
+// [{ value:'zj', label:'تشجيانغ', children:[{ value:'hz', label:'هانغتشو' }] }]
+findPathByValues(standard, ['zj', 'hz'])  // يعمل بشكل طبيعي
+```
+
+```vue
+<!-- Vue3: كل عمود يعرض طبقة من panelItems -->
+<div :class="getCascaderClassNames({ size, disabled, visible, readonly })">
+  <button class="lh-cascader__input" v-bind="getCascaderTriggerAria(visible, panelId)">
+    {{ getSelectedLabelPath(options, value) || placeholder }}
+  </button>
+  <div v-if="visible" class="lh-cascader-panel" :class="getPanelClassNames({ hoverMode })">
+    <div
+      v-for="(col, ci) in columns"
+      :key="ci"
+      class="lh-cascader-panel__column"
+      v-bind="getCascaderColumnAria(`col-${ci}`, ci + 1)"
+    >
+      <div
+        v-for="item in col"
+        class="lh-cascader-panel__item"
+        v-bind="getCascaderItemAria({ selected: ..., expanded: item.isExpanded, disabled: item.isDisabled, hasChildren: item.hasChildren })"
+        @click="select(item, ci)"
+      >{{ item.label }}</div>
+    </div>
+  </div>
+</div>
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-cascader` / `--disabled` / `--visible` | الحاوية |
+| `.lh-cascader__input` / `__input-inner` | منطقة إدخال العنصر المُطلِق |
+| `.lh-cascader__tags` / `__tag` / `__tag-more` | وسوم التحديد المتعدد (طيّ التجاوز) |
+| `.lh-cascader__clear` | زر المسح |
+| `.lh-cascader-panel` / `--hover-mode` | اللوحة (وضع hover: المرور فوقها يوسّع الطبقة التالية) |
+| `.lh-cascader-panel__column` / `__column-header` | العمود ورأسه |
+| `.lh-cascader-panel__item` / `--active` / `--disabled` | عناصر العمود |
+| `.lh-cascader-panel__search` / `__search-item` | منطقة نتائج البحث |
+| `.lh-cascader-panel__empty` | عنصر نائب عند انعدام النتائج |
+| أصناف الانتقال `lh-cascader-panel-*` | حركة دخول وخروج اللوحة |
+
+## ملاحظات
+
+- **الحد الافتراضي لـ `searchNodes` هو 50**: في الأشجار الكبيرة مع الإدخال عالي التردد سيؤدي استهلاك O(جميع العقد) مع كل ضغطة إلى تأخّر، والحد هو ضمان أداء؛ وعند الحاجة لنتائج أكثر تُنبه طبقة UI «النتائج كثيرة، رجاءً دقّق الكلمة المفتاحية».
+- **نطاق عمل الحماية من المراجع الدائرية**: استبعاد سلسلة الأسلاف فعّال within استدعاء واحد فقط، **ولا يوجد تخزين مؤقت عبر الاستدعاءات**. لا تحاول تخزين نتيجة `findNode` وإعادة استخدامها—إذا تغيّرت الشجرة يجب إعادة الحساب.
+- **`expandLastValue` يُستخدم فقط مع `emitPath: false`**: في هذا النمط يمنح `v-model` قيمة الطبقة الأخيرة فقط، وعند الاستعادة يلزم إعادة بناء مسار التوسيع الكامل من القيمة الواحدة.
+- **احتياط البيانات القذرة في `getChildren`**: العقدة null، والعقدة غير الكائن، وchildren غير المصفوفة جميعها تُعيد `[]` دون TypeError. وهذا يمكّن المحدد المتسلسل من استيعاب بيانات الخلفية القذرة (children فارغة مكتوبة null هي حالة شائعة).
+- **تركيبة `checkStrictly` مع `emitPath`**: يسمح `checkStrictly` باختيار أي طبقة، ويُقرَن عادةً مع `emitPath: false` (أي قيمة الطبقة الأخيرة فقط)، وكلاهما مستقل عن الآخر.
+
+<FnPlayground module="cascader" fn="getSelectedLabelPath" params='{"nodes": [{"value": "zj", "label": "تشجيانغ", "children": [{"value": "hz", "label": "هانغتشو"}]}], "values": ["zj", "hz"]}' />

@@ -1,0 +1,230 @@
+---
+title: keyboard —— 鍵盤導航演算法
+description: 'LH_KEYS 按鍵常數、列表 / 網格 / range 三套導航演算法與 type-ahead，供 select / menu / tree / tabs 共用'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+無障礙元件的鍵盤互動有標準答案（APG 的 listbox / menu / grid pattern），但「按上鍵該跳到哪一項」這個計算在 select / menu / tree / tabs / segmented 裡各寫一遍就會各錯一遍。`shared/keyboard` 把它變成純函式：輸入「列表 + 當前下標 + 方向」，輸出「目標下標」。
+
+**core 層不監聽任何按鍵**——鍵盤事件監聽屬於 UI 層（Vue3 的 `@keydown`、React 的 `onKeyDown`）。本模組只提供判定與計算。
+
+## 匯入方式
+
+```ts
+import {
+  LH_KEYS,
+  isActivationKey,
+  getNextListIndex,
+  getNextGridCell,
+  getNextRangeValue,
+  findTypeAheadIndex,
+  getRovingTabIndex,
+  type LhListNavigationOptions,
+} from '@lh-ui/share/core/shared/keyboard'
+```
+
+## 常數與類型
+
+```ts
+// 按鍵名常數（KeyboardEvent.key），UI 層禁止再裸寫字串字面值
+export const LH_KEYS = {
+  Escape: 'Escape',
+  Enter: 'Enter',
+  Space: ' ',          // 注意：值是一個空格
+  ArrowUp: 'ArrowUp',
+  ArrowDown: 'ArrowDown',
+  ArrowLeft: 'ArrowLeft',
+  ArrowRight: 'ArrowRight',
+  Home: 'Home',
+  End: 'End',
+  Tab: 'Tab',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
+} as const
+
+// 真實事件或裸 key 值都能收（純函式測試需要）
+export type LhKeyEvent = KeyboardEvent | { key: string }
+
+// 導航方向：數值偏移或首尾哨兵
+export type LhListDirection = 1 | -1 | 'first' | 'last'
+
+// 列表項的最小約束：只需停用標記，具體形狀由呼叫方提供
+export interface LhListItem {
+  disabled?: boolean
+}
+
+export interface LhListNavigationOptions<T = unknown> {
+  loop?: boolean                    // 首尾循環，預設 true
+  skipDisabled?: boolean            // 跳過停用項，預設 true
+  isDisabled?: (item: T) => boolean // 自訂停用判定，預設讀 item.disabled
+}
+
+export interface LhGridNavOptions {
+  cols: number                      // 每列行數
+  total: number                     // 網格總格數
+  loop?: boolean                    // 行內 / 整體循環，預設 false（到邊界傳回 null 交由 UI 層翻頁）
+}
+
+export interface LhRangeNavOptions {
+  min: number
+  max: number
+  step: number                      // 方向鍵步長；非有限或 ≤0 退化為 1 且只做邊界鉗制
+  pageStep?: number                 // PageUp / PageDown 步長，預設 max(step, (max-min)/10)
+}
+```
+
+## 函式表
+
+### 按鍵判定
+
+| 函式 | 簽名 | 作用 |
+| --- | --- | --- |
+| `isActivationKey` | `(e: LhKeyEvent) => boolean` | Enter 或 Space |
+| `isArrowKey` | `(e: LhKeyEvent) => boolean` | 四向方向鍵 |
+| `isEscapeKey` | `(e: LhKeyEvent) => boolean` | Escape（彈出層關閉） |
+| `isHomeOrEndKey` | `(e: LhKeyEvent) => boolean` | Home / End（列表首尾跳躍） |
+| `isSpaceKey` | `(e: LhKeyEvent) => boolean` | 空格（需與 Enter 區分的場景，如捲動容器內翻頁） |
+| `isHorizontalArrowKey` | `(e: LhKeyEvent) => boolean` | 水平方向鍵 |
+| `isVerticalArrowKey` | `(e: LhKeyEvent) => boolean` | 垂直方向鍵 |
+
+`isHorizontalArrowKey` / `isVerticalArrowKey` **只做物理鍵判定**——RTL 版面配置下「左」該表示「上一個」還是「下一個」是 UI 層的語義，演算法不替你翻轉。
+
+### 導航計算
+
+| 函式 | 簽名 | 作用 |
+| --- | --- | --- |
+| `getNextListIndex` | `<T>(items, current, direction, options?) => number` | 通用列表導航，傳回目標下標 |
+| `findTypeAheadIndex` | `(labels: string[], query: string, startIndex?) => number` | type-ahead 首字元匹配 |
+| `getRovingTabIndex` | `<T>(items, activeIndex) => number` | roving tabindex：傳回應為 tabindex 0 的下標 |
+| `getNextGridCell` | `(current, key, opts: LhGridNavOptions) => number \| null` | 二維網格導航（日期網格、月份網格） |
+| `getNextRangeValue` | `(current, key, opts: LhRangeNavOptions) => number` | range 控制項導航（slider 的鍵盤步進） |
+
+### getNextListIndex 的傳回值語義
+
+這是最容易用錯的地方，單獨說明：
+
+| 情形 | 傳回值 |
+| --- | --- | --- |
+| `'first'` / `'last'` | 直達首個 / 末個**啟用**項 |
+| 正常移動 | 目標下標 |
+| 不循環且已到邊界 | **停在邊界**（傳回邊界下標，不是 -1） |
+| 空列表 / 全部停用且 `skipDisabled` | `-1`（無可用項） |
+| 只有邊界項停用且已到邊界 | `-1` |
+| `current` 越界或 `-1` | 按「未選取」處理：正向取首項、負向取末項 |
+
+**不循環時不會傳回 -1 來表示「到頭了」**——它傳回邊界下標，讓焦點停在那一項。UI 層據此決定要不要 `preventDefault`；只有「真的沒有可選項」才給 -1。
+
+### getRovingTabIndex 傳回的是下標
+
+函式名容易誤導：它**傳回「應為 tabindex 0 的那一項的下標」**，不是 tabindex 值本身。呼叫方據此落值：
+
+```ts
+const activeIndex = getRovingTabIndex(items, selectedIndex)
+items.forEach((item, i) => (item.tabindex = i === activeIndex ? 0 : -1))
+```
+
+這樣保證整組裡**始終有一個可 Tab 進入的錨點**；`activeIndex` 無可用項時回退到首個啟用項，不會出現整組都 -1、鍵盤進不去的情況。
+
+### findTypeAheadIndex 的匹配規則
+
+- 項標籤**以查詢串開頭**即命中（大小寫不敏感）。
+- 從 `startIndex` **之後**開始環繞查找（預設 `-1`，從頭開始）。
+- 支援多字元累積：使用者快速敲 `zh` 時，UI 層在 500ms 內累積查詢串，逾時清空。
+- 無匹配 / `query` 為空 / `labels` 為空 → `-1`。
+
+### getNextGridCell 的跨行流動
+
+ArrowRight 在**行末會流到下一行行首**（視區內連續移動，只有越過整個網格邊界才傳回 `null`）；ArrowDown / ArrowUp 垂直移動 `±cols`；Home / End 是**行首 / 行末**（最後一行不足 `cols` 時行末按 `total` 收斂，不會跳到網格外）。
+
+非導航鍵、不循環時越界、`current` 越界、`cols` / `total` ≤ 0 → `null`。
+
+`loop` 預設 `false` 是刻意的：日期面板裡「右越界」通常意味著**切到下個月**，這個決定由 UI 層做，演算法只說「到頭了」。
+
+### getNextRangeValue 只鉗不整
+
+```ts
+getNextRangeValue(25, 'ArrowUp', { min: 0, max: 100, step: 10 })
+// 25 + 10 = 35（不做 step 對齊）
+```
+
+**為什麼不取整**：如果當前值是 25（使用者拖出來的未對齊值），取整演算法會先跳到 30 再到 40，看起來像跳了兩下。只做 clamp + 步進，對齊交給元件層在寫入 localValue 時保證（拖曳放手時 snap 到刻度）。
+
+非導航鍵**原樣傳回 `current`**——呼叫方據此判斷「這次按鍵我需要處理嗎」，決定要不要 `preventDefault`。
+
+## 使用範例
+
+### select 的鍵盤導航（roving tabindex + list nav）
+
+```ts
+function onKeydown(e: KeyboardEvent) {
+  if (isArrowKey(e)) {
+    e.preventDefault()
+    const next = getNextListIndex(
+      options.value,
+      selectedIndex.value,
+      e.key === LH_KEYS.ArrowDown ? 1 : -1,
+      { loop: true },
+    )
+    if (next !== -1) selectedIndex.value = next
+  } else if (isHomeOrEndKey(e)) {
+    selectedIndex.value = getNextListIndex(
+      options.value,
+      -1,
+      e.key === LH_KEYS.Home ? 'first' : 'last',
+    )
+  } else if (isActivationKey(e)) {
+    open.value = !open.value
+  } else if (isEscapeKey(e)) {
+    open.value = false
+  }
+}
+```
+
+### date-picker 的日期網格
+
+```ts
+const next = getNextGridCell(focusedIndex.value, e.key, {
+  cols: 7,                    // 一週 7 天
+  total: daysInMonth.value,   // 本月天數
+})
+if (next === null) {
+  // 越界 → 切月上 / 下月（UI 層決定）
+  switchMonth(e.key === LH_KEYS.ArrowRight ? 1 : -1)
+} else {
+  focusedIndex.value = next
+}
+```
+
+### slider 的鍵盤步進
+
+```ts
+if (isArrowKey(e) || isHomeOrEndKey(e) || e.key === LH_KEYS.PageUp || e.key === LH_KEYS.PageDown) {
+  e.preventDefault()
+  modelValue.value = getNextRangeValue(modelValue.value, e.key, {
+    min: props.min,
+    max: props.max,
+    step: props.step,
+  })
+}
+```
+
+### 字元輸入導航
+
+```ts
+// 累積查詢串（UI 層維護 500ms 逾時）
+typeAheadBuffer.value += e.key
+const idx = findTypeAheadIndex(labels, typeAheadBuffer.value, selectedIndex.value)
+if (idx !== -1) selectedIndex.value = idx
+```
+
+## 注意事項
+
+- **監聽在 UI 層**：`onKeydown` 的接線、`preventDefault` 的時機、焦點切換後的 `focus()` 呼叫，都是各框架元件的責任；core 只給計算結果。
+- **RTL 版面配置**：左右方向鍵的語義翻轉由 UI 層在呼叫前反轉 `direction` 實作，演算法本身保持物理鍵語義。
+- **`isDisabled` 的預設值**：讀 `item.disabled`，讀不到視為未停用——傳 `{}` 類型的項時所有項都可導航。
+- **空列表安全**：所有導航函式對空列表都傳回 `-1` / `null`，UI 層判一下即可，不會拋錯。
+
+<FnPlayground module="keyboard" fn="getNextListIndex" params='{"items": [{"disabled": false}, {"disabled": true}, {"disabled": false}, {"disabled": false}], "current": 0, "direction": 1, "options": {"loop": true}}' />

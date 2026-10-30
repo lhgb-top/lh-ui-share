@@ -1,0 +1,147 @@
+---
+title: checkbox —— チェックボックス
+description: 'isCheckboxChecked は Object.is で判定、toggleCheckboxValue はイミュータブルにトグル'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+チェックボックスはフォームで最小のステートマシンです：ある値が配列に入っているかどうか。`core/checkbox` には関数が 2 つしかありません。「チェック」を**集合演算**に抽象化したからです——チェックボックスグループの値は 1 つの配列で、チェックは要素の追加、解除は要素の削除です。
+
+## いつ使うか
+
+- 各端の `LhCheckbox` と `LhCheckboxGroup` の実装（group が値の配列を持ち、item はそこから自身のチェック状態を判定する）。
+- 複数選択のシーン；2 状態のトグルなら `switch` のほうが適しています。
+- **使うべきでない**：単一選択なら `radio`；半選択セマンティクス（親ノードが部分的にチェック済み）が必要なら `tree` のチェック連動を使います。
+
+## インポート方法
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+import type { LhCheckboxState } from '@lh-ui/share/core/checkbox'
+```
+
+## 設計意図
+
+`includes` の暗黙の等価判定ではなく `Object.is` を使うのは、チェックボックスの値が任意の型になり得るからです（文字列、数値、さらにはオブジェクトの参照）。`includes` は NaN に対して false を返しますが、`Object.is(NaN, NaN)` は true を返します——実際のシーンでは稀ですが、集合のセマンティクスは一貫しているべきです。
+
+`toggleCheckboxValue` は**イミュータブル**です：まず同値の項目をフィルタで削除し（重複排除）、それから `checked` に応じて追加するかを決めます。この順序が**冪等性**を保証します——同じ値・同じ方向で繰り返し呼んでも結果は同じで、配列に重複要素が現れることはありません。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `isCheckboxChecked` | `(values: unknown[], value: unknown) => boolean` | 真偽値 | value が配列に含まれるか |
+| `toggleCheckboxValue` | `(values: unknown[], value: unknown, checked: boolean) => unknown[]` | 新しい配列 | イミュータブルなトグル |
+
+## 型定義
+
+```ts
+export interface LhCheckboxState {
+  values: unknown[]
+  value: unknown
+  checked: boolean
+}
+```
+
+## アクセシビリティ
+
+`core/checkbox` は aria 属性パックを出力しません——**各端にはネイティブの `<input type="checkbox">` を強く推奨します**：ネイティブ要素は `aria-checked` を備え、キーボード操作とフォーム送信のセマンティクスをサポートしており、いかなるカスタムコントロールの等価な実装でも完全に複製するのは困難です。
+
+ネイティブ checkbox の `indeterminate`（半選択）状態は** JS でしか設定できません**（対応する HTML 属性がありません）。これが group のシーンで UI 層が扱う唯一の特殊なポイントです：
+
+```ts
+// 親チェックボックスの半選択状態（「すべて選択」ボックスなど）
+input.indeterminate = checkedCount > 0 && checkedCount < total
+```
+
+## 使用例
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+
+isCheckboxChecked(['a', 'b'], 'b')   // true
+isCheckboxChecked(['a', 'b'], 'c')   // false
+
+toggleCheckboxValue(['a', 'b'], 'c', true)   // ['a', 'b', 'c']
+toggleCheckboxValue(['a', 'b', 'c'], 'b', false)  // ['a', 'c']
+toggleCheckboxValue(['a', 'b'], 'b', false)       // ['a']
+toggleCheckboxValue(['a'], 'a', true)             // ['a']（すでに存在、冪等）
+```
+
+```vue
+<!-- Vue3：LhCheckboxGroup -->
+<script setup>
+const model = defineModel<Array<string>>({ default: [] })
+const toggle = (value: string, checked: boolean) => {
+  model.value = toggleCheckboxValue(model.value, value, checked)
+}
+</script>
+
+<template>
+  <div class="lh-checkbox-group" :class="`lh-checkbox-group--${size}`">
+    <label
+      v-for="opt in options"
+      :key="String(opt.value)"
+      class="lh-checkbox"
+      :class="{
+        'lh-checkbox--checked': isCheckboxChecked(model, opt.value),
+        'lh-checkbox--disabled': disabled || opt.disabled,
+      }"
+    >
+      <span class="lh-checkbox__box">
+        <input
+          class="lh-checkbox__input"
+          type="checkbox"
+          :checked="isCheckboxChecked(model, opt.value)"
+          :disabled="disabled || opt.disabled"
+          @change="toggle(opt.value, ($event.target as HTMLInputElement).checked)"
+        />
+      </span>
+      <span class="lh-checkbox__label">{{ opt.label }}</span>
+    </label>
+  </div>
+</template>
+```
+
+```tsx
+// React
+const [values, setValues] = useState<string[]>([])
+return options.map((opt) => (
+  <label key={opt.value} className="lh-checkbox">
+    <input
+      type="checkbox"
+      checked={isCheckboxChecked(values, opt.value)}
+      onChange={(e) => setValues(toggleCheckboxValue(values, opt.value, e.target.checked))}
+    />
+    <span className="lh-checkbox__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp：<checkbox-group> + <checkbox> は内蔵コンポーネントで、change イベントが直接値の配列を渡す；
+// チェックのカスタムスタイルには .lh-checkbox__box でデフォルトの見た目を上書きする（非 h5 端では :checked のリアクティブ性に注意）
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-checkbox` | 基底クラス（label で包む） |
+| `.lh-checkbox--checked` / `--indeterminate` / `--disabled` | 3 つの状態 |
+| `.lh-checkbox--{small\|large}` | サイズのバリエーション |
+| `.lh-checkbox__box` | カスタムチェックボックス（ネイティブの見た目を上書き） |
+| `.lh-checkbox__input` | ネイティブ input（視覚的に隠す、セマンティクスは保持） |
+| `.lh-checkbox__label` | 文字 |
+| `.lh-checkbox-group` / `--{small\|large}` | グループコンテナとグループサイズ |
+
+チェックマークの位置は `top: 2px / left: 5px` で固定——**16px のボックスでのみ正しく**、これは「高度トークン専用」に記録された統一待ち項目です（50% の中央配置に変えるべき）。
+
+## 注意事項
+
+- **値の型の一貫性**：`toggleCheckboxValue(['1'], 1, true)` は `['1', 1]` になります——文字列 `'1'` と数値 `1` は異なる値です。バックエンドが渡す id の型は UI 層で統一しなければなりません。
+- **空配列のセマンティクス**：`values: []` は「1 つも選ばれていない」ことであり、`values: undefined` とは異なります；group のデフォルト値は `[]` にすべきです。
+- **`checked` パラメータの方向**：これは「目標の状態」であり「現在の状態」ではありません。`toggleCheckboxValue(v, x, false)` は、元から入っているかどうかにかかわらず必ず x を削除します。
+- 選択肢が大量の場合は `virtual-list` を検討してください；group 自身は仮想化しません。
+
+<FnPlayground module="checkbox" fn="toggleCheckboxValue" params='{"values": ["a", "b"], "value": "c", "checked": true}' />

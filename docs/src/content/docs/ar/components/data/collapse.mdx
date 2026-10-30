@@ -1,0 +1,164 @@
+---
+title: collapse —— لوحة قابلة للطي
+description: 'تطبيع عبر normalizeActiveKeys، ووضع الأكورديون عبر toggleCollapseKey، وتحديثات غير قابلة للتغيير'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+اللوحة القابلة للطي هي الحل القياسي لـ «محتوى كثير، ومطوي افتراضيًا، ويُ expand عند الحاجة»: شائعة في الأسئلة الشائعة، وتجميع عناصر الإعدادات، وتقسيم النماذج الطويلة. ونموذج حالتها في غاية البساطة — مصفوفة «أي اللوحات مفتوحة» — ولا تكمن الصعوبة إلا في **وضع الأكورديون** (فتح واحد فقط في الوقت نفسه) و**تطبيع القيمة المضبوطة**.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhCollapse`: أسئلة وأجوبة، وتجميع الإعدادات، وطي أقسام النماذج المعقدة، ومجموعات القوائم الجانبية.
+- المشاهد التي يمكن فيها طي/expand كتل المحتوى باستقلال، وتحتاج إلى توفير المساحة العمودية.
+- **لا يجب استخدامه**: عند وجود عنصرين أو ثلاثة ثابتين فقط (عرضها مباشرة أسهل)؛ أو عند الحاجة إلى خطوات خطية صارمة (استخدم `steps`).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  normalizeActiveKeys,
+  toggleCollapseKey,
+  getCollapseItemClassNames,
+} from '@lh-ui/share/core/collapse'
+import type { LhCollapseKey } from '@lh-ui/share/core/collapse'
+```
+
+## نية التصميم
+
+**تطبيع الحالات الثلاث في `normalizeActiveKeys`**: قد يمرّر `v-model` المضبوط قيمة مفردة (`'1'`)، أو مصفوفة (`['1','2']`)، أو undefined (طي الكل). وبعد التطبيع إلى مصفوفة، لا يواجه حكم `includes` في المصب سوى شكل واحد — وهذا مثال آخر على «المدخلات متسامحة، والداخل صارم».
+
+**«السماح بصفر لوحة مفتوحة» في الأكورديون**: عندما يكون `keys.includes(key)` صحيحًا، تُعيد `toggleCollapseKey(keys, key, true)` القيمة `[]` بدلًا من إبقاء عنصر آخر — فالنقر مرة أخرى على لوحة مفتوحة في الأكورديون **يطوي الكل**، وهو سلوك يتوافق مع الحدس (لا التبديل إلى لوحة أخرى). وعندما يمرّر الأكورديون قيمة مفردة، فإن `v-model` في الطرف البصري سيتلقى مصفوفة، فيحتاج إلى معالجة النوع بنفسه (أو يوفّر الطرف البصري واجهة برمجية للقيمة المفردة في وضع الأكورديون).
+
+**تحديث غير قابل للتغيير**: تُعيد الدالتان مصفوفة جديدة تُغذَّى مباشرةً إلى الحالة التفاعلية، دون تعديل المدخلات.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `normalizeActiveKeys` | `(value: LhCollapseKey \| LhCollapseKey[] \| undefined) => LhCollapseKey[]` | مصفوفة المفاتيح | تطبيع الحالات الثلاث |
+| `toggleCollapseKey` | `(keys, key, accordion: boolean) => LhCollapseKey[]` | مصفوفة مفاتيح جديدة | أكورديون / عادي |
+| `getCollapseItemClassNames` | `(state: { active, disabled }) => string[]` | أسماء الأصناف | موسّع / معطّل |
+
+## تعريف الأنواع
+
+```ts
+export type LhCollapseKey = string | number
+```
+
+## إمكانية الوصول
+
+يُعدّ collapse تنفيذًا نموذجيًا لنمط **accordion / disclosure** في APG، وتُجمَّع اصطلاحاته الدلالية في الطرف البصري (لا يوفّر core دالة حزمة سمات، لأن النمط بسيط وتختلف بنى DOM بين الأطراف):
+
+```html
+<!-- كل item هو disclosure -->
+<div class="lh-collapse__item">
+  <h3>
+    <button type="button" aria-expanded="true" aria-controls="panel-1" id="trigger-1">
+      عنوان
+    </button>
+  </h3>
+  <div id="panel-1" role="region" aria-labelledby="trigger-1">محتوى</div>
+</div>
+```
+
+- يُعلَّق `aria-expanded` على زر المُطلِق ويكون من المصدر نفسه مثل `active` — وهو **السمة الجوهرية** للوحة القابلة للطي الميسّرة.
+- تُشير حاوية اللوحة عكسيًا إلى المُطلِق عبر `role="region"` + `aria-labelledby`، فيتكون ارتباط في الاتجاهين.
+- **العناصر المعطّلة**: يُضاف `disabled` إلى زر المُطلِق (السمة disabled الحقيقية لا مجرد اسم صنف)، فيتعرف عليها كلٌّ من لوحة المفاتيح وقارئ الشاشة.
+- لوحة المفاتيح: يتنقل Tab بين المُطلِقات، ويُبدِّل Enter/Space بين التوسيع والطي.
+- في وضع الأكورديون **لا** تستخدم `aria-hidden="true"` لإخفاء اللوحات المطوية — فالمحتوى لا يزال في DOM (مرئي أثناء الحركة)، ويكفي استخدام حركة ارتفاع CSS؛ وإن أُزيل DOM فعلًا، فيجب إدارة حالة `aria-expanded` جيدًا.
+
+## أمثلة الاستخدام
+
+```ts
+import { normalizeActiveKeys, toggleCollapseKey } from '@lh-ui/share/core/collapse'
+
+normalizeActiveKeys('1')          // ['1']
+normalizeActiveKeys(['1', '2'])   // ['1', '2']
+normalizeActiveKeys(undefined)    // []
+
+toggleCollapseKey([], '1', false)       // ['1']
+toggleCollapseKey(['1'], '1', false)    // [] (نقر مرة أخرى يطوي)
+toggleCollapseKey(['1'], '2', false)    // ['1', '2'] (الوضع العادي يسمح بفتح عدة)
+toggleCollapseKey(['1'], '1', true)     // [] (أكورديون: نقر مرة أخرى يطوي الكل)
+toggleCollapseKey(['1'], '2', true)     // ['2'] (أكورديون: يُحتفظ بالجديد فقط)
+```
+
+```vue
+<!-- Vue3 -->
+<div class="lh-collapse">
+  <div
+    v-for="item in items"
+    :key="item.key"
+    :class="getCollapseItemClassNames({ active: activeKeys.includes(item.key), disabled: item.disabled })"
+  >
+    <h4 class="lh-collapse__header">
+      <button
+        type="button"
+        class="lh-collapse__trigger"
+        :disabled="item.disabled"
+        :aria-expanded="activeKeys.includes(item.key)"
+        :aria-controls="`lh-panel-${item.key}`"
+        :id="`lh-trigger-${item.key}`"
+        @click="onToggle(item)"
+      >
+        <span class="lh-collapse__arrow">{{ activeKeys.includes(item.key) ? '▾' : '▸' }}</span>
+        {{ item.title }}
+      </button>
+    </h4>
+    <div
+      v-show="activeKeys.includes(item.key)"
+      class="lh-collapse__panel"
+      :id="`lh-panel-${item.key}`"
+      role="region"
+      :aria-labelledby="`lh-trigger-${item.key}`"
+    >
+      <slot :name="item.key" :item="item" />
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// مضبوط + أكورديون
+const activeKeys = computed(() => normalizeActiveKeys(props.modelValue))
+function onToggle(item) {
+  if (item.disabled) return
+  emit('update:modelValue', toggleCollapseKey(activeKeys.value, item.key, props.accordion))
+}
+```
+
+```tsx
+// React: هل تكون قيمة v-model في وضع الأكورديون مفردة أم مصفوفة يقرره API في الطرف البصري؛
+// core يعمل دائمًا على المصفوفات، ويحوّل الطرف البصري عند emit حسب الحاجة
+// (في الأكورديون وعند رغبته في قيمة مفردة يأخذ [0])
+```
+
+```ts
+// uniapp: <view> + v-show؛ وحركة التوسيع تستخدم انتقال max-height في CSS (يدعمها <view>)
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-collapse` | الصنف الأساسي |
+| `.lh-collapse__item` | عنصر لوحة واحد |
+| `.lh-collapse__item--active` | حالة التوسيع |
+| `.lh-collapse__item--disabled` | تعطيل |
+| `.lh-collapse__header` / `__trigger` | الترويسة / زر المُطلِق |
+| `.lh-collapse__arrow` | سهم التوسيع (حركة دوران) |
+| `.lh-collapse__panel` | منطقة محتوى اللوحة |
+
+لون خلفية الترويسة `--lh-fill-color`، ولون السهم `--lh-text-color-secondary`، وللعنصر المعطّل `--lh-text-disabled`، وحدّ اللوحة `--lh-border-color`.
+
+## ملاحظات
+
+- **`v-show` مقابل `v-if`**: تحتاج حركة التوسيع إلى DOM مقيم (`v-show` + انتقال ارتفاع/max-height). أما `v-if` فلا يستطيع تشغيل حركة الطي عند الإزالة، فتكون التجربة فجة.
+- **نوع القيمة المضبوطة والأكورديون**: منطقيًا يجب أن يكون للأكورديون عنصر واحد موسّع، لكن `toggleCollapseKey` يُعيد مصفوفة (قد تكون `[]` أو `[key]`). فإذا كان الطرف البصري يكشف واجهة القيمة المفردة للأكورديون، فإنه يأذن عند emit `[0] ?? undefined`؛ ويصح أيضًا الاحتفاظ بواجهة المصفوفة، لكن على المستدعي أن يلزم نفسه.
+- **توقيت استدعاء `normalizeActiveKeys`**: تكلفة التطبيع في كل عرض ضئيلة جدًا (حكم `Array.isArray` واحد)؛ وإن كان ذلك مدعاة للقلق، فاستخدم `computed` للتخزين المؤقت.
+- **اللوحات القابلة للطي المتداخلة**: `activeKeys` للطبقة الداخلية مستقلة عن الخارجية، وعند تداخل DOM تكون `role="region"` للوحة الداخلية متداخلة داخل region أخرى — وهذا مسموح، لكن يجب أن يكون id الخاص بـ `aria-labelledby` فريدًا عالميًا (بإضافة بادئة من key).
+- **الارتفاع أثناء الحركة**: تحتاج طريقة `max-height` إلى حد أعلى كبير بما يكفا (مثل `1000px`)، وإلا تتشوه سرعة الحركة عندما يكون المحتوى أطول؛ والحل الأدق هو قياس `scrollHeight` عبر JS ثم ضبطه، ولا يتدخل core، بل يُنفّذه الطرف البصري.
+- **تفرد id**: يعتمد `aria-controls` / `aria-labelledby` على id، وفي الصفحات التي تتعايش فيها عدة مثيلات collapse يجب إضافة بادئة على مستوى المكوّن إلى key (يستخدم الطرف البصري `useId` أو uid للمثيل).
+
+<FnPlayground module="collapse" fn="toggleCollapseKey" params='{"keys": ["1", "2"], "key": "3", "accordion": false}' />

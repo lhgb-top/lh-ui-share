@@ -1,0 +1,161 @@
+---
+title: virtual —— 仮想スクロール
+description: 'computeRange / computeWindow による定高の仮想スクロール区間。virtual-list と table が同一のアルゴリズムを共有'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+定高の仮想スクロールはもともと `virtual-list` と `table` にそれぞれ実装があり、デフォルトの
+オーバースキャン量まで違っていました（2 と 3）。片方で境界を直してももう片方に漏れます。
+`shared/virtual` はアルゴリズムを唯一の実装に抽出し、2 箇所は薄いラッパーだけを持ちます。
+
+## いつ使うか
+
+- **仮想リスト / テーブル**：データが千行あるとき、ビューポート内の十数行だけをレンダリング。
+- **水平仮想スクロール**：`computeWindow` は軸に依存しないため、横方向のタイムラインや
+  横スクロールのタブバーにも同じく適用できます。
+- **使うべきでない場合**：可変高のシナリオでは**「オフセット取得」の能力しかなく**
+  （`getItemOffsetAt`）、可変高のウィンドウアルゴリズムはありません——動的な高さの仮想
+  スクロールには UI 層が累積高さテーブルを維持する必要があり、本モジュールはオフセット取得の
+  一手順だけを提供します。
+
+## インポート方法
+
+```ts
+import {
+  computeRange,
+  computeWindow,
+  getItemOffsetAt,
+  LH_VIRTUAL_OVERSCAN,
+  type LhVirtualRange,
+} from '@lh-ui/share/core/shared/virtual'
+```
+
+## 型と定数
+
+```ts
+export interface LhVirtualRange {
+  start: number        // レンダリング区間の開始インデックス（含む）
+  end: number          // レンダリング区間の終了インデックス（含まない）
+  offsetY: number      // 開始要素のコンテナ上端からのオフセット（高さ確保量の負の起点）
+  totalHeight: number  // 全データの合計高さ（コンテナの高さ確保用）
+}
+
+export interface LhAxisRange {
+  start: number
+  end: number
+  offset: number
+  totalSize: number
+}
+
+export const LH_VIRTUAL_OVERSCAN = 2   // デフォルトのオーバースキャン行数
+```
+
+## 関数表
+
+| 関数 | シグネチャ | 役割 |
+| --- | --- | --- |
+| `computeRange` | `(scrollTop, viewportHeight, itemHeight, total, overscan?) => LhVirtualRange` | 縦方向の定高仮想区間 |
+| `computeWindow` | `(scrollOffset, viewportSize, itemSize, total, overscan?) => LhAxisRange` | 軸非依存の定高ウィンドウ（横方向用） |
+| `getItemOffsetAt` | `(items: { offset: number }[], index: number) => number` | 可変高モードで指定項目のスクロールオフセットを取得 |
+
+## 計算ロジック
+
+`computeRange` の核心は 3 ステップです：
+
+1. **先頭インデックス**：`first = floor(scrollTop / itemHeight)`、前後へ `overscan` 行ずつ拡張。
+2. **末尾インデックス**：`end = min(total, start + visible + overscan × 2)`。ここで
+   `visible = ceil(viewportHeight / itemHeight)`。
+3. **合計高さ**：`totalHeight = total × itemHeight`。コンテナを実際の高さに押し広げ、スクロール
+   バーの比率を正しくするために使います。
+
+返される `offsetY` は「レンダリング起点の合計高さ内での位置」で、UI 層はこれをコンテンツ
+コンテナの `translateY`（または padding-top）として使います。
+
+## 境界の保護
+
+このモジュールの防御は主に**データが縮小したフレーム**に向いています：ユーザーが 500 行目を
+見ている最中にデータが突然 10 条になり、`scrollTop` がまだブラウザにクランプバックされて
+いないとき、素朴なアルゴリズムは `start = 490 > end` を算出し、`slice()` が空配列を返して
+→ 白画面になります。
+
+対処：`first` を `total - 1` にクランプし、`start <= end` が常に成立することを保証します。
+同様のガードはほかにもあります：
+
+| 不正な入力 | 動作 |
+| --- | --- |
+| `itemHeight` が非有限 / ≤ 0 | 全ゼロ区間を返す（レンダリングせず、エラーも出さない） |
+| `total` が非有限 / ≤ 0 | 全ゼロ区間を返す |
+| `scrollTop` が非有限 | 0 にフォールバック |
+| `viewportHeight` が非有限 | 0 にフォールバック（→ overscan の部分だけレンダリング、白画面にならない） |
+| `overscan` が非有限 | `LH_VIRTUAL_OVERSCAN` にフォールバック |
+
+## 使用例
+
+### 純関数
+
+```ts
+computeRange(400, 300, 40, 1000)
+// first = 10, visible = 8, overscan = 2
+// start = 10 - 2 = 8, end = min(1000, 10 + 8 + 4) = 22
+// offsetY = 8 * 40 = 320, totalHeight = 40000
+// → 8〜21 番目の項目をレンダリング、コンテナを translateY 320px
+```
+
+### Vue3 の配線
+
+```vue
+<template>
+  <div class="lh-virtual-list" @scroll="onScroll" :style="{ height: `${viewportHeight}px` }">
+    <div :style="{ height: `${range.totalHeight}px` }">
+      <div :style="{ transform: `translateY(${range.offsetY}px)` }">
+        <LhVirtualItem v-for="i in visibleItems" :key="i.index" :data="i.data" />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+const range = ref<LhVirtualRange>({ start: 0, end: 0, offsetY: 0, totalHeight: 0 })
+
+function onScroll(e: Event) {
+  range.value = computeRange(
+    (e.target as HTMLElement).scrollTop,
+    viewportHeight.value,
+    props.itemHeight,
+    props.data.length,
+  )
+}
+</script>
+```
+
+### 横方向のスクロール
+
+```ts
+// 同じアルゴリズムで、軸を替える
+const window = computeWindow(scrollLeft, viewportWidth, itemWidth, total)
+```
+
+### 指定項目へのスクロール（可変高）
+
+```ts
+// UI 層が累積オフセット表 [{ offset: 0 }, { offset: 40 }, ...] を維持
+const offset = getItemOffsetAt(itemOffsets, targetIndex)
+container.scrollTop = offset
+```
+
+## 注意事項
+
+- **定高が前提**：`computeRange` は各項目の高さが厳密に等しいと仮定します。リスト項目の
+  高さが可変なら、UI 層が自分で高さテーブルを維持し、`getItemOffsetAt` でジャンプする必要が
+  あります——本モジュールは可変高のウィンドウアルゴリズムを提供しません。
+- **`getItemOffsetAt` は範囲外で 0 を返す**：空リスト、インデックス範囲外のいずれも 0 で、
+  例外は投げません。
+- **オーバースキャンのトレードオフ**：`LH_VIRTUAL_OVERSCAN = 2` は「高速スクロール時に
+  ちらつかない」と「余分にレンダリングする行数」のバランス点です。ユーザーの高速スクロール時
+  に `overscan` 領域が次フレームのコンテンツのレンダリング完了を保証します。パラメータで
+  上書きできますが、1 未満にするとスクロール時にちらつきます。
+- **`computeWindow` と `computeRange` は同源**：前者は内部で後者に委譲してフィールド名を
+  付け替えるだけなので、動作は完全に同一で、縦方向のシナリオではどちらを使っても構いません。
+
+<FnPlayground module="virtual" fn="computeRange" params='{"scrollTop": 400, "viewportHeight": 300, "itemHeight": 40, "total": 1000}' />

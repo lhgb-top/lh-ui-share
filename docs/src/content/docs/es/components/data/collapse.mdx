@@ -1,0 +1,164 @@
+---
+title: collapse —— Panel plegable
+description: 'normalizeActiveKeys normaliza, toggleCollapseKey en modo acordeón, actualización inmutable'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El panel plegable es la solución estándar para «demasiado contenido, recogido por defecto, desplegado bajo demanda»: es habitual en preguntas frecuentes, en la agrupación de opciones de configuración y en la sectorización de formularios largos. Su modelo de estado es de lo más simple: una matriz con «qué paneles están abiertos». La dificultad está solo en el **modo acordeón** (solo uno abierto a la vez) y en la **normalización del valor controlado**.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhCollapse`: preguntas y respuestas frecuentes, agrupación de opciones, plegado sectorial de formularios complejos, grupos del menú lateral.
+- Bloques de contenido que se pueden plegar y desplegar de forma independiente y donde se necesita ahorrar espacio vertical.
+- **No usarlo para**: solo dos o tres elementos fijos (mostrarlos directamente ahorra trabajo); los pasos estrictamente lineales (usa `steps`).
+
+## Importación
+
+```ts
+import {
+  normalizeActiveKeys,
+  toggleCollapseKey,
+  getCollapseItemClassNames,
+} from '@lh-ui/share/core/collapse'
+import type { LhCollapseKey } from '@lh-ui/share/core/collapse'
+```
+
+## Intención de diseño
+
+**La normalización de tres estados de `normalizeActiveKeys`**: un `v-model` controlado puede pasar un valor único (`'1'`), una matriz (`['1','2']`) o undefined (todo recogido). Tras normalizar a una matriz, la evaluación `includes` de las capas inferiores solo se enfrenta a una única forma: otro ejemplo más de «entrada tolerante, interior estricto».
+
+**El acordeón «permite cero abiertos»**: `toggleCollapseKey(keys, key, true)` devuelve `[]` cuando `keys.includes(key)`, en lugar de conservar los demás elementos: en el modo acordeón, volver a pulsar un panel abierto **recoge todo**, que es el comportamiento intuitivo (no conmuta a otro panel). Cuando el acordeón pasa un valor único, el `v-model` de la capa UI recibe una matriz y debe gestionar el tipo por su cuenta (o exponer una API de valor único adicional para el modo acordeón).
+
+**Actualización inmutable**: ambas funciones devuelven matrices nuevas, listas para alimentar el estado reactivos, sin modificar los parámetros de entrada.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `normalizeActiveKeys` | `(value: LhCollapseKey \| LhCollapseKey[] \| undefined) => LhCollapseKey[]` | matriz de claves | normalización de tres estados |
+| `toggleCollapseKey` | `(keys, key, accordion: boolean) => LhCollapseKey[]` | nueva matriz de claves | acordeón / modo normal |
+| `getCollapseItemClassNames` | `(state: { active, disabled }) => string[]` | nombres de clase | desplegado / desactivado |
+
+## Definiciones de tipos
+
+```ts
+export type LhCollapseKey = string | number
+```
+
+## Accesibilidad
+
+collapse es la implementación típica del patrón **accordion / disclosure** de APG, y el ensamblaje de las convenciones semánticas corre por cuenta de la capa UI (core no proporciona una función de paquete de atributos, porque el patrón es simple y el DOM difiere mucho entre plataformas):
+
+```html
+<!-- Cada item es un disclosure -->
+<div class="lh-collapse__item">
+  <h3>
+    <button type="button" aria-expanded="true" aria-controls="panel-1" id="trigger-1">
+      Título
+    </button>
+  </h3>
+  <div id="panel-1" role="region" aria-labelledby="trigger-1">Contenido</div>
+</div>
+```
+
+- `aria-expanded` se monta en el botón disparador y comparte fuente con `active`: este es el **atributo central** de un panel plegable accesible.
+- El contenedor del panel lleva `role="region"` + `aria-labelledby`, que referencia en sentido inverso al disparador y forma una asociación bidireccional.
+- **Elementos desactivados**: el botón disparador lleva `disabled` (el verdadero atributo disabled, no solo un nombre de clase), reconocido tanto por el teclado como por el lector de pantalla.
+- Teclado: Tab se mueve entre los disparadores; Enter/Espacio conmuta el despliegue.
+- En el modo acordeón, **no** uses `aria-hidden="true"` para ocultar los paneles recogidos: el contenido sigue en el DOM (visible durante la animación), basta con la animación de altura de CSS; si de verdad se elimina del DOM, hay que gestionar bien el estado de `aria-expanded`.
+
+## Ejemplos de uso
+
+```ts
+import { normalizeActiveKeys, toggleCollapseKey } from '@lh-ui/share/core/collapse'
+
+normalizeActiveKeys('1')          // ['1']
+normalizeActiveKeys(['1', '2'])   // ['1', '2']
+normalizeActiveKeys(undefined)    // []
+
+toggleCollapseKey([], '1', false)       // ['1']
+toggleCollapseKey(['1'], '1', false)    // [] (al volver a pulsar, se recoge)
+toggleCollapseKey(['1'], '2', false)    // ['1', '2'] (el modo normal permite varios abiertos)
+toggleCollapseKey(['1'], '1', true)     // [] (acordeón: al volver a pulsar, se recoge todo)
+toggleCollapseKey(['1'], '2', true)     // ['2'] (acordeón: solo se conserva el recién abierto)
+```
+
+```vue
+<!-- Vue3 -->
+<div class="lh-collapse">
+  <div
+    v-for="item in items"
+    :key="item.key"
+    :class="getCollapseItemClassNames({ active: activeKeys.includes(item.key), disabled: item.disabled })"
+  >
+    <h4 class="lh-collapse__header">
+      <button
+        type="button"
+        class="lh-collapse__trigger"
+        :disabled="item.disabled"
+        :aria-expanded="activeKeys.includes(item.key)"
+        :aria-controls="`lh-panel-${item.key}`"
+        :id="`lh-trigger-${item.key}`"
+        @click="onToggle(item)"
+      >
+        <span class="lh-collapse__arrow">{{ activeKeys.includes(item.key) ? '▾' : '▸' }}</span>
+        {{ item.title }}
+      </button>
+    </h4>
+    <div
+      v-show="activeKeys.includes(item.key)"
+      class="lh-collapse__panel"
+      :id="`lh-panel-${item.key}`"
+      role="region"
+      :aria-labelledby="`lh-trigger-${item.key}`"
+    >
+      <slot :name="item.key" :item="item" />
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// Controlado + acordeón
+const activeKeys = computed(() => normalizeActiveKeys(props.modelValue))
+function onToggle(item) {
+  if (item.disabled) return
+  emit('update:modelValue', toggleCollapseKey(activeKeys.value, item.key, props.accordion))
+}
+```
+
+```tsx
+// React: si el v-model del acordeón es un valor único o una matriz lo decide la API de la capa UI;
+// core siempre opera con matrices; la capa UI convierte al emitir según convenga
+// (en acordeón y cuando solo se quiere un valor único, tomar [0])
+```
+
+```ts
+// uniapp: <view> + v-show; la animación de despliegue usa transition de max-height en CSS (<view> lo admite)
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-collapse` | clase base |
+| `.lh-collapse__item` | un elemento de panel |
+| `.lh-collapse__item--active` | estado desplegado |
+| `.lh-collapse__item--disabled` | desactivado |
+| `.lh-collapse__header` / `__trigger` | cabecera / botón disparador |
+| `.lh-collapse__arrow` | flecha de despliegue (con animación de rotación) |
+| `.lh-collapse__panel` | zona de contenido del panel |
+
+El color de fondo de la cabecera es `--lh-fill-color`; la flecha, `--lh-text-color-secondary`; los elementos desactivados, `--lh-text-disabled`; el borde del panel, `--lh-border-color`.
+
+## Notas
+
+- **`v-show` frente a `v-if`**: la animación de despliegue necesita que el DOM sea persistente (`v-show` + transition de altura/max-height). Con `v-if`, al destruir el elemento no se puede reproducir la animación de recogido y la experiencia resulta brusca.
+- **El tipo del valor controlado y el acordeón**: lógicamente, el acordeón solo debería tener un elemento desplegado, pero `toggleCollapseKey` devuelve una matriz (que puede ser `[]` o `[key]`). Si la capa UI expone una API de valor único para el acordeón, al emitir toma `[0] ?? undefined`; también es válido mantener una API de matriz, solo que quien llama debe autolimitarse.
+- **El momento de llamar a `normalizeActiveKeys`**: normalizar en cada renderizado es muy barato (una sola evaluación `Array.isArray`); si te preocupa, usa una caché con `computed`.
+- **Paneles plegables anidados**: los `activeKeys` internos son independientes de los exteriores; al anidar el DOM, el `role="region"` de un panel interno quedaría dentro de otro region: está permitido, pero el id del `aria-labelledby` debe ser único a nivel global (añade un prefijo con la key).
+- **La altura durante la animación**: la solución de `max-height` necesita un límite superior suficientemente grande (como `1000px`), o la velocidad de la animación se distorsiona con contenidos muy altos; una alternativa más precisa es medir `scrollHeight` con JS y fijarlo después; core no participa y la capa UI lo implementa por su cuenta.
+- **Unicidad de los id**: `aria-controls` / `aria-labelledby` dependen de id; en páginas donde coexisten varias instancias de collapse, añade a la key un prefijo de instancia (la capa UI puede usar `useId` o el uid de la instancia).
+
+<FnPlayground module="collapse" fn="toggleCollapseKey" params='{"keys": ["1", "2"], "key": "3", "accordion": false}' />

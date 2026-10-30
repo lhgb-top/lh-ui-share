@@ -1,0 +1,197 @@
+---
+title: tooltip —— تلميح النص
+description: 'تأخيرَي الإظهار والإخفاء في getDefaultDelay (إظهار 200 / إخفاء 0)، وتعيين اقتران role=tooltip مع aria-describedby'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Tooltip هو «شرح مكمّل لا يُرى إلا عند المرور فوق العنصر»: أيقونة زر غير مفهومة، نص رابط مقطوع، خلية جدول لا تسع المحتوى الكامل. طبقة `core/tooltip` رقيقة جداً—فالتموضيع موكول إلى `shared/popper`، والتأخير إلى `shared/delay`، وهي لا تُعلن سوى **الإيقاع الافتراضي لهذا المكوّن** و**اتفاق اقتران aria**.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `<LhTooltip>`: لإضافة سطر شرح مختصر (جملة واحدة) للعنصر المُطلِق.
+- إظهار المحتوى الكامل عند قطع النص (ellipsis).
+- شرح دلالة الأزرار الأيقونية.
+- **لا ينبغي استخدامه**: المحتوى الذي يحتاج تفاعلاً (استخدم `popover`—فالأدوات التلميحية لا تحوي أزراراً)؛ عمليات التأكيد (استخدم `popconfirm`)؛ تغذية الأخطاء (استخدم `message`)؛ **الأجهزة المحمولة** (بلا hover، ويكاد يكون tooltip مستحيلاً على شاشات اللمس، استبدله بتفعيل click في popover أو الضغط المطوَّل).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getPopperClassNames,
+  getPopperStyle,
+  getDefaultDelay,
+  getTooltipPopperAria,
+  getTooltipTriggerAria,
+} from '@lh-ui/share/core/tooltip'
+import type {
+  LhTooltipPlacementCore,
+  LhTooltipTriggerCore,
+  LhTooltipEffectCore,
+  LhTooltipState,
+} from '@lh-ui/share/core/tooltip'
+```
+
+## القصد التصميمي
+
+**عدم تماثل التأخير الافتراضي**: الإظهار 200ms والإخفاء 0ms—**إظهار بطيء وإخفاء سريع**. فتأخير الإظهار يمنع التفعيل بالخطأ (مرور المؤشر فوق صف أزرار لا يجب أن يُظهر تلميحاً لكل واحد)، وتأخير الإخفاء 0ms يضمن الاختفاء فور المغادرة دون تثاقل. وبالمقارنة مع تأخير إخفاء popover البالغ 100ms (انظر أدناه)، فإن الفرق في الإيقاع بين الاثنين يعكس الفرق في الوزن التفاعلي.
+
+**اتفاق اقتران aria**: يشير `aria-describedby` الخاص بالعنصر المُطلِق إلى id الطبقة، وتحمل الطبقة `role="tooltip"`. هذا هو الأسلوب المعياري في WAI-ARIA: عند تركيز قارئ الشاشة على العنصر المُطلِق يقرأ محتوى التلميح معه، **دون حاجة المستخدم إلى المرور فوق المؤشر للحصول على المعلومة**—وهذا من أكثر جوانب إمكانية الوصول إغفالاً، فالأداة التلميحية البصرية البحتة غير مرئية تماماً لمستخدمي لوحة المفاتيح.
+
+**معالجة الأسماء البديلة `@deprecated`**: `getPopperClass` / `getPopperStyle` اسمان قديمان يستخدمهما المستودع vue2، فيُحتفظ بهما للتوافق لكن مع علامة deprecated، والكود الجديد يستخدم `getPopperClassNames` (اتفاقية getXxxClassNames). **لا يجوز حذفهما**—فالمستهلكون لا يزالون يستوردونهما، وتغيير الاسم يستتبع تغيير المستهلكين.
+
+**`getPopperStyle` يدير maxWidth فقط**: رقم → px، والسلسلة تُستخدم كما هي. أما إحداثيات التموضع فيحسبها `computePosition` في `shared/popper`، وتحوّل transform/إزاحة الطبقة هي نتيجة ربط طبقة UI بحالة popper.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `getPopperClassNames` | `(state: { effect, placement }) => string[]` | أسماء الأصناف | تأثير السمة + الموضع |
+| `getPopperStyle` ⚠️ | `(state: { maxWidth }) => Record<string, string>` | أنماط مضمّنة | توحيد maxWidth |
+| `getDefaultDelay` | `(show?, hide?) => { show, hide }` | التأخير | افتراضياً 200 / 0 |
+| `getTooltipPopperAria` | `(id?) => LhAriaAttrs` | حزمة aria | role="tooltip" |
+| `getTooltipTriggerAria` | `(tooltipId?) => LhAriaAttrs` | حزمة aria | aria-describedby |
+
+ما يحمل علامة ⚠️ هو اسم بديل للتوافق `@deprecated`، والكود الجديد يستخدم الاسم الجديد.
+
+الثوابت (أنواع): `LhTooltipPlacementCore` 12 موضعاً، `LhTooltipTriggerCore`، `LhTooltipEffectCore = 'dark' | 'light'`.
+
+## تعريفات الأنواع
+
+```ts
+export type LhTooltipPlacementCore =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhTooltipTriggerCore = 'hover' | 'focus' | 'click' | 'contextmenu'
+export type LhTooltipEffectCore = 'dark' | 'light'
+
+export interface LhTooltipState {
+  visible: boolean
+  effect: LhTooltipEffectCore
+  placement: LhTooltipPlacementCore
+  maxWidth?: number | string
+  showDelay?: number
+  hideDelay?: number
+}
+```
+
+## إمكانية الوصول
+
+```ts
+getTooltipPopperAria('tip-1')
+// { role: 'tooltip', id: 'tip-1' }
+getTooltipTriggerAria('tip-1')
+// { 'aria-describedby': 'tip-1' }
+getTooltipTriggerAria()  // {} (عند عدم تمرير id لا يُخرَج شيء، وهنا يُستحسَن تعويضه بـ aria-label)
+```
+
+- **يجب تطابق id في الطرفين**: قيمة `aria-describedby` الخاصة بالمُطلِق يجب أن تساوي id الطبقة الحقيقي بعد العرض. وفي التصيير من الخادم قد يكون id فارغاً—فعند عدم تمرير id تُعيد الدالة كائناً فارغاً، وعلى طبقة UI تعويضه بـ `aria-label`، ولا يجوز ترك `aria-describedby` يشير إلى عنصر غير موجود (سيُعلن قارئ الشاشة «العنصر المُشار إليه غير موجود»).
+- **تفعيل focus يغطي مستخدمي لوحة المفاتيح**: عند `trigger: 'focus'` يُظهر التلميَح بمجرد التركيز عبر Tab—وهو سلوك إمكانية الوصول الافتراضي المُستحسَن، فالاعتماد على hover وحده يجعل التلميح غير مرئي تماماً لمستخدمي لوحة المفاتيح.
+- **قيود محتوى `role="tooltip"`**: تنص WAI-ARIA على أنه **لا يجوز أن يحوي tooltip عناصر تفاعلية** (أزراراً، روابط)—عند الحاجة للتفاعل استخدم `popover` (role=dialog). وينعكس هذا القيد أيضاً على الأنماط: يحمل tooltip عادةً pointer-events: none.
+- **النصوص الطويلة**: يحدّ `maxWidth` عرض التفاف النص، ولكن لا ينبغي أن يحمل tooltip فقرات—فما تجاوز جملة واحدة فكر في popover.
+
+## أمثلة الاستخدام
+
+```ts
+import { getDefaultDelay, getPopperClassNames, getPopperStyle } from '@lh-ui/share/core/tooltip'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 0 }
+getDefaultDelay(0, 500)                // { show: 0, hide: 500 } (تجاوز صريح)
+
+getPopperClassNames({ effect: 'dark', placement: 'top' })
+// ['lh-tooltip__popper', 'lh-tooltip__popper--dark', 'lh-tooltip__popper--top']
+
+getPopperStyle({ maxWidth: 200 })    // { maxWidth: '200px' }
+getPopperStyle({ maxWidth: '30em' }) // { maxWidth: '30em' }
+getPopperStyle({})                   // {}
+```
+
+```ts
+// آلة الحالة للإظهار/الإخفاء (طبقة UI): التأخير موحَّد عبر resolveDelay في shared/delay
+const state = reactive<LhTooltipState>({
+  visible: false, effect: 'dark', placement: 'top',
+})
+
+let showTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleShow() {
+  clearTimeout(showTimer)
+  const { show } = getDefaultDelay(props.showDelay, props.hideDelay)
+  showTimer = setTimeout(() => { state.visible = true }, show)
+}
+function scheduleHide() {
+  clearTimeout(showTimer)
+  const { hide } = getDefaultDelay(props.showDelay, props.hideDelay)
+  setTimeout(() => { state.visible = false }, hide)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTooltip content="لا يمكن الاستعادة بعد الحذف" placement="top">
+    <button type="button" aria-label="حذف"><LhIcon name="delete" /></button>
+  </LhTooltip>
+</template>
+
+<!-- داخل المكوّن: العنصر المُطلِق والطبقة -->
+<template>
+  <span
+    class="lh-tooltip__trigger"
+    v-bind="getTooltipTriggerAria(popperId)"
+    @mouseenter="scheduleShow" @mouseleave="scheduleHide"
+    @focus="scheduleShow" @blur="scheduleHide"
+  >
+    <slot />
+  </span>
+  <teleport to="body">
+    <transition name="lh-tooltip-fade">
+      <div
+        v-if="state.visible"
+        :id="popperId"
+        :class="getPopperClassNames({ effect: state.effect, placement: state.placement })"
+        :style="{ ...getPopperStyle({ maxWidth: props.maxWidth }), ...popperStyle }"
+        v-bind="getTooltipPopperAria(popperId)"
+        role="tooltip"
+      >
+        <slot name="content">{{ props.content }}</slot>
+      </div>
+    </transition>
+  </teleport>
+</template>
+```
+
+```tsx
+// React: استنساخ عنصر الأطفال لحقن الأحداث وسمات aria (React.cloneElement)؛
+// والطبقة عبر createPortal + useFloating (@floating-ui أو popper ذاتي)
+```
+
+```ts
+// uniapp: <view> + catchtouchstart؛ وhover غير موجود في التطبيقات المصغّرة،
+// فيخدم tooltip بشكل أساسي h5، وعلى مشاهد التطبيقات المصغّرة استبداله بتفعيل click في popover
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-tooltip__trigger` | غلاف العنصر المُطلِق (inline) |
+| `.lh-tooltip__popper` | الطبقة |
+| `.lh-tooltip__popper--{dark\|light}` | تأثير السمة |
+| `.lh-tooltip__popper--{top\|top-start\|…}` | 12 موضعاً (تشمل اتجاه السهم) |
+
+تأثير dark: `--lh-tooltip-bg-dark` (قريب من الأسود) + نص أبيض؛ تأثير light: `--lh-bg-color` + `--lh-text-primary`. زاوية الانحناء `--lh-border-radius-small`، والهامش الداخلي `--lh-tooltip-padding`، وحجم الخط `--lh-font-size-small`.
+
+## ملاحظات
+
+- **التنظيف ثنائي الاتجاه للمؤقّتات**: إذا غادر المؤشر قبل انطلاق مؤقّت الإظهار فيجب clearTimeout—وإلا فستظهر الأداة التلميحية بعد مغادرة المؤشر. وآلة الحالة في المثال أعلاه تنظّف showTimer فقط، بينما على التنفيذ الكامل التنظيف في الاتجاهين.
+- **المرور فوق الطبقة نفسها**: يكون `pointer-events` الخاص بـ tooltip عادة none، فلا يوجد ما يُسمّى «المرور فوق الطبقة»—أما popover فيسمح به، ومن هنا تأتي فروق تأخير الإخفاء بين الاثنين.
+- **متحكَّم فيه وغير متحكَّم فيه**: في الوضع المتحكَّم فيه `v-model:visible`، يجب مزامنة الحالة الداخلية مع التغيير الخارجي لـ visible؛ وإعادة ضبط مؤقّتات التأخير تبعاً للحالة المتحكَّم فيها.
+- **تعايش عدة tooltip**: يجب أن يكون popperId لكل نسخة فريداً (useId أو تسلسل متزايد)، وإلا فسيشير aria-describedby إلى عنصر خاطئ.
+- **`getPopperClass` / `getPopperStyle` اسمان بديلان deprecated**: يستخدم الكود الجديد `getPopperClassNames`؛ وما زال الاسمان يُستورَدان في مستودع vue2، وقبل حذفهما يجب تعديل المستهلكين أولاً (ترتيب الإصدارات في الخط الأحمر 5).
+- **معالجة المحتوى الفارغ**: عندما يكون `content` فارغاً لا ينبغي عرض طبقة فارغة—تتخطّى طبقة UI العرض عند المحتوى الفارغ (`v-if="content"`)، وليس هذا من مسؤوليات core.
+- **العنصر المُطلِق المعطَّل**: الزر ذو `disabled` الأصلي لا يُطلق حدثَي mouseenter/focus، فيفشل tooltip. والممارسة الشائعة هي لفّ المُطلِق بطبقة عنصر غير معطّل (الـ span ذي الصنف `.lh-tooltip__trigger`) لتلقّي الأحداث—وهذا أحد أسباب وجود صنف trigger.
+
+<FnPlayground module="tooltip" fn="getDefaultDelay" params='{"showDelay": null, "hideDelay": null}' />

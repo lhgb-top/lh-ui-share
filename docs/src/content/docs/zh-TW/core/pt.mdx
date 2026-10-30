@@ -1,0 +1,121 @@
+---
+title: pt —— 透傳屬性合併
+description: 'mergePt 把 PT 屬性包（class / style / attrs）與基礎類別名淺合併，供元件內部元素樣式透傳'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+元件內部有多個元素（按鈕的 `<button>` 和裡面的 `<span>`、輸入框的 `<input>` 和前置圖示 `<i>`），使用者想從外部微調其中某一個，怎麼辦？lh-ui 的答案是 **PT（PassThrough）屬性包**：元件暴露 `pt` prop，按內部元素名分別透傳 `class` / `style` / `attrs`。`mergePt` 負責把它與元件自己的基礎類別名合併。
+
+## 何時使用
+
+- 元件庫內部：每個內部元素呼叫 `mergePt(props.pt?.icon, 'lh-button__icon')`，拿到該掛的 class / style / attrs。
+- 使用者側透過 `pt` prop 深入元件內部做微調，而不必 `:deep()` 穿透。
+
+**不該用它**：主題級客製（用 [themeVars](/theme/customization)）；單純加類別名（用 `class` prop）。
+
+## 匯入方式
+
+```ts
+import { mergePt, type LhPtAttrs } from '@lh-ui/share/core/shared/pt'
+```
+
+## 類型與函式
+
+```ts
+export interface LhPtAttrs {
+  class?: string | string[] | Record<string, boolean>
+  style?: Record<string, string>
+  attrs?: Record<string, any>
+}
+```
+
+| 函式 | 簽名 | 作用 |
+| --- | --- | --- |
+| `mergePt` | `(pt: LhPtAttrs \| undefined, baseClass: string) => { class: string[]; style: Record<string, string>; attrs: Record<string, any> }` | 合併 PT 屬性與基礎類別名 |
+
+## 合併規則
+
+### class
+
+`baseClass` **永遠在陣列首位**，使用者的 class 在後：
+
+```ts
+mergePt({ class: 'my-icon' }, 'lh-button__icon')
+// { class: ['lh-button__icon', 'my-icon'], style: {}, attrs: {} }
+
+mergePt({ class: ['a', 'b'] }, 'lh-button__icon')
+// class: ['lh-button__icon', 'a', 'b']
+
+mergePt({ class: { active: true, disabled: false } }, 'lh-button__icon')
+// class: ['lh-button__icon', 'active']   —— 物件只取值為真的鍵
+
+mergePt({ class: 'a  b ' }, 'lh-button__icon')
+// class: ['lh-button__icon', 'a', 'b']   —— 字串按空格切分，過濾空串
+```
+
+為什麼 `baseClass` 在前：**BEM 基礎類別名的特異性不能被使用者類別名壓過**（同為單類別名時後寫的覆蓋先寫的）。元件的 `--primary` 修飾符仍然要能蓋住使用者的 `my-icon`。
+
+### style / attrs
+
+```ts
+mergePt(undefined, 'lh-button__icon')
+// { class: ['lh-button__icon'], style: {}, attrs: {} }   —— pt 為空時全空
+
+mergePt({ style: { color: 'red' }, attrs: { 'data-x': '1' } }, 'lh-button__icon')
+// { class: ['lh-button__icon'], style: { color: 'red' }, attrs: { 'data-x': '1' } }
+```
+
+**注意**：`style` / `attrs` 是**參照透傳**，不做拷貝。UI 層拿到後直接 `v-bind="merged.attrs"` / `:style="merged.style"` 即可；不要在元件內部 mutate 傳回值。
+
+## 使用範例
+
+### 元件內部（按鈕的圖示元素）
+
+```ts
+// button 元件
+const iconPt = computed(() => mergePt(props.pt?.icon, 'lh-button__icon'))
+```
+
+```vue
+<template>
+  <button class="lh-button">
+    <i v-if="icon" v-bind="iconPt.attrs" :class="iconPt.class" :style="iconPt.style" />
+    <span><slot /></span>
+  </button>
+</template>
+```
+
+### 使用者側
+
+```vue
+<lh-button
+  :pt="{
+    icon: { class: 'text-lg', style: { marginRight: '4px' } },
+    $root: { attrs: { 'data-test': 'submit' } },
+  }"
+>
+  提交
+</lh-button>
+```
+
+### React
+
+```tsx
+const iconPt = mergePt(pt?.icon, 'lh-button__icon')
+
+return (
+  <button className="lh-button">
+    {icon && <i className={iconPt.class.join(' ')} style={iconPt.style} {...iconPt.attrs} />}
+  </button>
+)
+```
+
+## 注意事項
+
+- **淺層合併，不做 deepMerge**：`class` 陣列級拼接、`style` / `attrs` 整包替換。深合併在這裡沒有語義（class 是列表不是樹）。
+- **`pt` 為空傳回全空物件**：UI 層可以無腦解構，不用判空。
+- **傳回的 class 是陣列**：Vue 的 `:class` 接收陣列，React 需要 `.join(' ')`。
+- **基礎類別名不可省**：`mergePt(pt, '')` 會得到一個首項為空串的陣列——BEM 基礎類別名是樣式錨點，每個內部元素都必須有。
+
+<FnPlayground module="pt" fn="mergePt" params='{"pt": {"class": "my-icon text-lg"}, "baseClass": "lh-button__icon"}' />

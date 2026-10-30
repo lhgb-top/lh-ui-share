@@ -1,0 +1,167 @@
+---
+title: 'anchor ancre —— Navigation'
+description: "flattenAnchorItems : aplatissement parcours en profondeur (chaîne d'ancêtres anti-boucle), resolveActiveAnchor pour la mise en surbrillance liée au défilement, indentation par niveau"
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Les ancres sont le « sommaire latéral des documents longs » : sur la droite des sites documentaires, « Utilisation de base / API / Points d'attention » ; on clique pour défiler jusqu'au titre correspondant, et le défilement met en surbrillance la section courante. La différence avec `menu` est que l'ancre est reliée à une **position de contenu au sein d'une même page**, pas à des pages différentes.
+
+## Quand l'utiliser
+
+- Chaque port implémente `<LhAnchor>` : sommaire de site documentaire, lecture guidée de documents longs, navigation entre les sections d'une documentation d'API, navigation entre les blocs d'une page d'atterrissage.
+- Lorsque le contenu de la page est **suffisamment long pour nécessiter des sauts rapides** et que les blocs ont des titres clairs.
+- **À éviter** : la navigation entre les pages du site (utilisez `menu` / `breadcrumb`) ; les pages courtes (pas besoin de sommaire dans un seul écran) ; les blocs sans titre (l'ancre s'appuie sur le texte du titre comme libellé du lien).
+
+## Import
+
+```ts
+import {
+  flattenAnchorItems,
+  collectAnchorIds,
+  resolveActiveAnchor,
+  getAnchorClassNames,
+  getAnchorLinkClassNames,
+} from '@lh-ui/share/core/anchor'
+import type { LhAnchorItem, LhFlatAnchorItem } from '@lh-ui/share/core/anchor'
+```
+
+## Intentions de conception
+
+**De la structure arborescente à la liste aplatie** : la configuration des ancres est un arbre (sections contenant des sous-sections), mais le rendu est une liste unidimensionnelle (avec indentation). `flattenAnchorItems` effectue un parcours en profondeur, **en préservant l'ordre du document** — un sommaire dans le désordre est pire que pas de sommaire. `level` enregistre la profondeur d'origine et pilote les styles d'indentation.
+
+**La chaîne d'ancêtres `seen` protège des références circulaires** : `seen` est l'**ensemble des ancêtres sur le chemin DFS courant** (pas un ensemble global). Le commentaire le dit explicitement : « protection de la chaîne d'ancêtres contre les références circulaires » — si, dans des données corrompues, les children de A contiennent A lui-même, un `seen` global ne ferait que dédoublonner, alors que la chaîne d'ancêtres interrompt directement la récursion pour éviter une boucle infinie. C'est un filet de sécurité contre les erreurs structurelles de données arborescentes.
+
+**`resolveActiveAnchor` : « le dernier à avoir franchi le seuil »** : parmi les positions offset ordonnées selon le document, on cherche la **dernière ancre dont `offset <= currentTop`**. Détail clé : **dès que le premier `offset > currentTop` est rencontré, on interrompt (break)** — comme les offsets sont ordonnés, les suivants ne peuvent qu'être plus grands, continuer à parcourir serait du gaspillage. C'est une écriture en O(n) avec terminaison anticipée.
+
+**En l'absence de correspondance, retour au premier élément** : lorsqu'on défile avant toutes les ancres (en haut de page), on renvoie `ids[0]` — le premier élément reste toujours surligné, évitant l'état confus « aucune ancre active ». Un tableau vide renvoie une chaîne vide (la couche UI ne rend rien en surbrillance).
+
+- **`offsets` et `ids` doivent être dans le même ordre** : la signature de la fonction exige deux tableaux — les positions sont mesurées par la couche UI via `getBoundingClientRect()` pour chaque ancre, puis transmises dans le même ordre. Un ordre décalé donnerait une mauvaise ancre active : c'est un contrat de l'appelant que core ne peut pas vérifier.
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `flattenAnchorItems` | `(items, level?, seen?) => LhFlatAnchorItem[]` | liste aplatie | parcours en profondeur conservant l'ordre |
+| `collectAnchorIds` | `(items) => string[]` | liste d'id | tableau d'id dans l'ordre aplati |
+| `resolveActiveAnchor` | `(ids, offsets, currentTop) => string` | id actif | détection liée au défilement |
+| `getAnchorClassNames` | `(state: { direction }) => string[]` | classes | direction du conteneur |
+| `getAnchorLinkClassNames` | `(state: { active, level }) => string[]` | classes | état actif + indentation par niveau |
+
+## Définitions de types
+
+```ts
+export interface LhAnchorItem {
+  id: string          // id de l'élément cible
+  title: string       // texte affiché
+  children?: LhAnchorItem[]
+}
+
+export interface LhFlatAnchorItem {
+  id: string
+  title: string
+  level: number       // profondeur d'origine (racine = 0), pilote l'indentation
+}
+```
+
+## Accessibilité
+
+Les liens d'ancre pointent vers **une ancre au sein de la même page** ; la pratique standard est l'ancre native `<a href="#section">` :
+
+```html
+<a href="#usage" class="lh-anchor__link">Exemples d'utilisation</a>
+...
+<section id="usage" tabindex="-1">…</section>
+```
+
+- **Saut d'ancre natif + tabindex="-1"** : lorsqu'on clique sur `<a href="#id">`, le navigateur défile et tente de focuser la cible. Si la cible n'est pas un élément focusable, le focus ne bouge pas après le saut — ajoutez `tabindex="-1"` à la cible pour qu'elle puisse recevoir le focus programmatique, afin que le lecteur d'écran commence la lecture à cet endroit. C'est le modèle d'ancre accessible recommandé par WAI-ARIA.
+- **aria-current pour marquer la section courante** : `--active` de `getAnchorLinkClassNames` est une classe visuelle ; en matière d'accessibilité, il est recommandé que la couche UI ajoute `aria-current="location"` sur le lien actif (sémantique de position dans la page, à distinguer du `aria-current="page"` de `breadcrumb`).
+- **Les sauts ne doivent pas avoir l'effet de bord de modifier le hash de l'URL** : les changements de hash entrent dans l'historique du navigateur ; cliquer cinq fois sur une ancre oblige à appuyer cinq fois sur Retour pour quitter la page. La couche UI peut utiliser `history.replaceState` ou `scrollIntoView` à la place du saut par défaut — c'est un arbitrage d'interaction dont core ne se
+occupe pas.
+- **Conteneur `nav` + aria-label** : comme pour `breadcrumb`, `<nav aria-label="Sommaire de cette page">` déclare qu'il s'agit d'une zone de navigation.
+
+## Exemples d'utilisation
+
+```ts
+import {
+  flattenAnchorItems, collectAnchorIds, resolveActiveAnchor,
+} from '@lh-ui/share/core/anchor'
+
+const items = [
+  { id: 'intro', title: 'Présentation', children: [
+    { id: 'why', title: 'Pourquoi l'utiliser' },
+  ] },
+  { id: 'usage', title: 'Utilisation' },
+]
+
+flattenAnchorItems(items)
+// [ { id: 'intro', title: 'Présentation', level: 0 },
+//   { id: 'why', title: 'Pourquoi l'utiliser', level: 1 },
+//   { id: 'usage', title: 'Utilisation', level: 0 } ]
+
+collectAnchorIds(items)  // ['intro', 'why', 'usage']
+
+// Liaison au défilement : offsets est la position de chaque ancre relativement au haut du conteneur (dans le même ordre que ids)
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 350)  // 'why'
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 50)   // 'intro' (n'a pas franchi why)
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 0)    // 'intro' (pas de correspondance, retour au premier)
+resolveActiveAnchor([], [], 0)  // '' (liste vide)
+```
+
+```ts
+// Couche UI : écoute du défilement + mesure des positions
+const activeId = ref('')
+
+function refresh() {
+  const flat = flattenAnchorItems(props.items)
+  const ids = flat.map((item) => item.id)
+  const offsets = ids.map((id) => {
+    const el = document.getElementById(id)
+    return el ? el.getBoundingClientRect().top - containerTop : Infinity
+  })
+  activeId.value = resolveActiveAnchor(ids, offsets, scrollTop.value)
+}
+
+onMounted(() => window.addEventListener('scroll', refresh, { passive: true }))
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhAnchor :items="items" :offset-top="80" @click="onAnchorClick" />
+</template>
+```
+
+```tsx
+// React : enregistre l'écouteur scroll dans un useEffect ; mesure des positions via un tableau de refs + getBoundingClientRect ;
+// limitation par requestAnimationFrame ou throttle (scroll se déclenche à haute fréquence)
+```
+
+```ts
+// uniapp : <scroll-view scroll-into-view="id"> est le saut d'ancre natif des mini-programmes ;
+// la liaison au défilement utilise l'événement scroll de scroll-view pour récupérer scrollTop
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-anchor` | conteneur |
+| `.lh-anchor--{vertical\|horizontal}` | direction (barre latérale verticale / navigation supérieure horizontale) |
+| `.lh-anchor__link` | lien d'ancre |
+| `.lh-anchor__link--level-{0..n}` | indentation par niveau (padding-left croissant) |
+| `.lh-anchor__link--active` | état actif (couleur principale + barre indicatrice à gauche) |
+
+Couleur d'activation `--lh-primary-color` ; lien ordinaire `--lh-text-regular` ; unité d'indentation par niveau `--lh-anchor-indent` (par ex. 12px/niveau).
+
+## Points d'attention
+
+- **La mesure des positions doit déduire le décalage du conteneur** : si les ancres se trouvent dans un conteneur intérieur à défilement (pas le défilement de window), il faut déduire la position du haut du conteneur du `getBoundingClientRect().top`, sinon la surbrillance est toujours décalée. C'est le bug le plus courant.
+- **`getBoundingClientRect` force le calcul de mise en page** : l'appeler sur N éléments à chaque événement scroll déclenche N reflows. Optimisation : mettez les positions en cache, ne recalculez que lorsque les dimensions du contenu changent ; ou observez chaque élément avec IntersectionObserver.
+- **La compensation du décalage pour l'épinglage en haut** : lorsqu'une page a un en-tête fixe (`affix`), la cible d'un saut d'ancre peut être masquée par l'en-tête. Ajoutez `scroll-margin-top` (CSS) à l'élément cible ou déduisez la hauteur de l'en-tête du montant de défilement de la couche UI — c'est un point de coopération de mise en page.
+- **Les positions deviennent caduques avec un contenu dynamique** : après un changement de hauteur du contenu (déplier/replier, fin du chargement d'une image), les positions en cache sont erronées. Il faut remesurer lorsque le contenu change.
+- **La sémantique de chaîne d'ancêtres de `seen`** : le troisième paramètre `seen` de `flattenAnchorItems` est constitué des **ancêtres sur le chemin**, par défaut `new Set()`. Côté métier, on ne le passe généralement pas — il sert surtout à se protéger des boucles infinies sur des données corrompues. Si deux sous-arbres frères référencent un même nœud (partage en DAG), la chaîne d'ancêtres le fait apparaître une fois sur chaque chemin (même arbitrage que « chaîne d'ancêtres de `tree` » contre « seen global de `table` »).
+- **`id` vide et `id` dupliqué** : l'`id` doit être globalement unique (exigence des ancres HTML). `document.getElementById` ne renvoie que la première correspondance — des id dupliqués entraînent des sauts erronés, ce que core ne peut pas vérifier.
+- **Ancres vs routage de sommaire** : l'ancre relie des positions au sein d'une page ; si chaque entrée du « sommaire » est une page différente, c'est un `menu`, pas un `anchor` — ne les confondez pas (les ancres ne rafraîchissent pas la page et n'entrent pas dans la gestion de l'historique de routage de la même manière).
+
+<FnPlayground module="anchor" fn="resolveActiveAnchor" params='{"ids": ["intro", "why", "usage"], "offsets": [0, 300, 600], "currentTop": 350}' />

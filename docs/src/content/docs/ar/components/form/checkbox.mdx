@@ -1,0 +1,147 @@
+---
+title: checkbox —— مربع الاختيار
+description: 'isCheckboxChecked يحكم عبر Object.is، toggleCheckboxValue للتبديل غير القابل للتغيير'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+مربع الاختيار هو أصغر آلة حالة في النموذج: قيمة موجودة في مصفوفة أم لا. لا يحتوي `core/checkbox` سوى على دالتين، لأنه يجرد «التحديد» إلى **عملية مجموعات**—فمجموعة مربعات الاختيار قيمتها مصفوفة، والتحديد هو إضافة عنصر، والإلغاء هو حذف عنصر.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `LhCheckbox` و`LhCheckboxGroup` (تحتفظ المجموعة بمصفوفة القيم، ويحكم كل عنصر على حالة تحديده منها).
+- مشاهد التحديد المتعدد؛ وللتبديل ثنائي الحالة يكون `switch` ألصق.
+- **لا ينبغي استخدامه**: للاختيار الفردي استخدم `radio`؛ وعند الحاجة إلى دلالة التحديد الجزئي (الأب محدد جزئياً) استخدم تحديد `tree` المتسلسل.
+
+## طريقة الاستيراد
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+import type { LhCheckboxState } from '@lh-ui/share/core/checkbox'
+```
+
+## القصد التصميمي
+
+استخدام `Object.is` للحكم بدلاً من التساوي الضمني في `includes`، لأن قيمة مربع الاختيار قد تكون من أي نوع (سلسلة، رقم، أو حتى مرجع كائن). يُعيد `includes` القيمة false بالنسبة لـ NaN، بينما يُعيد `Object.is(NaN, NaN)` القيمة true—ورغم ندرته عملياً، ينبغي أن يكون دلالات المجموعة متّسقة.
+
+أما `toggleCheckboxValue` فهو **غير قابل للتغيير**: يُزيل أولاً العناصر ذات القيمة نفسها (إزالة التكرار)، ثم يقرر وفقاً لـ `checked` ما إذا كان سيُضيف. ويضمن هذا الترتيب **التساوي الذاتي (idempotence)**—فاستدعاءه المتكرر بالقيمة والاتجاه نفسهما يعطي النتيجة نفسها، دون ظهور عناصر مكررة في المصفوفة.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `isCheckboxChecked` | `(values: unknown[], value: unknown) => boolean` | قيمة منطقية | هل القيمة في المصفوفة |
+| `toggleCheckboxValue` | `(values: unknown[], value: unknown, checked: boolean) => unknown[]` | مصفوفة جديدة | تبديل غير قابل للتغيير |
+
+## تعريفات الأنواع
+
+```ts
+export interface LhCheckboxState {
+  values: unknown[]
+  value: unknown
+  checked: boolean
+}
+```
+
+## إمكانية الوصول
+
+لا يُخرج `core/checkbox` حزمة سمات aria—**يُوصى بشدة بأن تستخدم الأطراف `<input type="checkbox">` الأصلي**: فالعنصر الأصلي يأتي معه `aria-checked`، ويدعم لوحة المفاتيح، ودلالات إرسال النموذج، وهو ما يصعب على أي عنصر تحكم مخصّص أن ينسخه بالكامل.
+
+أما حالة `indeterminate` (التحديد الجزئي) في checkbox الأصلي **فتُضبط فقط عبر JS** (لا يوجد سمة HTML مقابلة)، وهي النقطة الخاصة الوحيدة التي تحتاج طبقة UI لمعالجتها في مشاهد المجموعات:
+
+```ts
+// حالة التحديد الجزئي لمربع الأب (مثل مربع «تحديد الكل»)
+input.indeterminate = checkedCount > 0 && checkedCount < total
+```
+
+## أمثلة الاستخدام
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+
+isCheckboxChecked(['a', 'b'], 'b')   // true
+isCheckboxChecked(['a', 'b'], 'c')   // false
+
+toggleCheckboxValue(['a', 'b'], 'c', true)   // ['a', 'b', 'c']
+toggleCheckboxValue(['a', 'b', 'c'], 'b', false)  // ['a', 'c']
+toggleCheckboxValue(['a', 'b'], 'b', false)       // ['a']
+toggleCheckboxValue(['a'], 'a', true)             // ['a'] (موجود، تساوٍ ذاتي)
+```
+
+```vue
+<!-- Vue3: LhCheckboxGroup -->
+<script setup>
+const model = defineModel<Array<string>>({ default: [] })
+const toggle = (value: string, checked: boolean) => {
+  model.value = toggleCheckboxValue(model.value, value, checked)
+}
+</script>
+
+<template>
+  <div class="lh-checkbox-group" :class="`lh-checkbox-group--${size}`">
+    <label
+      v-for="opt in options"
+      :key="String(opt.value)"
+      class="lh-checkbox"
+      :class="{
+        'lh-checkbox--checked': isCheckboxChecked(model, opt.value),
+        'lh-checkbox--disabled': disabled || opt.disabled,
+      }"
+    >
+      <span class="lh-checkbox__box">
+        <input
+          class="lh-checkbox__input"
+          type="checkbox"
+          :checked="isCheckboxChecked(model, opt.value)"
+          :disabled="disabled || opt.disabled"
+          @change="toggle(opt.value, ($event.target as HTMLInputElement).checked)"
+        />
+      </span>
+      <span class="lh-checkbox__label">{{ opt.label }}</span>
+    </label>
+  </div>
+</template>
+```
+
+```tsx
+// React
+const [values, setValues] = useState<string[]>([])
+return options.map((opt) => (
+  <label key={opt.value} className="lh-checkbox">
+    <input
+      type="checkbox"
+      checked={isCheckboxChecked(values, opt.value)}
+      onChange={(e) => setValues(toggleCheckboxValue(values, opt.value, e.target.checked))}
+    />
+    <span className="lh-checkbox__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp: <checkbox-group> + <checkbox> مكوّنان مدمجان، ويعطي حدث change مصفوفة القيم مباشرة؛
+// وعند تخصيص شكل التحديد يُستخدم .lh-checkbox__box لتجاوز المظهر الافتراضي (انتبه لاستجابة :checked على غير h5)
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-checkbox` | الصنف الأساسي (غلاف label) |
+| `.lh-checkbox--checked` / `--indeterminate` / `--disabled` | الحالات الثلاث |
+| `.lh-checkbox--{small\|large}` | حجم معياري |
+| `.lh-checkbox__box` | مربع التحديد المخصّص (يتجاوز المظهر الأصلي) |
+| `.lh-checkbox__input` | input الأصلي (مخفي بصرياً، مع الاحتفاظ بالدلالة) |
+| `.lh-checkbox__label` | النص |
+| `.lh-checkbox-group` / `--{small\|large}` | حاوية المجموعة وحجمها |
+
+تموضع علامة الصح ثابت `top: 2px / left: 5px`—وهو **صحيح فقط في صندقة 16px**، وهذا بند مُدرَج ضمن «مشروع رموز الارتفاع» كي يُوحَّد لاحقاً (أن يكون 50% توسيطاً).
+
+## ملاحظات
+
+- **اتساق نوع القيمة**: `toggleCheckboxValue(['1'], 1, true)` ستنتج `['1', 1]`—فالسلسلة `'1'` والرقم `1` قيمتان مختلفتان. ويجب توحيد نوع id القادم من الخلفية في طبقة UI.
+- **دلالة المصفوفة الفارغة**: `values: []` تعني «لا شيء محدد»، وتختلف عن `values: undefined`؛ ويجب أن تكون القيمة الافتراضية للمجموعة `[]`.
+- **اتجاه المعامل `checked`**: هو «الحالة المستهدفة» لا «الحالة الحالية»، فـ `toggleCheckboxValue(v, x, false)` تزيل x دائماً بصرف النظر عن وجودها من قبل.
+- عند كثرة الخيارات فكر في `virtual-list`؛ فالمجموعة نفسها لا تقوم بالتخميل (virtualization).
+
+<FnPlayground module="checkbox" fn="toggleCheckboxValue" params='{"values": ["a", "b"], "value": "c", "checked": true}' />

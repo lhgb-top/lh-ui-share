@@ -1,0 +1,60 @@
+---
+title: '@lh-ui/share'
+description: L'unique couche partagée indépendante des frameworks de la famille lh-ui — fonctions pures core / theme / source des styles
+template: splash
+hero:
+  title: '@lh-ui/share'
+  tagline: L'unique <b>couche partagée indépendante des frameworks</b> de la famille lh-ui — 56 composants core en fonctions pures, 12 modules du noyau partagé, un système de thèmes style chinois, une internationalisation par simple emitter, 58 ensembles de sources de styles de composants. Une seule logique, pour alimenter les bibliothèques UI de Vue3 / Vue2 / React / uniapp sur toutes les plateformes.
+  actions:
+    - text: Démarrage
+      link: /lhui/share/fr/guide/getting-started
+      icon: right-arrow
+      variant: primary
+    - text: Préréglages de thème
+      link: /lhui/share/fr/theme/presets
+      icon: sun
+    - text: GitHub
+      link: https://github.com/lhgb-top/lh-ui-share
+      icon: github
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid cols={3}>
+  <Card title="Fonctions pures core" icon="code-branch">
+    Les calculs de classes, les machines à états et les paquets d'attributs d'accessibilité des 56 composants sont tous des fonctions pures sans aucune dépendance. La couche framework ne fait que le câblage : la logique a une source unique, ainsi que les tests unitaires.
+  </Card>
+  <Card title="Noyau partagé" icon="puzzle">
+    Moteur de positionnement popper, défilement virtuel, piège à focus, navigation clavier, props de styles sx, sanitisation des valeurs — 12 modules repris tels quels par chaque plateforme.
+  </Card>
+  <Card title="Thème style chinois" icon="pencil">
+    Cinq préréglages intégrés (青花瓷 (porcelaine bleue et blanche) / 松花绿 (vert pin) / 朱砂 (cinabre) / 水墨 (encre de Chine) / 藤黄 (gamboge)), variables CSS + mode sombre + système de motifs, surveillés par un script de contraste AA.
+  </Card>
+  <Card title="Internationalisation par simple emitter" icon="translate">
+    LhLocale est un pur émetteur d'événements, sans aucune réactivité de framework ; chaque plateforme s'abonne à version avec son propre mécanisme de signaux.
+  </Card>
+  <Card title="Source unique des styles" icon="open-book">
+    `styles/` est l'unique source des styles BEM des composants de toute la famille ; trois mixins fédèrent les différences de classes de transition entre Vue2 / Vue3 / React.
+  </Card>
+  <Card title="Zéro dépendance de framework" icon="padlock">
+    Un bundle entièrement sans dépendance grâce à `external: []` ; la gate `verify:dts` interdit toute importation de framework dans les artefacts.
+  </Card>
+</CardGrid>
+
+## À qui s'adresse cette documentation
+
+- **Aux développeurs des bibliothèques UI de chaque plateforme** (lh-ui-plus / lh-ui-vue2 / lh-ui-react / lh-ui-uniapp) : pour consulter la signature, la valeur de retour et les limites de chaque fonction pure, ainsi que la façon de surcharger les jetons de styles.
+- **Aux développeurs indépendants qui utilisent share directement** : le projet ne veut que la base d'accessibilité + les jetons du thème style chinois, sans aucune bibliothèque UI.
+- **Aux contributeurs** : pour comprendre les responsabilités des répertoires, les lignes rouges, ainsi que les processus de vérification et de release.
+
+## Ce package en cinq minutes
+
+```md
+- `src/core/<composant>/`   — logique en fonctions pures (logic.ts / types.ts), zéro import de framework
+- `src/core/shared/`        — noyau partagé entre composants (popper / virtual / sx / keyboard …)
+- `src/theme/`              — côté TS du thème : types + cinq préréglages + primitives d'exécution
+- `styles/`                 — unique source des styles BEM des composants + jetons theme/common/*.scss
+- `src/{constants,locales,types,utils}/` — constantes / paquets de langues / types / utilitaires
+```
+
+Prochaine étape : [Démarrage](/fr/guide/getting-started) pour installer le package et importer les styles ; ou consultez directement [les entrées du package et les sous-chemins](/fr/guide/exports) pour comprendre comment importer à la demande.

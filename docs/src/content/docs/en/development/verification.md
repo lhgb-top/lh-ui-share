@@ -31,7 +31,7 @@ Script: `scripts/verify-styles.mjs`. The six checks run in order; the first fail
 
 ### 1. EP palette
 
-Checks that color tokens land on legal shades of the family palette, with no stray "wild colors". The design intent is to keep every color in the interface **explainable** (this blue is blue-6, not picked at random).
+A blacklist check: any of Element Plus's 9 legacy color values (`#409eff`, `#e6a23c`, `#f56c6c`, `#67c23a`, `#909399`, `#606266`, `#303133`, `#ebeef5`, `#c0c4cc`) appearing in the scss files under `styles/` fails the check. This is a regression guard from the D2 cleanup, keeping the old palette from creeping back — every lh-ui color must come from the token definitions in `styles/theme/common/variables.scss`.
 
 ### 2. var fallback
 

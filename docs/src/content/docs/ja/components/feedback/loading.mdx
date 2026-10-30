@@ -1,0 +1,178 @@
+---
+title: loading —— ローディングマスク
+description: 'resolveLoadingTarget のマウント対象解析、ensurePositioned の配置修正と復元、aria-busy セマンティクス'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ローディングマスクはある領域（またはページ全体）を覆い、「ここは忙しい」ことを示します。`core/loading` が管理するのは**マウント対象の解析**と**配置の修正**です——命令型の `v-loading="true"` はマスクをトリガー要素に absolute しなければなりませんが、static 配置の要素は配置の祖先になれず、この修正が core の仕事です。
+
+## いつ使うか
+
+- 各端末で `v-loading` ディレクティブまたは `<LhLoading>` コンポーネントを実装するケース：ボタンの送信、テーブルのリフレッシュ、ページ全体の読み込み。
+- **特定の領域を明示的に覆いたい**（全画面ではなく）とき。
+- **使うべきでないケース**：純粋なテキストのフィードバック（`message` を使う）；所要時間が不確定なバックグラウンドタスク（`notification` + キャンセル可）；スケルトン構造（`skeleton` を使う——loading はコンテンツのレイアウトが変わらないと仮定し、skeleton は変わると仮定する）。
+
+## インポート方法
+
+```ts
+import {
+  getLoadingClassNames,
+  resolveLoadingTarget,
+  isLoadingFullscreen,
+  ensurePositioned,
+  getLoadingAria,
+} from '@lh-ui/share/core/loading'
+import type { LhLoadingOptions, LhLoadingHandle, LhLoadingState } from '@lh-ui/share/core/loading'
+```
+
+## 設計意図
+
+**`resolveLoadingTarget` の三状態の正規化**：未指定 → `document.body`（全画面）；文字列 → `querySelector`、**不一致時は body にフォールバック**（セレクターの打ち間違いでクラッシュせず、単に全画面マスクになる）；要素はそのまま返します。このフォールバックが重要です：命令型 API が受け取る target はユーザーが書いた ref / セレクターから来て、汚いデータは必ず受け止めなければなりません。
+
+**`ensurePositioned` の「借りたら返す」**：static 配置の要素を一時的に relative に変更し、アンマウント時に復元するための `restore()` を返します。**inline style の position だけを変更**し、クラスにも他のスタイルにも触れません——復元時には inline の position を元の値（空文字列の可能性あり）に戻します。要素がすでに配置を持っている（relative/absolute/fixed/sticky）場合は何もせず、`restore` は空の関数です——呼び出し側は判定なしに無条件で呼べます。
+
+**全画面の判定は「対象が body かどうか」**：`isLoadingFullscreen(target)` であって、別のフラグを渡すのではありません——target が body なら全画面とみなし、マスクのクラス名に `--fullscreen` を追加します（fixed 配置 + より高い z-index）。SSR の守衛：`document` がない場合は false を返します。
+
+**`getLoadingAria` の二重のセマンティクス**：`aria-busy="true"` で覆われた領域をマークし（スクリーンリーダーは読み込みが完了するまで古いコンテンツを読み上げない）、回転するアイコンは**装飾的な図形** → `aria-hidden`（スクリーンリーダーが「回転する図形」のような無意味なものを読み上げるのを避ける）。`busy: false` は空のオブジェクトを返します——UI 層は無条件で `v-bind` できます。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getLoadingClassNames` | `(state: LhLoadingState) => string[]` | クラス名 | 全画面 / テキストあり |
+| `resolveLoadingTarget` | `(target: string \| HTMLElement \| undefined) => HTMLElement` | 対象要素 | 文字列セレクターの不一致時は body にフォールバック |
+| `isLoadingFullscreen` | `(target: HTMLElement) => boolean` | 全画面か | 対象が body なら全画面 |
+| `ensurePositioned` | `(target: HTMLElement) => { restore }` | 復元ハンドル | static → relative、アンマウント時に復元 |
+| `getLoadingAria` | `(busy?: boolean) => LhAriaAttrs` | aria 属性バッグ | aria-busy + アイコンの aria-hidden |
+
+## 型定義
+
+```ts
+export interface LhLoadingOptions {
+  text?: string                      // マスクのテキスト
+  fullscreen?: boolean               // 強制的に全画面
+  background?: string                // マスクの背景色（デフォルトの半透明を上書き）
+  spinner?: boolean                  // 回転アイコンを表示（デフォルト true）
+  target?: string | HTMLElement      // マウント対象
+  delay?: number                     // 表示遅延ミリ秒（ちらつき防止）
+}
+
+export interface LhLoadingHandle {
+  close: () => void                  // 閉じてマスクをアンマウント
+  setText: (text: string) => void    // テキストを動的に更新
+}
+
+export interface LhLoadingState {
+  fullscreen: boolean
+  withText: boolean                  // テキストがあるときテキストコンテナにスペースを確保
+}
+```
+
+## アクセシビリティ
+
+```ts
+getLoadingAria(true)   // { 'aria-hidden': true, 'aria-busy': true }
+getLoadingAria(false)  // {}（無条件 v-bind 用）
+```
+
+- `aria-busy="true"` は WAI-ARIA の標準的な「ビジー領域」のマークで、スクリーンリーダーはコンテンツが間もなく変わることを知り、現在の古いコンテンツをひとまず読み上げません。**覆われたコンテンツのコンテナ**に付けます。マスクレイヤーそのものではありません。
+- 回転アイコンの `aria-hidden`：これは純粋な視覚的なフィードバックで、テキスト（あれば）はすでにテキスト経由で伝わっています。
+- **テキストは意味のあるものに**：「ロード中…」は「loading」より良い；パーセンテージを伴う進捗（「76% 読み込み済み」）はスクリーンリーダーのユーザーにとってより親切です——マスクレイヤーのテキストが変わるとスクリーンリーダーは読み上げます（`aria-live` の併用は UI 層が決める）。
+- **全画面マスクとフォーカス**：全画面マスク時でもコンテンツは Tab でフォーカスできます——インタラクションを阻止したい場合、UI 層はマスクでインターセプトするか、コンテンツ領域に `inert` を付けてください（`shared/focus-trap` の inert の仕組みを参照）。
+
+## 使用例
+
+```ts
+import { resolveLoadingTarget, ensurePositioned, isLoadingFullscreen, getLoadingClassNames } from '@lh-ui/share/core/loading'
+
+resolveLoadingTarget(undefined)              // document.body（全画面）
+resolveLoadingTarget('.table-wrapper')       // ヒットした要素；不一致 → body
+resolveLoadingTarget(elRef)                  // そのまま返す
+
+const el = resolveLoadingTarget(props.target)
+const restore = ensurePositioned(el).restore  // static → relative、元の値を記録
+try {
+  // …マスクをレンダリング…
+} finally {
+  restore()                                   // アンマウント時に position を復元
+}
+
+isLoadingFullscreen(document.body)  // true
+isLoadingFullscreen(tableEl)        // false
+```
+
+```ts
+// 命令型サービス（UI 層）：作成 / 閉じる / カウント
+const instances = new Map<HTMLElement, { count: number; restore: () => void; el: HTMLElement }>()
+
+function showLoading(target: HTMLElement, text?: string) {
+  const hit = instances.get(target)
+  if (hit) { hit.count++; return }
+  const { restore } = ensurePositioned(target)
+  const mask = createMask(text, isLoadingFullscreen(target))
+  target.appendChild(mask)
+  instances.set(target, { count: 1, restore, el: mask })
+}
+
+function closeLoading(target: HTMLElement) {
+  const hit = instances.get(target)
+  if (!hit) return
+  hit.count--
+  if (hit.count > 0) return        // 参照カウント：複数の loading は 1 つだけ閉じる
+  hit.el.remove()
+  hit.restore()                    // position を復元
+  instances.delete(target)
+}
+```
+
+```vue
+<!-- Vue3：v-loading ディレクティブ -->
+<template>
+  <div class="table-wrapper" v-loading="loading">
+    <LhTable :data="rows" />
+  </div>
+</template>
+
+<script setup>
+// ディレクティブの実装：mounted 時に binding.value で表示/非表示を決定
+const loading = ref(false)
+async function refresh() {
+  loading.value = true
+  try { rows.value = await fetch() } finally { loading.value = false }
+}
+</script>
+```
+
+```tsx
+// React：useLoading hook（ref + useEffect でマスクのマウントと restore を管理）
+```
+
+```ts
+// uniapp：マスクは <view> + absolute；ensurePositioned は h5 端でのみ有効。
+// ミニプログラム側では fixed/absolute の挙動が異なり、UI 層が端末ごとに適応する
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-loading` | マスクコンテナ（absolute で対象を覆う） |
+| `.lh-loading--fullscreen` | 全画面（fixed + より高い z-index） |
+| `.lh-loading--with-text` | テキストあり（アイコン + テキストを縦並び） |
+| `.lh-loading__spinner` | 回転アイコン（`LhSpinner`） |
+| `.lh-loading__text` | テキスト |
+
+マスクの背景色 `--lh-mask-color`（半透明、明色 / 暗色で各 1 つ）；テキスト色 `--lh-text-primary-regular`；z-index `--lh-z-index-loading`。
+
+## 注意事項
+
+- **`restore()` は必ず呼ぶ**：`ensurePositioned` が対象要素の inline の position を変更したままにすると「relative」がレイアウトを汚染します（特に `position: static` が意図的であるシーン）。try/finally で保証してください。
+- **セレクターの不一致は暗黙に全画面になる**：`resolveLoadingTarget('.typo-selector')` は body にフォールバックします——「なぜマスクが画面全体を覆うのか」を排查するときは、まずセレクターを疑ってください。
+- **参照カウント**：同じ領域に複数の並行的な loading（2 つのリクエストを同時に発行するなど）があるときはカウントし、最後の 1 つが完了して初めてマスクを閉じます。core は状態を持たず、UI 層が管理します。
+- **`delay` でちらつきを防ぐ**：高速で完了するリクエスト（200ms 未満）では、マスクが一瞬通り過ぎるだけで逆にバグっぽく見えます。UI 層は delay で表示を遅らせ、リクエストが先に終わった場合は表示を取り消せます。
+- **ネストしたマスク**：A 領域のマスクの中にさらに B 領域のマスクがあるとき、z-index と pointer-events で B のマスクが B だけを覆うようにするのは UI 層の責任です——core は単一の対象の配置だけを計算します。
+- **SSR の守衛**：`isLoadingFullscreen` と `ensurePositioned` にはどちらも `typeof document/window === 'undefined'` の守衛がありますが、**ローディングマスク自体がクライアント側の概念**です。SSR 下ではサービス層を呼ぶべきではありません。
+- **全画面マスクはインタラクションをブロックしない**：デフォルトは単なる視覚的なマスクで、背景のボタンは依然としてクリックできます（マスクレイヤーが pointer-events を処理しない限り）。強制的にブロックする必要がある場合は UI 層で `inert` を加えます。
+
+<FnPlayground module="loading" fn="getLoadingAria" params='{"busy": true}' />

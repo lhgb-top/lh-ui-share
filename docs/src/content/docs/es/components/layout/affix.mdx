@@ -1,0 +1,153 @@
+---
+title: affix anclaje —— Diseño
+description: 'Detección de salida del viewport en isAffixFixed (modos dual top/bottom), estilo de posicionamiento de getAffixFixedStyle, doble vía con IntersectionObserver y getBoundingClientRect'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Al desplazar la página hay elementos que queremos «fijar»: la navegación superior, la barra de acciones inferior, el índice lateral. `affix` conmuta el elemento a posicionamiento `fixed` cuando sale del viewport y lo restablece al regresar. La dificultad no reside en la conmutación en sí, sino en **el momento de la detección** y en **el marcador de posición anti-colapso**: core se encarga únicamente de la detección y del estilo; la observación y el marcador de posición son responsabilidad de la capa UI.
+
+## Cuándo usarlo
+
+- Implementar `<LhAffix>` en cada extremo: fijar la navegación superior de la página, la barra de acciones inferior del formulario, el índice lateral de documentos largos fijado al viewport.
+- Escenarios donde el elemento debe **permanecer visible durante todo el desplazamiento**.
+- **Cuándo no usarlo**: páginas cortas cuyo elemento ya está dentro del viewport (no necesita fijarse); escenarios que requieren una máscara a pantalla completa (usar el fullscreen de `loading`); barras laterales con un diseño completamente fijo (es más sencillo usar directamente `position: sticky` de CSS; el valor de affix reside en el comportamiento condicional de «fijar solo al superar el umbral»).
+
+## Importación
+
+```ts
+import {
+  getAffixClassNames,
+  isAffixFixed,
+  getAffixFixedStyle,
+} from '@lh-ui/share/core/affix'
+import type { LhAffixState } from '@lh-ui/share/core/affix'
+```
+
+## Intención de diseño
+
+**top y bottom son dos modos mutuamente excluyentes**: cuando `offsetTop > 0` se evalúa «si el borde superior cruzó el umbral superior del viewport», y cuando `offsetBottom > 0` se evalúa «si el borde inferior cruzó el umbral inferior del viewport». Ambos offset no pueden actuar a la vez: `isAffixFixed` comprueba primero `if (offsetBottom > 0)` y se decanta por el modo inferior. Semánticamente, el elemento solo puede fijarse por un borde.
+
+**La detección inferior necesita la altura del viewport**: `rect.bottom > viewportHeight - offsetBottom`: la parte inferior del elemento de marcador debe cruzar «viewport inferior - umbral» para considerarse fijo. Este umbral es **dinámico** (viewportHeight cambia con el tamaño de la ventana), de modo que la capa UI debe pasar la altura actual del viewport en cada callback; no se puede almacenar en caché.
+
+**La función de detección está desacoplada del mecanismo de observación**: `isAffixFixed` recibe un objeto rectangular `{ top, bottom }` sin importar su origen: el callback de IntersectionObserver toma el boundingClientRect del entry, o bien se usa `getBoundingClientRect()` como respaldo en eventos resize/scroll; ambas vías comparten la misma lógica de detección.
+
+**`top: 'auto'` / `bottom: 'auto'` en `getAffixFixedStyle`**: al fijar, el otro eje se define explícitamente como auto para evitar que el elemento lleve a la vez top y bottom (en posicionamiento fixed, ambos con valor simultáneo estira la altura del elemento).
+
+**Clase de fixed en vez de modificar el estilo directamente**: `lh-affix--fixed` deja que el SCSS decida los detalles del posicionamiento fixed (z-index, sombra, transición), mientras que `getAffixFixedStyle` de core se limita a calcular el valor en píxeles de top/bottom: el interruptor de posicionamiento y el desplazamiento quedan separados.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Acción |
+| --- | --- | --- | --- |
+| `getAffixClassNames` | `(state: LhAffixState) => string[]` | Nombres de clase | Estado fixed |
+| `isAffixFixed` | `(rect: { top, bottom }, offsetTop, offsetBottom, viewportHeight) => boolean` | Si está fijo | Detección de salida del viewport |
+| `getAffixFixedStyle` | `(offsetTop, offsetBottom) => Record<string, string>` | Estilos en línea | Desplazamiento del posicionamiento fixed |
+
+## Definiciones de tipos
+
+```ts
+export interface LhAffixState {
+  fixed: boolean    // Si actualmente está en estado fijo (impulsa el nombre de clase)
+}
+```
+
+## Accesibilidad
+
+affix es posicionamiento puramente visual, **no altera la semántica del contenido** y no tiene atributos aria propios. Dos prácticas relacionadas:
+
+- **El estado fijo no debe alterar el orden del DOM**: tras volverse fixed, el elemento sigue en su posición original del DOM y los lectores de pantalla lo anuncian según el orden del código fuente. Si por motivos visuales se traslada al final de body (teleport), el orden de lectura dará un salto: la implementación de affix debe cambiar únicamente el posicionamiento y nunca el DOM.
+- **Visibilidad del elemento fijo**: el elemento en estado fijo siempre está dentro del viewport; `aria-hidden` no debería variar con el desplazamiento (ya es visible de forma permanente).
+- **Riesgo de trampa de foco**: una barra de acciones «guardar/enviar» fijada en la parte inferior es cómoda en formularios largos, pero conviene recordar que un elemento fixed puede tapar el contenido inferior de la página (el botón siempre cubrirá la última fila). La capa UI debería reservar espacio añadiendo `padding-bottom` al body o al contenedor de contenido; es un problema de maquetación y no de accesibilidad, pero afecta a la operabilidad.
+
+## Ejemplos de uso
+
+```ts
+import { isAffixFixed, getAffixFixedStyle } from '@lh-ui/share/core/affix'
+
+// Modo superior: el borde superior cruza el umbral de 80px
+isAffixFixed({ top: 50, bottom: 200 }, 80, 0, 900)   // false (se fija con 50 < 80; 50 no lo cruzó)
+isAffixFixed({ top: 100, bottom: 300 }, 80, 0, 900)  // true (100 > 80)
+// Atención a la dirección de la detección: top < offsetTop es verdadero
+// —— el borde superior del elemento está **por encima** de la línea de umbral (ha sido desplazado hacia arriba)
+
+// Modo inferior: el borde inferior cruza «viewport inferior - umbral»
+isAffixFixed({ top: 700, bottom: 950 }, 0, 60, 900)  // true (950 > 900-60=840)
+isAffixFixed({ top: 500, bottom: 700 }, 0, 60, 900)  // false (700 < 840, todavía no lo cruza)
+
+// Con ambos offset: el inferior tiene prioridad
+isAffixFixed({ top: 100, bottom: 950 }, 80, 60, 900)  // true (rama inferior)
+```
+
+```ts
+getAffixFixedStyle(80, 0)   // { position: 'fixed', top: '80px', bottom: 'auto' }
+getAffixFixedStyle(0, 60)   // { position: 'fixed', bottom: '60px', top: 'auto' }
+getAffixFixedStyle(0, 0)    // { position: 'fixed', top: '0px', bottom: 'auto' } (fijación superior por defecto)
+```
+
+```ts
+// Capa UI: vía principal con IntersectionObserver + marcador de posición anti-colapso
+const placeholder = document.createElement('div')  // Al fijarse, mantiene la posición original para evitar saltos del contenido posterior
+let observer: IntersectionObserver | undefined
+
+function observe() {
+  observer = new IntersectionObserver(
+    (entries) => {
+      const rect = entries[0].boundingClientRect
+      const fixed = isAffixFixed(
+        { top: rect.top, bottom: rect.bottom },
+        props.offsetTop ?? 0,
+        props.offsetBottom ?? 0,
+        window.innerHeight,
+      )
+      if (fixed !== state.fixed) {
+        state.fixed = fixed
+        if (fixed) targetEl.before(placeholder)   // marcador de posición
+        else placeholder.remove()                 // retirar el marcador
+      }
+    },
+    { threshold: [0, 1] },
+  )
+  observer.observe(targetEl)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhAffix :offset-top="64">
+    <nav class="page-nav">…</nav>
+  </LhAffix>
+</template>
+```
+
+```tsx
+// React: useEffect registra IntersectionObserver; en SSR se omite (no hay IntersectionObserver),
+// y se monta tras la activación del cliente
+```
+
+```ts
+// uniapp: IntersectionObserver en el lado del miniprograma es wx.createIntersectionObserver;
+// en el lado h5 se usa la API nativa del navegador. La función de detección de core es común a ambos
+```
+
+## Estilos y tokens
+
+| Nombre de clase | Semántica |
+| --- | --- |
+| `.lh-affix` | Contenedor envolvente (posición original) |
+| `.lh-affix--fixed` | Estado fijo (position: fixed + z-index + sombra/transición opcionales) |
+
+z-index `--lh-z-index-affix`; sombra del estado fijo `--lh-box-shadow-affix` (opcional, una sombra fina en la parte inferior al fijar arriba para distinguir la jerarquía).
+
+## Advertencias
+
+- **El elemento de marcador de posición es indispensable**: en cuanto el elemento pasa a fixed, sale del flujo del documento y el contenido posterior asciende para rellenar el hueco, provocando un salto brusco de la página. La capa UI debe colocar un marcador de posición del mismo tamaño (véase el ejemplo anterior). Su altura debe ser la del elemento **antes de fijarse**.
+- **La altura del viewport en el modo inferior debe ser en tiempo real**: el parámetro `viewportHeight` de `isAffixFixed` debe recibir el valor actual en cada llamada; al redimensionar la ventana hay que volver a evaluar (el estado de affix puede pasar de fijo a no fijo).
+- **`offsetTop` / `offsetBottom` se eligen mutuamente**: si se pasan ambos, el inferior tiene prioridad y el umbral superior queda anulado. Aunque la API permite pasar ambos, semánticamente solo debería configurarse uno.
+- **Colapso del ancho en estado fijo**: al volverse fixed, el ancho del elemento deja de estar limitado por el contenedor padre (un elemento de bloque fixed se contrae al ancho de su contenido). El lado SCSS suele registrar y reutilizar el ancho original dentro de `--fixed`, o bien la capa UI escribe el ancho en los estilos en línea.
+- **Contenedores de desplazamiento anidados**: si la página contiene un contenedor con desplazamiento local (no el desplazamiento de window), la raíz (root) del IntersectionObserver debe ser ese contenedor, y el parámetro de altura del viewport de `isAffixFixed` debe sustituirse por el clientHeight del contenedor. core no lo distingue; quien llama debe garantizar la coherencia.
+- **Compatibilidad de IntersectionObserver**: todos los extremos de destino ya lo soportan; si fuera necesario admitir entornos muy antiguos, se usa como respaldo el evento scroll + `getBoundingClientRect()` (la función de detección se puede reutilizar directamente, pues solo recibe objetos rectangulares).
+- **Elección entre affix y sticky**: `position: sticky` de CSS cubre la mayoría de las necesidades de «fijar arriba» sin nada de JS. El valor añadido de affix es el **umbral controlable** (no se fija al llegar al borde, sino al superar 64px) y el **modo inferior** (sticky solo puede adherirse al borde más cercano en la dirección de desplazamiento). Para escenarios simples, no uses affix.
+
+<FnPlayground module="affix" fn="isAffixFixed" params='{"rect": {"top": 100, "bottom": 300}, "offsetTop": 80, "offsetBottom": 0, "viewportHeight": 900}' />

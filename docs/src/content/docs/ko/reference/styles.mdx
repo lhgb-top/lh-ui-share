@@ -1,0 +1,116 @@
+---
+title: styles —— 스타일 소스
+description: 'styles/ 디렉터리 구조, BEM 규칙, 토큰의 3계층(var.scss 밝은색 / var-dark.scss 어두운색 / variables.scss SCSS 변수)'
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+`styles/`는 패밀리 전체의 컴포넌트 BEM 스타일 **유일 소스**입니다([레드라인 2](/ko/development/contribution#6개의-레드라인)): 58개 컴포넌트 디렉터리 + `theme/common/` 토큰 계층. 어떤 UI 라이브러리도 스타일을 밖으로 복사해 직접 수정해서는 안 됩니다.
+
+## 디렉터리 구조
+
+```
+styles/
+├── index.scss                  # 전체 집계(토큰 + 모든 컴포넌트), 한 줄로 import
+├── theme/
+│   ├── common/
+│   │   ├── var.scss            # 밝은색 토큰(:root, 185개 CSS 변수)
+│   │   ├── var-dark.scss       # 어두운색 덮어쓰기([data-theme='dark'], .dark, 118개)
+│   │   ├── variables.scss      # SCSS 변수 계층(183개 $lh-*, 컴파일 타임 상수)
+│   │   ├── patterns.scss       # 중국풍 문양 시스템(6개 텍스처)
+│   │   ├── transition.scss     # 단말 간 전환 클래스명 단일 소스(3개 mixin)
+│   │   └── …                   # mixin / function 공개 계층
+│   └── index.scss              # 테마 집계 진입점
+├── button/index.scss           # 컴포넌트 스타일(58개 디렉터리)
+├── dialog/index.scss
+└── …
+```
+
+**각 컴포넌트 디렉터리는 하나의 `index.scss`**이며, `@lh-ui/share/styles/<name>`으로 import합니다(vite가 디렉터리를 index로 해석).
+
+## 불러오는 방법
+
+```ts
+// 네 가지 방법(시작하기에서 자세히)
+import '@lh-ui/share/styles/button'        // 단일 컴포넌트
+import '@lh-ui/share/styles'                // 전체(styles/index.scss)
+import '@lh-ui/share/styles/theme'          // 테마 토큰만
+import '@lh-ui/share/styles/theme/common/var-dark'  # 특정 파일까지
+```
+
+각 UI 라이브러리의 주입 전략은 다릅니다: plus는 라이브러리 진입점에서 전체를 주입하고, vue2는 사용자가 필요에 따라 불러옵니다([주입 전략](/ko/guide/injection) 참고).
+
+## BEM 규칙
+
+클래스명은 항상 `lh-` 접두사 + BEM의 3계층:
+
+```scss
+.lh-button {                    // Block
+  &__text { }                   // Element
+  &--primary { }                // Modifier
+  &__text--disabled { }         // Element + Modifier
+  &.is-loading { }              // 상태 클래스(is- 접두사, 네임스페이스 없음)
+}
+```
+
+- 명명은 [createNamespace](/ko/reference/utils#createnamespace--bem-네임스페이스)가 생성하며, 패밀리 전체의 일관성을 보장합니다.
+- **상태 클래스는 `is-` 접두사**(`is-loading` / `is-disabled` / `is-open`)를 쓰고, BEM 수식어가 아닙니다.
+- 클래스명을 새로 추가하면 `docs/src/data/classes.json`도 같이 갱신해야 합니다(`scripts/gen-docs-data.mjs`가 `styles/*/index.scss`를 스캔하여 생성).
+
+## 토큰의 3계층
+
+| 계층 | 파일 | 수량 | 특성 |
+| --- | --- | --- | --- |
+| CSS 변수(밝은색) | `var.scss` | 185개 | `:root { --lh-*: ... }`, 런타임에 덮어쓰기 가능 |
+| CSS 변수(어두운색) | `var-dark.scss` | 118개 | `[data-theme='dark'], .dark { ... }`가 밝은색을 덮어씀 |
+| SCSS 변수 | `variables.scss` | 183개 | `$lh-*`, **컴파일 타임에 구워짐** |
+
+### 컴포넌트는 CSS 변수만 소비할 수 있습니다
+
+```scss
+// ✅ 올바름: var()의 연쇄 폴백, 런타임에 평가
+.lh-button--primary {
+  color: var(--lh-color-on-primary, #fff);
+  background: var(--lh-primary-color, #1677ff);
+}
+
+// ❌ 틀림: SCSS 변수를 직접 참조, 어두운색에서 전환되지 않음
+.lh-button--primary {
+  background: #{$lh-primary-color};
+}
+```
+
+### 컴파일 타임 베이크 함정
+
+`var.scss`에서 값이 `#{$lh-foo}` 형태인 토큰은, SCSS 변수가 **컴파일 타임에 구체적인 밝은색 값으로 치환**되며, 어두운색에서 자동으로 전환되지 않습니다. 이런 토큰은 `var-dark.scss`에서 명시적으로 어두운색 의미 토큰을 다시 가리켜야 합니다:
+
+```scss
+// var-dark.scss
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);   // ← 명시적 재지정
+}
+```
+
+이런 누락은 과거에 어두운색에서 메뉴 / 표 / 타임라인의 글자가 밝은색 값을 그대로 써서 보이지 않게 만들었습니다. `pnpm verify:styles`의 7번째 항목(어두운색 도달성)이 전담합니다. 반대로, 컴포넌트 안의 `var(--lh-foo, var(--lh-bar, #x))` **연쇄 폴백은 런타임에 평가**되므로, 연쇄상의 토큰에 어두운색 덮어쓰기가 있기만 하면 안전하여 반복 선언이 필요 없습니다. 자세한 내용은 [다크 모드](/ko/theme/dark-mode)를 참고하세요.
+
+## `styles/index.scss`는 생성물
+
+전체 집계 파일은 `scripts/build-styles.mjs`가 **컴포넌트 디렉터리를 스캔하여 생성**하며, `verify:styles`가 일관성을 검증합니다 —— **직접 수정하지 마세요**. 컴포넌트 디렉터리를 새로 추가하면 자동으로 집계에 포함됩니다.
+
+## 폐지된 hairline 표시
+
+~~1px 얇은 테두리 선언에는 반드시 `/* hairline */` 줄 수준 표시가 있어야 한다~~ —— 이 레드라인은 **폐지**되었습니다(uniapp v3의 px 직접 출력으로 더 이상 rpx로 변환하지 않아 표시가 용도를 잃음; `docs/bugfix-log.md`의 D-02 참고). `styles/` 안의 기존 65곳의 역사적 표시는 일반 주석으로 보존되며, **새로 추가하는 1px 테두리에는 더 이상 표시가 필요 없습니다**. 구조적 테두리(2px / 3px)는 원래 표시 대상이 아니었습니다.
+
+## 테마 토큰 전체 표
+
+<TokenTable />
+
+(토큰 데이터는 `scripts/gen-docs-data.mjs`가 `var.scss` / `var-dark.scss` / `variables.scss`를 파싱하여 생성하며, 개수 어서션을 포함합니다.)
+
+## 주의 사항
+
+- **스타일을 수정하는 것은 이 저장소뿐입니다**: 어떤 UI 라이브러리도 컴포넌트 scss 사본을 가질 수 없습니다. 단말 간 전환 클래스명 차이는 [transition mixin](/ko/reference/transition-mixins)으로 통합합니다.
+- **색은 항상 `var(--lh-*, fallback)`**이며, 새로운 하드코딩 색 값을 추가하지 않습니다(verify:styles의 var fallback 항목이 관리).
+- **새 컴포넌트에는 반드시 `styles/<name>/index.scss`가 있어야** 합니다. 그렇지 않으면 해당 컴포넌트가 어느 한 단말에서 스타일 산출물이 없게 됩니다(빌드 스크립트가 조용히 건너뛰고, 오류를 내지 않습니다).
+- **어두운색 완전성은 필수 요건입니다**: 모든 컴포넌트는 기본적으로 밝은색 / 어두운색을 지원하며, 어두운색 누락은 verify:styles의 7번째 항목이 차단합니다.

@@ -1,0 +1,151 @@
+---
+title: types —— 共有型
+description: 'LhLocaleType / LhLeaves / LhBaseProps / LhTypes ジェネリクスと ambient の全体宣言'
+---
+
+`src/types/` は外部に公開する共有型の層です。[core/shared/types](/ja/core/types)（core 内部のユニオン型）との違い：こちらは**各 UI ライブラリのコンポーネント Props に使う基礎形状**です。
+
+## インポート方法
+
+```ts
+import type {
+  LhLocaleType,
+  LhLocaleMessages,
+  LhLocaleMessageValue,
+  LhLeaves,
+  LhBaseProps,
+  LhTypes,
+  LhSizes,
+  LhLanguages,
+} from '@lh-ui/share/types'
+```
+
+## エクスポート構造
+
+```ts
+// src/types/index.ts
+export * from './locale'           // 言語パック関連
+export * from './components/base'  // コンポーネントの基礎属性
+```
+
+`global.d.ts`、`theme.ts`、`scss.d.ts` は ambient 宣言で、tsconfig の `include` を通じてコンパイルに参加しますが、**ここから明示的にエクスポートはされません**。
+
+## locale 関連の型
+
+| 型 | 定義 | 用途 |
+| --- | --- | --- |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | 6 言語のコードのユニオン |
+| `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | 言語パックのリーフノード（再帰的に読み取り専用） |
+| `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | 言語パック全体 |
+| `LhLeaves<T, Prefix extends string = ''>` | 再帰マップ型 | すべての「文字列リーフ」のドットパスのユニオンを導出する |
+| `LhLocaleOptions` | `{ locale: LhLocaleType; messages: LhLocaleMessages }` | `lhlocale.use()` の入力形状 |
+
+### LhLeaves の挙動
+
+```ts
+type ZhLeaves = LhLeaves<typeof zhCN>
+// 'common.loading' | 'input.placeholder' | 'input.password' | 'pagination.total' | …
+```
+
+- **文字列リーフ** → 完全なパス（`'input.placeholder'`）。
+- **配列キー**（例：`datepicker.months`）→ `never`。配列はキーでアドレッシングできず、`t()` では到達できない、`tm()` でしか取れない。
+- **オブジェクト** → 子キーを再帰する。
+
+`LhLocalePath = LhLeaves<typeof zhCN>` が `lhlocale.t()` にリテラルの自動補完とスペルチェックを提供します。
+
+## コンポーネントの基礎属性
+
+ジェネリクスを持つ 3 つのユニオン（利用側がカスタム値を拡張できる）：
+
+```ts
+export type LhTypes<T extends string | undefined = undefined> =
+  T extends string ? LhComponentType | T : LhComponentType
+
+export type LhSizes<T extends string | undefined = undefined> =
+  T extends string ? LhComponentSize | T : LhComponentSize
+
+export type LhLanguages<T extends string | undefined = undefined> =
+  T extends string ? LhComponentLanguage | T : LhComponentLanguage
+```
+
+使い方：
+
+```ts
+type MyType = LhTypes<'brand' | 'dangerous'>
+// LhComponentType | 'brand' | 'dangerous'
+```
+
+### LhBaseProps —— コンポーネント Props の基礎形状
+
+```ts
+export interface LhBaseProps<
+  T extends string | undefined = undefined,
+  S extends string | undefined = undefined,
+  L extends string | undefined = undefined,
+> {
+  type?: T extends string ? LhTypes<T> : LhTypes
+  size?: S extends string ? LhSizes<S> : LhSizes
+  disabled?: boolean
+  loading?: boolean
+  plain?: boolean
+  block?: boolean
+  icon?: string
+  nativeType?: string
+  href?: string
+  target?: string
+  title?: string
+  alt?: string
+  lang?: L extends string ? LhLanguages<L> : LhLanguages
+  langPath?: string
+  old?: boolean      // 高齢者向け
+}
+```
+
+各 UI ライブラリのコンポーネント Props は `extends LhBaseProps` することで、`type` / `size` / `disabled` / `lang` の共通フィールドを自動的に獲得します——ファミリー全体で共通 prop の名前を一致させます（ユーザーが「このライブラリは `disabled` 、あのライブラリは `disabled` がない」と覚えずに済むように）。
+
+| フィールド | セマンティクス |
+| --- | --- |
+| `type` | セマンティック色（`LhTypes`） |
+| `size` | サイズ段階（`LhSizes`） |
+| `disabled` | 無効 |
+| `loading` | 読み込み中 |
+| `plain` | プレーン（背景色なしのアウトライン） |
+| `block` | ブロック幅 100% |
+| `icon` | アイコン名（内蔵アイコンセット、[アイコン](/ja/theme/tokens)のアイコン部を参照） |
+| `nativeType` | ネイティブボタンの `type`（`submit` / `reset` / `button`） |
+| `href` / `target` | `<a>` として描画するときのリンク |
+| `title` / `alt` | タイトルと代替テキスト（アクセシビリティ） |
+| `lang` | コンポーネント単位の言語上書き |
+| `langPath` | カスタム文案キーのパスプレフィックス |
+| `old` | 高齢者モードのスイッチ（`size="x-large"` と組み合わせる、[constants](/ja/reference/constants)を参照） |
+
+## ambient の全体宣言
+
+tsconfig の `include` によって効力を持ち、import は不要です：
+
+```ts
+// src/types/global.d.ts
+interface CSSVariable { [key: string]: string }
+
+interface LhUIConfig {
+  prefix?: string
+  theme?: Record<string, string>
+  locale?: string
+}
+
+interface InstallOptions {
+  prefix?: string
+  theme?: Record<string, string>
+  locale?: string
+  components?: any[]
+}
+```
+
+これらは「`app.use(LhUI, { prefix: 'x' })`」といった全体設定項目のための ambient 型です。`theme.ts` は現在空のプレースホルダ（テーマの型は `src/theme/types.ts` にあります）；`scss.d.ts` は `.scss` モジュールを宣言します。
+
+## 注意事項
+
+- **`LhBaseProps` はすべて任意フィールドです**：どのフィールドも省略可能で、コンポーネントは必要に応じて extends した上で制約を厳しくします（例：button では `type` が必須）。
+- **`lang` と全体言語の関係**：`lang` はコンポーネント単位の上書き（`<lh-button lang="en-US">`）で、`lhlocale.setLocale` は呼ばず、コンポーネント内部が言語パックを選びます。
+- **ジェネリクスのデフォルト値の罠**：`LhTypes<undefined>` は `LhComponentType` になります——`undefined` をジェネリクス引数に渡した場合と `string` リテラルを渡した場合で結果が違いますが、これは意図的です（`extends string ? ... : ...` の分岐）。
+- **`LH_LANGUAGE_CONST` は types の公開エクスポート面にありません**：`types/locale.ts` が内部で `import` して導出に使いますが、`types/index.ts` は `./locale` と `./components/base` しかエクスポートせず、定数を使うには `@lh-ui/share/constants` からインポートします。

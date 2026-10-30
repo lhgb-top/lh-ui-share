@@ -1,0 +1,158 @@
+---
+title: Préréglages de thème
+description: "Les cinq préréglages intégrés 青花瓷 / 松花绿 / 朱砂 / 水墨 / 藤黄 et l'enregistrement personnalisé par registerTheme"
+---
+
+import PresetPreview from '../../../../components/PresetPreview.astro'
+
+Les cinq préréglages intégrés sont le parti pris esthétique par défaut de lh-ui : chacun puise une couleur primaire dans les couleurs traditionnelles chinoises, assortie d'une palette complète en version claire et sombre.
+
+## La vue d'ensemble des préréglages
+
+| Préréglage | `name` | Identifiant | labelEn | Description | Primaire claire |
+| --- | --- | --- | --- | --- | --- |
+| 青花瓷 (porcelaine bleue et blanche) | `'cerblue'` | `LhCerblue` | Ceramic Blue | L'émail sous couvre de la porcelaine bleue et blanche, d'une élégance épurée | Non |
+| 松花绿 (vert pin) | `'songhua'` | `LhSonghua` | Pine Green | La fraîche verdure d'un bosquet de bambous, pleine de vitalité | **Oui** |
+| 朱砂 (cinabre) | `'zhusha'` | `LhZhusha` | Vermilion | Le rouge cinabre des sceaux traditionnels, solennel et festif | Non |
+| 水墨 (encre de Chine) | `'shuimo'` | `LhShuimo` | Ink Wash | Le lavis à l'encre de Chine, d'une sobriété minimale | Non |
+| 藤黄 (gamboge) | `'golden'` | `LhGolden` | Golden Autumn | Le jaune érable d'une fin d'automne, un doré chaleureux | **Oui** |
+
+<PresetPreview />
+
+## Les vars de chaque préréglage
+
+### Les cinq clés de base (présentes chez tous les préréglages)
+
+```ts
+{
+  '--lh-primary-color': '...',
+  '--lh-primary-color-hover': '...',
+  '--lh-primary-color-active': '...',
+  '--lh-primary-color-bg': '...',
+  '--lh-primary-color-border': '...',
+}
+```
+
+### Les deux clés supplémentaires des préréglages à primaire claire
+
+`songhua` (松花绿 (vert pin)) et `golden` (藤黄 (gamboge)) ont une **primaire claire** : le texte blanc n'atteint pas le contraste AA, il faut obligatoirement fournir deux clés en supplément :
+
+| Clé | Rôle |
+| --- | --- |
+| `--lh-color-on-primary` | La couleur du texte sur les boutons à primaire (les primaires claires passent au texte encre) |
+| `--lh-selected-color` | La couleur du texte sélectionné (la couleur active sert de texte sélectionné sur le fond de survol avec un contraste insuffisant ; on l'assombrit donc séparément) |
+
+**Pourquoi c'est obligatoire** : un bouton à primaire claire avec du texte blanc n'a qu'un contraste de 3.x:1, ce qui n'atteint pas le 4.5:1 de la norme AA. La gate `verify:theme` l'intercepte.
+
+Avec 松花绿 (vert pin) en exemple, les commentaires du code source consignent les raisons des correctifs :
+
+- `--lh-color-on-primary` : 松花绿 est une primaire claire, le texte blanc n'atteint que 3.93:1, on passe au texte encre à 4.73:1
+- `--lh-selected-color` : la couleur active utilisée comme texte sélectionné sur le fond de survol n'atteint que 3.48:1, l'état sélectionné est donc assombri séparément (le fond actif du bouton n'est pas affecté)
+- `--lh-primary-color-active` : l'ancien `#4B7A4A` n'était qu'à 3.70:1 → `#4F8F4C` à 4.75:1
+
+藤黄 (gamboge) suit la même logique : texte blanc 3.25:1 → texte encre 5.31:1 ; texte sélectionné 3.41:1 → assombri jusqu'à `#82600A` ; active `#9A7208` à 3.94:1 → `#A87F0A` à 4.70:1.
+
+**L'exigence impérative pour un nouveau préréglage à primaire claire** : il doit fournir `--lh-color-on-primary` et `--lh-selected-color`, sans quoi la gate AA 4.5:1 de `verify:theme` échoue.
+
+## Utiliser les préréglages
+
+### Obtenir un préréglage
+
+```ts
+import { LH_THEME_PRESETS, getThemePreset, getThemeVars } from '@lh-ui/share/theme'
+
+LH_THEME_PRESETS                       // Les cinq préréglages
+getThemePreset('cerblue')              // L'objet LhCerblue
+getThemePreset('not-exists')           // undefined
+getThemeVars('cerblue')?.['--lh-primary-color']
+```
+
+### Injecter un préréglage (la couche UI)
+
+```ts
+import { buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyPreset(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+
+  const text = buildPresetStyleText(vars)
+  let style = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!style) {
+    style = document.createElement('style')
+    style.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(style)
+  }
+  style.textContent = text     // Remplacement et non ajout : au changement de thème, les anciens styles personnalisés ne subsistent pas
+}
+```
+
+**Le point clé** (voir [la contrainte d'injection de la vue d'ensemble du thème](/fr/theme/overview#contrainte-dinjection--uniquement-des-style-jamais-de-style-inline)) : on ne peut écrire qu'un élément `<style>`, jamais le style inline du `documentElement`, sans quoi la palette du mode sombre est faussée.
+
+### Le ConfigProvider de chaque bibliothèque UI
+
+```vue
+<!-- lh-ui-plus / lh-ui-vue2 -->
+<lh-config-provider theme="cerblue">
+  <App />
+</lh-config-provider>
+```
+
+La prop `theme` accepte un `LhThemePresetName` ; le composant applique en interne la logique d'injection ci-dessus. La page de personnalisation de thème du site de documentation et ThemeStudio parcourent `LH_THEME_PRESETS` pour lister automatiquement tous les préréglages — **après l'ajout d'un nouveau préréglage, les pages de documentation de chaque bibliothèque n'ont pas besoin d'être modifiées à la main**.
+
+## Les préréglages personnalisés
+
+```ts
+import { registerTheme, getThemePreset } from '@lh-ui/share/theme'
+
+registerTheme({
+  name: 'my-brand',
+  label: 'Couleur de marque',
+  labelEn: 'Brand',
+  description: "La couleur primaire de la marque de l'entreprise",
+  vars: {
+    '--lh-primary-color': '#722ED1',
+    '--lh-primary-color-hover': '#9254DE',
+    '--lh-primary-color-active': '#531DAB',
+    '--lh-primary-color-bg': '#F9F0FF',
+    '--lh-primary-color-border': '#D3ADF7',
+    // Une primaire claire doit aussi fournir ces deux clés :
+    // '--lh-color-on-primary': '#101410',
+    // '--lh-selected-color': '#...,
+  },
+})
+
+getThemePreset('my-brand')   // Disponible dès l'enregistrement
+```
+
+La sémantique de `registerTheme` :
+
+- **La surcharge du même nom** : `registerTheme({ name: 'cerblue', ... })` **surcharge le 青花瓷 (porcelaine bleue et blanche) intégré** — c'est délibéré, afin que le côté métier puisse ajuster le thème par défaut sans toucher aux composants.
+- **Les nouveaux noms sont ajoutés en fin de tableau** : l'ordre de `LH_THEME_PRESETS` est « les cinq intégrés + ceux enregistrés ».
+- **Le registre est un état de niveau module** : l'`import` le partage ; une seule instance pour toute l'application.
+
+## Le processus d'ajout d'un préréglage intégré
+
+1. Ajouter un `LhThemePreset` dans `src/theme/themes/index.ts` (au minimum les cinq `--lh-primary-*` ; un préréglage à primaire claire doit en plus fournir `--lh-color-on-primary` et `--lh-selected-color`).
+2. L'ajouter au tableau `LH_THEME_PRESETS`, et compléter le nom dans le re-export de `src/theme/index.ts`.
+3. `pnpm test` (`theme.spec` contient une régression de cohérence des préréglages) + `pnpm verify:theme` (la gate AA 4.5:1).
+4. Joindre un changeset ; les pages de personnalisation de thème de la documentation de chaque bibliothèque listeront automatiquement le nouveau préréglage.
+
+**À noter** : les vars ne servent qu'à la consommation JS à l'exécution ; la couleur primaire utilisée par les SCSS des composants reste dans `styles/theme/common/variables.scss` — **lorsqu'on surcharge la couleur primaire d'un thème intégré, les deux côtés doivent être modifiés ensemble** (theme.spec contient une régression).
+
+## Les conventions de nommage
+
+La **valeur chaîne** d'un préréglage (`name: 'cerblue'`) est la valeur de configuration que l'utilisateur écrit dans le `theme` du ConfigProvider ; la changer casserait toutes les configurations aval — c'est l'une des entrées du [registre des exemptions de nommage](/fr/guide/naming#registre-des-exemptions). L'**identifiant TS** correspondant porte toujours le préfixe (`LhCerblue`).
+
+## Points d'attention
+
+- **Un nom non enregistré renvoie `undefined`** : `getThemePreset` / `getThemeVars` ne lèvent pas d'erreur ; la couche UI doit penser à tester la vacuité.
+- **`--lh-primary-color-active` et `--lh-selected-color` sont deux choses différentes** : la première est la couleur du fond d'un bouton enfoncé, la seconde est la couleur du **texte** de l'élément sélectionné dans une liste. Dans les préréglages à primaire claire, la couleur active n'offre pas un contraste suffisant comme texte sélectionné, d'où la nécessité d'un `--lh-selected-color` séparé.
+- **L'éclaircissement automatique en mode sombre des préréglages à primaire profonde** : `buildPresetDarkVars` juge la couleur primaire profonde et l'éclaircit dès que son contraste avec le fond de page sombre `#1A1A2E` descend sous 3 (voir [Vue d'ensemble du système de thèmes](/fr/theme/overview#la-dérivation-sombre-de-buildpresetdarkvars)).
+
+## Documentation connexe
+
+- [Vue d'ensemble du système de thèmes](/fr/theme/overview)
+- [Jetons de conception](/fr/theme/tokens)
+- [Personnalisation à l'exécution](/fr/theme/customization)
+- [Mode sombre](/fr/theme/dark-mode)

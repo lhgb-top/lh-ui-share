@@ -1,0 +1,270 @@
+---
+title: table —— Tabla
+description: 'sortTableRows coloca los valores nulos al final, buildHeaderCells expande los encabezados multinivel, getStickyOffsets calcula los desplazamientos de las columnas fijas, computeVisibleRange para el desplazamiento virtual'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La tabla es el «peso pesado» de la exhibición de datos: ordenación, filtrado, encabezados multinivel, columnas fijas, desplazamiento virtual y arrastre del ancho de columnas; cada uno es un problema algorítmico independiente. `core/table` abstrae todo ello en funciones puras, y la capa UI se limita a vincular el resultado al DOM. Es uno de los módulos de componentes con más funciones de todo el paquete.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhTable`: listas de administración, informes de datos y tablas con operaciones por lotes.
+- Escenarios donde los datos estructurados necesitan ordenación, filtrado, columnas fijas o encabezados multinivel.
+- **No usarlo para**: volúmenes de datos minúsculos y sin interacción (una `descriptions` simple o una tabla escrita a mano es más ligera); flujos de información en tarjetas (usa el layout de `card`).
+
+## Importación
+
+```ts
+import {
+  LH_TABLE_ROW_HEIGHT,
+  LH_TABLE_OVERSCAN,
+  LH_TABLE_MIN_COL_WIDTH,
+  computeVisibleRange,
+  cycleSortOrder,
+  sortTableRows,
+  getCellValue,
+  getColumnWidth,
+  getGridTemplate,
+  getStickyOffsets,
+  getTableClassNames,
+  getTableCellClassNames,
+  flattenLeafColumns,
+  buildHeaderCells,
+  getHeaderStickyOffsets,
+  filterTableRows,
+  clampColumnWidth,
+  getTableSortAria,
+} from '@lh-ui/share/core/table'
+import type {
+  LhTableAlign,
+  LhTableColumn,
+  LhTableFilterOption,
+  LhTableHeaderCell,
+  LhTableRow,
+  LhTableSortOrder,
+  LhTableVisibleRange,
+  LhTableCellSticky,
+} from '@lh-ui/share/core/table'
+```
+
+## Intención de diseño
+
+**Los valores nulos al final**: `sortTableRows` trata de forma uniforme `null`, `undefined` y `NaN`: no participan en la comparación normal y se colocan siempre al final, **y también al ordenar en desc**. Es una decisión de producto explícita: las filas con datos vacíos no deberían saltar a la primera posición al ordenar al revés y tapar los datos válidos.
+
+**La seguridad DAG de los encabezados multinivel**: `flattenLeafColumns` y `buildHeaderCells` usan un **seen global** y no un seen por cadena de ancestros: porque un mismo objeto column puede compartirse por referencia en forma de DAG (una misma columna bajo dos grupos), y la deduplicación global garantiza que solo se emita una vez, de modo que el número de columnas del cuerpo de la tabla coincide con el de las casillas hoja del encabezado. El `leafSpan` de `buildHeaderCells` usa «el número de hojas que la recursividad emite realmente» en lugar de un recuento a priori, precisamente para evitar que un subárbol compartido se cuente dos veces y desplace el número de columnas.
+
+**La herencia sticky de los encabezados de grupo**: `getHeaderStickyOffsets` solo deja que un encabezado de grupo herede el desplazamiento de la primera o la última hoja cuando «todas las columnas hoja del intervalo están fijas en el mismo lado»: un encabezado de grupo que cruza la zona fija y la zona en flujo no se puede posicionar con un único desplazamiento, y directamente no se fija.
+
+**La sobrecarga isomorfa de `clampColumnWidth`**: entra número y sale número; entra cadena y sale cadena, de modo que quien llama no necesita una aserción de tipos adicional para una transformación isomorfa; NaN devuelve directamente el límite inferior (durante el arrastre pueden aparecer coordenadas NaN).
+
+**`computeVisibleRange` está @deprecated**: el algoritmo de desplazamiento virtual ha convergido al núcleo compartido `computeRange` de `core/shared/virtual` (el mismo origen que VirtualList); esta función se conserva como alias de compatibilidad para quienes ya la referencian en el downstream, como vue2.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `computeVisibleRange` | `(scrollTop, viewportHeight, rowHeight, total, overscan?) => LhTableVisibleRange` | intervalo visible | **@deprecated**, delega en `computeRange` |
+| `cycleSortOrder` | `(current?) => LhTableSortOrder \| undefined` | siguiente estado de ordenación | ninguno→asc→desc→ninguno |
+| `sortTableRows` | `(rows, prop, order, sorter?) => LhTableRow[]` | nueva matriz | los valores nulos al final |
+| `getCellValue` | `(row, column) => string` | valor a mostrar | el formatter tiene prioridad |
+| `getColumnWidth` | `(column) => string` | `'120px'` / `'1fr'` | sin ancho, reparto uniforme |
+| `getGridTemplate` | `(columns) => string` | plantilla de cuadrícula | para el layout de CSS grid |
+| `getStickyOffsets` | `(columns) => LhTableCellSticky[]` | desplazamientos izquierdo/derecho | acumulación de columnas fijas |
+| `getTableClassNames` | `(state: { stripe, border, size, virtual }) => string[]` | nombres de clase | cuatro modificadores |
+| `getTableCellClassNames` | `(state) => string[]` | nombres de clase | alineación/columna fija/arrastre del ancho |
+| `flattenLeafColumns` | `(columns) => LhTableColumn[]` | columnas hoja | para el cuerpo y el encabezado multinivel |
+| `buildHeaderCells` | `(columns) => LhTableHeaderCell[]` | casillas de encabezado aplanadas | con rowspan/colspan |
+| `getHeaderStickyOffsets` | `(leafColumns, headerCells) => LhTableCellSticky[]` | desplazamientos del encabezado | herencia condicional del encabezado de grupo |
+| `filterTableRows` | `(rows, filters) => LhTableRow[]` | nueva matriz | AND entre columnas, OR dentro de la columna |
+| `clampColumnWidth` | `(width: number \| string) => number \| string` | ancho limitado | límite inferior de 40px |
+| `getTableSortAria` | `(options: { sortOrder?, sortable? }) => LhAriaAttrs` | paquete de atributos aria | aria-sort |
+
+Constantes: `LH_TABLE_ROW_HEIGHT = 48` (altura de fila por defecto), `LH_TABLE_OVERSCAN = 3` (filas de amortiguación al desplazar), `LH_TABLE_MIN_COL_WIDTH = 40` (límite inferior del arrastre del ancho).
+
+## Definiciones de tipos
+
+```ts
+export type LhTableAlign = 'left' | 'center' | 'right'
+export type LhTableSortOrder = 'asc' | 'desc'
+export type LhTableRow = Record<string, any>
+
+export interface LhTableColumn {
+  prop: string
+  label: string
+  width?: number | string          // un número se interpreta como px
+  align?: LhTableAlign
+  fixed?: 'left' | 'right'         // necesita ir acompañado de width
+  sortable?: boolean
+  slot?: string                    // nombre del slot personalizado de la celda
+  formatter?: (row: LhTableRow, value: any) => string
+  children?: LhTableColumn[]       // la configuración define el encabezado multinivel
+  filters?: LhTableFilterOption[]  // solo surte efecto en las columnas hoja
+  filterMethod?: (value: string | number, row: LhTableRow) => boolean
+  filterMultiple?: boolean         // true por defecto
+  resizable?: boolean              // necesita una columna hoja con un width numérico
+}
+
+export interface LhTableHeaderCell {
+  column: LhTableColumn
+  level: number          // nivel del encabezado, desde 0
+  leafStart: number      // punto de inicio de la secuencia de columnas hoja
+  leafSpan: number       // número de columnas hoja que abarca
+  rowspan: number        // relleno hasta la profundidad máxima
+  colspan: number        // = leafSpan
+  isLeaf: boolean
+}
+
+export interface LhTableVisibleRange { start: number; end: number; offsetY: number; totalHeight: number }
+export interface LhTableCellSticky { left?: number; right?: number }
+```
+
+## Accesibilidad
+
+`getTableSortAria` emite `aria-sort`, estrictamente alineado con la máquina de estados de `cycleSortOrder`:
+
+```ts
+getTableSortAria({ sortable: true, sortOrder: 'asc' })    // { 'aria-sort': 'ascending' }
+getTableSortAria({ sortable: true, sortOrder: 'desc' })   // { 'aria-sort': 'descending' }
+getTableSortAria({ sortable: true })                      // { 'aria-sort': 'none' }
+getTableSortAria({ sortable: false })                     // {} (las columnas no ordenables no emiten nada)
+```
+
+Observa el tercer caso: sin ordenar, se emite `aria-sort="none"` en lugar de omitirlo: es un requisito explícito de APG que **declara de forma manifiesta «esta columna es ordenable pero actualmente no está ordenada»**, y el lector de pantalla lo aprovecha para indicar al usuario que puede ordenar por esa columna.
+
+Las demás convenciones (las implementa la capa UI): el encabezado usa `<th scope="col">`; las columnas fijas no deben usar `tabindex` para crear focos adicionales; la zona de paginación es un `nav` independiente; la casilla de selección de fila necesita `aria-label` (como «Seleccionar la fila 3»).
+
+## Ejemplos de uso
+
+```ts
+import { cycleSortOrder, sortTableRows, filterTableRows, buildHeaderCells } from '@lh-ui/share/core/table'
+
+cycleSortOrder(undefined)  // 'asc'
+cycleSortOrder('asc')      // 'desc'
+cycleSortOrder('desc')     // undefined (cancela la ordenación)
+
+const rows = [
+  { name: 'Ana', age: 30 },
+  { name: 'Bruno', age: null },
+  { name: 'Carla', age: 20 },
+]
+sortTableRows(rows, 'age', 'asc')
+// Carla 20 → Ana 30 → Bruno null (los valores nulos siempre al final)
+sortTableRows(rows, 'age', 'desc')
+// Ana 30 → Carla 20 → Bruno null (al ordenar en desc, los nulos siguen al final)
+sortTableRows(rows, 'age', undefined)  // copia en el orden original
+
+filterTableRows(rows, [{ column: { prop: 'name' }, values: ['Carla'] }])
+// [{ name: 'Carla', age: 20 }]
+filterTableRows(rows, [])  // copia completa (sin filtros activos)
+
+// Encabezado multinivel
+const columns = [
+  { label: 'Información básica', children: [{ prop: 'name', label: 'Nombre' }, { prop: 'age', label: 'Edad' }] },
+  { prop: 'city', label: 'Ciudad' },
+]
+flattenLeafColumns(columns)  // [Nombre, Edad, Ciudad] (el cuerpo de la tabla se renderiza en este orden)
+buildHeaderCells(columns)
+// Información básica (level 0, leafStart 0, colspan 2), Nombre (rowspan 2 de relleno),
+// Edad (rowspan 2), Ciudad (level 0, rowspan 2)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTableClassNames({ stripe, border, size, virtual })">
+  <div class="lh-table__wrapper">
+    <div class="lh-table__header" :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }">
+      <div
+        v-for="cell in headerCells"
+        :key="`${cell.level}-${cell.leafStart}`"
+        class="lh-table__header-cell"
+        :style="cellStyle(cell)"
+        v-bind="getTableSortAria({ sortOrder: sortState[cell.column.prop], sortable: cell.column.sortable })"
+        @click="onSort(cell.column)"
+      >
+        {{ cell.column.label }}
+        <span v-if="cell.column.sortable" class="lh-table__sort-indicator">
+          {{ sortState[cell.column.prop] === 'asc' ? '↑' : sortState[cell.column.prop] === 'desc' ? '↓' : '↕' }}
+        </span>
+      </div>
+    </div>
+    <div class="lh-table__body">
+      <div
+        v-for="row in displayRows"
+        :key="row.id"
+        class="lh-table__row"
+        :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }"
+      >
+        <div
+          v-for="column in leafColumns"
+          :key="column.prop"
+          :class="getTableCellClassNames({ align: column.align ?? 'left', fixed: column.fixed })"
+        >
+          {{ getCellValue(row, column) }}
+        </div>
+      </div>
+    </div>
+  </div>
+  <LhPagination :total="total" v-model:current="current" v-model:page-size="pageSize" />
+</div>
+```
+
+```ts
+// Cableado de la ordenación (controlado)
+function onSort(column: LhTableColumn) {
+  if (!column.sortable) return
+  const next = cycleSortOrder(sortState.value[column.prop])
+  if (next) sortState.value = { ...sortState.value, [column.prop]: next }
+  else delete sortState.value[column.prop]
+}
+
+const displayRows = computed(() =>
+  filterTableRows(
+    sortTableRows(props.data, sortProp.value, sortOrder.value),
+    activeFilters.value,
+  ),
+)
+```
+
+```tsx
+// React: desplazamiento virtual
+// const range = computeRange(scrollTop, viewportHeight, rowHeight, rows.length, 3)
+// se renderiza range.start..range.end; la capa exterior usa totalHeight para generar la altura
+// y la interior translateY(range.offsetY)
+```
+
+```ts
+// uniapp: <scroll-view scroll-y> + cálculo del intervalo visible; el soporte de CSS grid es
+// limitado en algunas plataformas y se puede degradar a columnas flex; las funciones de core de
+// ordenación, filtrado y expansión del encabezado son independientes de la plataforma: úsalas tal cual
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-table` / `--{small\|medium\|large}` | clase base / escala de tamaño (altura de fila y padding interno) |
+| `.lh-table--stripe` / `--border` / `--virtual` | filas alternas / bordes / desplazamiento virtual |
+| `.lh-table__header` / `__header-cell` | encabezado |
+| `.lh-table__body` / `__row` | cuerpo de la tabla |
+| `.lh-table__cell` / `--{left\|center\|right}` | celda / alineación |
+| `.lh-table__cell--fixed-left` / `--fixed-right` | columna fija (sticky) |
+| `.lh-table__cell--fixed-left-last` / `--fixed-right-first` | borde de la columna fija (separación por sombra) |
+| `.lh-table__cell--resizable` | columna de ancho arrastrable |
+| `.lh-table__empty` | estado vacío |
+
+La altura de fila por defecto es 48px (`LH_TABLE_ROW_HEIGHT`) y debe coincidir obligatoriamente con el parámetro `rowHeight` del algoritmo de desplazamiento virtual, o la ventana quedará desplazada. El color de fondo del encabezado es `--lh-fill-color`; el de los bordes, `--lh-border-color`; el de la fila al pasar el cursor, `--lh-fill-color-light`.
+
+## Notas
+
+- **La coherencia de la altura de fila es la premisa del desplazamiento virtual**: `computeRange` asume que todas las filas tienen la misma altura; si el contenido dentro de una fila la hace crecer (un texto largo que se ajusta en varias líneas), el desplazamiento virtual se desalineará: no actives `virtual` en tablas con alturas irregulares.
+- **Las columnas fijas deben declarar `width`**: `getStickyOffsets` solo calcula los desplazamientos para anchos en píxeles numéricos o cadenas `'Npx'`; las unidades como `'20%'` no se pueden convertir, se acumulan como 0 y las columnas fijas se apilan unas sobre otras.
+- **La premisa de `resizable`**: debe ser una **columna hoja con un width numérico**; tras el arrastre, se limita al mínimo con `clampColumnWidth` y se escribe de vuelta en la configuración de columnas.
+- **El `prop` de la ordenación y las claves de los datos**: `sortTableRows` toma el valor de `row[prop]`; los campos anidados (`user.name`) no se admiten automáticamente: usa un `sorter` personalizado.
+- **El OR dentro de la columna del filtrado**: los múltiples valores seleccionados de una misma columna están en relación «o», y entre columnas distintas, en «y»: es la semántica habitual, coherente con Element.
+- **El orden de las columnas del cuerpo con encabezado multinivel**: el cuerpo debe usar `flattenLeafColumns(columns)` y no `columns`, o el número de columnas no coincidirá con el de las casillas hoja del encabezado.
+- **Columnas compartidas en el DAG**: cuando el mismo objeto column se referencia bajo dos grupos, el seen global garantiza que solo se emita una vez; pero **la consecuencia de compartir el mismo objeto es que cambiar un sitio cambia ambos**: si necesitas «el mismo nombre con una configuración distinta», haz una copia profunda.
+- **La ordenación de grandes volúmenes de datos es O(n log n)**: ordenar decenas de miles de filas en cada fotograma produce bloqueos; valora la ordenación en el servidor (`sortable: 'custom'`, convenio de la capa UI).
+- **El `aria-sort` de `getTableSortAria` se monta en el `<th>`**, no en cada celda de la columna.
+
+<FnPlayground module="table" fn="cycleSortOrder" params='{"current": "asc"}' />

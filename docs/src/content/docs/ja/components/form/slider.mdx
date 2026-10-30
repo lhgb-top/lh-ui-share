@@ -1,0 +1,166 @@
+---
+title: slider —— スライダー
+description: 'snapToStep のステップ吸着、getValueFromPosition のパーセント換算、getInitialValue の区間の初期値、slider セマンティクスの属性パック'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+スライダーは数値選択を**空間的な操作**に変えます：ドラッグは入力よりも直感的で、範囲内での値の位置も一目で分かります。`core/slider` が管理するのは「値 ↔ 位置」の双方向の換算、ステップ吸着、区間（range）モードの 2 点の初期値、そして APG の slider セマンティクスです。
+
+## いつ使うか
+
+- 各端の `LhSlider` 実装：音量、価格帯、不透明度の調整。
+- 値域が連続、またはステップ粒度が粗いシーン。
+- **使うべきでない**：精密な数値入力（`input-number` を使います。スライダーは「37」のようなステップの倍数でない値を表現できません）。
+
+## インポート方法
+
+```ts
+import {
+  snapToStep,
+  clampAndSnap,
+  getValueFromPosition,
+  getPositionFromValue,
+  getSliderClassNames,
+  getInitialValue,
+  buildMarksList,
+  getSliderThumbAria,
+} from '@lh-ui/share/core/slider'
+import type { LhSliderState, LhSliderMark } from '@lh-ui/share/core/slider'
+```
+
+## 設計意図
+
+`snapToStep` は `step` が有限でない、または `<= 0` のとき**元の値を返し**、NaN は返しません——`step: 0` はモジュロ演算で NaN を生み、ここでは「不正なステップ幅」を「吸着なし」として扱い、純粋な境界のクランプは `clampAndSnap` に任せます。責務の分離です：吸着とクランプは別のことです。
+
+`getPositionFromValue` が `max === min` のとき 0 を返すのはゼロ除算を避けるためです：値域が 1 点に退化したとき、スライダーは当然起点にあるべきです。
+
+`getInitialValue` は区間モードで `[min にクランプ, (min+max)/2 にクランプ]` を返します——2 つ目のスライダーはデフォルトで max ではなく**中点**にあります。これは視覚的な考慮です（2 つのスライダーがくっついているとバグのように見えます）。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `snapToStep` | `(value: number, min: number, step: number) => number` | 吸着値 | step に合わせて最も近い格子点へ |
+| `clampAndSnap` | `(value: number, min: number, max: number, step: number) => number` | 規整値 | 先に吸収してからクランプ |
+| `getValueFromPosition` | `(pct: number, min: number, max: number, step: number) => number` | 数値 | パーセント → 値 |
+| `getPositionFromValue` | `(value: number, min: number, max: number) => number` | パーセント [0,1] | 値 → 位置 |
+| `getSliderClassNames` | `(state: LhSliderState) => string[]` | クラス名 | disabled / range / size |
+| `getInitialValue` | `(state: LhSliderState) => number \| [number, number]` | 初期値 | 区間なら 2 点を返す |
+| `buildMarksList` | `(marks?: Record<number, string>) => LhSliderMark[]` | 目盛り配列 | value の昇順 |
+| `getSliderThumbAria` | `(options: { value, min, max, vertical?, disabled?, ariaValueText? }) => LhAriaAttrs` | aria 属性パック | slider セマンティクス |
+
+## 型定義
+
+```ts
+export interface LhSliderMark {
+  label: string
+  value: number
+}
+
+export interface LhSliderState {
+  value: number | [number, number] | null
+  min: number
+  max: number
+  step: number
+  disabled: boolean
+  range: boolean              // 区間モード（2 つのスライダー）
+  showInput: boolean          // input-number との連動
+  size: LhComponentSize
+  marks: Record<number, string> | undefined
+}
+```
+
+## アクセシビリティ
+
+`getSliderThumbAria` は APG の slider セマンティクスを出力します。**区間モードでは 2 つのスライダーそれぞれに 1 回ずつ呼ぶ必要があります**：
+
+```ts
+getSliderThumbAria({ value: 30, min: 0, max: 100 })
+// { role: 'slider', 'aria-valuenow': 30, 'aria-valuemin': 0, 'aria-valuemax': 100 }
+
+getSliderThumbAria({ value: 60, min: 0, max: 100, vertical: true, disabled: true })
+// { role: 'slider', 'aria-valuenow': 60, 'aria-valuemin': 0, 'aria-valuemax': 100,
+//   'aria-orientation': 'vertical', 'aria-disabled': true }
+```
+
+- `vertical` は `aria-orientation: 'vertical'` を出力します（水平がデフォルトの方向で、宣言しません）。
+- `ariaValueText` は `aria-valuetext` を出力します——数値を意味のある形で表現する必要がある場合（「30%」や「低速」など）に使い、**valuenow より優先して読み上げ**られます。
+- キーボード操作（UI 層）：←/→ または ↓/↑ で step を加減、Home/End で min / max へジャンプ、PageUp/Down で大きなステップを進めます。
+
+## 使用例
+
+```ts
+import { getValueFromPosition, getPositionFromValue, snapToStep } from '@lh-ui/share/core/slider'
+
+getValueFromPosition(0.5, 0, 100, 1)   // 50
+getValueFromPosition(0.333, 0, 100, 5) // 35（5 の倍数に吸着）
+getPositionFromValue(30, 0, 100)       // 0.3
+getPositionFromValue(150, 0, 100)      // 1（クランプ）
+getPositionFromValue(50, 50, 50)       // 0（max===min でゼロ除算を回避）
+snapToStep(7, 0, 5)                    // 5
+snapToStep(8, 0, 5)                    // 10
+snapToStep(7, 0, 0)                    // 7（不正な step は吸着しない）
+buildMarksList({ 0: '低', 100: '高' })  // [{ label: '低', value: 0 }, { label: '高', value: 100 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSliderClassNames({ value, min, max, step, disabled, range, showInput, size, marks })">
+  <div class="lh-slider__track">
+    <div class="lh-slider__bar" :style="{ width: pct + '%' }" />
+    <div
+      class="lh-slider__button-wrapper"
+      :style="{ left: pct + '%' }"
+      v-bind="getSliderThumbAria({ value, min, max, disabled })"
+      @pointerdown="startDrag"
+    >
+      <div class="lh-slider__button" />
+    </div>
+    <template v-if="marks">
+      <div v-for="mark in buildMarksList(marks)" :key="mark.value" class="lh-slider__marks">
+        <span class="lh-slider__mark" :style="{ left: getPositionFromValue(mark.value, min, max) * 100 + '%' }">
+          {{ mark.label }}
+        </span>
+      </div>
+    </template>
+  </div>
+</div>
+```
+
+```tsx
+// React：ドラッグは pointer events + getBoundingClientRect でパーセントを計算
+// const pct = (clientX - rect.left) / rect.width
+// onChange(getValueFromPosition(pct, min, max, step))
+```
+
+```ts
+// uniapp：<slider> は内蔵コンポーネント（単一スライダー）で、min/max/step/show-value をサポート；
+// 区間モードと marks はカスタム view で実装し、ドラッグには @touchmove を使う
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-slider` | 基底クラス |
+| `.lh-slider--{small\|large}` | サイズのバリエーション（スライダーの大きさ） |
+| `.lh-slider--disabled` | 無効 |
+| `.lh-slider--range` | 区間モード（2 つのスライダー + 中間のハイライト区間） |
+| `.lh-slider__track` | トラック |
+| `.lh-slider__bar` | 選択済み区間（ハイライト区間） |
+| `.lh-slider__button-wrapper` / `__button` | スライダーのつまみ |
+| `.lh-slider__marks` / `__mark` | 目盛り |
+| `.lh-slider__input` / `__input-text` | 連動する入力フィールド |
+
+トラック色は `--lh-fill-color`、選択済み区間は `--lh-primary-color` です。
+
+## 注意事項
+
+- **`getPositionFromValue` は [0,1] の小数を返します**。UI 層が `%` を結合します；パーセントを返すと思わないでください。
+- **吸着と目盛りの整列**：`marks` の value は step の倍数であるべきです。さもなくば目盛りが 2 つの吸着値の間に落ち、ユーザーはそこまでドラッグできません。
+- **区間モードの交差**：2 つのスライダーは互いに通り抜けることができます（UI 層は通常これを禁止するか、自動で入れ替えます）が、core の `clampAndSnap` はこのセマンティクスを扱いません。
+- **垂直モード**：`vertical` のときは轨道の高さが幅の代わりになり、換算の分母を変えなければなりません；core の `getValueFromPosition` は軸非依存（パーセントを受け取る）で、pct の計算は UI 層が担います。
+- **`showInput` の連動**：`input-number` の min / max / step は slider と一致させるべきです。さもなくば両者の値域が一致しなくなります。
+
+<FnPlayground module="slider" fn="getValueFromPosition" params='{"pct": 0.35, "min": 0, "max": 100, "step": 5}' />

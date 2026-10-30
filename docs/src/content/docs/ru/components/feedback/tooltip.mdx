@@ -1,0 +1,198 @@
+---
+title: tooltip —— Текстовая подсказка
+description: 'задержки показа/скрытия getDefaultDelay (показ 200 / скрытие 0), соглашение о связке role=tooltip и aria-describedby'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Tooltip — это «пояснение, которое читают только при наведении»: непонятный значок на кнопке, обрезанный текст ссылки, ячейка таблицы, куда не помещается содержимое целиком. `core/tooltip` очень тонок — позиционирование отдано `shared/popper`, задержки — `shared/delay`, а он лишь объявляет **стандартный ритм этого компонента** и **соглашение о связке aria**.
+
+## Когда использовать
+
+- В каждой платформе реализован `<LhTooltip>`: короткое пояснение в одну строку к элементу-триггеру.
+- Показ полного содержимого при усечении текста (ellipsis).
+- Семантическое пояснение значка-кнопки.
+- **Не использовать для**: содержимого, требующего взаимодействия (используйте `popover` — внутри tooltip нет кнопок); подтверждающих действий (используйте `popconfirm`); обратной связи об ошибках (используйте `message`); **на мобильных** (там нет hover, и tooltip на сенсорном экране почти невозможно вызвать — используйте click-запуск popover или долгое нажатие).
+
+## Импорт
+
+```ts
+import {
+  getPopperClassNames,
+  getPopperStyle,
+  getDefaultDelay,
+  getTooltipPopperAria,
+  getTooltipTriggerAria,
+} from '@lh-ui/share/core/tooltip'
+import type {
+  LhTooltipPlacementCore,
+  LhTooltipTriggerCore,
+  LhTooltipEffectCore,
+  LhTooltipState,
+} from '@lh-ui/share/core/tooltip'
+```
+
+## Замысел дизайна
+
+**Асимметрия задержек по умолчанию**: показ 200 мс, скрытие 0 мс — **показ медленный, скрытие быстрое**. Задержка показа защищает от случайных наведений (мышь, проведённая по ряду кнопок, не должна вызывать подсказку у каждой), а скрытие 0 мс гарантирует мгновенное исчезновение при выводе указателя, без волокиты. Сравните со скрытием 100 мс у `popover` (см. ниже) — разница ритмов отражает интерактивный вес.
+
+**Соглашение о связке aria**: триггер через `aria-describedby` указывает на id плавающего слоя, а у слоя проставлен `role="tooltip"`. Это стандартная практика WAI-ARIA: программа чтения экрана при фокусе на триггере зачитывает и содержимое подсказки, **пользователю не нужно наводить курсор, чтобы получить информацию** — этот момент в доступности упускают чаще всего: чисто визуальный tooltip для пользователей клавиатуры вообще невидим.
+
+**Обращение с псевдонимами `@deprecated`**: `getPopperClass` / `getPopperStyle` — старые имена, их использует нижестоящий репозиторий vue2; они сохранены для совместимости, но помечены как deprecated, а в новом коде используется `getPopperClassNames` (соглашение getXxxClassNames). **Удалять нельзя** — на них ещё ссылаются вниз по потоку, и переименование потребует синхронного изменения у потребителей.
+
+**`getPopperStyle` управляет только maxWidth**: число → px, строка используется как есть. Координаты позиционирования считаются в `computePosition` из `shared/popper`, а transform/смещение плавающего слоя — результат привязки UI-слоя к состоянию popper.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `getPopperClassNames` | `(state: { effect, placement }) => string[]` | имена классов | тема оформления + позиция |
+| `getPopperStyle` ⚠️ | `(state: { maxWidth }) => Record<string, string>` | inline-стили | нормализация maxWidth |
+| `getDefaultDelay` | `(show?, hide?) => { show, hide }` | задержки | по умолчанию 200 / 0 |
+| `getTooltipPopperAria` | `(id?) => LhAriaAttrs` | пакет aria | role="tooltip" |
+| `getTooltipTriggerAria` | `(tooltipId?) => LhAriaAttrs` | пакет aria | aria-describedby |
+
+⚠️ Помеченные — совместимые псевдонимы `@deprecated`, в новом коде используйте новые имена.
+
+Константы (типы): `LhTooltipPlacementCore` — 12 позиций, `LhTooltipTriggerCore`, `LhTooltipEffectCore = 'dark' | 'light'`.
+
+## Определения типов
+
+```ts
+export type LhTooltipPlacementCore =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhTooltipTriggerCore = 'hover' | 'focus' | 'click' | 'contextmenu'
+export type LhTooltipEffectCore = 'dark' | 'light'
+
+export interface LhTooltipState {
+  visible: boolean
+  effect: LhTooltipEffectCore
+  placement: LhTooltipPlacementCore
+  maxWidth?: number | string
+  showDelay?: number
+  hideDelay?: number
+}
+```
+
+## Доступность
+
+```ts
+getTooltipPopperAria('tip-1')
+// { role: 'tooltip', id: 'tip-1' }
+getTooltipTriggerAria('tip-1')
+// { 'aria-describedby': 'tip-1' }
+getTooltipTriggerAria()  // {} (без id не выводится; тогда нужно использовать запасной aria-label)
+```
+
+- **id должен быть согласован с обеих сторон**: значение `aria-describedby` триггера должно совпадать с реальным id отрендеренного плавающего слоя. При серверном рендеринге id может быть пустым — если id не передан, функция возвращает пустой объект, и UI-слой должен использовать запасной `aria-label`, не позволяя `aria-describedby` указывать на несуществующий элемент (программа чтения сообщит «указанный элемент не существует»).
+- **Запуск по focus покрывает пользователей клавиатуры**: при `trigger: 'focus'` подсказка появляется при фокусе через Tab — это рекомендуемое поведение доступности по умолчанию; вариант только-hover для пользователей клавиатуры полностью невидим.
+- **Ограничения содержимого role="tooltip"**: по WAI-ARIA внутри tooltip **не должно быть интерактивных элементов** (кнопок, ссылок) — если нужно взаимодействие, используйте `popover` (role=dialog). Это ограничение одновременно отражается и в стилях: у tooltip обычно pointer-events: none.
+- **Длинный текст**: `maxWidth` ограничивает ширину переноса, но tooltip не должен нести абзацы — если выходит за рамки одного предложения, рассмотрите popover.
+
+## Примеры использования
+
+```ts
+import { getDefaultDelay, getPopperClassNames, getPopperStyle } from '@lh-ui/share/core/tooltip'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 0 }
+getDefaultDelay(0, 500)                // { show: 0, hide: 500 } (явное переопределение)
+
+getPopperClassNames({ effect: 'dark', placement: 'top' })
+// ['lh-tooltip__popper', 'lh-tooltip__popper--dark', 'lh-tooltip__popper--top']
+
+getPopperStyle({ maxWidth: 200 })    // { maxWidth: '200px' }
+getPopperStyle({ maxWidth: '30em' }) // { maxWidth: '30em' }
+getPopperStyle({})                   // {}
+```
+
+```ts
+// Конечный автомат видимости (UI-слой): задержки нормализуются через resolveDelay из shared/delay
+const state = reactive<LhTooltipState>({
+  visible: false, effect: 'dark', placement: 'top',
+})
+
+let showTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleShow() {
+  clearTimeout(showTimer)
+  const { show } = getDefaultDelay(props.showDelay, props.hideDelay)
+  showTimer = setTimeout(() => { state.visible = true }, show)
+}
+function scheduleHide() {
+  clearTimeout(showTimer)
+  const { hide } = getDefaultDelay(props.showDelay, props.hideDelay)
+  setTimeout(() => { state.visible = false }, hide)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTooltip content="После удаления восстановление невозможно" placement="top">
+    <button type="button" aria-label="Удалить"><LhIcon name="delete" /></button>
+  </LhTooltip>
+</template>
+
+<!-- Внутри компонента: триггер и плавающий слой -->
+<template>
+  <span
+    class="lh-tooltip__trigger"
+    v-bind="getTooltipTriggerAria(popperId)"
+    @mouseenter="scheduleShow" @mouseleave="scheduleHide"
+    @focus="scheduleShow" @blur="scheduleHide"
+  >
+    <slot />
+  </span>
+  <teleport to="body">
+    <transition name="lh-tooltip-fade">
+      <div
+        v-if="state.visible"
+        :id="popperId"
+        :class="getPopperClassNames({ effect: state.effect, placement: state.placement })"
+        :style="{ ...getPopperStyle({ maxWidth: props.maxWidth }), ...popperStyle }"
+        v-bind="getTooltipPopperAria(popperId)"
+        role="tooltip"
+      >
+        <slot name="content">{{ props.content }}</slot>
+      </div>
+    </transition>
+  </teleport>
+</template>
+```
+
+```tsx
+// React: события и aria инъектируются в children клонированием элемента-триггера (React.cloneElement);
+// плавающий слой — через createPortal + useFloating (@floating-ui или самописный popper)
+```
+
+```ts
+// uniapp: <view> + catchtouchstart; hover в мини-программах не существует,
+// поэтому tooltip на мобильных в основном обслуживает h5,
+// а в сценариях мини-программ следует перейти на click-запуск popover
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-tooltip__trigger` | обёртка триггера (inline) |
+| `.lh-tooltip__popper` | плавающий слой |
+| `.lh-tooltip__popper--{dark\|light}` | тема оформления |
+| `.lh-tooltip__popper--{top\|top-start\|…}` | 12 позиций (включая направление стрелки) |
+
+Оформление dark: `--lh-tooltip-bg-dark` (почти чёрный) + белый текст; light: `--lh-bg-color` + `--lh-text-primary`. Скругление `--lh-border-radius-small`, внутренние отступы `--lh-tooltip-padding`, размер шрифта `--lh-font-size-small`.
+
+## Замечания
+
+- **Двусторонняя очистка задержек**: если указатель выведен до срабатывания таймера показа, нужно сделать clearTimeout — иначе подсказка всплывёт уже после того, как мышь ушла. В примере конечного автомата выше очищается только showTimer, в полной реализации чистить нужно в обе стороны.
+- **Вход указателя в сам плавающий слой**: у tooltip `pointer-events` обычно none, поэтому «войти в подсказку» не получится — но popover это разрешает, и именно отсюда берётся разница задержек скрытия.
+- **Управляемое и неуправляемое**: в управляемом режиме `v-model:visible` внешнее изменение visible нужно синхронизировать с внутренним state; таймеры задержки нужно сбрасывать вместе с управляемым состоянием.
+- **Сосуществование нескольких tooltip**: popperId каждого экземпляра должен быть уникален (useId или возрастающий номер), иначе aria-describedby укажет не на тот элемент.
+- **`getPopperClass` / `getPopperStyle` — deprecated-псевдонимы**: в новом коде используйте `getPopperClassNames`; на старые имена в нижестоящем репозитории vue2 всё ещё есть ссылки, поэтому перед удалением нужно сначала обновить потребителей (порядок релизов по красной линии 5).
+- **Обработка пустого содержимого**: при пустом `content` не следует показывать пустой плавающий слой — UI-слой пропускает показ при пустом содержимом (`v-if="content"`), это не ответственность core.
+- **Отключённый элемент-триггер**: кнопка с нативным `disabled` не генерирует события mouseenter/focus, и tooltip не работает. Распространённое решение — обернуть триггер в неотключённый элемент (span `.lh-tooltip__trigger`), который и принимает события — это одна из причин существования класса trigger.
+
+<FnPlayground module="tooltip" fn="getDefaultDelay" params='{"showDelay": null, "hideDelay": null}' />

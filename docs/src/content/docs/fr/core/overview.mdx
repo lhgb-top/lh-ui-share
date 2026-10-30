@@ -1,0 +1,70 @@
+---
+title: "Vue d'ensemble du noyau partagé"
+description: "Les 12 sous-modules de core/shared, la philosophie de conception de la couche de fonctions pures et les dépendances entre modules"
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+## De quoi s'agit-il
+
+`@lh-ui/share/core/shared` est la **couche d'algorithmes commune** à toute la famille lh-ui — 12 modules TypeScript sans aucune dépendance, qui ramènent à une implémentation unique les logiques dont chaque composant a besoin, mais que chaque port a tendance à réimplémenter à sa façon (avec des différences subtiles) :
+
+Le positionnement des couches flottantes, le défilement virtuel, la navigation au clavier, le piège au focus, la construction des attributs aria, les primitives de date, la sanitisation des nombres, la transmission de styles… Ces algorithmes **n'appartiennent à aucun framework** : l'entrée est de la donnée simple, la sortie est de la donnée simple, on ne touche ni à la réactivité ni à l'état global du DOM (quelques fonctions lisent le DOM, mais derrière des gardes SSR).
+
+Dans lh-ui-plus, lh-ui-vue2, lh-ui-react et lh-ui-uniapp, un même composant utilise le **même** `computePosition`, le même `getNextListIndex`. Corrigez un bug, les quatre ports sont corrigés ; ajoutez un cas aux bornes, les quatre ports en bénéficient.
+
+## Les 12 sous-modules
+
+| Module | Responsabilité | Exports principaux |
+| --- | --- | --- |
+| [`sx`](/fr/core/sx) | props sx → styles inline, avec une priorité fixe « côté unique > paire d'axes > abréviation » | `sxToStyle` / `mergeSx` / `LhSxProps` |
+| [`popper`](/fr/core/popper) | Moteur de positionnement des couches flottantes : 12 placements, retournement sur l'axe principal, clamp sur l'axe secondaire, décalage de la flèche | `computePosition` / `parsePlacement` / `LhPlacement` |
+| [`virtual`](/fr/core/virtual) | Intervalle de défilement virtuel à hauteur fixe (virtual-list et table partagent le même algorithme) | `computeRange` / `computeWindow` / `LH_VIRTUAL_OVERSCAN` |
+| [`keyboard`](/fr/core/keyboard) | Interaction clavier : détection des touches, navigation liste / grille / range, type-ahead | `getNextListIndex` / `getNextGridCell` / `LH_KEYS` |
+| [`focus-trap`](/fr/core/focus-trap) | Gestion du focus : énumération des éléments focusables, piège à focus Tab, registre de propriété inert | `trapTabKey` / `setInertOutside` / `focusFirst` |
+| [`a11y`](/fr/core/a11y) | Bâtisseurs atomiques d'attributs aria (sémantique unifiée d'omission des valeurs fausses) | `getPopupTriggerAria` / `ariaExpanded` / `getDecorativeAria` |
+| [`date`](/fr/core/date) | Primitives de date : nombre de jours dans le mois, comparaison, détection de désactivation, formatage par tokens à largeur fixe | `formatDate` / `parseDate` / `isDateDisabled` |
+| [`format`](/fr/core/format) | Interpolation de modèles de messages (marqueurs `{key}`) | `formatMessage` |
+| [`delay`](/fr/core/delay) | Normalisation des délais d'affichage et de masquage (partagée par tooltip / popover / popconfirm) | `resolveDelay` |
+| [`pt`](/fr/core/pt) | Fusion des props de transmission PT (fusion superficielle de class / style / attrs) | `mergePt` / `LhPtAttrs` |
+| [`sanitize`](/fr/core/sanitize) | Sanitisation des nombres : NaN / Infinity interceptés à l'entrée | `sanitizeNumber` / `clamp` / `safePrecision` |
+| [`types`](/fr/core/types) | Types unions partagés : taille / langue / type / position | `LhComponentSize` / `LhComponentType` |
+
+L'entrée agrégée `@lh-ui/share/core/shared` réexporte les 12 modules via `export *` ; on peut aussi importer un module précis via `@lh-ui/share/core/shared/popper`, afin que le bundler n'emporte que la partie utilisée.
+
+## Philosophie de conception
+
+### Des fonctions pures, l'état côté couche UI
+
+Les fonctions de la couche core **ne portent aucun état de composant**. Prenons popper : `computePosition(trigger, popper, viewport, options)` reçoit trois littéraux rect et renvoie `{ top, left, placement, arrowOffset }` — « où se trouve actuellement le déclencheur, quelle est la taille de la couche flottante, quelle est la taille du viewport » sont toutes des choses que la couche UI a mesurées au moment de l'appel et qu'elle transmet. Cela signifie que :
+
+- Une même fonction peut s'exécuter dans un `watchEffect` de Vue3 comme dans un `useLayoutEffect` de React, ou encore dans un `onPageScroll` d'uniapp.
+- **Les tests unitaires n'ont pas besoin de rendre des composants** : une grande partie des cas dans `tests/unit/` est de la forme « construire un jeu de rect, affirmer la sortie », et les quatre ports partagent les mêmes résultats de test (ligne rouge 3 : la copie unique des tests unitaires de core se trouve dans ce dépôt).
+
+### Le garde SSR est le contrat par défaut
+
+Quelques fonctions doivent lire le DOM (`getWindowViewport`, `getFocusableElements`, `saveActiveElement`). Elles effectuent toutes, à l'entrée, un test `typeof document === 'undefined'` / `typeof window === 'undefined'` et renvoient une valeur vide sûre (`[]` / `null` / un rect de largeur et hauteur nulles), afin que le rendu côté serveur de Nuxt / Next / uniapp ne casse pas. La documentation indique pour chaque fonction « sans risque en SSR » ou le comportement précis du garde.
+
+### La convention aria d'omission des valeurs fausses
+
+Tous les bâtisseurs du module `a11y` respectent la même convention : **un attribut aria booléen à faux produit `undefined`, afin que le framework ne rende pas l'attribut** (une `aria-required: false` explicite est la plupart du temps du bruit). Les exceptions sont les attributs qui doivent être annoncés explicitement pour leur sémantique : `aria-expanded: false`, `aria-invalid: false` sont produits tels quels. Voir la [documentation d'a11y](/fr/core/a11y).
+
+### La sanitisation à l'entrée, point de défense en aval
+
+L'existence de `sanitize` permet aux autres fonctions de core de ne pas écrire des défenses `Number.isFinite` partout. Les valeurs numériques venues de l'extérieur — numéros de page, espacements, step, precision — passent d'abord par `sanitizeNumber` avant d'entrer dans l'algorithme, et NaN / Infinity sont remplacés par une valeur sûre par défaut. C'est l'arbitrage « intercepter à un seul endroit, garder l'ensemble propre » : l'appelant garantit lui-même la finitude et utilise `clamp` directement, ou déclare explicitement faire confiance à la sanitatisation à l'entrée.
+
+### Des dépendances entre modules très légères
+
+Il n'y en a que trois :
+
+- `keyboard` ← `sanitize.clamp` (clamping des bornes de navigation)
+- `popper` ← `sanitize.clamp` + `sanitize.sanitizeNumber` (clamping et sanitisation des entrées)
+- `shared/types` ← `constants.LH_SIZE_CONST` / `LH_LANGUAGE_CONST` / `LH_TYPES_CONST` (`import type`, les types unions sont dérivés des constantes)
+
+Aucune dépendance circulaire, ni de dépendance inverse vers `locales` ou la couche UI. L'existence même du module `format` est le produit de cette ligne : les interpolations telles que `'{n} 星'` de `rate` ou `'共 {total} 条'` de `pagination` nécessitaient à l'origine de rechercher en retour le singleton locales ; une fois descendues en fonctions pures sur les chaînes, les composants core ne dépendent plus des effets de bord au niveau module de locales.
+
+## Essayez-le
+
+<FnPlayground module="sanitize" fn="clamp" params='{"value": 12, "min": 0, "max": 10}' />
+
+Chaque page de documentation d'un sous-module se termine par un bloc interactif de ce type : remplissez les paramètres, exécutez directement côté client, observez la sortie.

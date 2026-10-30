@@ -1,0 +1,140 @@
+---
+title: card —— Tarjeta
+description: 'getCardInteractivity distingue la semántica interactive/static, isCardInteractive determina la interactividad, shadow tiene tres niveles de clases modificadoras'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La tarjeta es un «contenedor de contenido», pero las tarjetas de una biblioteca de componentes moderna a menudo son **clicables en toda su superficie**. Entonces ya no son un simple `<div>`: necesitan semántica de botón, foco por teclado y disparo con Enter/Espacio. `core/card` hace explícita la decisión de «es o no un botón» con `getCardInteractivity`, de modo que la capa UI monte tabindex y role en consecuencia.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhCard`: los nombres de clase y la semántica de interacción los calcula core.
+- Agregación de información: portada + título + descripción + área de acciones.
+- **No usarlo para**: escenarios que necesitan controles de formulario o interacciones anidadas complejas. Es válido poner botones dentro de una tarjeta (en el área de acciones), pero **tarjeta entera clickable + botón dentro** crea un problema de accesibilidad de interacciones anidadas y debe evitarse.
+
+## Importación
+
+```ts
+import { getCardClassNames, isCardInteractive, getCardInteractivity } from '@lh-ui/share/core/card'
+import type { LhCardState, LhCardShadow, LhCardInteractivity } from '@lh-ui/share/core/card'
+```
+
+## Intención de diseño
+
+La evaluación de `isCardInteractive` es `clickable && !loading`: una tarjeta en carga no es interactiva. Este `&&` parece de cajón, pero resuelve un problema real: durante la carga, la tarjeta suele mostrar un esqueleto, y en ese momento los clics deben absorberse en lugar de disparar una acción que aún no está lista.
+
+`getCardInteractivity` devuelve `'interactive'` / `'static'` en lugar de un booleano, para que el código de la capa UI se lea como si tratara con dos **elementos** distintos:
+
+- `interactive`: al renderizar, se monta `role="button"`, `tabindex="0"`, se escucha el teclado Enter/Espacio y se vincula `@click`.
+- `static`: no se monta ninguna semántica, es un simple contenedor.
+
+Esta separación en capas es necesaria: si la capa UI escribiera directamente `v-if="clickable"`, el role, el tabindex y los eventos de teclado serían tres ramas que evolucionarían por separado y sería fácil que algo se quedara fuera.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `getCardClassNames` | `(state: LhCardState) => string[]` | matriz de nombres de clase | nivel de sombra, clickable, modificadores de carga |
+| `isCardInteractive` | `(state: LhCardState) => boolean` | booleano | `clickable && !loading` |
+| `getCardInteractivity` | `(state: LhCardState) => LhCardInteractivity` | `'interactive'` / `'static'` | decisión de rol semántico |
+
+Salida de ejemplo:
+
+```ts
+getCardClassNames({ shadow: 'hover', clickable: true, loading: false })
+// ['lh-card', 'lh-card--shadow-hover', 'lh-card--clickable']
+
+getCardInteractivity({ shadow: 'hover', clickable: true, loading: false })  // 'interactive'
+getCardInteractivity({ shadow: 'always', clickable: false, loading: false }) // 'static'
+```
+
+## Definiciones de tipos
+
+```ts
+export type LhCardShadow = 'always' | 'hover' | 'never'
+export type LhCardInteractivity = 'interactive' | 'static'
+
+export interface LhCardState {
+  shadow: LhCardShadow
+  clickable: boolean
+  loading: boolean
+}
+```
+
+## Accesibilidad
+
+Este es el núcleo del componente. Cuando la tarjeta completa es clicable debe implementarse según el patrón de botón de APG, y las tres cosas de la capa UI son imprescindibles:
+
+```vue
+<div
+  :class="getCardClassNames({ shadow, clickable, loading })"
+  :role="interactivity === 'interactive' ? 'button' : undefined"
+  :tabindex="interactivity === 'interactive' ? 0 : undefined"
+  @click="interactivity === 'interactive' && emit('click')"
+  @keydown.enter="interactivity === 'interactive' && emit('click')"
+  @keydown.space.prevent="interactivity === 'interactive' && emit('click')"
+>
+```
+
+Observa el `.prevent` de la tecla Espacio: un botón nativo bloquea el comportamiento predeterminado de desplazamiento de la barra espaciadora; al simularlo con un div hay que bloquearlo manualmente, o la tarjeta se desplazará y se disparará al mismo tiempo.
+
+**No** renderices la tarjeta clicable como `<button>` por comodidad: los estilos por defecto del botón (inline, texto centrado) chocan con el layout de la tarjeta, y además colocar contenido de bloque dentro de un botón da problemas en navegadores antiguos. div + role es la implementación equivalente reconocida por APG.
+
+## Ejemplos de uso
+
+```ts
+import { getCardClassNames, getCardInteractivity } from '@lh-ui/share/core/card'
+
+getCardClassNames({ shadow: 'never', clickable: false, loading: true })
+// ['lh-card', 'lh-card--shadow-never', 'lh-card--loading']
+```
+
+```tsx
+// React
+const interactivity = getCardInteractivity({ shadow, clickable, loading })
+const interactive = interactivity === 'interactive'
+return (
+  <div
+    className={getCardClassNames({ shadow, clickable, loading }).join(' ')}
+    role={interactive ? 'button' : undefined}
+    tabIndex={interactive ? 0 : undefined}
+    onClick={interactive ? onClick : undefined}
+    onKeyDown={interactive ? (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() }
+    } : undefined}
+  >
+    {loading ? <Skeleton /> : children}
+  </div>
+)
+```
+
+```ts
+// uniapp: view admite hover-class, se puede simular la sombra al pasar el cursor con :hover-class;
+// los eventos de teclado solo funcionan en h5, fuera de h5 solo responde al tap
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-card` | clase base: esquinas redondeadas, borde, fondo, transición |
+| `.lh-card--shadow-{always\|hover\|never}` | tres niveles de sombra: siempre / al pasar el cursor / nunca |
+| `.lh-card--clickable` | clicable: elevación al pasar el cursor + cursor de puntero + presión al activar |
+| `.lh-card--loading` | estado de carga: el contenido queda cubierto por el esqueleto |
+| `.lh-card__header` / `.lh-card__title` / `.lh-card__extra` | cabecera: título + posición de acciones a la derecha |
+| `.lh-card__cover` | zona de la imagen de portada (empalme de esquinas redondeadas a todo lo ancho) |
+| `.lh-card__body` | zona de contenido principal |
+| `.lh-card__footer` | zona de acciones inferior |
+| `.lh-card__loading-line` / `--narrow` / `--wide` | líneas de marcador de posición del esqueleto |
+
+La sombra y el redondeo pasan por los tokens `--lh-shadow-*` / `--lh-radius-*`, que ConfigProvider puede sobrescribir.
+
+## Notas
+
+- **La trampa de la interacción anidada**: cuando la tarjeta completa tiene `role="button"`, los botones y enlaces de su interior pasan a ser descendientes del botón, y el lector de pantalla los saltará (dentro de un button no se permite contenido interactivo). Si deben coexistir, renuncia a la tarjeta completa clicable y reduce la zona de clic a un elemento claramente delimitado.
+- `shadow` no tiene valor de respaldo: el tipo exige que se pase; el valor por defecto de los props de la capa UI suele ser `'hover'`.
+- El esqueleto del estado de carga lo implementa `.lh-card__loading-line` en la capa de estilos; core solo emite la clase `--loading`.
+- Que `clickable` sea true sin tener vinculado un evento de clic es legal (solo el aspecto será de clicable); es un asunto de quien llama, no de core.
+
+<FnPlayground module="card" fn="getCardClassNames" params='{"state": {"shadow": "hover", "clickable": true, "loading": false}}' />

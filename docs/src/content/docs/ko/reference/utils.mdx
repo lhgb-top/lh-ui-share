@@ -1,0 +1,189 @@
+---
+title: utils —— 범용 유틸리티
+description: 'createNamespace / deepMerge / debounce / throttle / cssVars 등 15개의 프레임워크 비종속 유틸리티 함수'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`src/utils/`는 가장 아래 계층의 범용 유틸리티입니다: core조차 이것들에 의존하지 않으며(core가 쓰는 것은 `core/shared/`의 더 전문화된 알고리즘들입니다), 이것들은 각 UI 라이브러리의 컴포넌트 구현과 사용하는 측을 서비스합니다.
+
+## import 방법
+
+```ts
+import { createNamespace, deepMerge, debounce, generateId } from '@lh-ui/share/utils'
+```
+
+## 함수 표
+
+| 함수 | 시그니처 | 역할 |
+| --- | --- | --- |
+| `generateId` | `(prefix = 'lh') => string` | 고유 ID 생성(`${prefix}_${Date.now()}_${counter}`) |
+| `generateRandomId` | `() => string` | 무작위 ID 생성(7문자 base36) |
+| `isEmpty` | `(val: unknown) => boolean` | 빈값 여부(`null` / `undefined` / `''`만) |
+| `isString` | `(val: unknown) => val is string` | 타입 가드: 문자열 |
+| `isNumber` | `(val: unknown) => val is number` | 타입 가드: 숫자(`NaN`은 `false` 반환) |
+| `isPlainObject` | `(val: unknown) => val is Record<string, unknown>` | 타입 가드: 일반 객체 |
+| `debounce` | `<T>(fn: T, delay = 300) => LhDebounced<T>` | 디바운스(`cancel` / `flush` 포함) |
+| `throttle` | `<T>(fn: T, delay = 300) => LhThrottled<T>` | 쓰틀(선두 즉시 실행 + 후미 보충 실행) |
+| `deepMerge` | `<T>(target: T, ...sources: Partial<T>[]) => T` | 객체 깊은 병합 |
+| `getScrollbarWidth` | `() => number` | 스크롤바 너비 획득(결과 캐시) |
+| `toggleClass` | `(el, className, force?) => void` | CSS class 추가 / 제거 |
+| `getEventValue` | `(e: Event) => string` | 이벤트에서 타깃 값 취득 |
+
+하위 모듈 내보내기(`@lh-ui/share/utils` 끝에서 re-export):
+
+| 함수 | 시그니처 | 역할 |
+| --- | --- | --- |
+| `createNamespace` | `(block: string) => LhNamespace` | BEM 네임스페이스 유틸리티 |
+| `toCssVarName` | `(key: string) => string` | CSS 변수명 생성(이미 `--lh-` 접두사가 있으면 그대로 반환, **멱등**) |
+| `cssVars` | `(vars: Record<string, string>) => Record<string, string>` | themeVars 키-값 쌍 → `:style`에 묶을 수 있는 CSS 변수 객체 |
+| `stripCssVarName` | `(key: string) => string` | `--lh-` 접두사를 제거하고 themeVars prop 키로 되돌림 |
+
+## createNamespace —— BEM 네임스페이스
+
+```ts
+const ns = createNamespace('button')
+
+ns.b()              // 'lh-button'
+ns.e('text')        // 'lh-button__text'
+ns.m('primary')     // 'lh-button--primary'
+ns.em('text', 'disabled')  // 'lh-button__text--disabled'
+ns.is('loading', true)     // 'is-loading'
+ns.is('loading', false)    // ''(빈 문자열, 프레임워크가 무시)
+```
+
+모든 lh-ui 컴포넌트의 클래스명이 이것을 거쳐 생성되어, BEM 구조의 일관성과 `lh-` 접두사의 누락 없음을 보장합니다. `is()`의 상태 클래스는 **네임스페이스 접두사를 붙이지 않습니다**(`lh-button--is-loading`이 아니라 `is-loading`), 이것이 패밀리 규약입니다.
+
+타입:
+
+```ts
+export interface LhNamespace {
+  b: () => string                       // 블록
+  e: (element: string) => string        // 요소
+  m: (modifier: string) => string       // 수식어
+  em: (element: string, modifier: string) => string  // 요소 + 수식어
+  is: (name: string, state?: boolean | string) => string  // 상태 클래스
+}
+```
+
+## debounce / throttle
+
+### debounce —— 침묵 구간 동안 마지막 하나만 실행
+
+```ts
+const debounced = debounce((q: string) => search(q), 300)
+input.addEventListener('input', (e) => debounced(e.target.value))
+
+debounced.cancel()   // 언마운트 시 실행되지 않은 대기 호출을 정리
+debounced.flush()    // 대기 중인 한 번을 즉시 실행(대기 중이 아니면 아무 일도 하지 않음)
+```
+
+`cancel` / `flush`은 선택적 장식이 아닙니다: 컴포넌트 언마운트 시 타이머를 정리하지 않으면 이미 파괴된 컨텍스트를 호출하게 됩니다; "즉시 검색" 버튼은 `flush()`로 아직 발동하지 않은 질의를 즉시 실행해야 합니다.
+
+### throttle —— 선두 즉시 실행 + 후미 보충 실행
+
+```ts
+const throttled = throttle(onScroll, 100)
+window.addEventListener('scroll', throttled)
+```
+
+시간 창의 **시작에서 즉시 실행**(선두)하고, 창 안의 마지막 호출은 창이 끝날 때 **보충 실행**(후미)합니다. 단순한 쓰틀은 빠른 스크롤의 마지막 프레임을 잃어버립니다 —— 스크롤이 멈추는 순간이야말로 가장 갱신이 필요한 때입니다(sticky / affix의 위치 판정).
+
+`throttle`에는 `cancel`만 있고(후미 타이머 정리 + `lastTime` 초기화) `flush`는 없습니다(후미는 의미상 "나중에 실행"이기 때문).
+
+타입:
+
+```ts
+export interface LhDebounced<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+  flush(): void
+}
+
+export interface LhThrottled<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+}
+```
+
+## cssVars의 3개 세트
+
+ConfigProvider의 `themeVars` prop은 **약식 키**(`'primary-color'`)를 쓰고, 컴포넌트가 소비하는 것은 CSS 변수(`--lh-primary-color`)입니다. 이 세 함수가 양방향 변환을 합니다:
+
+```ts
+cssVars({ 'primary-color': '#1677ff' })
+// { '--lh-primary-color': '#1677ff' }   ← 바로 :style에 묶을 수 있음
+
+toCssVarName('primary-color')      // '--lh-primary-color'
+toCssVarName('--lh-primary-color') // '--lh-primary-color'(멱등)
+
+stripCssVarName('--lh-primary-color')  // 'primary-color'
+```
+
+**`toCssVarName`의 멱등성이 중요한 이유**: 이미 접두사가 붙은 키가 일부 경로에서 이중으로 보충되어 `--lh---lh-primary-color`가 되는 것을 막습니다 —— 그런 키는 조용히 무효가 되고(CSS 변수가 존재하지 않음), 테마 전환이 "반응 없는" 것처럼 보이게 됩니다.
+
+## deepMerge
+
+```ts
+deepMerge({ a: 1, nested: { x: 1 } }, { nested: { y: 2 } })
+// { a: 1, nested: { x: 1, y: 2 } }
+```
+
+- **양쪽 모두 일반 객체**일 때만 재귀합니다.
+- `sourceVal !== undefined`일 때만 덮어씁니다(명시적으로 `undefined`를 전달하면 덮어쓰지 않음).
+- **target을 그 자리에서 수정하고 반환**합니다 —— 이것이 주의점이며, 원래 객체를 오염시키고 싶지 않을 때는 먼저 `{ ...target }`으로 얕은 복사를 한 겹 합니다.
+
+## getScrollbarWidth
+
+```ts
+getScrollbarWidth()   // 예: 15(Windows) / 0(macOS, 스크롤바 없음)
+```
+
+결과는 모듈 변수 `_scrollbarWidth`에 캐시됩니다. **SSR 가드**: `typeof document === 'undefined'`이면 `0`을 반환합니다.
+
+용도: dialog / drawer가 열릴 때 body의 스크롤을 잠그면 오른쪽에 스크롤바 너비만큼이 사라지는데, `padding-right`로 보충하지 않으면 페이지 콘텐츠가 가로로 흔들립니다.
+
+## 사용 예시
+
+### 컴포넌트 안의 BEM + class 결합
+
+```ts
+const ns = createNamespace('dialog')
+
+const headerClass = computed(() => [
+  ns.e('header'),
+  ns.is('centered', props.centered),
+  // 사용자가 전달한 class
+  ...(typeof attrs.class === 'string' ? attrs.class.split(' ') : []),
+])
+```
+
+### ConfigProvider가 테마 변수 주입
+
+```ts
+const styleVars = computed(() => cssVars(props.themeVars))
+// <div :style="styleVars">
+```
+
+### 스크롤 감시 쓰틀
+
+```ts
+onMounted(() => {
+  const onScroll = throttle(updateAffixPosition, 100)
+  window.addEventListener('scroll', onScroll, true)
+  onUnmounted(() => {
+    window.removeEventListener('scroll', onScroll, true)
+    onScroll.cancel()
+  })
+})
+```
+
+## 주의 사항
+
+- **`isEmpty`는 세 가지만 판별**: `null` / `undefined` / `''`. `0` / `false` / `[]`는 **빈값이 아닙니다**. "빈 배열 / 빈 객체"를 판별하려면 직접 작성하세요.
+- **`isNumber(NaN)`은 `false`**: 의도적으로 NaN을 제외했습니다.
+- **`deepMerge`는 target을 그 자리에서 수정**: 가장 흔한 오용의 출처입니다.
+- **`generateId`는 순수 함수가 아닙니다**: 모듈 수준의 자증 카운터로, 같은 프로세스에서 여러 번 호출하면 결과가 달라집니다(SSR / CSR의 순서가 일치해야 함, [a11y의 generateAriaId 설명](/ko/core/a11y#generateariaid) 참고).
+- **`useLhSize` 같은 composables는 여기에 없습니다**: Vue의 컴포지션 API에 의존하는 것은 각 프레임워크의 UI 계층에 속하며, share는 내보내지 않습니다.
+
+<FnPlayground module="utils" fn="createNamespace" params='{"block": "button"}' />

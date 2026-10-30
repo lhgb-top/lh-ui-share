@@ -1,0 +1,128 @@
+---
+title: البدء
+description: 'تثبيت @lh-ui/share واستيراد الدوال النقية عند الطلب وأربع طرق لاستيراد الأنماط'
+---
+
+# البدء
+
+## التثبيت
+
+```bash
+pnpm add @lh-ui/share
+# أو npm i @lh-ui/share / yarn add @lh-ui/share
+```
+
+هذه الحزمة تستخدم `external: []`، أي **ليس لها أي تبعية في وقت التشغيل**؛ يمكن استخدامها فور التثبيت دون الحاجة إلى تثبيت أي إطار عمل مسبقًا (peer-install).
+
+## استيراد المنطق (JS / TS)
+
+### الاستيراد المجرّد: الكل
+
+```ts
+import { lhlocale, createNamespace, LH_THEME_PRESETS } from '@lh-ui/share'
+```
+
+مدخل الكل هو `./es/index.js` (ولـ CJS يكون `./lib/index.js`). تعلن `sideEffects` في هذه الحزمة عن
+`**/*.css` و `**/*.scss` فقط، لذا يمكن للأعمال الحرج (tree-shaking) أن تجري على وحدات JS الخالصة،
+ولن يدخل أي كود زائد بسبب الاستيراد الكامل.
+
+### الاستيراد عبر مسار فرعي: حسب المكوّن (موصى به)
+
+```ts
+import { getButtonClasses, getButtonAria } from '@lh-ui/share/core/button'
+import { sxToStyle } from '@lh-ui/share/core/shared/sx'
+import { lhlocale } from '@lh-ui/share/locales'
+import { LH_THEME_PRESETS, buildPresetStyleText } from '@lh-ui/share/theme'
+```
+
+لكل مسار فرعي تصدير ثلاثي الشروط مستقل (types / import / require)، والاستيراد عند الطلب
+يجعل الحزمة تضم دوال ذلك المكوّن النقية فقط. الجدول الكامل للمفاتيح في
+[مداخل الحزمة والمسارات الفرعية](/ar/guide/exports).
+
+## استيراد الأنماط (أربع طرق)
+
+حقل `files` في هذه الحزمة ينشر أربعة أدلة فقط هي `es / lib / dist / styles`، وللأنماط مساران:
+
+### 1. السمة بالكامل (الأكثر راحة)
+
+```ts
+// رموز فقط دون أي أنماط للمكوّنات، وهو الأصغر حجمًا
+import '@lh-ui/share/theme.css'       // رموز الوضع الفاتح على :root
+import '@lh-ui/share/theme-dark.css'  // تجاوزات الوضع الداكن ضمن [data-theme='dark']
+```
+
+يناسب المشاريع التي «تريد رموز التصميم فقط وتكتب أنماط المكوّنات بنفسها».
+
+### 2. السمة بالكامل + أنماط كل المكوّنات
+
+```ts
+import '@lh-ui/share/styles.css'      // dist/styles/index.css: الرموز + جميع المكوّنات الـ 58
+```
+
+`dist/index.css` هو المنتج النهائي المُجمَّع في وقت البناء، واستيراد واحد يمنحك المظهر الكامل.
+
+### 3. استيراد مصدر SCSS عند الطلب (يتطلب حازمًا يستطيع ترجمة SCSS)
+
+```scss
+// تجميع شامل (رموز السمة + كل المكوّنات)
+@use '@lh-ui/share/styles/index.scss';
+
+// مكوّن واحد: تترجم هذه المجموعة فقط، وأصغر حجمًا في المخرجات
+@use '@lh-ui/share/styles/button';
+```
+
+يُنشر دليل `styles/` مع الحزمة كـ **مصدر**، ويمكن ترجمته مباشرة بواسطة sass loader في
+vite / webpack، مما يسهّل استخدام `@use` للرموز وتخصيصها داخل المشروع.
+
+### 4. استيراد الرموز فقط للتخصيص العميق
+
+```scss
+@use '@lh-ui/share/styles/theme/common/var.scss' as *;
+
+.my-panel {
+  color: $lh-text-primary;
+  border: 1px solid $lh-border-color;
+}
+```
+
+يُعرض في `styles/theme/common/` ما مجموعه 183 متغيرًا SCSS من نوع `$lh-*` و6 mixin للزخارف
+الصينية، انظر [رموز التصميم](/ar/theme/tokens) و[نظام الزخارف](/ar/theme/patterns).
+
+## TypeScript
+
+يحمل كل مسار فرعي شرط `types`، فلا حاجة إلى حزمة `@types` إضافية:
+
+```ts
+import type { LhThemePreset, LhThemeVars } from '@lh-ui/share/theme'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+```
+
+تُصدَّر الأنواع بشكل منفصل عبر `./es/**/*.d.ts`، ولن يُدرج `import type` أي تنفيذ في المخرجات.
+
+## تشغيل دالة نقية للتجربة
+
+لا تحتاج إلى أي إطار عمل، إذ يمكن تشغيلها في Node مباشرة:
+
+```ts
+import { getButtonClasses } from '@lh-ui/share/core/button'
+
+getButtonClasses({ size: 'small', type: 'primary', disabled: true })
+// => 'lh-button lh-button--small lh-button--primary is-disabled'
+```
+
+هل تريد تجربة تفاعلية؟ كل صفحة مكوّن في موقع التوثائق تحتوي على لوحة **تشغيل الدوال**،
+حيث تغيّر المعاملات لترى المخرجات مباشرة — مثل
+[تشغيل دوال steps](/ar/components/navigation/steps).
+
+## الوضع الداكن
+
+لا تفعّل مكوّنات هذه الحزمة الوضع الداكن بنفسها، بل تعتمد على متغيرات CSS فقط. أضِف السمة
+إلى العقدة الجذرية لينقلب الموقع بأكمله:
+
+```html
+<html data-theme="dark">
+  <!-- أو <body class="dark">، وكلا المحدِّدين يغطيهما var-dark.scss -->
+</html>
+```
+
+للاطلاع على المبدأ وفخ «الخبز في وقت الترجمة»، انظر [الوضع الداكن](/ar/theme/dark-mode).

@@ -1,0 +1,178 @@
+---
+title: dialog —— ダイアログ
+description: 'canClose のエスケープゲート、shouldTrapFocus のフォーカストラップ判断、getDialogStyle の 3 種類の配置、dialog セマンティクス'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ダイアログは「現在のフローを中断し、ユーザーにまずこれを処理させる」モーダルレイヤーです：削除の確認、フォームの入力、詳細の表示。中核は視覚ではなく**フォーカスとスクロールのロック**です——モーダルとは背後のページが操作不可能であることを意味します。`core/dialog` は「閉じられるか」「フォーカスを trap するか」「配置のスタイル」を純関数に収束し、実際のトラップは `core/shared/focus-trap` が実行します。
+
+## いつ使うか
+
+- 各端末で `LhDialog` を実装するケース：危険な操作の確認、独立したフォーム（ドロワーより集中している）、重要な情報の表示。
+- **モーダル**が必要（メインフローを中断し、必ず先に処理する）なシーン。
+- **使うべきでないケース**：非モーダルの軽い通知（`message` / `notification` を使う）；横からスライドする詳細パネル（`drawer` を使う。画面全体を覆わない）；シンプルな確認（`popconfirm` を使う。より軽量）。
+
+## インポート方法
+
+```ts
+import {
+  canClose,
+  getDialogStyle,
+  getDialogPopperClass,
+  shouldTrapFocus,
+  getDialogAria,
+} from '@lh-ui/share/core/dialog'
+import type { LhDialogState } from '@lh-ui/share/core/dialog'
+```
+
+## 設計意図
+
+**`canClose` の 2 つのデフォルト値は非対称**：
+
+- `closeOnClickModal` のデフォルトは **false**（マスクをクリックしても閉じない）——ダイアログは通常、ユーザーの明示的な操作を必要とするフォームや確認を担い、マスクの誤タップで閉じると入力が失われます。
+- `closeOnPressEscape` のデフォルトは **true**（Esc で閉じる）——キーボードのユーザーには脱出口が必要です。これは APG dialog パターンの慣例です。
+
+この非対称は意図的な体験設計です：**誤操作を防ぎつつ逃げ道を残す**。
+
+**`shouldTrapFocus` は判断だけする**：「フォーカストラップを有効にするか」を返し、具体的なトラップは UI 層が `core/shared/focus-trap` と組み合わせて実装します（開くとき saveActiveElement + focusFirst、keydown 時に trapTabKey、inert は setInertOutside が処理、閉じるとき restoreActiveElement でフォーカスを返す）。core 層は DOM に触れません。
+
+**`getDialogStyle` の配置の分担**：`top` / `center` / `bottom` はコンテナの flexbox アライメントが処理し、`marginTop` は `position: 'top'` または未設定のときだけ適用されます——center/bottom で marginTop を重ねると flexbox と衝突します。
+
+**`getDialogPopperClass` の visible クラス**：トランジションアニメーションの開始 / 終了状態に使われ、表示/非表示の制御には使われません（表示/非表示は `v-if` / `v-show` が管理します）。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `canClose` | `(state, reason: 'modalClick' \| 'escape') => boolean` | 閉じることを許可するか | エスケープゲート |
+| `getDialogStyle` | `(state: { top?, zIndex?, position? }) => Record<string, string>` | スタイル | 配置と重なり順 |
+| `getDialogPopperClass` | `(state: LhDialogState) => string[]` | クラス名 | visible 状態 |
+| `shouldTrapFocus` | `(state: { visible, lockScroll }) => boolean` | trap するか | 判断（DOM に触れない） |
+| `getDialogAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | aria 属性バッグ | dialog セマンティクス |
+
+## 型定義
+
+```ts
+export interface LhDialogState {
+  visible: boolean
+  lockScroll: boolean
+  closeOnClickModal: boolean   // デフォルト false
+  closeOnPressEscape: boolean  // デフォルト true
+  width: string | number | undefined
+  top: string | undefined
+  zIndex: number | undefined
+  position: 'top' | 'center' | 'bottom' | undefined
+}
+```
+
+## アクセシビリティ
+
+`getDialogAria` は APG modal dialog のセマンティクスを出力します：
+
+```ts
+getDialogAria({ id: 'lh-dialog-1', titleId: 'lh-dialog-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-dialog-1', 'aria-labelledby': 'lh-dialog-title' }
+
+getDialogAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true` はスクリーンリーダーに背景が到達不能であることを伝えます（inert / focus-trap との組み合わせで初めて完全になります）。
+- **タイトルがある場合は必ず `titleId` を渡してください**；タイトルがない場合は `aria-labelledby` を出力しません。このとき UI 層は `aria-label` でフォールバックを保証してください——到達可能な名前のないダイアログは、スクリーンリーダーに空っぽの「ダイアログ」として読み上げられてしまいます。
+- フォーカス管理（UI 層）：開くときフォーカスをダイアログに入れ（最初のフォーカス可能な要素またはコンテンツ領域）、閉じるとき**トリガー要素に返します**——これがフォーカストラップの標準的な慣例です。返し忘れるとキーボードのユーザーは自分の位置を見失います。
+- **`aria-modal` は代替品ではありません**：これは単なる宣言で、本当の背景の隔離は `core/shared/focus-trap` の inert の実装に頼ります。宣言だけで隔離しない「見かけだけのモーダル」はよくある欠陥です。
+- ダイアログ内にフォームがある場合、Enter で送信 / Esc で閉じるのセマンティクスを明確にしてください（未保存の変更がある場合は Esc で閉じる前に再確認すべきです）。
+
+## 使用例
+
+```ts
+import { canClose, shouldTrapFocus, getDialogStyle } from '@lh-ui/share/core/dialog'
+
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'modalClick')  // false
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'escape')      // true
+canClose({}, 'escape')        // true（デフォルトで Esc 閉じ可）
+canClose({}, 'modalClick')    // false（デフォルトでマスククリック閉じ不可）
+
+shouldTrapFocus({ visible: true, lockScroll: true })   // true
+shouldTrapFocus({ visible: true, lockScroll: false })  // false
+shouldTrapFocus({ visible: false, lockScroll: true })  // false
+
+getDialogStyle({ top: '15vh', position: 'top', zIndex: 2000 })
+// { marginTop: '15vh', zIndex: '2000' }
+getDialogStyle({ top: '15vh', position: 'center' })
+// {}（center は flexbox で中央揃え。marginTop は重ねない）
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-dialog-fade">
+    <div v-if="visible" class="lh-dialog__wrapper" :style="{ zIndex }">
+      <div class="lh-dialog__mask" @click="onMaskClick" />
+      <div
+        :class="getDialogPopperClass({ visible })"
+        :style="getDialogStyle({ top, zIndex, position })"
+        v-bind="getDialogAria({ id: dialogId, titleId })"
+      >
+        <header class="lh-dialog__header">
+          <h3 class="lh-dialog__title" :id="titleId">{{ title }}</h3>
+          <button v-if="showClose" type="button" class="lh-dialog__close" aria-label="閉じる" @click="close">✕</button>
+        </header>
+        <div class="lh-dialog__body"><slot /></div>
+        <footer class="lh-dialog__footer"><slot name="footer" /></footer>
+      </div>
+    </div>
+  </transition>
+</teleport>
+```
+
+```ts
+function onMaskClick() {
+  if (canClose({ closeOnClickModal, closeOnPressEscape }, 'modalClick')) close()
+}
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && canClose({ closeOnClickModal, closeOnPressEscape }, 'escape')) close()
+}
+
+// フォーカストラップ（shared/focus-trap と組み合わせ）
+watch(visible, async (v) => {
+  if (v) { savedFocus = saveActiveElement(); await nextTick(); focusFirst(dialogRef.value) }
+  else { restoreActiveElement(savedFocus) }
+})
+```
+
+```tsx
+// React：トランジションは CSSTransition かヘッドレスな方式。フォーカストラップは同じ focus-trap の内核を使う
+```
+
+```ts
+// uniapp：<view> + fixed 配置；スクロールのロックは UI 層が処理（ミニプログラムに body scroll はないため、
+// scroll-view でコンテンツ領域を包んで制御する）；core の canClose / getDialogAria はそのまま使える
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-dialog__wrapper` | 外側（flex の中央揃え + zIndex） |
+| `.lh-dialog__mask` | マスク（半透明の黒） |
+| `.lh-dialog__popper` | ダイアログ本体 |
+| `.lh-dialog__popper--visible` | 展開状態（トランジションの終点） |
+| `.lh-dialog__header` / `__title` / `__close` | ヘッダー |
+| `.lh-dialog__body` | コンテンツ領域 |
+| `.lh-dialog__footer` | ボタン領域 |
+
+マスク `rgba(0, 0, 0, 0.5)`；本体は `--lh-bg-color` + `--lh-radius-base` の角丸 + シャドウ；幅は `width` prop で制御（デフォルト 50%）。
+
+## 注意事項
+
+- **`closeOnClickModal` とフォームの衝突**：フォームを含むダイアログでは明示的に `false` を（それがデフォルト値ですが）設定し、ユーザーがマスクを誤ってタップして入力を失うのを避けてください。
+- **`lockScroll` とフォーカストラップの関係**：`shouldTrapFocus` は `lockScroll` も true であることを要求します——スクロールのロックは通常、完全なモーダルを意味し、フォーカストラップはその付随する挙動です。スクロールだけロックしてフォーカスを trap しないと「Tab が背後のページに逃げる」という分裂した体験になります。
+- **ネストしたダイアログ**：内側のダイアログの zIndex は外側より高くなければならず（インクリメントするカウンタで管理）、フォーカストラップもネストして保存します（内側を閉じるときは最外側ではなく、内側のトリガー要素に返す）。
+- **`zIndex` の管理**：core は渡された値をスタイルに書き込むだけで、インクリメントはしません。UI 層はグローバルな zIndex カウンタを使ってください（message / notification との重なりの衝突を避ける）。
+- **トランジションアニメーションのマウントのタイミング**：`v-if` の切り替えは即座に DOM をアンマウントし、閉じるアニメーションには `<transition>` の組み合わせが必要です；アニメーション中に DOM が破棄されるとフォーカスの返却に失敗します——`@after-leave` で本当にアンマウントするロジックを遅らせてください。
+- **`position: 'bottom'`**：下部配置のダイアログ（モバイルの action sheet スタイル）は flexbox の flex-end アライメントになり、`top` は無効です。
+- **`width` がパーセントの場合**：`'50%'` はマスクの幅に対する相対値です。モバイルの狭い画面では `'90%'` か具体的な px に変更することを推奨します。
+
+<FnPlayground module="dialog" fn="canClose" params='{"state": {"closeOnClickModal": false, "closeOnPressEscape": true}, "reason": "escape"}' />

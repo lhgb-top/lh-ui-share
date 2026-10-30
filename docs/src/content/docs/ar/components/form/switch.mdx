@@ -1,0 +1,143 @@
+---
+title: switch —— المفتاح
+description: 'getSwitchLabel يجلب نصَي التفعيل وعدم التفعيل، و getSwitchAria يُخرج حزمة سمات الدلالة role=switch'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+المفتاح هو «عنصر تحكم ثنائي الحالة»: مفتوح أو مغلق، ولا ثالث لهما. يبدو وكأنه مربع اختيار (لأنه ثنائي الحالة)، لكن دلالته مختلفة — فمربع الاختيار يعبر عن «هل هذا الخيار محدَّد أم لا»، بينما يعبر المفتاح عن «هل هذه الميزة مُفعَّلة أم لا». وقد عرَّفت APG له الدور `role="switch"` على وجه الاختصاص.
+
+## متى يُستخدم
+
+- تُنجزه الأطراف على هيئة `LhSwitch`: إيقاف عناصر الإعدادات وتشغيلها، ومفاتيح الصلاحيات، وحالة الاشتراك.
+- العمليات الثنائية التي تحمل دلالة «أمر فوري» (يأخذ أثره بمجرد اختياره، دون انتظار الإرسال).
+- **لا ينبغي استخدامه**: للاختيار المتعدد في النماذج (مربع اختيار checkbox)؛ وللاختيار متعدد الدرجات (segmented أو radio).
+
+## طريقة الاستيراد
+
+```ts
+import { getSwitchClassNames, getSwitchLabel, getSwitchAria } from '@lh-ui/share/core/switch'
+import type { LhSwitchState } from '@lh-ui/share/core/switch'
+```
+
+## القصد التصميمي
+
+دمج `disabled || loading` في `getSwitchAria` مقصود: فالمفتاح أثناء التحميل والمفتاح المعطَّل متماثلان على مستوى إمكانية الوصول **سلوكياً** — فكلاهما غير قابل للعمل، ويجب أن يُعلن قارئ الشاشة «غير متاح» لا «متاح لكن النقر لا يأتي بنتيجة».
+
+ويُعيد `getSwitchLabel` القيمة `activeText` / `inactiveText`: فالنصان يلصقان على جانبي المفتاح المنزلق، وهو ميزة بصرية للمفتاح مقارنةً بمربع الاختيار — تُقرأ الحالة بنظرة واحدة، ولا الاعتماد على حفظ المواضع.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `getSwitchClassNames` | `(state: LhSwitchState) => string[]` | مصفوفة أسماء أصناف | مُعدِّلات checked/disabled/loading/size |
+| `getSwitchLabel` | `(state: LhSwitchState) => string` | نص | يُعيد activeText عند التحديد، وإلا inactiveText |
+| `getSwitchAria` | `(state: Pick<LhSwitchState, 'checked' \| 'disabled' \| 'loading'>) => LhAriaAttrs` | حزمة سمات aria | دلالة `role="switch"` |
+
+مثال على المخرجات:
+
+```ts
+getSwitchClassNames({ checked: true, disabled: false, loading: false, name: '', size: 'medium', activeText: '', inactiveText: '' })
+// ['lh-switch', 'lh-switch--checked']
+
+getSwitchLabel({ checked: true, activeText: 'مفتوح', inactiveText: 'مغلق' })  // 'مفتوح'
+
+getSwitchAria({ checked: true, disabled: false, loading: false })
+// { role: 'switch', 'aria-checked': true }
+
+getSwitchAria({ checked: false, disabled: false, loading: true })
+// { role: 'switch', 'aria-checked': false, 'aria-disabled': true }
+```
+
+## تعريفات الأنواع
+
+```ts
+export interface LhSwitchState {
+  checked: boolean
+  disabled: boolean
+  loading: boolean
+  name: string            // اسم المفتاح عند إرسال النموذج
+  size: LhComponentSize
+  activeText: string      // النص عند التفعيل
+  inactiveText: string    // النص عند التعطيل
+}
+```
+
+## إمكانية الوصول
+
+حزمة `getSwitchAria` هي حزمة سمات النمط switch وفق APG. **والمفتاح في الاختيار بين عنصر input الأصلي وعنصر تحكم مخصّص**:
+
+```ts
+// الخطة أ (موصى بها): <input type="checkbox"> الأصلي + role="switch" لتعزيز الدلالة
+// فدلالة checkbox التي يوفّرها المتصفح تُعزَّز بـ role="switch"،
+// ويتزامن aria-checked تلقائياً مع :checked،
+// ويأتي تبديل Space وإرسال النموذج كلها مجاناً
+<input type="checkbox" role="switch" :aria-checked="checked" />
+
+// الخطة ب: عنصر تحكم مخصَّص بالكامل (محاكاة بـ div)، فتجب إضافة كل السمات يدوياً
+// وقد أُعدَّت getSwitchAria لهذا الغرض — role + aria-checked + aria-disabled
+```
+
+وكثيراً ما تضطر الأطراف غير h5 (مثل uniapp) إلى السير وفق الخطة ب (لصعوبة تخصيص مظهر checkbox الأصلي)، وهنا تصبح `getSwitchAria` ضرورة.
+
+## أمثلة الاستخدام
+
+```ts
+import { getSwitchClassNames, getSwitchAria } from '@lh-ui/share/core/switch'
+
+getSwitchAria({ checked: true, disabled: false, loading: false })
+// { role: 'switch', 'aria-checked': true }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSwitchClassNames({ checked, disabled, loading, name, size, activeText, inactiveText })">
+  <span class="lh-switch__label lh-switch__label--left">{{ inactiveText }}</span>
+  <div class="lh-switch__core" v-bind="getSwitchAria({ checked, disabled, loading })" @click="toggle">
+    <LhSpinner v-if="loading" class="lh-switch__loading" :size="12" />
+  </div>
+  <span class="lh-switch__label lh-switch__label--right">{{ activeText }}</span>
+</div>
+```
+
+```tsx
+// React
+const aria = getSwitchAria({ checked, disabled, loading })
+return (
+  <div className="lh-switch">
+    <div className="lh-switch__core" {...aria} onClick={() => !disabled && !loading && onChange(!checked)} />
+  </div>
+)
+```
+
+```ts
+// uniapp: محاكاة المفتاح المنزلق بـ view؛ ودعم role/aria محدود خارج h5،
+// فيمكن لمخرجات getSwitchAria أن تتدهور بأمان
+// (فالخصائص ذات القيمة undefined يُهمِلها الإطار، ولا تنتج علامات غير صالحة)
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-switch` | الصنف الأساسي |
+| `.lh-switch--checked` | حالة التفعيل (ينتقل المقبض نحو الأمام، ويتلوَّن المسار باللون الرئيسي) |
+| `.lh-switch--checked__core` | مقبض حالة التفعيل (كتابة متداخلة، تجنباً للتعارض مع `--checked`) |
+| `.lh-switch--{small\|large}` | درجة الحجم |
+| `.lh-switch--disabled` / `--loading` | تعطيل / تحميل |
+| `.lh-switch__core` | المسار |
+| `.lh-switch__label` | النصان على الجانبين |
+| `.lh-switch__loading` | مؤشر التحميل spinner |
+
+لون التفعيل `var(--lh-primary-color)`، ولون التعطيل `--lh-fill-color` (رمادي محايد).
+
+مشكلة معروفة (مُدرَجة في «مشروع رموز الارتفاع»): القيمة `translate(-50%,-50%)` لمقبض المفتاح **مُكرَّرة بترميز ثابت** في القاعدة base وفي keyframes، فيلزم تعديل الموضعين معاً عند تغيير الحجم.
+
+## ملاحظات
+
+- **اتساق `aria-checked` مع المظهر**: يجب أن تتشارك حالة `checked` لدى عنصر التحكم المخصَّص المصدر نفسه مع مخرجات `getSwitchAria`، وإلا وقع «يقول aria إنه مفتوح، لكنه يبدو مغلاقاً».
+- **ابتلاع النقرات أثناء التحميل**: يجب ألّا يُبدِّل التحميل القيمة، فعلى معالِج النقر في طبقة UI أن يفحص `disabled || loading`.
+- **اتجاه النصين**: يُلصَق `activeText` على جانب التفعيل، و `inactiveText` على جانب التعطيل؛ وعند خلو النص تُطوى المساحة على الجانبين تلقائياً.
+- معيار الاختيار بين switch و checkbox: **هل يأخذ الأمر أثره فوراً؟**. فتبديل المفتاح يأخذ أثره في الحال، بينما يُرسَل مربع الاختيار عادةً مع النموذج.
+
+<FnPlayground module="switch" fn="getSwitchAria" params='{"state": {"checked": true, "disabled": false, "loading": false}}' />

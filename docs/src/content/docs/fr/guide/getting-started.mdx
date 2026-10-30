@@ -1,0 +1,119 @@
+---
+title: Démarrage
+description: "Installer @lh-ui/share, importer des fonctions pures à la demande, et les quatre façons d'importer les styles"
+---
+
+# Démarrage
+
+## Installation
+
+```bash
+pnpm add @lh-ui/share
+# ou npm i @lh-ui/share / yarn add @lh-ui/share
+```
+
+Ce package est bundlé avec `external: []` : **il n'a aucune dépendance d'exécution**, il est utilisable dès l'installation, sans avoir à peer-installer un framework au préalable.
+
+## Importer la logique (JS / TS)
+
+### Import brut : tout le package
+
+```ts
+import { lhlocale, createNamespace, LH_THEME_PRESETS } from '@lh-ui/share'
+```
+
+Entrée complète `./es/index.js` (en CJS : `./lib/index.js`). Le `sideEffects` de ce package ne déclare que `**/*.css` et `**/*.scss` ; les modules JS purs sont éligibles au tree-shaking, un import brut n'embarque donc pas de code superflu.
+
+### Import par sous-chemin : par composant (recommandé)
+
+```ts
+import { getButtonClasses, getButtonAria } from '@lh-ui/share/core/button'
+import { sxToStyle } from '@lh-ui/share/core/shared/sx'
+import { lhlocale } from '@lh-ui/share/locales'
+import { LH_THEME_PRESETS, buildPresetStyleText } from '@lh-ui/share/theme'
+```
+
+Chaque sous-chemin a ses trois conditions d'export types / import / require : un import à la demande n'embarque que les fonctions pures de ce composant. La table complète des clés est dans [Entrées du package et sous-chemins](/fr/guide/exports).
+
+## Importer les styles (quatre façons)
+
+Le champ `files` de ce package ne publie que les quatre répertoires `es / lib / dist / styles` ; les styles peuvent être importés par deux voies :
+
+### 1. Le thème complet (le plus simple)
+
+```ts
+// Uniquement les jetons, sans aucun style de composant ; taille minimale
+import '@lh-ui/share/theme.css'       // Jetons clairs (:root)
+import '@lh-ui/share/theme-dark.css'  // Surcharge sombre [data-theme='dark']
+```
+
+Idéal pour les projets qui « ne veulent que les jetons de conception et écrivent eux-mêmes les styles des composants ».
+
+### 2. Thème complet + tous les styles de composants
+
+```ts
+import '@lh-ui/share/styles.css'      // dist/styles/index.css : jetons + les 58 composants
+```
+
+`dist/index.css` est l'artefact final agrégé à la compilation : un seul import donne le rendu visuel complet.
+
+### 3. Source SCSS à la demande (le bundler doit savoir compiler le SCSS)
+
+```scss
+// Agrégat complet (jetons de thème + tous les composants)
+@use '@lh-ui/share/styles/index.scss';
+
+// Un seul composant : on ne compile que celui-ci, taille d'artefact minimale
+@use '@lh-ui/share/styles/button';
+```
+
+Le répertoire `styles/` est publié en tant que **code source** ; il est compilé à la volée par le loader sass de vite / webpack, ce qui permet de `@use` les jetons depuis le projet pour personnaliser.
+
+### 4. Importer uniquement les jetons pour une personnalisation poussée
+
+```scss
+@use '@lh-ui/share/styles/theme/common/var.scss' as *;
+
+.my-panel {
+  color: $lh-text-primary;
+  border: 1px solid $lh-border-color;
+}
+```
+
+`styles/theme/common/` exposes 183 variables SCSS `$lh-*` et 6 mixins de motifs style chinois ; voir [Jetons de conception](/fr/theme/tokens) et [Système de motifs](/fr/theme/patterns).
+
+## TypeScript
+
+Tous les sous-chemins portent la condition `types`, sans aucun paquet `@types` supplémentaire :
+
+```ts
+import type { LhThemePreset, LhThemeVars } from '@lh-ui/share/theme'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+```
+
+Les exports de types passent séparément par `./es/**/*.d.ts` ; un `import type` n'embarque pas l'implémentation dans les artefacts.
+
+## Lancer une fonction pure
+
+Aucun framework nécessaire, ça tourne dans Node :
+
+```ts
+import { getButtonClasses } from '@lh-ui/share/core/button'
+
+getButtonClasses({ size: 'small', type: 'primary', disabled: true })
+// => 'lh-button lh-button--small lh-button--primary is-disabled'
+```
+
+Envie d'essayer de façon interactive ? Chaque page de composant du site de documentation embarque un panneau **bac à sable de fonctions** : on modifie les paramètres et on voit la sortie en temps réel — par exemple le [bac à sable steps](/fr/components/navigation/steps).
+
+## Mode sombre
+
+Les composants de ce package ne basculent pas eux-mêmes le mode sombre, ils ne lisent que les variables CSS. Ajoutez l'attribut sur le nœud racine pour retourner tout le site :
+
+```html
+<html data-theme="dark">
+  <!-- ou <body class="dark"> : var-dark.scss couvre les deux sélecteurs -->
+</html>
+```
+
+Le principe et le piège de la « cuisson à la compilation » sont dans [Mode sombre](/fr/theme/dark-mode).

@@ -1,0 +1,251 @@
+---
+title: tree —— 樹
+description: 'flattenTree 扁平化、getNodeCheckState 三態、toggleCheckKeys 級聯與祖先回溯、懶載入合併、tree/treeitem 語義'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+樹是層次資料的通用容器：檔案目錄、組織架構、權限樹、級聯選單。它難在**遞迴結構的狀態管理**——展開、勾選、懶載入都是對整棵子樹的操作，還要處理循環參照資料、停用節點、半選態。`core/tree` 用純函式 + 不可變更新把這套演算法收斂下來。
+
+## 何時使用
+
+- 各端實作 `LhTree`：目錄瀏覽、權限分配、組織架構展示、分類篩選。
+- 層級資料需要展開/收起、勾選（含父子連動）、懶載入的場景。
+- **不該用它**：兩級以內的扁平分類（用級聯選擇或分段控制器更省事）；線性列表（用 `virtual-list`）。
+
+## 匯入方式
+
+```ts
+import {
+  isTreeNodeLeaf,
+  flattenTree,
+  getDescendantKeys,
+  findTreeNode,
+  getNodeCheckState,
+  collectLeafKeys,
+  toggleCheckKeys,
+  findParentNode,
+  moveTreeFocus,
+  mergeLoadedChildren,
+  isNodeLoadable,
+  getTreeClassNames,
+  getTreeNodeClassNames,
+  getTreeAria,
+  getTreeNodeAria,
+} from '@lh-ui/share/core/tree'
+import type {
+  LhTreeNode,
+  LhFlatTreeNode,
+  LhTreeCheckState,
+} from '@lh-ui/share/core/tree'
+```
+
+## 設計意圖
+
+**渲染即扁平化**：樹在 UI 上本質是一個**帶縮排層級的列表**。`flattenTree` 深度優先遍歷，只展開 `expandedKeys` 命中的子樹，輸出扁平陣列（每項帶 `level` / `parentKey` / `ancestorKeys`）。UI 層對一維陣列做 `v-for`——這比遞迴元件簡單得多，且天然相容虛擬捲動。
+
+**祖先鏈判重 vs 全域判重**：本模組的遞迴函式普遍用**祖先鏈 seen**（`ancestors` / `nextSeen` 逐層傳遞）而非全域 Set。代價是保護只在單次呼叫內有效，好處是 **DAG 裡合法共享的子樹不會被誤跳過**，且無跨實例狀態洩漏。注意這與 `table` 的 `flattenLeafColumns`（用全域 seen）的取捨不同——表格的 DAG 共享必須只發射一次（行數對齊），樹的 DAG 共享在路徑不同時應各算一次。
+
+**停用節點不進全選分母**：`collectCheckableLeafKeys` 跳過停用子樹——否則父級勾選後會因停用後代缺位而**恆顯 indeterminate**，永遠無法變成全選。這是一類真實的體驗 bug。
+
+**未載入的非葉子節點**：`isLeaf !== true` 且無 `children` 時，`collectCheckableLeafKeys` 傳回空陣列，但 `toggleCheckKeys` 會把它的**自身鍵**寫入 `checkedKeys`——懶載入場景下，使用者可以先勾選一個還沒載入孩子的節點，等載入後由 UI 層決定是否級聯。
+
+**`moveTreeFocus` 已 @deprecated**：導航演算法收斂到 `core/shared/keyboard.getNextListIndex`，本外殼保留舊簽名與「目前值無效時回退首項」的既有語義。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `isTreeNodeLeaf` | `(node) => boolean` | 是否葉子 | `isLeaf` 優先，否則按 children 推斷 |
+| `flattenTree` | `(nodes, expandedKeys, …) => LhFlatTreeNode[]` | 扁平列表 | 只展開命中的子樹 |
+| `getDescendantKeys` | `(node, seen?) => string[]` | 後代鍵 | 祖先鏈判重 |
+| `findTreeNode` | `(nodes, key, seen?) => LhTreeNode \| null` | 節點 | 深度查找 |
+| `getNodeCheckState` | `(node, checkedKeys, checkStrictly?) => LhTreeCheckState` | 三態 | 停用子樹不計入分母 |
+| `collectLeafKeys` | `(node, seen?) => string[]` | 可選葉子鍵 | 跳過停用 |
+| `toggleCheckKeys` | `(roots, checkedKeys, key, options?) => string[]` | 新勾選鍵 | 級聯 + 祖先回溯 |
+| `findParentNode` | `(nodes, key, …) => LhTreeNode \| null` | 父節點 | 頂層傳回 null |
+| `moveTreeFocus` | `(flat, currentKey, direction) => string \| null` | 目標鍵 | **@deprecated** |
+| `mergeLoadedChildren` | `(nodes, loadedMap, seen?) => LhTreeNode[]` | 新樹 | 懶載入不可變合併 |
+| `isNodeLoadable` | `(node, lazy, loadedKeys) => boolean` | 可否載入 | 未宣告葉子且未載入 |
+| `getTreeClassNames` | `(state: { showCheckbox }) => string[]` | 類別名 | 勾選模式 |
+| `getTreeNodeClassNames` | `(state) => string[]` | 類別名 | 展開/選取/停用/葉子 |
+| `getTreeAria` | `(id?) => LhAriaAttrs` | aria 屬性包 | role=tree |
+| `getTreeNodeAria` | `(options) => LhAriaAttrs` | aria 屬性包 | treeitem 全語義 |
+
+## 類型定義
+
+```ts
+export interface LhTreeNode {
+  key: string
+  label: string
+  children?: LhTreeNode[]
+  disabled?: boolean
+  isLeaf?: boolean       // 不傳按 children 推斷
+}
+
+export interface LhFlatTreeNode {
+  node: LhTreeNode
+  key: string
+  level: number                 // 0 起
+  parentKey: string | null
+  ancestorKeys: string[]        // 祖先鏈（不含自身）
+  isLeaf: boolean
+}
+
+export type LhTreeCheckState = 'checked' | 'indeterminate' | 'unchecked'
+```
+
+## 無障礙
+
+`getTreeAria` / `getTreeNodeAria` 輸出 APG treeview 模式的完整語義：
+
+```ts
+getTreeAria('lh-tree-1')  // { role: 'tree', id: 'lh-tree-1' }
+
+getTreeNodeAria({ level: 2, expanded: true, selected: true, checked: 'indeterminate' })
+// { role: 'treeitem', 'aria-level': 2, 'aria-expanded': true,
+//   'aria-selected': true, 'aria-checked': 'indeterminate' }
+
+getTreeNodeAria({ level: 1, leaf: true })
+// { role: 'treeitem', 'aria-level': 1 }  ← 葉子節點不輸出 aria-expanded
+```
+
+- `aria-level` 從 1 起（注意 `flattenTree` 的 `level` 從 0 起，傳給 aria 時 **+1**）。
+- **葉子節點不輸出 `aria-expanded`**——避免無意義的 `aria-expanded="false"`，這是 APG 的明確要求。
+- `aria-checked` 的三值：`true` / `false` / `'indeterminate'`（字串）。
+- 鍵盤互動（APG treeview）：↑/↓ 在可見節點間移動，→ 展開/進入子節點，← 收起/回到父節點，Home/End 到首末，Enter 觸發選取。
+- **扁平化後 `aria-level` 的來源**：`flattenTree` 的 `level + 1`，不要用 DOM 縮排深度反推。
+
+## 使用範例
+
+```ts
+import { flattenTree, toggleCheckKeys, getNodeCheckState } from '@lh-ui/share/core/tree'
+
+const tree = [
+  { key: '1', label: '研发部', children: [
+    { key: '1-1', label: '前端组', children: [{ key: '1-1-1', label: 'lh-ui' }] },
+    { key: '1-2', label: '后端组' },
+  ]},
+  { key: '2', label: '产品部' },
+]
+
+flattenTree(tree, ['1'])
+// [研發部(l0), 前端組(l1), 後端組(l1), 產品部(l0)]
+// 注意 1-1-1 未出現：因為 '1-1' 不在 expandedKeys 裡
+
+flattenTree(tree, ['1', '1-1'])
+// [研發部, 前端組, lh-ui(l2), 後端組, 產品部]
+
+toggleCheckKeys(tree, [], '1')
+// ['1', '1-1', '1-1-1', '1-2']（級聯全選後代，含自身）
+
+toggleCheckKeys(tree, ['1', '1-1', '1-1-1', '1-2'], '1-1-1')
+// ['1-2']  —— 取消 '1-1-1' 後級聯回溯：'1-1' 不再全選被移除，
+// '1' 也不再全選被移除（回溯會一直走到根）
+
+toggleCheckKeys(tree, ['1-1'], '1-2')
+// ['1-1', '1-2']  —— 只回溯祖先，不動其它分支
+
+getNodeCheckState(tree[0], ['1', '1-1', '1-1-1', '1-2'])  // 'checked'（可選葉子全中）
+getNodeCheckState(tree[0], ['1-1-1'])                      // 'indeterminate'（兩個可選葉子中一個）
+getNodeCheckState(tree[0], ['1-1'])                        // 'unchecked'（'1-1' 不是葉子，不計數）
+getNodeCheckState(tree[0], [])                             // 'unchecked'
+```
+
+```vue
+<!-- Vue3：扁平化 + 虛擬捲動友好的渲染 -->
+<div :class="getTreeClassNames({ showCheckbox })" v-bind="getTreeAria(treeId)">
+  <div
+    v-for="item in flatNodes"
+    :key="item.key"
+    class="lh-tree-node-row"
+    :style="{ paddingLeft: item.level * 18 + 'px' }"
+  >
+    <div
+      :class="getTreeNodeClassNames({
+        expanded: expandedKeys.includes(item.key),
+        selected: selectedKey === item.key,
+        disabled: item.node.disabled,
+        leaf: item.isLeaf,
+      })"
+      role="treeitem"
+      :aria-level="item.level + 1"
+      :aria-expanded="item.isLeaf ? undefined : expandedKeys.includes(item.key)"
+      @click="onSelect(item)"
+    >
+      <span v-if="!item.isLeaf" class="lh-tree-node__arrow" @click.stop="onToggle(item)">
+        {{ expandedKeys.includes(item.key) ? '▾' : '▸' }}
+      </span>
+      <input
+        v-if="showCheckbox"
+        type="checkbox"
+        :checked="checkState(item) === 'checked'"
+        :indeterminate.prop="checkState(item) === 'indeterminate'"
+        :disabled="item.node.disabled"
+        @change="onCheck(item)"
+      />
+      <span class="lh-tree-node__label">{{ item.node.label }}</span>
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// 勾選接線
+function onCheck(item: LhFlatTreeNode) {
+  checkedKeys.value = toggleCheckKeys(props.data, checkedKeys.value, item.key, { checkStrictly })
+}
+function checkState(item: LhFlatTreeNode) {
+  return getNodeCheckState(item.node, checkedKeys.value, checkStrictly)
+}
+```
+
+```ts
+// 懶載入
+async function onLoad(item: LhFlatTreeNode) {
+  if (!isNodeLoadable(item.node, lazy, loadedKeys.value)) return
+  loadingKeys.value = [...loadingKeys.value, item.key]
+  const children = await fetchChildren(item.key)
+  loadedMap.value = { ...loadedMap.value, [item.key]: children }
+  loadedKeys.value = [...loadedKeys.value, item.key]
+  // 不可變合併後重新扁平化
+}
+const merged = computed(() => mergeLoadedChildren(props.data, loadedMap.value))
+```
+
+```tsx
+// React：expandedKeys / checkedKeys / selectedKey 都是受控狀態；
+// flatNodes = useMemo(() => flattenTree(merged, expandedKeys), [merged, expandedKeys])
+```
+
+```ts
+// uniapp：<view> + 縮進 padding；core 全部函數端無關，照用
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-tree` | 基礎類 |
+| `.lh-tree--checkbox` | 勾選模式（節點內邊距給 checkbox 留位） |
+| `.lh-tree-node` | 節點 |
+| `.lh-tree-node--expanded` | 展開（箭頭旋轉） |
+| `.lh-tree-node--selected` | 選取（主色背景） |
+| `.lh-tree-node--disabled` | 停用 |
+| `.lh-tree-node--leaf` | 葉子（箭頭佔位收起） |
+| `.lh-tree-node__arrow` / `__label` | 展開箭頭 / 文字 |
+
+縮排由 UI 層的 `paddingLeft: level * 18px` 實作（core 不管像素），選取背景 `--lh-primary-color-light`，箭頭 `--lh-text-color-secondary`。
+
+## 注意事項
+
+- **`level` 從 0 起，`aria-level` 從 1 起**——這是本模組最容易錯的地方，綁 `aria-level` 時務必 `+1`。
+- **祖先鏈判重的有效範圍**：保護只在單次呼叫內有效。同一棵樹上的兩次獨立 `findTreeNode` 呼叫各自判重，共享子樹會被遍歷兩次——這是有意的（DAG 合法共享），不是 bug。
+- **`checkStrictly`（父子不連動）**：`getNodeCheckState` 變二態、`toggleCheckKeys` 只改自身鍵、不回溯祖先。權限分配場景常用。
+- **停用節點的級聯不變數**：`toggleCheckKeys` 的祖先回溯跳過停用父級——其鍵不被級聯改寫。若業務需要「停用父節點仍可被程式化選取」，直接操作 `checkedKeys` 而非用本函式。
+- **`isLeaf` 優先於 `children`**：宣告了 `isLeaf: true` 的節點即使有 `children` 也按葉子處理（懶載入場景常用：宣告葉子阻止展開）。
+- **`mergeLoadedChildren` 的不可變性**：傳回新樹，不修改傳入的 `nodes`——props.data 由使用方持有，直接改會破壞單向資料流。
+- **`flattenTree` 的效能**：每次 expandedKeys 變化都全量重算。深層級 + 大資料量時考慮對子樹做 memo（UI 層按 parentKey 分組快取）。
+- **循環參照資料**：所有遞迴函式都有祖先鏈判重保護，不會無限遞迴——但**資料本身有環本身就是錯誤**，判重只是不讓它崩。
+
+<FnPlayground module="tree" fn="getNodeCheckState" params='{"node": {"key": "1", "label": "研发部", "children": [{"key": "1-1", "label": "前端组"}, {"key": "1-2", "label": "后端组"}]}, "checkedKeys": ["1-1"], "checkStrictly": false}' />

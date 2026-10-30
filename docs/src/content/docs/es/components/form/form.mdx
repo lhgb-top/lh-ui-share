@@ -1,0 +1,225 @@
+---
+title: form —— Formulario
+description: 'motor de reglas validateFormField (lo asíncrono no se cortocircuita), lectura por ruta de puntos con getFormFieldValue, asociación de errores con getFormFieldAria'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El control de formulario en sí no recoge datos — **la validación y la asociación de errores** son el verdadero valor del formulario. `core/form` ofrece tres cosas: un motor de reglas (`validateFormField`), un lector de valores (`getFormFieldValue`, con rutas de puntos) y un conjunto de bolsas de atributos de asociación de errores (`getFormFieldAria`). Deliberadamente **no incluye la orquestación del formulario completo** (registro de campos, momento del envío, reseteo): esa es responsabilidad del componente `LhForm` en la capa UI.
+
+## Cuándo usarlo
+
+- Cada framework implementa `LhForm` / `LhFormItem`: cualquier escenario de entrada que requiera validación.
+- Escenarios en los que hay que asociar los errores de validación a los lectores de pantalla (`aria-invalid` + `aria-describedby`).
+- **No usarlo para**: validación simple de un único campo, sin dependencias entre campos (puede bastar con el `required` que trae el control); cuando necesitas un grafo complejo de dependencias entre campos (del tipo «si A es x, entonces B es obligatorio y C debe ser igual a D»), exprésalo con una función `validator` personalizada y no intentes combinar múltiples reglas integradas.
+
+## Importación
+
+```ts
+import {
+  getFormFieldValue,
+  isEmptyValue,
+  validateFormField,
+  getFormFieldErrorId,
+  getFormFieldAria,
+} from '@lh-ui/share/core/form'
+import type { LhFormRule, LhFormState } from '@lh-ui/share/core/form'
+```
+
+## Intención de diseño
+
+**Las tres decisiones clave del motor de reglas**:
+
+1. **Un valor vacío solo se ocupa de required** — cuando el campo no es obligatorio y el valor está vacío, **se saltan todas las reglas**, en consonancia con el convenio de las bibliotecas principales (Element / Ant Design): si no se ha rellenado, no hay error. Esto significa que `type: 'email'` no reporta «formato de correo incorrecto» para la cadena vacía — la intención de obligatoriedad se expresa con `required`.
+
+2. **Las reglas asíncronas no se cortocircuitan** — esta es la diferencia de comportamiento frente a la implementación antigua y el punto más sutil del módulo. Un `validator` puede devolver una Promise. La implementación antigua, al encontrar el primer thenable, **se saltaba todas las reglas siguientes**, de modo que «la validación de longitud posterior a una comprobación asíncrona de correo se perdía». La nueva envuelve cada regla en una función de evaluación perezosa (`RuleCheck`): al encontrar un thenable se suspende y **se continúa evaluando las reglas siguientes**, para al final incorporar todos los errores a la misma Promise resumida. El primer error síncrono sigue devolviéndose de inmediato (se cortocircuita el error síncrono, no las reglas asíncronas).
+
+3. **Un validator que lanza síncronamente se trata como fallo de validación** — se toma `error.message` como texto del error y no se propaga como excepción no capturada. Cuando el usuario escribe mal un validador personalizado (y lanza un TypeError), el formulario se comporta como «este campo ha fallado la validación» en lugar de romper la página.
+
+**La prioridad del mensaje de required**: con valor vacío, se busca primero «una regla de obligatoriedad que haya proporcionado un message explícito» y, en caso contrario, se toma la primera regla de obligatoriedad. Este tratamiento corrige un bug real: la capa del componente (form item) sintetiza una regla `{ required: true }` sin message cuando la propiedad `required` es verdadera; si esa regla sintetizada queda por delante de la regla con message del usuario, el `find` da con ella y retrocede al texto genérico, **tragándose el texto personalizado del usuario**.
+
+**La ruta de puntos de `getFormFieldValue`**: `'user.address.city'` se reduce nivel a nivel; si a mitad de camino se encuentra un no-objeto (null / un valor primitivo) devuelve undefined sin lanzar excepciones. Así, los campos del formulario pueden vincularse directamente al modelo anidado, sin que la capa UI tenga que aplanar los datos a mano.
+
+**El criterio de `isEmptyValue`**: undefined / null / la cadena vacía / el array vacío cuentan como vacío; **la cadena de espacios y el objeto vacío no** — la semántica de los espacios la decide la capa del componente recortándolos (trim) antes de pasar el valor si procede; core no toma esa decisión por el negocio.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `getFormFieldValue` | `(model, prop: string) => unknown` | valor del campo | ruta de puntos; si falta, undefined |
+| `isEmptyValue` | `(value: unknown) => boolean` | si está vacío | cuatro estados de vacío |
+| `validateFormField` | `(value, rules?, model, requiredMessage?) => string \| undefined \| Promise<string \| undefined>` | texto del error / undefined | motor de reglas |
+| `getFormFieldErrorId` | `(prop: string) => string` | id del elemento | correspondencia con aria-describedby |
+| `getFormFieldAria` | `(options: { prop, error?, required? }) => LhAriaAttrs` | bolsa de atributos aria | invalid + describedby + required |
+
+## Definiciones de tipos
+
+```ts
+export interface LhFormRule {
+  required?: boolean
+  message?: string
+  trigger?: string  // momento de disparo (blur / change / submit); core no lo interpreta,
+                    // la capa UI filtra las reglas según el evento
+  /** Validación de tipo integrada; el valor vacío se salta (misma regla que required) */
+  type?: 'string' | 'number' | 'boolean' | 'array' | 'email' | 'url'
+  pattern?: string | RegExp       // expresión regular (solo aplica a valores de cadena)
+  min?: number                    // límite inferior numérico, o longitud mínima de string/array
+  max?: number                    // límite superior numérico, o longitud máxima de string/array
+  len?: number                    // longitud exacta (string/array)
+  /** Validador personalizado: devuelve el texto del error; si pasa, no devuelve nada;
+      admite asíncronía */
+  validator?: (value: unknown, model: Record<string, unknown>) => string | undefined | Promise<string | undefined>
+}
+
+export interface LhFormState {
+  model: Record<string, unknown>
+  rules?: Record<string, LhFormRule[]>
+}
+```
+
+**La doble semántica de `min` / `max`** es una comodidad de diseño: los valores numéricos se comparan por magnitud y las cadenas y arrays, por longitud. El precio es un tipo menos preciso, pero la ganancia en sencillez de configuración de las reglas es mayor (`{ min: 6, message: 'Mínimo 6 caracteres' }` sirve igual para una contraseña que para un número de personas).
+
+## Accesibilidad
+
+`getFormFieldAria` es el **último kilómetro** de la accesibilidad del formulario: cuando falla la validación, asocia el mensaje de error al control y el lector de pantalla anuncia «entrada inválida, el error es…».
+
+```ts
+getFormFieldAria({ prop: 'username', error: 'El nombre de usuario es obligatorio', required: true })
+// { 'aria-invalid': true, 'aria-describedby': 'lh-form-error-username', 'aria-required': true }
+
+getFormFieldAria({ prop: 'username', required: true })
+// { 'aria-required': true } (sin error, no se asocia un elemento de aviso vacío)
+
+getFormFieldAria({ prop: 'username' })
+// {} (objeto vacío cuando no hay estado)
+```
+
+Convenios complementarios:
+
+- El elemento del mensaje de error debe renderizarse con el id que da `getFormFieldErrorId(prop)` — hacia él apunta `aria-describedby`.
+- **La temporización de `aria-describedby`**: el atributo solo se emite cuando error tiene valor (para evitar referenciar un elemento vacío inexistente), de modo que la bolsa de atributos y el texto del error deben actualizarse en el mismo fotograma.
+- Los campos `required` emiten `aria-required`, para que el lector de pantalla anuncie «obligatorio» al entrar en el control.
+- El significado de `trigger` en accesibilidad: una validación disparada por blur no debe interrumpir al usuario a mitad de la entrada (reportar un error con cada carácter pulsado es una experiencia pésima); el disparo por change encaja en escenarios ligeros de «validar al introducir».
+
+## Ejemplos de uso
+
+```ts
+import { validateFormField, isEmptyValue, getFormFieldValue } from '@lh-ui/share/core/form'
+
+isEmptyValue('')           // true
+isEmptyValue([])           // true
+isEmptyValue('  ')         // false (la cadena de espacios no cuenta como vacío)
+isEmptyValue({})           // false (el objeto vacío no cuenta como vacío)
+isEmptyValue(0)            // false (¡0 es un valor válido!)
+
+getFormFieldValue({ user: { name: 'lh' } }, 'user.name')   // 'lh'
+getFormFieldValue({ user: null }, 'user.name')             // undefined (un no-objeto a mitad de camino)
+getFormFieldValue({}, 'missing')                           // undefined
+```
+
+```ts
+// Obligatorio
+validateFormField('', [{ required: true, message: 'El nombre de usuario es obligatorio' }], {})
+// 'El nombre de usuario es obligatorio'
+
+// Valor vacío no obligatorio: se saltan todas las reglas
+validateFormField('', [{ required: false, type: 'email', message: 'Formato de correo incorrecto' }], {})
+// undefined
+
+// Tipo integrado + longitud
+validateFormField('ab', [{ min: 6, message: 'Mínimo 6 caracteres' }], { username: 'ab' })
+// 'Mínimo 6 caracteres'
+
+// Expresión regular
+validateFormField('123', [{ pattern: /^\d{4}$/, message: '4 dígitos' }], {})
+// '4 dígitos'
+
+// Validador síncrono personalizado
+validateFormField('abc', [{
+  validator: (v) => (v as string).includes('@') ? undefined : 'Debe contener @',
+}], {})
+// 'Debe contener @'
+
+// Validador personalizado que lanza: se trata como fallo de validación
+validateFormField('x', [{ validator: () => { throw new Error('El validador ha explotado') } }], {})
+// 'El validador ha explotado'
+
+// Validador asíncrono (sin cortocircuito: las reglas síncronas siguientes siguen evaluándose)
+validateFormField('ab', [
+  { validator: async (v) => await checkUnique(v) ? undefined : 'Ya está en uso', message: 'x' },
+  { min: 6, message: 'Mínimo 6 caracteres' },
+], {})
+// Promise<[el primer error entre 'Ya está en uso' y 'Mínimo 6 caracteres']>
+```
+
+```vue
+<!-- Vue3: el cableado típico de un form-item -->
+<script setup>
+const error = ref('')
+async function validate(trigger: string) {
+  const rules = (props.rules ?? []).filter((r) => !r.trigger || r.trigger === trigger)
+  error.value = (await validateFormField(
+    getFormFieldValue(props.model, props.prop),
+    rules,
+    props.model,
+    t('form.required'),
+  )) ?? ''
+}
+</script>
+
+<template>
+  <div class="lh-form-item" :class="{ 'is-error': error }">
+    <label class="lh-form-item__label" :for="inputId">{{ label }}</label>
+    <div class="lh-form-item__content">
+      <slot :aria-props="getFormFieldAria({ prop, error, required })" />
+      <p
+        v-if="error"
+        :id="getFormFieldErrorId(prop)"
+        class="lh-form-item__error"
+        role="alert"
+      >
+        {{ error }}
+      </p>
+    </div>
+  </div>
+</template>
+```
+
+```tsx
+// React: la bolsa de atributos se pasa transparentemente al control envuelto
+// <input {...getFormFieldAria({ prop, error, required })} aria-describedby={error ? getFormFieldErrorId(prop) : undefined} />
+```
+
+```ts
+// uniapp: la capa core es totalmente utilizable; ten en cuenta que, fuera de h5, el
+// soporte de atributos de aria es limitado y el texto del error se apoya sobre todo en
+// lo visual + role="alert"
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-form` | contenedor del formulario |
+| `.lh-form--inline` | layout en línea (label y control en la misma línea) |
+| `.lh-form--label-top` / `--label-left` / `--label-right` | posición del label |
+| `.lh-form-item` | elemento de campo |
+| `.lh-form-item.is-error` | validación fallida (borde rojo del control) |
+| `.lh-form-item__label` | etiqueta (el asterisco de obligatorio lo renderiza `::before`) |
+| `.lh-form-item__content` | zona del control |
+| `.lh-form-item__error` | mensaje de error (`role="alert"`) |
+| `.lh-form-item__required` | asterisco de obligatorio |
+
+Color de error `--lh-danger-color`; el asterisco de obligatorio, del mismo color. La anchura del label la controla el token `--lh-form-label-width` (base de alineación cuando está alineado a la derecha).
+
+## Advertencias
+
+- **`0` / `false` no son valores vacíos**: `isEmptyValue(0)` devuelve false. Es la trampa más frecuente — «cantidad 0» es una entrada válida y `required` no debería reportar error. Igualmente, `false` es un valor válido para una casilla de verificación.
+- **El segundo parámetro de `validator` es el modelo completo**: la validación entre campos (como confirmar la contraseña) lo usa; no captures un valor antiguo en el cierre.
+- **El antirrebote de la validación asíncrona**: cuando el `validator` hace una petición, la capa UI debe aplicar antirrebote (habitualmente 300 ms) y gestionar la carrera de «la petición regresa cuando el campo ya ha cambiado de valor» — core no gestiona eso; devolver un texto de error caducado es problema del llamador.
+- **`trigger` lo interpreta la capa UI**: core solo lo transporta en la declaración y no lo consume. La capa del componente filtra las reglas según el evento (blur/change/submit) antes de pasarlas a `validateFormField`.
+- **`requiredMessage` es el texto genérico de respaldo**: normalmente viene del paquete de idioma (`form.required`) y solo se usa cuando el `message` de la regla es undefined; una cadena vacía explícita `message: ''` también se usa tal cual (no se trata como ausente).
+- **El primer error entre varias reglas**: las reglas síncronas se cortocircuitan (se devuelve el primer acierto) y las asíncronas se evalúan todas y se toma el primer error resuelto. El orden de presentación de los errores coincide con el del array de reglas.
+- **El prop de los campos anidados**: `'user.name'` sirve a la vez para leer el valor y para generar el id del error (`lh-form-error-user.name`) — el punto del id hay que escaparlo en los selectores de CSS; ten cuidado al usar `document.getElementById` o `querySelector`.
+
+<FnPlayground module="form" fn="validateFormField" params='{"value": "ab", "rules": [{"min": 6, "message": "Mínimo 6 caracteres"}], "model": {}}' />

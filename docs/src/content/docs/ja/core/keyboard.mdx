@@ -1,0 +1,254 @@
+---
+title: keyboard —— キーボードナビゲーションアルゴリズム
+description: 'LH_KEYS キー定数、リスト / グリッド / range の 3 つのナビゲーションアルゴリズムと type-ahead。select / menu / tree / tabs が共有'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+アクセシブルなコンポーネントのキーボード操作には標準解があります（APG の listbox / menu /
+grid pattern）。しかし「上キーでどの項目に跳ぶか」という計算は、select / menu / tree / tabs /
+segmented でそれぞれ書けばそれぞれ間違えます。`shared/keyboard` はそれを純関数にします：
+入力は「リスト + 現在のインデックス + 方向」、出力は「対象のインデックス」。
+
+**core 層は一切のキーを購読しません**——キーボードイベントの購読は UI 層の仕事です
+（Vue3 の `@keydown`、React の `onKeyDown`）。本モジュールは判定と計算だけを提供します。
+
+## インポート方法
+
+```ts
+import {
+  LH_KEYS,
+  isActivationKey,
+  getNextListIndex,
+  getNextGridCell,
+  getNextRangeValue,
+  findTypeAheadIndex,
+  getRovingTabIndex,
+  type LhListNavigationOptions,
+} from '@lh-ui/share/core/shared/keyboard'
+```
+
+## 定数と型
+
+```ts
+// キー名の定数（KeyboardEvent.key）、UI 層はもう生の文字列リテラルを書いてはならない
+export const LH_KEYS = {
+  Escape: 'Escape',
+  Enter: 'Enter',
+  Space: ' ',          // 注意：値は半角スペース 1 つ
+  ArrowUp: 'ArrowUp',
+  ArrowDown: 'ArrowDown',
+  ArrowLeft: 'ArrowLeft',
+  ArrowRight: 'ArrowRight',
+  Home: 'Home',
+  End: 'End',
+  Tab: 'Tab',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
+} as const
+
+// 実際のイベントでも生の key 値でも受け取れる（純関数のテストに必要）
+export type LhKeyEvent = KeyboardEvent | { key: string }
+
+// ナビゲーション方向：数値オフセットまたは先頭 / 末尾のセンチネル
+export type LhListDirection = 1 | -1 | 'first' | 'last'
+
+// リスト項目の最小制約：無効フラグのみ、具体的な形は呼び出し側が提供
+export interface LhListItem {
+  disabled?: boolean
+}
+
+export interface LhListNavigationOptions<T = unknown> {
+  loop?: boolean                    // 先頭 / 末尾でのループ、デフォルト true
+  skipDisabled?: boolean            // 無効項目をスキップ、デフォルト true
+  isDisabled?: (item: T) => boolean // カスタム無効判定、デフォルトは item.disabled を読む
+}
+
+export interface LhGridNavOptions {
+  cols: number                      // 1 行あたりの列数
+  total: number                     // グリッドの総セル数
+  loop?: boolean                    // 行内 / 全体のループ、デフォルト false（境界で null を返し UI 層にページングを任せる）
+}
+
+export interface LhRangeNavOptions {
+  min: number
+  max: number
+  step: number                      // 方向キーのステップ；非有限または ≤0 は 1 に退化し境界クランプのみ行う
+  pageStep?: number                 // PageUp / PageDown のステップ、デフォルト max(step, (max-min)/10)
+}
+```
+
+## 関数表
+
+### キー判定
+
+| 関数 | シグネチャ | 役割 |
+| --- | --- | --- |
+| `isActivationKey` | `(e: LhKeyEvent) => boolean` | Enter または Space |
+| `isArrowKey` | `(e: LhKeyEvent) => boolean` | 4 方向キー |
+| `isEscapeKey` | `(e: LhKeyEvent) => boolean` | Escape（ポップアップ層の閉鎖） |
+| `isHomeOrEndKey` | `(e: LhKeyEvent) => boolean` | Home / End（リストの先頭 / 末尾へジャンプ） |
+| `isSpaceKey` | `(e: LhKeyEvent) => boolean` | スペース（Enter と区別が必要な場面、スクロールコンテナ内のページングなど） |
+| `isHorizontalArrowKey` | `(e: LhKeyEvent) => boolean` | 水平方向キー |
+| `isVerticalArrowKey` | `(e: LhKeyEvent) => boolean` | 垂直方向キー |
+
+`isHorizontalArrowKey` / `isVerticalArrowKey` は**物理キーの判定だけを行います**——RTL
+レイアウトで「左」が「前」を表すか「次」を表すかは UI 層のセマンティクスで、アルゴリズムは
+代わりに反転しません。
+
+### ナビゲーション計算
+
+| 関数 | シグネチャ | 役割 |
+| --- | --- | --- |
+| `getNextListIndex` | `<T>(items, current, direction, options?) => number` | 汎用リストナビゲーション、対象インデックスを返す |
+| `findTypeAheadIndex` | `(labels: string[], query: string, startIndex?) => number` | type-ahead の先頭文字マッチ |
+| `getRovingTabIndex` | `<T>(items, activeIndex) => number` | roving tabindex：tabindex 0 にすべきインデックスを返す |
+| `getNextGridCell` | `(current, key, opts: LhGridNavOptions) => number \| null` | 二次元グリッドナビゲーション（日付グリッド、月グリッド） |
+| `getNextRangeValue` | `(current, key, opts: LhRangeNavOptions) => number` | range コントロールのナビゲーション（slider のキーボードステップ） |
+
+### getNextListIndex の戻り値のセマンティクス
+
+ここは最も誤用しやすいので、個別に説明します：
+
+| 状況 | 戻り値 |
+| --- | --- |
+| `'first'` / `'last'` | 最初 / 最後の**有効**項目へ直行 |
+| 通常の移動 | 対象インデックス |
+| ループせずすでに境界 | **境界で停止**（境界インデックスを返し、-1 ではない） |
+| 空リスト / `skipDisabled` で全項目無効 | `-1`（利用可能な項目なし） |
+| 境界項目のみ無効で境界にいる | `-1` |
+| `current` が範囲外または `-1` | 「未選択」として扱う：正方向は先頭項目、負方向は末尾項目 |
+
+**ループしないときは「終わりに達した」を表す -1 を返しません**——境界インデックスを返し、
+フォーカスはその項目に留まります。UI 層はそれに基づいて `preventDefault` するか決めます。
+-1 になるのは「本当に選択可能な項目がない」場合だけです。
+
+### getRovingTabIndex が返すのはインデックス
+
+関数名は誤解を招きやすいですが、**「tabindex 0 にすべき項目のインデックス」を返します**。
+tabindex の値そのものではありません。呼び出し側はそれに基づいて値を書き込みます：
+
+```ts
+const activeIndex = getRovingTabIndex(items, selectedIndex)
+items.forEach((item, i) => (item.tabindex = i === activeIndex ? 0 : -1))
+```
+
+これにより、グループ全体に**常に Tab で入れるアンカーが 1 つある**ことが保証されます。
+`activeIndex` に利用可能な項目がないときは最初の有効項目へフォールバックし、グループ全体が
+-1 になってキーボードで入れなくなる事態は起きません。
+
+### findTypeAheadIndex のマッチ規則
+
+- 項目ラベルが**クエリ文字列で始まれば**ヒット（大文字小文字は区別しない）。
+- `startIndex` の**後ろから**ラップアラウンドして検索（デフォルト `-1`、先頭から開始）。
+- 複数文字の蓄積に対応：ユーザーが `zh` と素早く打つと、UI 層は 500ms 以内にクエリ文字列を
+  蓄積し、タイムアウトでクリアします。
+- マッチなし / `query` が空 / `labels` が空 → `-1`。
+
+### getNextGridCell の行をまたぐ流れ
+
+ArrowRight は**行末で次の行の先頭へ流れます**（ビューポート内の連続移動で、グリッド境界を
+丸ごと越えたときだけ `null` を返します）。ArrowDown / ArrowUp は `±cols` の垂直移動。
+Home / End は**行頭 / 行末**です（最終行が `cols` に満たないときの行末は `total` に収束し、
+グリッド外へ跳ぶことはありません）。
+
+非ナビゲーションキー、ループなしでの範囲外、`current` の範囲外、`cols` / `total` ≤ 0 → `null`。
+
+`loop` のデフォルトが `false` なのは意図的です：日付パネルで「右へ越境」は通常**翌月への
+切り替え**を意味し、この判断は UI 層が行います。アルゴリズムは「終わりに達した」とだけ言います。
+
+### getNextRangeValue はクランプのみ、丸めなし
+
+```ts
+getNextRangeValue(25, 'ArrowUp', { min: 0, max: 100, step: 10 })
+// 25 + 10 = 35（step への整列はしない）
+```
+
+**なぜ丸めないのか**：現在値が 25（ユーザーがドラッグして出した未整列の値）の場合、丸める
+アルゴリズムはまず 30 に跳び、次に 40 へ跳び、2 回跳んだように見えます。クランプ + ステップ
+のみを行い、整列はコンポーネント層が localValue を書き込むときに保証します（ドラッグを
+離したときに目盛りへスナップ）。
+
+非ナビゲーションキーは**`current` をそのまま返します**——呼び出し側はそれに基づいて「この
+キー押下を処理すべきか」を判断し、`preventDefault` するか決めます。
+
+## 使用例
+
+### select のキーボードナビゲーション（roving tabindex + list nav）
+
+```ts
+function onKeydown(e: KeyboardEvent) {
+  if (isArrowKey(e)) {
+    e.preventDefault()
+    const next = getNextListIndex(
+      options.value,
+      selectedIndex.value,
+      e.key === LH_KEYS.ArrowDown ? 1 : -1,
+      { loop: true },
+    )
+    if (next !== -1) selectedIndex.value = next
+  } else if (isHomeOrEndKey(e)) {
+    selectedIndex.value = getNextListIndex(
+      options.value,
+      -1,
+      e.key === LH_KEYS.Home ? 'first' : 'last',
+    )
+  } else if (isActivationKey(e)) {
+    open.value = !open.value
+  } else if (isEscapeKey(e)) {
+    open.value = false
+  }
+}
+```
+
+### date-picker の日付グリッド
+
+```ts
+const next = getNextGridCell(focusedIndex.value, e.key, {
+  cols: 7,                    // 1 週間は 7 日
+  total: daysInMonth.value,   // 今月の日数
+})
+if (next === null) {
+  // 範囲外 → 前月 / 翌月へ切り替え（UI 層が決定）
+  switchMonth(e.key === LH_KEYS.ArrowRight ? 1 : -1)
+} else {
+  focusedIndex.value = next
+}
+```
+
+### slider のキーボードステップ
+
+```ts
+if (isArrowKey(e) || isHomeOrEndKey(e) || e.key === LH_KEYS.PageUp || e.key === LH_KEYS.PageDown) {
+  e.preventDefault()
+  modelValue.value = getNextRangeValue(modelValue.value, e.key, {
+    min: props.min,
+    max: props.max,
+    step: props.step,
+  })
+}
+```
+
+### 文字入力ナビゲーション
+
+```ts
+// クエリ文字列の蓄積（UI 層が 500ms のタイムアウトを維持）
+typeAheadBuffer.value += e.key
+const idx = findTypeAheadIndex(labels, typeAheadBuffer.value, selectedIndex.value)
+if (idx !== -1) selectedIndex.value = idx
+```
+
+## 注意事項
+
+- **購読は UI 層で**：`onKeydown` の配線、`preventDefault` のタイミング、フォーカス移動後の
+  `focus()` 呼び出しは、各フレームワークコンポーネントの責任です。core は計算結果を返すだけです。
+- **RTL レイアウト**：左右方向キーのセマンティクス反転は UI 層が呼び出し前に `direction` を
+  反転して実現し、アルゴリズム自体は物理キーのセマンティクスを保ちます。
+- **`isDisabled` のデフォルト**：`item.disabled` を読み、読めなければ無効でないとみなします
+  ——`{}` 型の項目を渡すと全項目がナビゲート可能になります。
+- **空リストの安全**：すべてのナビゲーション関数は空リストに対して `-1` / `null` を返します。
+  UI 層が判定すればよく、例外は投げません。
+
+<FnPlayground module="keyboard" fn="getNextListIndex" params='{"items": [{"disabled": false}, {"disabled": true}, {"disabled": false}, {"disabled": false}], "current": 0, "direction": 1, "options": {"loop": true}}' />

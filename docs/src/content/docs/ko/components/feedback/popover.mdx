@@ -1,0 +1,175 @@
+---
+title: popover —— 팝오버
+description: '조작 가능한 콘텐츠를 담는 플로팅 레이어: hover 이탈의 100ms 숨김 지연, role=dialog + aria-labelledby, aria-haspopup 트리거 의미'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Popover는 "물건을 넣을 수 있는 tooltip"입니다: 힌트 안에 버튼, 폼, 메뉴, 이미지가 있을 수 있습니다. tooltip을 대체하지 않습니다——tooltip은 순수 텍스트만 넣을 수 있고 조작을 금지합니다; dialog도 대체하지 않습니다——dialog는 모달이고 포커스를 탈취합니다. `core/popover`는 tooltip과 마찬가지로 얇으며, 차이는 전부 **조작 무게**에 있습니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `<LhPopover>`: 카드형 상세, 필터 패널, 인라인 폼, 작업 버튼 그룹.
+- 사용자가 플로팅 레이어 안에 **머물며 조작**해야 하는 상황.
+- **사용하면 안 되는 경우**: 순수 텍스트 한 줄 힌트 (`tooltip` 사용, 더 가볍고 절제됨); 사용자 흐름을 중단해야 하는 강제 확인 (`dialog` 사용, 모달); 이차 확인 작업 (`popconfirm` 사용, 의미가 더 정확함).
+
+## 임포트 방법
+
+```ts
+import {
+  LH_POPOVER_TRIGGERS,
+  LH_POPOVER_PLACEMENT_DEFAULT,
+  getPopoverClass,
+  getPopoverWidthStyle,
+  getPopoverTriggerAria,
+  getPopoverPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+import type { LhPopoverTrigger, LhPopoverState } from '@lh-ui/share/core/popover'
+```
+
+## 설계 의도
+
+**100ms 숨김 지연이 존재하는 이유**: tooltip의 숨김은 0ms입니다 (이탈 즉시 사라짐), popover는 100ms를 남깁니다——**포인터가 트리거에서 플로팅 레이어 안으로 걸어 들어갈 수 있도록**. 마우스가 트리거에서 플로팅 레이어로 옮겨가는 동안 짧게 트리거 요소를 벗어나게 되는데, 0ms 지연이면 이동 중간에 플로팅 레이어가 닫혀 사용자가 들어갈 수 없습니다. 이것이 popover의 조작 가능성에서 비롯된 직접적인 제약입니다.
+
+**`LH_POPOVER_TRIGGERS`를 검증 상수로 사용**: 트리거 방식은 유한한 열거 (click/hover/focus/manual)이며, readonly 배열로 내보내 UI 계층의 props 검증 (Vue의 validator, React의 런타임 어서션)에 씁니다. 동시에 TS 타입의 런타임 대응물이기도 합니다.
+
+**`"tooltip"`이 아닌 `role="dialog"`**: WAI-ARIA는 tooltip 안에 조작 요소를 둘 수 없다고 규정하며, 조작 가능한 플로팅 레이어는 반드시 dialog 의미여야 합니다. `aria-labelledby`로 제목 요소를 가리켜, 스크린 리더가 열릴 때 콘텐츠 전체가 아닌 제목을 읽어주게 합니다.
+
+**`canCloseOnEscape`의 disabled 차단**: 기본적으로 Esc 닫기를 허용하되 `disabled`일 때 막습니다——비활성화 상태에서는 플로팅 레이어가 트리거되지 않았어야 하며, 이 가드는 컴포넌트가 비활성화된 후에 이미 열려 있던 플로팅 레이어를 Esc로 닫는 것을 방지합니다 (비즈니스 의미상 disabled는 보통 "조작 잠금"을 의미합니다).
+
+**화살표는 선택 사항**: `arrow !== false`일 때만 `--arrow` 클래스명을 추가합니다——화살표에는 추가 위치 계산이 필요하며 (`shared/popper`의 `computeArrowOffset`), 순수 정보형 팝오버는 생략할 수 있습니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | 지연 | 기본값 200 / 100 |
+| `getPopoverClass` | `(state: { placement, arrow?, popperClass? }) => string[]` | 클래스명 | 방위 + 화살표 + 사용자 정의 |
+| `getPopoverWidthStyle` | `(width?: string \| number) => Record<string, string>` | 인라인 스타일 | 너비 정규화 |
+| `getPopoverTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | aria 팩 | aria-expanded/controls/haspopup |
+| `getPopoverPopperAria` | `(id?, titleId?) => LhAriaAttrs` | aria 팩 | role=dialog + aria-labelledby |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | 허용 여부 | disabled일 때 차단 |
+
+상수: `LH_POPOVER_TRIGGERS` (4가지 트리거), `LH_POPOVER_PLACEMENT_DEFAULT = 'top'`.
+
+## 타입 정의
+
+```ts
+export type LhPopoverTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopoverState {
+  placement?: LhPlacement        // 12 방위 (shared/popper)
+  trigger?: LhPopoverTrigger
+  width?: string | number        // 팝오버 너비
+  title?: string
+  visible?: boolean
+  disabled?: boolean
+  arrow?: boolean                // 기본값 true
+  showAfter?: number
+  hideAfter?: number
+}
+```
+
+## 접근성
+
+```ts
+getPopoverTriggerAria(true, 'pop-1')
+// { 'aria-expanded': true, 'aria-controls': 'pop-1', 'aria-haspopup': 'true' }
+getPopoverTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'true' }
+
+getPopoverPopperAria('pop-1', 'pop-1-title')
+// { role: 'dialog', id: 'pop-1', 'aria-labelledby': 'pop-1-title' }
+```
+
+- **트리거 삼종 세트**: `aria-haspopup`은 "무언가를 팝업합니다"를 선언하고, `aria-expanded`는 "지금 열려 있는지"를 선언하고, `aria-controls`는 "팝업되는 것이 어느 요소인지"를 가리킵니다. 키보드 사용자는 expanded 상태로 현재 상황을 판단합니다.
+- **`aria-controls`는 플로팅 레이어가 존재해야 합니다**: 플로팅 레이어가 `v-if`로 렌더링될 때 id가 생깁니다; popperId를 전달하지 않으면 expanded/haspopup만 출력합니다. **controls가 언마운트된 요소를 가리키게 하지 마세요**——닫힌 후 플로팅 레이어가 제거되면 트리거의 controls가 허공을 가리키게 됩니다 (스크린 리더는 관대하지만 엄격한 검증에서는 오류).
+- **제목이 곧 문면**: `aria-labelledby`는 `<div class="lh-popover__title" :id="titleId">`를 가리킵니다. 제목에는 이 팝오버가 무엇인지 명확히 쓰세요 ("필터 조건", "주문 상세"), 동사를 쓰지 마세요 ("여기 클릭").
+- **포커스 관리는 UI 계층의 일입니다**: `role="dialog"`에 포커스 트랩이 내장되어 있지 않습니다——포커스를 가둘지, 초기 포커스를 어디에 둘지는 UI 계층이 `shared/focus-trap`으로 결정합니다. 비모달 popover는 보통 **가두지 않습니다** (사용자가 페이지의 다른 부분을 계속 조작 가능), 단 바깥 클릭 시 닫아야 합니다.
+- **키보드로 열기**: click 트리거에서 트리거가 버튼이면 Enter/Space로 열 수 있습니다; hover 트리거는 키보드 사용자에게 닿지 않습니다——**핵심 조작은 hover 트리거만 제공하지 마세요**.
+
+## 사용 예시
+
+```ts
+import {
+  getDefaultDelay, getPopoverClass, getPopoverWidthStyle, canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 100 }
+getDefaultDelay(0, 0)                   // { show: 0, hide: 0 } (명시적 즉시)
+
+getPopoverClass({ placement: 'bottom' })
+// ['lh-popover__popper', 'lh-popover__popper--bottom', 'lh-popover__popper--arrow']
+getPopoverClass({ placement: 'top', arrow: false })
+// ['lh-popover__popper', 'lh-popover__popper--top']
+getPopoverClass({ placement: 'top', popperClass: 'my-pop' })
+// ['lh-popover__popper', '…--top', '…--arrow', 'my-pop']
+
+getPopoverWidthStyle(240)     // { width: '240px' }
+getPopoverWidthStyle('50%')   // { width: '50%' }
+getPopoverWidthStyle(undefined) // {}
+
+canCloseOnEscape({ disabled: false })  // true
+canCloseOnEscape({ disabled: true })   // false
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopover :width="280" trigger="click" title="필터 조건">
+    <template #reference>
+      <LhButton>필터</LhButton>
+    </template>
+    <div class="filter-body">
+      <LhCheckbox v-model="form.active">활성화된 것만 보기</LhCheckbox>
+      <LhButton type="primary" @click="apply">적용</LhButton>
+    </div>
+  </LhPopover>
+</template>
+```
+
+```ts
+// 바깥 클릭으로 닫기 (UI 계층): document의 click을 감시하고, target이 트리거와 플로팅 레이어 바깥인지 판정
+function onDocumentClick(e: MouseEvent) {
+  if (!triggerEl.value?.contains(e.target as Node) && !popperEl.value?.contains(e.target as Node)) {
+    state.visible = false
+  }
+}
+watch(() => state.visible, (v) => {
+  v ? document.addEventListener('click', onDocumentClick) : document.removeEventListener('click', onDocumentClick)
+})
+```
+
+```tsx
+// React: useRef로 트리거와 플로팅 레이어 노드 획득; 바깥 클릭은 커스텀 useClickOutside 훅;
+// 플로팅 레이어는 document.body로 포털, 부모의 overflow:hidden에 잘리지 않게
+```
+
+```ts
+// uniapp: <view> 플로팅 레이어; "바깥 클릭으로 닫기"는 미니 프로그램 말단에서 catchtouchstart 전역 마스크로 구현
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-popover__popper` | 팝오버 컨테이너 |
+| `.lh-popover__popper--{top\|top-start\|…}` | 12 방위 (뒤집힌 후의 실제 방위 포함) |
+| `.lh-popover__popper--arrow` | 화살표 있음 |
+| `.lh-popover__title` | 제목 |
+| `.lh-popover__body` | 콘텐츠 영역 |
+
+바탕색 `--lh-bg-color`, 테두리 `--lh-border-color`, 그림자 `--lh-box-shadow-popover`, 둥근 모서리 `--lh-border-radius-base`, z-index `--lh-z-index-popover`.
+
+## 주의사항
+
+- **플로팅 레이어는 body로 텔레포트**: 원래 DOM 위치에 남겨두면 부모의 `overflow: hidden`, `transform`, `z-index` 겹침 맥락에 빠지게 됩니다. 텔레포트 후의 위치 좌표는 `shared/popper`의 `computePosition`이 뷰포트 기반으로 계산합니다.
+- **뒤집힌 후의 방위 클래스명**: `getPopoverClass`가 받는 것은 **실제 적용된 placement** (popper flip 이후의 값)이지 prop 원래 값이 아닙니다——그렇지 않으면 화살표 방향이 시각과 맞지 않습니다. UI 계층은 popper가 반환한 실제 방위를 전달해야 합니다.
+- **`width`와 콘텐츠 자기 너비**: 고정 너비를 설정하면 좁은 콘텐츠가 늘어납니다; 설정하지 않으면 콘텐츠가 뷰포트를 벗어날 수 있습니다. 복잡한 콘텐츠에는 `width` 대신 `min-width`를 권장합니다 (popperClass로 사용자 정의 스타일).
+- **hover 트리거의 모바일**: 터치 화면에는 hover가 없으며, hover 트리거의 popover는 모바일에서 한 번 눌러야 "호버" 상태가 되고 다른 곳을 눌러야 닫힙니다——경험이 매우 나쁩니다. 크로스 말단 컴포넌트는 말단별로 트리거 방식을 전환하길 권장합니다.
+- **중첩 popover**: A의 플로팅 레이어 안에 B를 열면, A를 닫을 때 B도 연쇄적으로 닫아야 합니다, 그렇지 않으면 B가 허공에 남습니다. popper 상태를 공유할 때 주의하세요.
+- **`manual` 트리거**: 완전히 외부 `v-model:visible`으로 제어됩니다——"행을 선택하면 펼침" 같은 로직과 자주 결합하는데, 이때 바깥 클릭 닫기 로직은 직접 작성해야 합니다 (core의 바깥 클릭 닫기도 UI 계층이 구현한 것입니다).
+- **tooltip과의 코드 재사용**: 둘은 `shared/popper`와 `shared/delay`를 공유하지만, **aria 역할은 섞어 쓸 수 없습니다**——재사용을 위해 tooltip의 `role="tooltip"`을 조작 가능한 플로팅 레이어에 쓰지 마세요, ARIA 위반이며 스크린 리더 동작을 예측할 수 없습니다.
+
+<FnPlayground module="popover" fn="getDefaultDelay" params='{"showAfter": null, "hideAfter": null}' />

@@ -1,0 +1,172 @@
+---
+title: backtop —— العودة إلى الأعلى
+description: 'resolveScrollTarget يحل جذر التمرير، وتخفيض prefers-reduced-motion، واكتشاف ميزة scrollend مع احتياطي للتهدئة'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+حين يصل المستخدم إلى أسفل الصفحة الطويلة، لا سبيل أمامه للعودة إلى القمة سوى عجلة التمرير المجنونة. وزر `backtop` زر عائم في أسفل الجانب البعيد، لا يظهر إلا بعد تجاوز مسافة معينة، وبالنقر عليه يعود إلى القمة بسلاسة. ومنطقه ليس معقدًا، ولكن **حُفر توافق واجهات برمجة التمرير كثيرة جدًّا** — من هو جذر التمرير، وكيف يُخفَّض التمرير السلس، وكيف يُكشَف انتهاء التمرير — وقد جمع `core/backtop` ذلك كله.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `<LhBackTop>`: مدخل العودة إلى القمة في القوائم الطويلة، والمستندات الطويلة، وجداول البيانات الخلفية.
+- لا يستحق الظهور إلا حين يتجاوز ارتفاع الصفحة شاشة واحدة بوضوح (عادة شاشتين إلى ثلاث).
+- **لا يجب استخدامه**: الصفحات القصيرة (أقل من شاشة، فالزر لا يظهر أصلًا ويضيف كودًا زائدًا)؛ والصفحات الأصلية على الأجهزة المحمولة التي يمكن فيها التمرير/الإيماء بسرعة للعودة إلى القمة (إيماءات النظام على المحمول تغطي الأمر، أما صفحات h5 المضمَّنة فبحسب الحال).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  LH_BACKTOP_SCROLLEND_DELAY,
+  getBackTopClassNames,
+  resolveScrollTarget,
+  getScrollTop,
+  backToTop,
+  isBackTopVisible,
+  supportsScrollEnd,
+} from '@lh-ui/share/core/backtop'
+```
+
+## نية التصميم
+
+**أولوية جذر التمرير**: `document.scrollingElement` مُقدَّم على `document.documentElement`. وليس هذا تعنُّتًا — ففي بعض الصفحات (التي تستخدم `body { overflow }`) الذي يتحرك فعلًا هو body، و`documentElement.scrollTop` يساوي 0 دائمًا، فيفسد حكم الرؤية فسادًا تامًّا. و`scrollingElement` هي خاصية قياسية اخترعها W3C لتوحيد هذا الفوضى.
+
+**`getScrollTop` يستخدم `instanceof HTMLElement` لا `instanceof Window`**: ويذكر التعليق «الأمان عبر العوالم (cross-realm)» — فإذا كانت الصفحة تحتوي iframe، فإن كائن Window الذي يمرِّره iframe **لا يساوي** بانية `Window` في العالم الحالي، فيخطئ `x instanceof Window` ويعطي false. ويتفادى استخدام HTMLElement (لا تعاني العناصر من هذه المشكلة) هذا المأزق. إنها حفصة دقيقة لكنها واقعية.
+
+**تخفيضان للتمرير السلس**: ① عند تفعيل `prefers-reduced-motion` يُخفَّض إلى `auto` (بلا حركة) — فالمستخدمون الذين يعانون اضطراب الدهليز يصيبهم الدوار من التمرير المستمر، وهو شرط صارم في إمكانية الوصول؛ ② وعند خلو العنصر الهدف من دالة `scrollTo` (بيئات مثل jsdom القديمة) يُكتب `scrollTop = 0` مباشرة.
+
+**اكتشاف ميزة `supportsScrollEnd`**: حدث `scrollend` لا يتوفر إلا في Chromium 114+ / Safari 18.2+ — وباستخدامه يمكن تحديث حالة الرؤية بدقة عند **استقرار التمرير فعلًا** (فقراءة scrollTop بكثرة أثناء التمرير تكلِّف أداءً). وعند عدم الدعم يعود المستدعي إلى حدث `scroll` + تهدئة بمدة `LH_BACKTOP_SCROLLEND_DELAY` (150ms) للمحاكاة.
+
+**الرؤية دالة صرفة**: تُقارن `isBackTopVisible(scrollTop, height)` الأرقام فقط — فإن طرف العرض يستمع للتمرير بنفسه ويخزن scrollTop بنفسه، ولا يحتفظ core بأي حالة تفاعلية. وهذا يجعل الاختبارات الوحدوية تؤكد حدود الأرقام مباشرة.
+
+## جدول الدوال
+
+| دالة / ثابت | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getBackTopClassNames` | `(state: { visible }) => string[]` | أسماء الأصناف | حالة الرؤية تقود حركتي الإظهار والإخفاء |
+| `resolveScrollTarget` | `(target?: string \| HTMLElement) => HTMLElement \| Window` | هدف التمرير | الرجوع إلى window عند إخفاق المُحدِّد |
+| `getScrollTop` | `(target) => number` | مسافة التمرير | تكيُّف مع الحاوية/إطار العرض |
+| `backToTop` | `(target, smooth) => void` | لا شيء | عودة سلسة إلى القمة (تشمل التخفيض) |
+| `isBackTopVisible` | `(scrollTop, visibilityHeight) => boolean` | هل هو مرئي | حكم العتبة |
+| `supportsScrollEnd` | `(target) => boolean` | هل يدعم | اكتشاف الميزة |
+
+الثوابت: `LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT = 200`، `LH_BACKTOP_SCROLLEND_DELAY = 150`.
+
+## تعريف الأنواع
+
+```ts
+export interface LhBackTopState {
+  visible: boolean      // هل هو مرئي حاليًّا (يقود صنفي الإظهار والإخفاء)
+  target?: string | HTMLElement
+  visibilityHeight?: number
+  smooth?: boolean      // هل يكون التمرير سلسًا (افتراضيًا true)
+}
+```
+
+## إمكانية الوصول
+
+```ts
+// تُجمَّع سمات إمكانية الوصول للزر في طبقة العرض:
+const aria = {
+  type: 'button',
+  'aria-label': 'العودة إلى الأعلى',   // زر أيقونة بلا نص، يجب إعطاؤه وسمًا
+}
+```
+
+- **`type="button"`**: إذا كان زر العودة إلى القمة داخل `<form>`، فإن `type="submit"` الافتراضي يُرسل النموذج — وهو أصغر الأخطاء شيوعًا.
+- **aria-label إلزامي**: الزر الذي هو أيقونة صرفة (سهم لأعلى) لا اسم له بالنسبة لقارئ الشاشة، فيجعله `aria-label="العودة إلى الأعلى"` قابلًا للإعلان.
+- **مزامنة aria-hidden مع الرؤية**: عند الاختفاء يُزال من شجرة إمكانية الوصول (`aria-hidden="true"` أو إلغاء تركيبه بـ `v-if`)، حتى لا يتنقل قارئ الشاشة إلى زر لا يُرى.
+- **قابلية الوصول بلوحة المفاتيح**: الزر هو `<button>` أصيل، فالتركيز بـ Tab + التشغيل بـ Enter/Space مدعوم بطبيعته. لا تصنعه `<div @click>`.
+- **المعنى المزدوج لـ prefers-reduced-motion**: فهو شرط إمكانية وصول (سلامة الدهليز)، ويجنب أيضًا تلعثم التمرير السلس على الأجهزة الضعيفة. وقد عُولِج الأمر داخل `backToTop`، فلا حاجة لطبقة العرض إلى الحكم.
+
+## أمثلة الاستخدام
+
+```ts
+import {
+  resolveScrollTarget, getScrollTop, isBackTopVisible, backToTop, supportsScrollEnd,
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT, LH_BACKTOP_SCROLLEND_DELAY,
+} from '@lh-ui/share/core/backtop'
+
+isBackTopVisible(200, 200)  // true (>= العتبة)
+isBackTopVisible(199, 200)  // false
+isBackTopVisible(0, 200)    // false
+
+supportsScrollEnd(window)         // المتصفحات الحديثة true
+supportsScrollEnd(someEl)         // Chromium 114+ / Safari 18.2+ فحسب
+```
+
+```ts
+// استراتيجية الاستماع: عند دعم scrollend لا يُحكم إلا عند الاستقرار، وإلا فـ scroll + تهدئة
+const target = resolveScrollTarget(props.target)
+let visible = ref(false)
+
+function refresh() {
+  visible.value = isBackTopVisible(
+    getScrollTop(target),
+    props.visibilityHeight ?? LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  )
+}
+
+if (supportsScrollEnd(target)) {
+  target.addEventListener('scrollend', refresh)
+} else {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  target.addEventListener('scroll', () => {
+    clearTimeout(timer)
+    timer = setTimeout(refresh, LH_BACKTOP_SCROLLEND_DELAY)
+  })
+}
+
+function onClick() {
+  backToTop(target, props.smooth ?? true)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <button
+    type="button"
+    class="lh-backtop"
+    :class="getBackTopClassNames({ visible })"
+    aria-label="العودة إلى الأعلى"
+    :aria-hidden="!visible"
+    @click="backToTop(target, true)"
+  >
+    <LhIcon name="arrow-up" />
+  </button>
+</template>
+```
+
+```tsx
+// React: useEffect لتسجيل/إزالة مستمع التمرير (يعتمد على target وvisibilityHeight)؛
+// ويُتحكَّم في smooth عبر props، بينما يتولى core معالجة reduced-motion
+```
+
+```ts
+// uniapp: `<button open-type?>` لا ينطبق؛ استخدم <view> + @tap؛
+// وفي تطبيق WeChat المصغَّر يُستخدم onPageScroll لتمرير الصفحة (مدمج في uniapp)،
+// وحدث scroll في scroll-view لتمرير العنصر
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-backtop` | حاوية الزر (مثبَّت في أسفل الجانب البعيد) |
+| `.lh-backtop--visible` | مرئي (يقود حركتي الدخول بالتلاشي والانزلاق) |
+
+والإخفاء الافتراضي `opacity: 0; visibility: hidden` (استخدام visibility لا display للمحافظة على انتقال الحركة)؛ والزر الدائري `--lh-backtop-size` (مثل 40px)؛ ولون الخلفية `--lh-bg-color` + الظل `--lh-box-shadow-base`؛ و`z-index` بمقدار `--lh-z-index-backtop`.
+
+## ملاحظات
+
+- **يجب إزالة مستمع التمرير**: فعند تدمير المكوّن `removeEventListener`، وإلا بقي مرجعًا لعنصر DOM مُزال فتحدث تسريبات ذاكرة. وذلك في `onUnmounted` لدى Vue أو دالة تنظيف useEffect لدى React.
+- **خصوصية الاستماع على `window`**: حدث `scroll` على window سلبيٌّ وعالي التردد، فيجب تهدئته أو استخدام scrollend؛ وقراءة `getScrollTop` في كل مرة على الصفحات الطويلة جدًّا تُحدث تلعثمًا.
+- **مشهد تمرير العنصر الهدف نفسه**: التمرير داخل الجدول (لا تمرير الصفحة) يتطلب توجيه `target` إلى حاوية الجدول — وإلا تبعيت رؤية الزر تمرير الصفحة، وهو أمر لا علاقة له بالحاوية المطلوب العودة إلى قمتها.
+- **تجاوز CSS للتمرير السلس**: إذا كانت الصفحة تستخدم `html { scroll-behavior: smooth }`، فإن `scrollTo({ behavior: 'auto' })` يُستبدَل بـ CSS — فيفشل تخفيض reduced-motion في `backToTop`. وعند لزوم التخفيض الصارم على طبقة العرض إزالة هذا CSS مؤقتًا.
+- **قصور التمرير في iOS Safari**: لتمرير iOS قصور ذاتي، ولا يُطلَق scrollend إلا بعد انتهاء القصور؛ فقد تُحدِّث التهدئة الاحتياطية (150ms) حالة الرؤية مبكرًا عند الانزلاق السريع (ف يومض الزر). وهو تنازل معروف.
+- **معنى عتبة الرؤية 200**: نحو نصف ارتفاع الشاشة (بحسب ارتفاع إطار العرض). ويمكن لصفحات المستندات تصغيرها (100) وصفحات الأدوات تكبيرها (500) — وprop بالاسم `visibilityHeight` لهذا الغرض.
+- **يجب ألا يحجب الزر المحتوى**: تثبيت بعيدًا + أسفل الجانب البعيد، وعلى المحمول تجنُّب شريط التنقل السفلي (إفساح ارتفاع المنطقة الآمنة).
+
+<FnPlayground module="backtop" fn="isBackTopVisible" params='{"scrollTop": 300, "visibilityHeight": 200}' />

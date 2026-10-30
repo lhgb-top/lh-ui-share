@@ -1,0 +1,182 @@
+---
+title: transfer —— Трансфер
+description: 'partitionTransferData — неизменное разбиение, moveTransferKeys — очистка фантомных ключей, getTransferCheckAllState — три состояния, sourceKeys как единый источник данных'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Трансфер решает задачу **двустороннего перемещения множественного выбора**: левая колонка — «кандидаты», правая — «выбранные», а между ними две кнопки-стрелки переносят элементы туда-обратно. Он подходит для больших списков лучше, чем группа checkbox (есть пагинация + поиск), и нагляднее, чем несколько select (видны обе стороны). `core/transfer` моделирует состояние через **единый источник данных `sourceKeys`** — левая колонка это «элементы, не входящие в sourceKeys», правая — «элементы из sourceKeys», а любое действие сводится к преобразованию этого массива.
+
+## Когда использовать
+
+- На всех платформах реализован `LhTransfer`: назначение прав, выбор членов роли, фильтрация по тегам, отметка полей данных.
+- Элементов много (>10), нужен поиск с фильтрацией, и важно одновременно видеть обе стороны — «выбрано/не выбрано».
+- **Не использовать**: элементов меньше 6 (группа checkbox или segmented компактнее); для одностороннего выбора, где не нужно «переносить обратно» (подойдёт select).
+
+## Импорт
+
+```ts
+import {
+  partitionTransferData,
+  toggleTransferChecked,
+  toggleTransferCheckAll,
+  moveTransferKeys,
+  getTransferCheckAllState,
+  filterTransferItems,
+  getTransferClassNames,
+  getTransferPanelClassNames,
+} from '@lh-ui/share/core/transfer'
+import type { LhTransferItem, LhTransferSide } from '@lh-ui/share/core/transfer'
+```
+
+## Замысел дизайна
+
+**`sourceKeys` — единый источник данных**: «значением» компонента является массив ключей правой колонки. Левая колонка не хранит состояние отдельно — `partitionTransferData(data, sourceKeys)` каждый раз нарезает её из полного набора данных. Это исключает классический баг «состояния левой и правой колонок рассинхронизированы»: любой перенос меняет только один массив, а обе стороны пересчитываются автоматически.
+
+**Очистка фантомных ключей в `moveTransferKeys`**: среди `checked` могут оказаться ключи, которых нет в `data` (устаревшие отметки, оставшиеся после обновления данных, — **фантомные ключи**). Их нельзя переносить, но и нельзя оставлять в исходной зоне, засоряя следующий кадр, — поэтому функция попутно **отфильтровывает фантомные ключи из исходной зоны**. В комментарии кода расписаны оба соображения, заложенные в это решение.
+
+**`toggleTransferCheckAll` пропускает отключённые элементы**: «выбрать все» отмечает только «доступные для выбора» (`!disabled`), и «снять все» сбрасывает только их — состояние отключённых элементов не трогается, что соответствует интуиции «отключено = не подлежит действиям».
+
+**Три состояния `getTransferCheckAllState`**: `all` / `some` / `none` управляют признаком `indeterminate` чекбокса «выбрать все» — это стандартное поведение такого чекбокса (при частичном выборе отображается горизонтальная черта).
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `partitionTransferData` | `(data, sourceKeys) => { left, right }` | списки обеих сторон | разбиение по keySet |
+| `toggleTransferChecked` | `(checked, key) => Array` | новый массив отметок | есть — убрать, нет — добавить |
+| `toggleTransferCheckAll` | `(checked, sideItems) => Array` | новый массив отметок | выбрать все / снять все (мимо отключённых) |
+| `moveTransferKeys` | `(sourceKeys, data, checked, direction) => Array` | новый sourceKeys | перенос с очисткой фантомных ключей |
+| `getTransferCheckAllState` | `(checked, sideItems) => 'all' \| 'some' \| 'none'` | три состояния | управление indeterminate |
+| `filterTransferItems` | `(items, query) => LhTransferItem[]` | отфильтрованный список | нечувствителен к регистру |
+| `getTransferClassNames` | `(state: { disabled }) => string[]` | классы | отключено |
+| `getTransferPanelClassNames` | `(side) => string[]` | классы | сторона панели |
+
+## Определения типов
+
+```ts
+export interface LhTransferItem {
+  key: string | number
+  label?: string       // рабочий контракт допускает отсутствие (UI-слой показывает key)
+  disabled?: boolean   // отключено (нельзя перемещать и не участвует в «выбрать все»)
+}
+
+export type LhTransferSide = 'left' | 'right'
+```
+
+## Доступность
+
+Структуру доступности трансфера собирает UI-слой: core не предоставляет функций-пакетов aria (нет всплывающих слоёв или сложной семантики). Обе панели — это `role="listbox"`, элементы списка — `role="option"` + `aria-selected`; кнопки переноса между панелями — обычные `<button>` с `aria-label`, поясняющим направление (например «Переместить 3 элемента вправо»); чекбокс «выбрать все» использует семантику checkbox, а состояние `indeterminate` активируется значением `some` из `getTransferCheckAllState` через DOM-атрибут.
+
+Клавиатурное соглашение: после фокуса на элементе списка Space его отмечает, ↑/↓ перемещают фокус; после фокуса на кнопке переноса Enter выполняет действие.
+
+## Примеры использования
+
+```ts
+import {
+  partitionTransferData, moveTransferKeys, getTransferCheckAllState, filterTransferItems,
+} from '@lh-ui/share/core/transfer'
+
+const data = [
+  { key: 'a', label: 'яблоко' },
+  { key: 'b', label: 'банан', disabled: true },
+  { key: 'c', label: 'вишня' },
+]
+
+partitionTransferData(data, ['c'])
+// { left: [яблоко, банан], right: [вишня] }
+
+moveTransferKeys(['c'], data, ['a', 'b'], 'left-to-right')
+// ['c', 'a']  — b отключён и не переносится; a перенесён слева направо
+
+moveTransferKeys(['c'], data, ['a', 'ghost'], 'left-to-right')
+// ['c', 'a']  — фантомный ключ 'ghost' отброшен и не попадает в результат
+
+getTransferCheckAllState(['a'], [{ key: 'a' }, { key: 'b', disabled: true }, { key: 'c' }])
+// 'some' (доступны для выбора a и c, отмечен только a → частично; b отключён и в расчёт не идёт)
+
+filterTransferItems(data, 'бан')   // [{ key: 'b', label: 'банан' }]
+filterTransferItems(data, '')      // исходный массив (пустой query не фильтрует)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTransferClassNames({ disabled })">
+  <transfer-panel
+    side="left"
+    :items="partition.left"
+    :checked="leftChecked"
+    @toggle="onToggle"
+    @check-all="onCheckAll"
+  />
+  <div class="lh-transfer__buttons">
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="leftChecked.length === 0"
+      :aria-label="`Переместить ${leftChecked.length} элем. вправо`"
+      @click="move('left-to-right')"
+    >→</button>
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="rightChecked.length === 0"
+      :aria-label="`Переместить ${rightChecked.length} элем. влево`"
+      @click="move('right-to-left')"
+    >←</button>
+  </div>
+  <transfer-panel side="right" :items="partition.right" :checked="rightChecked" />
+</div>
+```
+
+```ts
+// подключение состояния (разбиение через computed, checked — локальные отметки)
+const partition = computed(() => partitionTransferData(props.data, props.modelValue))
+const leftChecked = computed(() => state.checked.filter((k) => !props.modelValue.includes(k)))
+const rightChecked = computed(() => state.checked.filter((k) => props.modelValue.includes(k)))
+
+function move(direction) {
+  const checked = direction === 'left-to-right' ? leftChecked.value : rightChecked.value
+  emit('update:modelValue', moveTransferKeys(props.modelValue, props.data, checked, direction))
+  state.checked = state.checked.filter((k) => !checked.includes(k))  // снять отметки с перенесённых
+}
+```
+
+```tsx
+// React: sourceKeys — это управляемое значение; отметки хранятся в локальном useState,
+// а после переноса соответствующие отметки сбрасываются
+```
+
+```ts
+// uniapp: две колонки на <view> + прокрутка через <scroll-view>;
+// фильтрацию в поле поиска делает filterTransferItems
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-transfer` | базовый класс (горизонтальный flex) |
+| `.lh-transfer--disabled` | отключено |
+| `.lh-transfer-panel` | панель одной стороны |
+| `.lh-transfer-panel--left` / `--right` | сторона |
+| `.lh-transfer-panel__header` | заголовок панели (чекбокс «выбрать все» + счётчик) |
+| `.lh-transfer-panel__search` | поле поиска |
+| `.lh-transfer-panel__body` | область списка |
+| `.lh-transfer-panel__item` | элемент списка |
+| `.lh-transfer-panel__item--disabled` | отключённый элемент |
+| `.lh-transfer-panel__footer` | футер (пустое состояние / счётчик) |
+| `.lh-transfer__buttons` / `__button` | группа кнопок переноса |
+
+Состояние `indeterminate` чекбокса в заголовке панели управляется `getTransferCheckAllState`.
+
+## Замечания
+
+- **`checked` и `sourceKeys` — два независимых состояния**: `checked` — «что сейчас отмечено» (возможно, с обеих сторон), `sourceKeys` — «что лежит в правой колонке» (значение компонента). После переноса нужно вручную убрать перенесённые ключи из `checked`, иначе они останутся в состоянии отметок (`moveTransferKeys` не очищает checked за вас).
+- **Происхождение фантомных ключей**: при асинхронной загрузке данных пользователь успевает отметить несколько элементов, затем данные обновляются и часть ключей исчезает — эти ключи и становятся фантомными в `checked`. `moveTransferKeys` их очищает, но на подсчёт «выбрать все» (`getTransferCheckAllState`) они тоже могут влиять, поэтому при рендере отметок на UI-слое надёжнее дополнительно фильтровать через `byKey.has(key)`.
+- **Границы отключённых элементов**: элемент с `disabled: true` **не перемещается, не участвует в «выбрать все» и не снимается при «снять все»** — он сохраняет своё состояние отметки. Если бизнес-логика требует «отключённый элемент всегда неотмечен», обрабатывайте это на уровне данных, не опираясь на core.
+- **`label` может отсутствовать**: в типах `label?` необязателен, UI-слой должен показывать `key` как запасной вариант (`item.label ?? item.key`).
+- **Производительность на больших данных**: `partitionTransferData` каждый раз полностью обходит data, а `filterTransferItems` выполняется при изменении query. При тысячах элементов добавьте виртуальную прокрутку (`core/shared/virtual`); сама функция разбиения в core имеет сложность O(n) и не является узким местом.
+- **Порядок наложения поиска и разбиения**: сначала `partitionTransferData`, затем `filterTransferItems` для каждой стороны — если поменять порядок, поиск будет фильтровать неразбитый полный массив.
+
+<FnPlayground module="transfer" fn="moveTransferKeys" params='{"sourceKeys": ["c"], "data": [{"key": "a", "label": "яблоко"}, {"key": "b", "label": "банан", "disabled": true}, {"key": "c", "label": "вишня"}], "checked": ["a", "b"], "direction": "left-to-right"}' />

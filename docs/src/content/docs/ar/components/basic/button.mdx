@@ -1,0 +1,125 @@
+---
+title: button —— زر
+description: 'يحكم isClickable على قابلية النقر، ويحلّ getSize الحجم الفعّال، ويحسب getClassNames معدّلات النوع/الحجم/الشكل'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الزر واحد من أكثر المكوّنات تعديلًا في مكتبة المكوّنات: النوع، والحجم، والشكل، وحالة التحميل، وحالة التعطيل، وعرض المستوى الكتلي تتمازج لتولّد عددًا كبيرًا من المتغيّرات. يستخرج `core/button` **حساب** هذه المتغيّرات إلى دوال صرفة — فلا يفعل الطرف البصري أكثر من تمرير props وربط مصفوفة أسماء الأصناف بالعنصر الجذر.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhButton`: تُنتج أسماء الأصناف بالكامل عبر `getClassNames`، ولا يبني الطرف البصري السلاسل بنفسه.
+- عند الحاجة إلى إعادة استخدام الدلالة نفسها «النوع + الحجم» خارج الزر (مثل مُطلِق `LhDropdown` و`LhBackTop`)، تُستدعى دوال core مباشرة بدلًا من نسخ أسماء الأصناف.
+- **لا يجب استخدامه**: منطق إرسال النموذج، والحد من التكرار (throttling). لا يحسب core سوى «كيف يجب أن يبدو الآن»، لا «ماذا يحدث بعد النقر».
+
+## طريقة الاستيراد
+
+```ts
+import { isClickable, getSize, getClassNames } from '@lh-ui/share/core/button'
+import type { LhButtonState } from '@lh-ui/share/core/button'
+```
+
+## نية التصميم
+
+جُعل نموذج حالة الزر ضيّقًا عمدًا: لا يحتوي `LhButtonState` سوى الحقول **التي تؤثر في أسماء الأصناف**. يشارك كلٌّ من `loading` و`disabled` في حساب الأصناف (`--disabled`)، لكن «هل يستجيب للنقر» هي دلالة تفاعلية لا دلالة بصرية، لذا فُصلت في `isClickable` بمفردها — الزر أثناء التحميل يبدو سويًا لكن لا يمكن النقر عليه، ويجب أن يكون هذا الحكم مستقلًا عن حساب الأصناف، وإلا فمن السهل أن يحدث تسلل على هيئة «أُضيف صنف disabled لكن الحدث لم يُحجَب».
+
+يسير الحجم على مستويين من التراجع (props الخاصة بالمكوّن ← `LH_SIZE_DEFAULT`)، لكن انتبه إلى أن `getClassNames` لا يقبل داخليًا **سوى الحجم المحلي** (يُمرَّد الوسيط الثاني `undefined` دومًا): لا ترث درجة الحجم في أسماء الأصناف الحجمَ العام لـ ConfigProvider، ولا يعمل الحجم العام إلا على الأنماط المضمّنة أو ما يقرّره الطرف النهائي. هذا متعمَّد — فأسماء الأصناف عقدٌ بصري، وما تغيّره الإعدادات العامة هو «القيمة الافتراضية» لا «الاستبدال».
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `isClickable` | `(state: { loading?: boolean; disabled?: boolean }) => boolean` | قيمة منطقية | تعطي false إذا كان loading أو disabled صحيحًا، وtrue عند غيابهما معًا |
+| `getSize` | `(localSize: string \| undefined, globalSize: string \| undefined) => string` | معرّف الحجم | تراجع على مستويين، مع التراجع النهائي إلى `'medium'` |
+| `getClassNames` | `(state: LhButtonState) => string[]` | مصفوفة أسماء الأصناف | حساب `lh-button` وجميع المعدّلات |
+| `getStyle` | `() => Record<string, string>` | `{}` | عنصر نائب لمتغيّرات السمة، فارغ دائمًا (انظر أدناه) |
+
+استحقاق عودة `getStyle` لقيمة فارغة دائمًا يستحق البيان: يُدار لون الزر بالكامل برموز `:root` (`--lh-primary-*` وغيرها)، وتتسلسل themeVars الخاصة بـ ConfigProvider إلى الزر عبر متغيّرات CSS على العنصر الأب، **فلا داعي** لإعادة التصريح بها على عنصر الزر. ويُابقى على هذه الدالة لأجل التناظر مع المكوّنات الأخرى «التي قد يكون لها متغيّرات سمة مضمّنة»، فيتمكّن المستدعي من عمل `v-bind` دون تفكير.
+
+## تعريف الأنواع
+
+```ts
+export interface LhButtonState {
+  type: LhComponentType       // 'primary' | 'success' | ... | 'default'
+  size: LhComponentSize       // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  loading: boolean
+  disabled: boolean
+  plain: boolean              // بسيط: حدٌّ لا تعبئة
+  block: boolean              // مستوى الكتلة: يشغل عرض الحاوية الأب
+  round: boolean              // زوايا دائرية
+  circle: boolean             // دائرة تامة (تُقتَرن عادةً مع أيقونة)
+}
+```
+
+## إمكانية الوصول
+
+لا يُخرج `core/button` حزمة سمات aria: تُحمل دلالة الزر في الطرف البصري عبر عنصر `<button>` الأصلي، ويمرّر `disabled` مباشرةً إلى السمة الأصلية فيتعرف عليه قارئ الشاشة طبيعيًا. هذا تجلٍّ لمبدأ «إذا اكفت الدلالة الأصلية فلا تُعِد اختراع العجلة» — فقط عندما يعجز الأصلي عن التعبير (مثل spinbutton وtreeitem وprogressbar) يوفّر core دالة `getXxxAria`.
+
+ما يجب على الطرف البصري الانتباه إليه وحده: الزر في حالة `loading` يبقى قابلًا للتركيز، لكن `isClickable` تُعيد false. حينها يجب إضافة `aria-busy="true"` إلى الزر، ليعرف قارئ الشاشة أن «العملية جارية» لا أن «الزر معطّل».
+
+## أمثلة الاستخدام
+
+```ts
+import { getClassNames, isClickable } from '@lh-ui/share/core/button'
+
+getClassNames({ type: 'primary', size: 'large', loading: false, disabled: false, plain: false, block: false, round: true, circle: false })
+// ['lh-button', 'lh-button--primary', 'lh-button--large', 'lh-button--round']
+
+isClickable({ loading: true, disabled: false })  // false
+isClickable({})                                   // true
+```
+
+أسلاك جميع الأطراف تسير على نمط واحد هو «props ← حالة ← ربط»:
+
+```vue
+<!-- Vue3 -->
+<button
+  :class="getClassNames({ type, size, loading, disabled, plain, block, round, circle })"
+  :disabled="disabled"
+  :aria-busy="loading"
+  @click="isClickable({ loading, disabled }) && emit('click', $event)"
+>
+  <LhSpinner v-if="loading" :size="14" />
+  <slot />
+</button>
+```
+
+```tsx
+// React
+const cls = getClassNames({ type, size, loading, disabled, plain, block, round, circle })
+return <button className={cls.join(' ')} disabled={disabled} aria-busy={loading} onClick={onClick} />
+```
+
+```ts
+// uniapp: تدخل أسماء الأصناف كذلك في ربط class؛ وأيقونة التحميل تستخدم LhSpinner
+// (يعتمد طرف uniapp على صورة احتياطية لـ svg)
+```
+
+## الأنماط والرموز
+
+بنية BEM في `styles/button/index.scss`:
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-button` | الصنف الأساسي: التخطيط، حجم الخط، الانتقال |
+| `.lh-button--{primary\|success\|warning\|danger\|error\|info\|default}` | النوع الدلالي |
+| `.lh-button--{mini\|small\|medium\|large\|x-large}` | درجات الحجم (الارتفاع، padding، حجم الخط) |
+| `.lh-button--plain` | النمط البسيط: خلفية شفافة + حد |
+| `.lh-button--block` | عرض مستوى الكتلة |
+| `.lh-button--round` / `.lh-button--circle` | زوايا دائرية / دائرة تامة |
+| `.lh-button--disabled` | حالة التعطيل (المؤشر، العتامة) |
+| `.lh-button--blank` | زر فارغ (بلا حدّ ولا خلفية، لا يظهر إلا عند hover) |
+| `.lh-button__icon` / `.lh-button__text` | فتحة الأيقونة والنص |
+| `.lh-button__loading` / `.lh-button__spinner` / `.lh-button__path` | رسوم التحميل |
+
+تسير جميع الألوان عبر الرموز `var(--lh-primary-*)` / `var(--lh-success-*)` وغيرها، ويقلبها `var-dark.scss` تلقائيًا في الوضع الداكن.
+
+## ملاحظات
+
+- حجم `getClassNames` **لا يرث الإعدادات العامة** (راجع «نية التصميم»)، وإذا تطلّب طرفك تأثير الحجم العام على الأزرار، فعليك استدعاء `getSize(local, global)` في الطرف البصري أولًا ثم تمريره.
+- `loading` و`disabled` متكافئان من حيث أسماء الأصناف (كلاهما ينتج المظهر `--disabled`)، لكن حكم التفاعل يسير عبر `isClickable` — لا تستنتج قابلية النقر من وجود الصنف.
+- يجبر `circle` في الأنماط شكلًا مربعًا + دائرة تامة، فإن أُضيف إلى زر نصي سينتج انضغاطًا غريبًا.
+- يجمع `plain` مع `type: 'default'` يكاد يكون غير مرئي، وهذا السلوك المتوقَّع للنمط البسيط.
+
+<FnPlayground module="button" fn="getClassNames" params='{"state": {"type": "primary", "size": "large", "loading": false, "disabled": false, "plain": false, "block": true, "round": false, "circle": false}}' />

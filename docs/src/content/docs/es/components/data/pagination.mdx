@@ -1,0 +1,195 @@
+---
+title: pagination —— Paginación
+description: 'Algoritmo de contracción de ventana de getPaginationRange (primera y última siempre presentes + puntos suspensivos a ambos lados), clampPage normaliza los valores fuera de rango, aria-current=page'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La paginación es la navegación estándar para cuando «la cantidad de datos supera una pantalla». Su dificultad principal no es pasar de página, sino **la visualización del intervalo de números de página**: con 100 páginas no se pueden dibujar los 100 botones, y cada biblioteca tiene su propio algoritmo para expresar la posición y ofrecer salto rápido con primera y última página + ventana actual + puntos suspensivos. `core/pagination` implementa el algoritmo de «contracción de ventana» habitual y normaliza todo tipo de entradas ilegales.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhPagination`: paginación al pie de una tabla, paginación de resultados de búsqueda, paginación de un álbum.
+- Escenarios donde los datos son paginables y el usuario necesita controlar el número de página de forma explícita.
+- **No usarlo para**: la carga con desplazamiento infinito (usa `virtual-list` o un listener de desplazamiento); cuando los datos caben en una pantalla (no paginar es más simple).
+
+## Importación
+
+```ts
+import {
+  getPageCount,
+  clampPage,
+  getPaginationRange,
+  getPaginationItemAria,
+  formatMessage,
+} from '@lh-ui/share/core/pagination'
+import type {
+  LhPaginationRangeItem,
+  LhPaginationRangeState,
+  LhPaginationMessageParams,
+} from '@lh-ui/share/core/pagination'
+```
+
+## Intención de diseño
+
+**El saneamiento de doble parámetro de `getPageCount`**: tanto `total` como `pageSize` pasan por `shared/sanitize.sanitizeNumber`: NaN e Infinity no se cuelan hasta convertirse en un número de páginas NaN. Esta defensa no es redundante: `total` suele provenir de una interfaz asíncrona y, durante la carga, puede ser undefined, y `Math.ceil(undefined / 10)` es NaN, un NaN que inutilizaría `clampPage` y el algoritmo de intervalo.
+
+**El trato distinto de `clampPage` a NaN e Infinity**: NaN se considera ilegal y se retrocede a la primera página; **±Infinity se deja en manos de la limitación**: `Infinity` cae en la última página y `-Infinity`, en la primera. La distinción tiene sentido práctico: en modo controlado, los valores ilegales que llegan del exterior (NaN) deberían volver a una posición segura, y usar Infinity para expresar «saltar a la última página» es un uso legítimo.
+
+- **La lógica de adhesión del algoritmo de intervalo**: el `current` de `getPaginationRange` pasa primero por `clampPage`: un comentario registra una situación real: el `innerCurrent` que pasa la capa UI puede estar brevemente fuera de rango (en modo controlado, el valor exterior y el valor interior no están sincronizados, o el total se reduce y current no se ha actualizado), y no limitarlo haría que la página actual cayera fuera de la ventana de visualización y que la evaluación de los puntos suspensivos se invirtiera.
+- **Los puntos suspensivos solo se muestran cuando generan un hueco real**: `showLeftEllipsis = leftSibling > 2` y no `> 1`: cuando la ventana está pegada a la primera página (por ejemplo, current=3, siblingCount=1), a la izquierda solo se omite el número de página «2», y mostrar 1,2,3,4,5 seguidos es más claro que insertar puntos suspensivos.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `getPageCount` | `(total, pageSize) => number` | número total de páginas (mínimo 1) | saneamiento de ambos parámetros |
+| `clampPage` | `(page, pageCount) => number` | página limitada | NaN→1, Infinity→última |
+| `getPaginationRange` | `(state: LhPaginationRangeState) => LhPaginationRangeItem[]` | matriz de elementos del intervalo | algoritmo de contracción de ventana |
+| `getPaginationItemAria` | `(options: { page, current, labelTemplate? }) => LhAriaAttrs` | paquete de atributos aria | aria-current / aria-label |
+| `formatMessage` | reexportado desde `shared/format` | texto interpolado | conserva la ruta de importación original |
+
+## Definiciones de tipos
+
+```ts
+export type LhPaginationRangeItemType = 'page' | 'ellipsis'
+
+export interface LhPaginationRangeItem {
+  type: LhPaginationRangeItemType
+  page: number    // el elemento ellipsis siempre es 0; la posición es la semántica
+}
+
+export interface LhPaginationRangeState {
+  current: number       // página actual (desde 1)
+  pageCount: number
+  siblingCount?: number // número de páginas a cada lado de la actual; 1 por defecto
+}
+
+export type LhPaginationMessageParams = Record<string, string | number>
+```
+
+## Accesibilidad
+
+```ts
+getPaginationItemAria({ page: 3, current: 3, labelTemplate: 'Página {page}' })
+// { 'aria-current': 'page', 'aria-label': 'Página 3' }
+
+getPaginationItemAria({ page: 5, current: 3, labelTemplate: 'Página {page}' })
+// { 'aria-label': 'Página 5' }
+
+getPaginationItemAria({ page: 5, current: 3 })
+// {} (sin plantilla no se emite aria-label; el propio número del botón ya es legible)
+```
+
+- La página actual emite `aria-current="page"`, la convención estándar de APG para paginación; gracias a ella, el lector de pantalla anuncia «página actual» en lugar de tratar el número de página como un enlace cualquiera.
+- **El botón de puntos suspensivos** debe llevar `aria-label` (como «Saltar 5 páginas hacia adelante») o `disabled`: un texto `…` puro no aporta ninguna información al lector de pantalla, y es el defecto de accesibilidad más habitual en las paginaciones.
+- La paginación en conjunto debería estar envuelta en un `<nav aria-label="Paginación">`, para distinguirla del resto de las navegaciones de la página.
+- `labelTemplate` proviene del paquete de idiomas (`pagination.page`, etc.), y el marcador `{page}` lo sustituye esta función.
+
+## Ejemplos de uso
+
+```ts
+import { getPageCount, clampPage, getPaginationRange } from '@lh-ui/share/core/pagination'
+
+getPageCount(100, 10)    // 10
+getPageCount(105, 10)    // 11
+getPageCount(0, 10)      // 1 (mínimo 1 página)
+getPageCount(NaN, 10)    // 1 (total se sanea a 0 y Math.max(1, …) lo eleva a 1)
+getPageCount(100, NaN)   // 100 (pageSize se sanea al valor por defecto 1, es decir, 1 elemento por página)
+
+clampPage(5, 10)    // 5
+clampPage(0, 10)    // 1
+clampPage(15, 10)   // 10
+clampPage(NaN, 10)  // 1
+clampPage(Infinity, 10)  // 10 (Infinity cae en la última)
+
+// siblingCount por defecto 1, número total de casillas = 1*2 + 5 = 7
+getPaginationRange({ current: 1, pageCount: 10 })
+// [1, 2, 3, …, 10]
+getPaginationRange({ current: 5, pageCount: 10 })
+// [1, …, 4, 5, 6, …, 10]
+getPaginationRange({ current: 10, pageCount: 10 })
+// [1, …, 8, 9, 10]
+getPaginationRange({ current: 5, pageCount: 5 })
+// [1, 2, 3, 4, 5] (menos páginas que casillas: se muestran todas, sin puntos suspensivos)
+getPaginationRange({ current: 99, pageCount: 10 })
+// [1, …, 8, 9, 10] (current fuera de rango queda limitado)
+```
+
+```vue
+<!-- Vue3 -->
+<nav class="lh-pagination" aria-label="Paginación">
+  <button type="button" class="lh-pagination__prev" :disabled="current <= 1" @click="go(current - 1)">
+    Anterior
+  </button>
+  <template v-for="(item, i) in range" :key="i">
+    <span v-if="item.type === 'ellipsis'" class="lh-pagination__ellipsis">…</span>
+    <button
+      v-else
+      type="button"
+      class="lh-pagination__item"
+      :class="{ 'is-active': item.page === current }"
+      v-bind="getPaginationItemAria({ page: item.page, current, labelTemplate: t('pagination.page') })"
+      @click="go(item.page)"
+    >
+      {{ item.page }}
+    </button>
+  </template>
+  <button type="button" class="lh-pagination__next" :disabled="current >= pageCount" @click="go(current + 1)">
+    Siguiente
+  </button>
+  <select v-model="pageSize" class="lh-pagination__sizes">
+    <option :value="10">10 por página</option>
+    <option :value="20">20 por página</option>
+    <option :value="50">50 por página</option>
+  </select>
+  <span class="lh-pagination__total">Total: {{ total }}</span>
+</nav>
+```
+
+```ts
+const pageCount = computed(() => getPageCount(props.total, pageSize.value))
+const range = computed(() =>
+  getPaginationRange({ current: current.value, pageCount: pageCount.value }),
+)
+function go(page: number) {
+  const next = clampPage(page, pageCount.value)
+  if (next !== current.value) emit('update:current', next)
+}
+```
+
+```tsx
+// React: paginación controlada, current lo mantiene el componente padre; go aplica clampPage
+// antes del callback
+```
+
+```ts
+// uniapp: <view> + <view> para recorrer los elementos del intervalo; el salto a una página
+// concreta usa <input type="number"> + un botón de salto
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-pagination` | clase base (flex centrado) |
+| `.lh-pagination__prev` / `__next` | botones de página anterior / siguiente |
+| `.lh-pagination__item` | botón de número de página |
+| `.lh-pagination__item.is-active` | página actual (fondo del color principal) |
+| `.lh-pagination__ellipsis` | puntos suspensivos |
+| `.lh-pagination__sizes` | selector de elementos por página |
+| `.lh-pagination__total` / `__jump` | texto del total / entrada de salto |
+
+La página actual tiene fondo `--lh-primary-color` + texto `--lh-color-on-primary`; los botones desactivados, `--lh-text-disabled`; la separación entre botones la controla `--lh-gap-small`.
+
+## Notas
+
+- **Los números de página empiezan en 1**: `current`, `page` y `pageCount` empiezan todos en 1, a diferencia de los índices de fila de `table` (desde 0); mezclarlos es fuente de errores.
+- **La relación entre `pageCount` y `total`**: la capa UI normalmente lo calcula con `getPageCount(total, pageSize)`, pero también se puede pasar `pageCount` directamente (cuando el servidor ya conoce el número total de páginas). No uses ambas fuentes a la vez, para evitar incoherencias.
+- **La convergencia de `current` al cambiar `pageSize`**: al pasar de 50 elementos por página a 10, la página actual puede superar el nuevo `pageCount`: en el `watch(pageSize)` llama una vez a `clampPage`, o se mostrará una página vacía.
+- **La interacción de los puntos suspensivos**: pulsar los puntos suspensivos normalmente salta 5 páginas (`current ± 5`); core no incorpora este comportamiento, la capa UI lo implementa por su cuenta y da al botón de puntos suspensivos un `aria-label`.
+- **`siblingCount` y las casillas**: `totalSlots = siblingCount * 2 + 5` (primera y última página + página actual + dos posiciones de puntos suspensivos + hermanos a ambos lados). Cuando `pageCount <= totalSlots`, se muestran todas las páginas sin puntos suspensivos: con `siblingCount: 2`, el umbral son 9 páginas.
+- **El estar brevemente fuera de rango en modo controlado**: `getPaginationRange` ya limita internamente `current`, de modo que el renderizado no fallará; pero `aria-current` recaerá en la página ya limitada, y la coincidencia será natural en cuanto el estado exterior se sincronice.
+- **La reexportación de `formatMessage`**: este módulo reexporta `formatMessage` desde `shared/format` por el mismo enlace, únicamente para conservar la ruta de importación existente del downstream (la interpolación de textos con marcadores `{total}`, como `pagination.total`); el código nuevo debe importar directamente desde `core/shared/format`.
+
+<FnPlayground module="pagination" fn="getPaginationRange" params='{"state": {"current": 5, "pageCount": 20, "siblingCount": 1}}' />

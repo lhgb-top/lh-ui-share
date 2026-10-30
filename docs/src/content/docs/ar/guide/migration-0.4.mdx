@@ -1,0 +1,134 @@
+---
+title: دليل الترقية إلى 0.4.0
+description: 'جدول تخطيط إعادة تسمية البادئة LH — قائمة الاستبدال الآلي للأنواع والثوابت ومعرّفات المسبقات'
+---
+
+# دليل الترقية إلى 0.4.0
+
+يُضيف 0.4.0 البادئة `LH` بشكل موحّد لجميع الرموز العامة غير التابعة لجهات خارجية في هذا
+المستودع، وذلك ليتوافق مع اتفاقيات تسمية العائلة في plus ضمن
+`docs/project/development-guide.md` (للاطلاع على الخلفية انظر [اتفاقيات التسمية](/ar/guide/naming)).
+
+**الكل عبارة عن استبدال آلي على مستوى المعرّفات**، دون تغيير في السلوك أو مسارات
+التصدير. وقد غيّرت مكتبات واجهة المستخدم (plus / vue2 / uniapp) أسماءها تبعًا لذلك؛
+وعلى المستخدمين المستقلين تعديل الاستيراد وفق التخطيط أدناه.
+
+## الأنواع / الواجهات: `LhXxx`
+
+| القديم | الجديد | الانتماء |
+| --- | --- | --- |
+| `ThemePreset` | `LhThemePreset` | `theme` |
+| `ThemePresetName` | `LhThemePresetName` | `theme` |
+| `ThemeVars` | `LhThemeVars` | `theme` |
+| `SxProps` | `LhSxProps` | `core/shared/sx` |
+| `DOMRectLike` | `LhDOMRectLike` | `core/shared/popper` |
+| `ComputePositionOptions` | `LhComputePositionOptions` | `core/shared/popper` |
+| `PopperPosition` | `LhPopperPosition` | `core/shared/popper` |
+| `PtAttrs` | `LhPtAttrs` | `core/shared/pt` |
+| `SanitizeNumberOptions` | `LhSanitizeNumberOptions` | `core/shared/sanitize` |
+| `VirtualRange` | `LhVirtualRange` | `core/shared/virtual` |
+| `AxisRange` | `LhAxisRange` | `core/shared` |
+| `LocalePath` | `LhLocalePath` | `locales` |
+| `Leaves` | `LhLeaves` | `types/locale` |
+| `LocaleOptions` | `LhLocaleOptions` | `types/locale` |
+
+## الثوابت: `LH_<الوحدة>_<المفهوم>`
+
+| القديم | الجديد | الانتماء |
+| --- | --- | --- |
+| `DEFAULT_THEME` | `LH_THEME_DEFAULT` | `core/config` |
+| `DEFAULT_DRAWER_DIRECTION` | `LH_DRAWER_DIRECTION_DEFAULT` | `core/drawer` |
+| `DEFAULT_DRAWER_SIZE` | `LH_DRAWER_SIZE_DEFAULT` | `core/drawer` |
+| `DEFAULT_DROPDOWN_PLACEMENT` | `LH_DROPDOWN_PLACEMENT_DEFAULT` | `core/dropdown` |
+| `DROPDOWN_TRIGGERS` | `LH_DROPDOWN_TRIGGERS` | `core/dropdown` |
+| `DEFAULT_POPCONFIRM_TYPE` | `LH_POPCONFIRM_TYPE_DEFAULT` | `core/popconfirm` |
+| `DEFAULT_POPCONFIRM_PLACEMENT` | `LH_POPCONFIRM_PLACEMENT_DEFAULT` | `core/popconfirm` |
+| `POPOVER_TRIGGERS` | `LH_POPOVER_TRIGGERS` | `core/popover` |
+| `DEFAULT_POPOVER_PLACEMENT` | `LH_POPOVER_PLACEMENT_DEFAULT` | `core/popover` |
+| `THEME_PRESETS` | `LH_THEME_PRESETS` | `theme` |
+| `PRESET_THEME_STYLE_ID` | `LH_PRESET_THEME_STYLE_ID` | `theme` |
+
+لاحظ أن ثابت القيمة الافتراضية يأخذ الصيغة **`LH_<الوحدة>_<المفهوم>_DEFAULT`**
+(أي DEFAULT في **النهاية**)، وليس `LH_DEFAULT_<...>`.
+
+## كائنات مسبقات السمة: أحرف صغيرة → `LhXxx`
+
+| القديم | الجديد |
+| --- | --- |
+| `cerblue` | `LhCerblue` |
+| `songhua` | `LhSonghua` |
+| `zhusha` | `LhZhusha` |
+| `shuimo` | `LhShuimo` |
+| `golden` | `LhGolden` |
+
+## ما لم يُغيَّر (إعفاء)
+
+تبقى **الأسماء كما هي** للرموز التالية، فلا تُلمسها أثناء الترقية:
+
+| الرمز | السبب |
+| --- | --- |
+| `zhCN` / `enUS` | تسمية locale قياسية، وهي أيضًا واجهة برمجة تطبيقات عامة يُعاد تصديرها في ثلاث مكتبات واجهة |
+| **قيم النصوص** لأسماء المسبقات (مثل `name: 'cerblue'`) | قيم تكتبها أنت في `theme` الخاص بـ ConfigProvider، وتغييرها يكسر كل تكوينات المستهلكين |
+| أسماء الدوال (مثل `getThemeVars` / `sxToStyle`) | اقتصرت هذه الترقية على توحيد الثوابت / الأنواع / الواجهات / الفئات |
+
+```ts
+// ✅ بعد الترقية
+import { LH_THEME_PRESETS, LhCerblue, getThemeVars } from '@lh-ui/share/theme'
+import type { LhThemePreset, LhSxProps } from '@lh-ui/share/core/shared/sx'
+
+const preset: LhThemePreset = LhCerblue
+getThemeVars('cerblue')          // قيمة النص تظل كما هي
+```
+
+## مثال استبدال بنقرة واحدة
+
+```ts
+// قبل
+import { THEME_PRESETS, PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+import type { SxProps, ThemeVars } from '@lh-ui/share'
+
+// بعد
+import { LH_THEME_PRESETS, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+import type { LhSxProps, LhThemeVars } from '@lh-ui/share'
+```
+
+## محتويات أخرى في هذا الإصدار
+
+إضافةً إلى إعادة التسمية، يتضمّن 0.4.0 مجموعات changeset التالية قبل النشر:
+
+- **الربط المحلي وتنظيم الأنماط** (minor) —— آلية alias في تخطيط العائلة، وتطبيق ستة
+  تحققات من `verify:styles`
+- **إصلاحات التدقيق في ثلاثة مستودعات** (minor)
+- **مشروع رموز الارتفاع** (minor) —— رموز `--lh-control-height-*` جديدة لتوحيد الارتفاع
+  الخارجي لعناصر التحكم، **مع تغيير مدمر بصريًا**: انظر «تغييرات ارتفاع عناصر التحكم» أدناه
+- **دعم النص في divider العمودي** (minor) —— يدعم خط التقسيم العمودي نصوص الفتحة الافتراضية
+  افتراضيًا، ويصبح `aria-orientation="vertical"` قابلًا للوصول
+- **دفعة عيوب الانحدار في الواجهة الرسومية** (patch) —— أولوية نص الحقل الإلزامي في Form
+  (لم يعد `message` المخصَّص للمستخدم يُبتلَع من قِبل قواعد التركيب)، وتفتيح الوضع الداكن
+  للمسبقات ذات اللون الرئيسي الفاتح (لم يعد الزر الرئيسي في مسبقات مثل 水墨 (رسم الحبر)
+  شبه غير مرئي تقريبًا في الوضع الداكن) وغيرها
+- **تفكيك الاعتماد الدائري في date-picker** (patch) —— نقل `formatDate` / `parseDate` إلى
+  `core/shared/date`، وفكّ الحلقة الثنائية `logic ↔ adapter` إلى اتجاه واحد
+- **نمط حدود divider واختباراته** (patch)
+- **إصلاح توسيط عناصر تحكيم النموذج** (patch)
+- **التفاف عنوان steps وانكساره** (patch)
+- **إلغاء قاعدة وسْم hairline** (patch) —— إخراج px مباشرة في uniapp v3، ولم تعد حدود
+  1px الجديدة بحاجة إلى وسْم `/* hairline */` (تُحفَظ العلامات التاريخية البالغ عددها 65
+  كتعليقات عادية)
+- **موقع التوثيق** (minor) —— هو الموقع الذي تقرؤه الآن
+
+## تغييرات ارتفاع عناصر التحكم (مدمر بصريًا)
+
+رموز جديدة `--lh-control-height-{mini,small,medium,large,x-large}` (دلالتها الارتفاع
+الخارجي border-box لعنصر التحكم)، وأصبحت كل عناصر تحكم النموذج تشير إليها. وقبل ذلك لم
+تُصرَّح `box-sizing: border-box` لمعظم العناصر، وبعد محاذاة الارتفاع الخارجي بشكل موحّد
+انخفض الارتفاع الفعلي المُصيَّر لعناصر التحكم التالية:
+
+| عنصر التحكم | التغيير |
+| --- | --- |
+| input | من الاشتقاق من padding إلى ارتفاع ثابت: mini 28→20 و small 32→24 و medium 39→32 و large 50→40 |
+| بقية عناصر تحكم النموذج | توحيد مع نفس مجموعة درجات الارتفاع، بمحاذاة العمودي والأساس عند خلط العناصر في نموذج واحد |
+
+هذا خرق على المستوى **البصري** (بنية DOM وواجهة برمجة التطبيقات لم تتغير). إذا كان
+مشروعك يحتوي على اختبارات لقطة تعتمد على قيم البكسل القديمة أو تخطيطًا بارتفاع ثابت،
+فيجب التحقق من الانحدار.

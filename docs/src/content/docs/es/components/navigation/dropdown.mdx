@@ -1,0 +1,172 @@
+---
+title: dropdown menú desplegable —— Navegación
+description: 'LH_DROPDOWN_PLACEMENT_DEFAULT=b-bottom-start, scroll por maxHeight en getDropdownMenuStyle, distinción entre haspopup:"menu" y el "true" de popover'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Un menú desplegable es «una lista de acciones que se abre al pulsar un botón»: las acciones de fila «Editar / Eliminar / Deshabilitar», el «Más acciones» de una columna de tabla. La diferencia con `popover` es **de semántica y forma de contenido**: dropdown es **semántica de menú** (role=menu + lista de menuitem), popover es **semántica de diálogo** (role=dialog, puede contener cualquier cosa). La diferencia con `menu` es **de persistencia**: dropdown es una entrada de acciones temporal, que se abre y se cierra al pulsar.
+
+## Cuándo usarlo
+
+- Implementar `<LhDropdown>` / `<LhDropdownItem>` en cada extremo: menús de acciones de fila, botón «Más», operaciones por lotes, menús rápidos de comandos.
+- **Las acciones son del mismo nivel, en cantidad moderada (de 3 a 10) y no necesitan formularios complejos**.
+- **Cuándo no usarlo**: capas flotantes que necesitan formularios o contenido rico (usar `popover`); operaciones peligrosas que necesitan confirmación (poner un botón de eliminación directamente en un dropdown sin doble confirmación es arriesgado; usar `popconfirm`); navegación principal (usar `menu`: dropdown desaparece al recargar).
+
+## Importación
+
+```ts
+import {
+  LH_DROPDOWN_PLACEMENT_DEFAULT,
+  LH_DROPDOWN_TRIGGERS,
+  getDropdownClass,
+  getDropdownItemClass,
+  getDropdownMenuStyle,
+  getDropdownTriggerAria,
+  getDropdownMenuAria,
+  getDropdownItemAria,
+} from '@lh-ui/share/core/dropdown'
+import type { LhDropdownTrigger, LhDropdownState, LhDropdownItemState } from '@lh-ui/share/core/dropdown'
+```
+
+## Intención de diseño
+
+**La posición por defecto es `bottom-start` y no `top`**: `LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'`: el menú desplegable **se despliega desde la esquina inferior izquierda del botón**, acorde con el modelo mental de «desplegar hacia abajo». Compárese con el `top` por defecto de `popover` / `popconfirm` (la capa de información flota hacia arriba, sin tapar el contenido inferior): un desplegable es una entrada de acciones y desplegarse hacia abajo es más natural; además, `bottom-start` (alineado a la izquierda y no centrado) garantiza que un menú largo no rebose horizontalmente del viewport.
+
+**Ningún disparador de tipo focus**: `LH_DROPDOWN_TRIGGERS` es `hover / click / contextmenu`, **sin focus** (compárese con los `click / hover / focus / manual` de `popover`). El motivo: el disparador de un desplegable suele ser un botón, y un disparador por focus abriría el menú por error al pasar con Tab, entorpeciendo el flujo del teclado. `contextmenu` cubre los menús de botón derecho (en sustitución del menú contextual por defecto del navegador).
+
+**La semántica de `hideOnClick` vive en la capa UI**: el state contiene un campo `hideOnClick`, pero core no lo consume: la decisión de «si cerrar tras pulsar un elemento del menú» la toma la capa UI (al pulsar un item, decide según la configuración). core solo transporta la declaración, manteniendo la estructura de datos capaz de expresar la intención completa (misma idea que el campo `trigger` de `form`).
+
+**`getDropdownMenuStyle` lleva `overflow: auto` integrado**: si se define maxHeight, se añade el scroll automáticamente. Cuando el desplegable tiene muchos elementos, no revienta el viewport: una diferencia sutil con `popover` (el estilo de anchura de popover no incluye scroll; el desbordamiento del contenido lo gestiona quien llama).
+
+**`haspopup: 'menu'` en vez de `'true'`**: el valor de aria-haspopup del disparador es **`'menu'`**, declarando con precisión que lo que se abre es un menú. Compárese con el `'true'` de `popover` (capa flotante genérica, equivalente a la generalización de dialog/menu/listbox). El lector de pantalla puede así anticipar el patrón de interacción del contenido emergente (un menú soporta navegación con las teclas de dirección).
+
+## Tabla de funciones
+
+| Función / constante | Firma | Devuelve | Acción |
+| --- | --- | --- | --- |
+| `getDropdownClass` | `(state: { placement, popperClass? }) => string[]` | Nombres de clase | Posición + personalización |
+| `getDropdownItemClass` | `(state: { disabled?, divided? }) => string[]` | Nombres de clase | Deshabilitado + separador |
+| `getDropdownMenuStyle` | `(maxHeight?: string \| number) => Record<string, string>` | Estilos en línea | maxHeight + overflow |
+| `getDropdownTriggerAria` | `(visible, menuId?) => LhAriaAttrs` | Paquete aria | haspopup="menu" |
+| `getDropdownMenuAria` | `(id?) => LhAriaAttrs` | Paquete aria | role=menu |
+| `getDropdownItemAria` | `(state: { disabled? }) => LhAriaAttrs` | Paquete aria | role=menuitem |
+
+Constantes: `LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'`, `LH_DROPDOWN_TRIGGERS` (hover / click / contextmenu).
+
+## Definiciones de tipos
+
+```ts
+export type LhDropdownTrigger = 'hover' | 'click' | 'contextmenu'
+
+export interface LhDropdownState {
+  trigger?: LhDropdownTrigger
+  placement?: LhPlacement          // 12 posiciones (shared/popper)
+  visible?: boolean
+  disabled?: boolean
+  hideOnClick?: boolean            // Si cerrar tras pulsar un elemento del menú (lo consume la capa UI)
+}
+
+export interface LhDropdownItemState {
+  command?: string | number        // Identificador del elemento del menú, se emite con el evento command
+  disabled?: boolean
+  divided?: boolean                // Línea separadora superior
+}
+```
+
+## Accesibilidad
+
+```ts
+getDropdownTriggerAria(true, 'dd-menu-1')
+// { 'aria-expanded': true, 'aria-controls': 'dd-menu-1', 'aria-haspopup': 'menu' }
+getDropdownTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'menu' }
+
+getDropdownMenuAria('dd-menu-1')  // { role: 'menu', id: 'dd-menu-1' }
+getDropdownItemAria({ disabled: true })
+// { role: 'menuitem', 'aria-disabled': true }
+```
+
+- **La anticipación del lector de pantalla con `aria-haspopup="menu"`**: al encontrarlo, el lector de pantalla sabe que lo que se abre es un menú y lo trata en modo menú (navegación con las teclas de dirección, activación con Enter). Es más preciso que un `"true"` genérico: por eso dropdown y popover usan valores distintos.
+- **Convenciones de teclado del menú** (patrón APG menu): el disparador abre con Enter/Space; tras abrirlo, el foco cae en **el primer elemento disponible**; ↑/↓ mueven; Enter/Space activan; Esc cierra y **el foco vuelve al disparador**. El algoritmo de navegación con las teclas de dirección usa `shared/keyboard.getNextListIndex` (el mismo código que menu / tabs).
+- **El contrato de evento de `command`**: el campo `command` del elemento del menú se emite con el evento de pulsación (`@command="cmd => ..."`), en vez de escribir un handler independiente para cada item: es la forma estándar de la API del menú desplegable. La capa UI lo distribuye con un switch.
+- **`aria-disabled` para los elementos deshabilitados, en vez del atributo `disabled`**: `aria-disabled` marca el elemento como deshabilitado en el árbol de accesibilidad, pero sigue siendo enfocable (el lector de pantalla puede anunciar su existencia y la razón de su deshabilitación); el `disabled` nativo lo saca de la secuencia de tabulación y el usuario de teclado lo «salta» sin saber por qué.
+- **La línea separadora es puramente decorativa**: `divided` es solo un borde CSS, sin semántica: no lo uses para expresar «agrupación de operaciones peligrosas»; para una agrupación peligrosa usa `popconfirm` o un color visual (color de texto danger).
+- **Menú de botón derecho (contextmenu)**: el disparador debe usar `@contextmenu.prevent` para evitar el menú por defecto del navegador y marcar el elemento como interactivo; un menú de botón derecho es totalmente inalcanzable para usuarios de teclado, de modo que **debe ofrecerse una entrada equivalente mediante un botón** (requisito estricto de accesibilidad).
+
+## Ejemplos de uso
+
+```ts
+import {
+  getDropdownClass, getDropdownItemClass, getDropdownMenuStyle, LH_DROPDOWN_PLACEMENT_DEFAULT,
+} from '@lh-ui/share/core/dropdown'
+
+LH_DROPDOWN_PLACEMENT_DEFAULT  // 'bottom-start'
+
+getDropdownClass({ placement: 'bottom-start' })
+// ['lh-dropdown__menu', 'lh-dropdown__menu--bottom-start']
+getDropdownItemClass({ disabled: true, divided: true })
+// ['lh-dropdown__item', 'lh-dropdown__item--disabled', 'lh-dropdown__item--divided']
+
+getDropdownMenuStyle(200)     // { maxHeight: '200px', overflow: 'auto' }
+getDropdownMenuStyle('30vh')  // { maxHeight: '30vh', overflow: 'auto' }
+getDropdownMenuStyle(undefined)  // {}
+```
+
+```vue
+<!-- Vue3: menú de acciones de fila -->
+<template>
+  <LhDropdown @command="onCommand">
+    <template #default>
+      <LhButton size="small">Más<LhIcon name="arrow-down" /></LhButton>
+    </template>
+    <template #menu>
+      <LhDropdownItem :command="'edit'">Editar</LhDropdownItem>
+      <LhDropdownItem :command="'copy'">Copiar</LhDropdownItem>
+      <LhDropdownItem :command="'delete'" divided danger>Eliminar</LhDropdownItem>
+    </template>
+  </LhDropdown>
+</template>
+
+<script setup>
+function onCommand(command: string | number) {
+  if (command === 'delete') visible.value = true  // La eliminación pasa por la doble confirmación de popconfirm
+  else if (command === 'edit') router.push(`/edit/${id}`)
+}
+</script>
+```
+
+```tsx
+// React: los elementos del menú se renderizan desde un arreglo + distribución con onCommand;
+// el visible controlado se combina con el cierre al pulsar fuera
+```
+
+```ts
+// uniapp: menú con <view> + catchtap; el menú de botón derecho no se soporta fuera de h5,
+// solo se mantiene el disparador click
+```
+
+## Estilos y tokens
+
+| Nombre de clase | Semántica |
+| --- | --- |
+| `.lh-dropdown__menu` | Contenedor del menú (popper) |
+| `.lh-dropdown__menu--{bottom-start\|top\|…}` | Posición (el valor real tras el flip) |
+| `.lh-dropdown__item` | Elemento del menú |
+| `.lh-dropdown__item--disabled` | Deshabilitado (gris + sin respuesta) |
+| `.lh-dropdown__item--divided` | Línea separadora superior |
+| `.lh-dropdown__item--danger` | Operación peligrosa (texto en rojo, convención de la capa UI) |
+
+Color de fondo `--lh-bg-color`, sombra `--lh-box-shadow-dropdown`, radio de borde `--lh-border-radius-base`, relleno del elemento `--lh-dropdown-item-padding`, z-index `--lh-z-index-dropdown`.
+
+## Advertencias
+
+- **Las operaciones peligrosas exigen doble confirmación**: poner «Eliminar» directamente en un dropdown ejecuta la acción con una sola pulsación, y el coste de un error es alto. La práctica estándar es que el dropdown dispare un `popconfirm` («Tras la eliminación no se puede recuperar, ¿confirmar?»): es una cadena de colaboración entre dos componentes.
+- **Scroll cuando hay demasiados elementos**: con más de 10, valora el scroll por `maxHeight`, o pasa a `select` (semántica de selección) o a un drawer. La navegación de teclado en un menú largo es deficiente (hay que pulsar muchas veces las teclas de dirección).
+- **El problema del `hover` en móvil**: las pantallas táctiles no disponen de hover, al igual que con `popover`/`tooltip`. Para multiplataforma, usa click por defecto.
+- **Escenarios para `hideOnClick: false`**: cuando los elementos del menú son interruptores de «marcado» (p. ej. «Mostrar la columna X»), puede interesar mantener el menú abierto tras la pulsación para que quien usa el menú pueda marcar varios seguidos: esa es la razón de ser del campo.
+- **Dropdowns anidados**: el posicionamiento y la gestión del foco de los submenús (un dropdown dentro de un dropdown) son complejos (qué capa cierra cada Esc en una relación padre-hijo). lh-ui no incorpora submenús: si necesitas navegación jerárquica, usa `menu`.
+- **`placement` debe pasar el valor real tras el flip**: al igual que con `popover`, `getDropdownClass` recibe la posición real devuelta por popper; de lo contrario, las clases de flecha/alineación no coincidirán con lo que se ve.
+- **La frontera con `menu`**: dropdown es una **entrada de acciones temporal** (desaparece al recargar); menu es **navegación persistente** (admite enlaces profundos y mantiene su estado al recargar). Usar dropdown como navegación principal impide volver a las páginas de segundo nivel.
+- **Foco en el primer elemento**: al abrir el menú, el foco cae en el primer elemento disponible (la semántica first de `shared/keyboard`), no se queda en el disparador: es un requisito de APG; quien usa el teclado debe poder operar directamente tras abrirlo.
+
+<FnPlayground module="dropdown" fn="getDropdownMenuStyle" params='{"maxHeight": 200}' />

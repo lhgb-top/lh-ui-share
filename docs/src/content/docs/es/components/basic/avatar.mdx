@@ -1,0 +1,123 @@
+---
+title: avatar —— Avatar
+description: 'getAvatarText extrae el primer carácter con codePointAt (seguro para emoji), isImageSource evalúa el respaldo de imagen, getAvatarClassNames calcula los modificadores de forma'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El componente de avatar debe gestionar tres tipos de contenido: imagen, texto e icono, y degradar con elegancia cuando la imagen falla al cargar o la dirección no es válida. `core/avatar` convierte la «extracción de texto» y la «evaluación del origen de la imagen» en funciones puras: ambas decisiones deben ser idénticas en todas las plataformas, de lo contrario surgirían divergencias del estilo «Vue3 muestra texto y uniapp muestra una imagen rota».
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhAvatar`: si la imagen está disponible se renderiza un `img`, en caso contrario se renderiza el primer carácter extraído por `getAvatarText`, y si tampoco hay texto, el icono de marcador de posición.
+- Escenarios de sistemas de usuarios en los que se toma la «inicial del nombre» como avatar por defecto.
+- **No usarlo para**: recortar ni subir imágenes. Eso es tarea de `LhUpload` + la lógica de negocio.
+
+## Importación
+
+```ts
+import { getAvatarClassNames, getAvatarText, isImageSource } from '@lh-ui/share/core/avatar'
+import type { LhAvatarState, LhAvatarShape } from '@lh-ui/share/core/avatar'
+```
+
+## Intención de diseño
+
+`getAvatarText` usa `codePointAt(0)` + `String.fromCodePoint` en lugar de `str[0]`, y esto es una trampa fácil de pasar por alto: `'😀'[0]` devuelve media pareja sustituta (`\uD83D`), que al renderizarse muestra un cuadro ilegible. Extrayendo por puntos de código, los emoji y los caracteres del plano suplementario (muchos caracteres chino poco frecuentes) son seguros.
+
+La expresión regular de `isImageSource` solo hace una **evaluación laxa de disponibilidad**, no una validación de seguridad: considera dirección de imagen a cualquier cadena que empiece por `http(s)://`, `data:image/`, ruta absoluta `/`, ruta relativa `./` o `../`. Su propósito es «decidir si vale la pena intentar renderizar un img»; el verdadero fallo de carga lo cubre el evento `error` del `img` (la capa UI cambia al estado de texto).
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `getAvatarClassNames` | `(state: LhAvatarState) => string[]` | matriz de nombres de clase | modificadores de forma y tamaño |
+| `getAvatarText` | `(source: string) => string` | primer carácter o `''` | extrae el carácter a mostrar del texto |
+| `isImageSource` | `(src: string \| undefined) => boolean` | booleano | si la dirección de imagen merece intentarse |
+
+Detalles de los bordes:
+
+- `getAvatarText('')` → `''`; `getAvatarText(' 水墨 ')` → `'水'` (aplica trim primero); `getAvatarText('Alice')` → `'A'`.
+- `getAvatarText` devuelve `''` cuando `codePointAt(0)` retorna undefined (la cadena vacía ya se ha recortado, en teoría no debería darse).
+- `isImageSource(undefined)` → `false`; `isImageSource('')` → `false`.
+
+## Definiciones de tipos
+
+```ts
+export type LhAvatarShape = 'circle' | 'square'
+
+export interface LhAvatarState {
+  size: LhComponentSize
+  shape: LhAvatarShape
+}
+```
+
+## Accesibilidad
+
+`core/avatar` no emite un paquete de atributos aria, porque el tratamiento del avatar depende del tipo de contenido:
+
+- **Avatar de imagen**: se usa un `<img>` nativo y `alt` es obligatorio (por ejemplo, «Avatar de Zhang San»). No dejes alt vacío: un alt vacío significa «imagen decorativa», y el avatar suele portar información de identidad.
+- **Avatar de texto**: el texto en sí es contenido legible, no necesita tratamiento adicional.
+- **Avatar de icono** (marcador de posición de usuario anónimo): el icono sigue `getIconAria({ decorative: false, label: 'Usuario anónimo' })`.
+
+## Ejemplos de uso
+
+```ts
+import { getAvatarText, isImageSource } from '@lh-ui/share/core/avatar'
+
+getAvatarText('王小明')       // '王'
+getAvatarText('Alice Smith')  // 'A'
+getAvatarText('😀哈哈')       // '😀'
+isImageSource('https://a.com/1.png')  // true
+isImageSource('data:image/png;base64,...')  // true
+isImageSource(undefined)               // false
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getAvatarClassNames({ size, shape })">
+  <img v-if="isImage && !error" :src="src" :alt="alt" @error="error = true" />
+  <span v-else-if="text" class="lh-avatar__text">{{ text }}</span>
+  <LhIcon v-else name="user" :decorative="false" label="Usuario anónimo" />
+</div>
+```
+
+```tsx
+// React
+const text = getAvatarText(name)
+const showImg = isImageSource(src) && !imgError
+return (
+  <div className={getAvatarClassNames({ size, shape }).join(' ')}>
+    {showImg ? <img src={src} alt={alt} onError={() => setImgError(true)} />
+      : text ? <span className="lh-avatar__text">{text}</span>
+      : <LhIcon name="user" decorative={false} label="Usuario anónimo" />}
+  </div>
+)
+```
+
+```ts
+// uniapp: el componente <image> tiene evento @error, la lógica es la misma;
+// en el avatar de texto, vigila la fuente tipográfica en plataformas distintas de h5
+// (los caracteres raros pueden carecer de glifo)
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-avatar` | clase base: ancho y alto fijos, recorte del desbordamiento, centrado |
+| `.lh-avatar--{mini\|small\|medium\|large\|x-large}` | escala de tamaño |
+| `.lh-avatar--circle` / `.lh-avatar--square` | forma (grado de redondeo) |
+| `.lh-avatar__img` | imagen: ocupa todo + object-fit |
+| `.lh-avatar__text` | texto: centrado, blanco, escalado según el tamaño |
+| `.lh-avatar__icon` | icono de marcador de posición |
+
+El color de fondo del avatar por defecto es el token del color principal; en escenarios con múltiples avatares (grupos de avatares) cada plataforma puede colorear por hash del nombre en su capa UI; core no participa.
+
+## Notas
+
+- **No uses `str[0]` ni `str.charAt(0)`** en la capa UI para extraer el primer carácter: los emoji y los caracteres raros se truncarían en texto ilegible. Usa siempre `getAvatarText`.
+- Que `isImageSource` devuelva true no significa que la imagen exista, solo que «merece la pena intentarlo». El respaldo `onError` es obligatorio.
+- `square` no es un ángulo recto, sino una esquina ligeramente redondeada (armonía visual); un avatar con esquinas rectas parece demasiado afilado en el diseño.
+- El `object-fit` del avatar de imagen es `cover` por defecto, por lo que un rostro puede verse recortado en los bordes. A menudo el negocio necesita ajustar `object-position`; esto se gestiona en la capa UI de cada plataforma.
+
+<FnPlayground module="avatar" fn="getAvatarText" params='{"source": "青花瓷"}' />

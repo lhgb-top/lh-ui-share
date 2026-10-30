@@ -1,0 +1,159 @@
+---
+title: 'menu меню —— Навигация'
+description: 'toggleMenuOpen: двухрежимный аккордеон/обычный, связь aria-expanded подменю, @deprecated moveMenuFocus собран в shared/keyboard'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Меню — это каркасная навигация сайта: верхнее горизонтальное меню, боковое вертикальное меню, сворачиваемое меню из значков. Отличие от `dropdown` — в **постоянстве и иерархии**: меню постоянно присутствует на странице и может бесконечно вкладывать подуровни; dropdown — временно всплывающий список действий. `core/menu` отвечает за учёт состояний развёрнутости и семантику доступности, а раскладка и позиционирование целиком лежат на SCSS.
+
+## Когда использовать
+
+- Реализация `<LhMenu>` / `<LhSubMenu>` / `<LhMenuItem>` на всех концах: основная навигация сайта, боковая панель административной системы, оглавление сайта документации.
+- Навигация с **более чем двумя уровнями** иерархии.
+- **Не следует использовать**: ряд равноправных кнопок действий (используйте `space` + `button`); временно всплывающее меню действий (используйте `dropdown`); переключение содержимого в стиле вкладок (используйте `tabs`).
+
+## Импорт
+
+```ts
+import {
+  getMenuClassNames,
+  getMenuItemClassNames,
+  getSubMenuClassNames,
+  getMenuItemGroupClassNames,
+  toggleMenuOpen,
+  isMenuOpen,
+  moveMenuFocus,
+  getMenuAria,
+  getMenuItemAria,
+  getSubMenuAria,
+} from '@lh-ui/share/core/menu'
+import type { LhMenuMode } from '@lh-ui/share/core/menu'
+```
+
+## Замысел
+
+**Режим аккордеона допускает ноль открытых**: при `uniqueOpened: true` `toggleMenuOpen` по клику на уже развёрнутый элемент возвращает `[]` (всё свёрнуто), а по клику на свёрнутый — `[key]` (остаётся только он). Обратите внимание: это не «хотя бы один остаётся открытым» — ноль открытых разрешён, что делает состояние «всё свёрнуто» интерактивным.
+
+**Обычный режим — добавление/удаление, а не замена**: возвращается новый массив (через `filter` удаляется / добавляется элемент), остальные развёрнутые элементы сохраняются — в многоуровневом меню одновременно открыть несколько подменю — частая потребность.
+
+**`moveMenuFocus` — оболочка @deprecated**: алгоритм циклической навигации собран в `getNextListIndex` из `core/shared/keyboard`, а эта функция сохраняет старую сигнатуру (принимает массив DOM-элементов) для существующих ссылок downstream. Что она делает: отфильтровывает `tabIndex === -1` (эквивалент отключённых элементов ядра), а при отсутствии текущего элемента в списке откатывается к первому. **В новом коде используйте `getNextListIndex` напрямую.**
+
+**Тройка aria**: контейнер `role="menu"`, листовые элементы `role="menuitem"`, заголовок подменю `role="menuitem"` + `aria-expanded` + `aria-controls`. Обратите внимание: **заголовок подменю не является дочерней ролью menuitem** — в структуре меню по APG разворачиваемый пункт остаётся menuitem, а состояние развёрнутости выражается через aria-expanded.
+
+**Имена классов отделены от состояний**: `--active` / `--disabled` / `--opened` — независимые булевы классы, SCSS комбинирует стили. `--collapse` (свёрнутое состояние) — класс уровня контейнера, влияющий на способ отрисовки всех дочерних элементов (меню из значков показывает только значки, а текст дополняется через tooltip).
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getMenuClassNames` | `(state: { mode, collapse }) => string[]` | классы | режим раскладки + свёрнутое состояние |
+| `getMenuItemClassNames` | `(state: { active, disabled }) => string[]` | классы | листовой элемент |
+| `getSubMenuClassNames` | `(state: { active, disabled, opened }) => string[]` | классы | подменю |
+| `getMenuItemGroupClassNames` | `() => string[]` | классы | контейнер группы |
+| `toggleMenuOpen` | `(openeds, key, uniqueOpened) => string[]` | новый массив | развернуть/свернуть (неизменяемо) |
+| `isMenuOpen` | `(openeds, key) => boolean` | развёрнуто ли | запрос includes |
+| `moveMenuFocus` ⚠️ | `(items, currentEl, direction) => HTMLElement \| null` | целевой элемент | перемещение фокуса ↑/↓ |
+| `getMenuAria` | `(id?) => LhAriaAttrs` | aria-пакет | role=menu |
+| `getMenuItemAria` | `(state: { disabled? }) => LhAriaAttrs` | aria-пакет | menuitem |
+| `getSubMenuAria` | `(options: { opened, disabled?, menuId? }) => LhAriaAttrs` | aria-пакет | menuitem + expanded |
+
+⚠️ — оболочка совместимости `@deprecated`; в новом коде используйте `getNextListIndex` из `shared/keyboard`.
+
+## Определения типов
+
+```ts
+export type LhMenuMode = 'horizontal' | 'vertical'
+```
+
+## Доступность
+
+```ts
+getMenuAria('menu-1')            // { role: 'menu', id: 'menu-1' }
+getMenuItemAria({ disabled: true })  // { role: 'menuitem', 'aria-disabled': true }
+getSubMenuAria({ opened: true, menuId: 'menu-1' })
+// { role: 'menuitem', 'aria-expanded': true, 'aria-controls': 'menu-1' }
+getSubMenuAria({ opened: false })
+// { role: 'menuitem', 'aria-expanded': false }
+```
+
+- **Ложное значение aria-expanded тоже выводится**: `{ 'aria-expanded': false }` имеет смысл — оно явно сообщает скринридеру «это подменю свёрнуто». Это следует соглашению `shared/a11y`: только undefined (не передано) опускается, false — допустимое значение состояния.
+- **Различие режимов клавиатурной навигации**: горизонтальное меню использует ←/→, вертикальное — ↑/↓; это соглашение шаблона menu из APG. Пользователь скринридера при нажатии стрелок ожидает соответствующего поведения — `moveMenuFocus` предоставляет только вертикальное направление 1/-1, а ←/→ горизонтального меню заменяются в UI-слое и вызывают ту же функцию.
+- **aria-current отмечает текущую страницу**: для активного элемента меню, помимо класса `--active`, рекомендуется добавить в UI-слое `aria-current="page"` (та же семантика, что у последнего элемента `breadcrumb`), чтобы скринридер озвучил «текущая страница».
+- **Компенсация текста в свёрнутом меню**: в режиме `collapse` отображаются только значки, текст элемента меню следует поместить в `aria-label` или в tooltip при наведении — иначе кнопка-значок для скринридера останется без имени.
+- **Пропуск отключённых элементов**: элементы с `--disabled` не реагируют на клики (перехват в UI-слое), но остаются в DOM. Клавиатурная навигация должна их пропускать (фильтрация по tabIndex в `moveMenuFocus`).
+
+## Примеры использования
+
+```ts
+import { toggleMenuOpen, isMenuOpen } from '@lh-ui/share/core/menu'
+
+toggleMenuOpen(['a', 'b'], 'b', false)  // ['a'] (обычный режим, сворачивается b)
+toggleMenuOpen(['a'], 'b', false)       // ['a', 'b'] (развёрнуто b)
+toggleMenuOpen(['a'], 'a', true)        // [] (аккордеон: повторный клик сворачивает, ноль открытых разрешён)
+toggleMenuOpen(['a'], 'b', true)        // ['b'] (аккордеон: остаётся только b)
+
+isMenuOpen(['a', 'b'], 'a')  // true
+isMenuOpen(['a'], 'c')       // false
+```
+
+```ts
+// Управляемое состояние развёрнутости (UI-слой): openeds — массив, а не Set,
+// для удобства сериализации и v-model
+const openeds = ref<string[]>([])
+function onSubMenuClick(key: string) {
+  openeds.value = toggleMenuOpen(openeds.value, key, props.uniqueOpened)
+}
+```
+
+```vue
+<!-- Vue3: боковое вертикальное меню -->
+<template>
+  <LhMenu mode="vertical" :collapse="collapsed" :unique-opened="true">
+    <LhSubMenu index="1">
+      <template #title><LhIcon name="settings" /><span>Настройки системы</span></template>
+      <LhMenuItem index="1-1" @click="go('/users')">Управление пользователями</LhMenuItem>
+      <LhMenuItem index="1-2" disabled>Управление доступом</LhMenuItem>
+    </LhSubMenu>
+    <LhMenuItem index="2" @click="go('/profile')">Личный кабинет</LhMenuItem>
+  </LhMenu>
+</template>
+```
+
+```tsx
+// React: openeds через useState<string[]>; клик по элементу меню выполняет navigate;
+// свёрнутое состояние спускается в подменю через context (чтобы не прокидывать
+// props через каждый уровень)
+```
+
+```ts
+// uniapp: <view> + catchtap; сворачиваемый режим на стороне мини-программ
+// использует анимацию перехода с фиксированной шириной в px
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-menu` | контейнер |
+| `.lh-menu--{horizontal\|vertical}` | режим раскладки |
+| `.lh-menu--collapse` | свёрнутое состояние (только значки) |
+| `.lh-menu-item` | листовой элемент |
+| `.lh-menu-item--active` / `--disabled` | активный / отключенный |
+| `.lh-sub-menu` / `--active` / `--disabled` / `--opened` | заголовок подменю |
+| `.lh-sub-menu__popup` | всплывающий дочерний уровень (горизонтальное меню) |
+| `.lh-menu-item-group` | группа (с заголовком группы) |
+
+Фон активного элемента `--lh-menu-item-active-background`, цвет текста `--lh-menu-item-color` (для светлых токенов требуется явное переопределение в var-dark, см. «ловушка тёмной темы» в корневом AGENTS.md); токен высоты `--lh-menu-item-height`.
+
+## Замечания
+
+- **openeds — массив, а не объект**: порядок не важен, но требуется уникальность; `toggleMenuOpen` гарантирует её. При сериализации в query роутера или в localStorage массив нагляднее.
+- **Аккордеон управляет только одним уровнем**: `uniqueOpened` делает взаимоисключающими только прямые подменю **одного menu**; подменю уровня внука не затрагиваются (каждое поддерживает собственный openeds).
+- **Дочерние уровни горизонтального меню — всплывающие**: первый уровень располагается горизонтально, второй выпадает вниз (класс `lh-sub-menu__popup`, позиционирование через `shared/popper`); дочерние уровни вертикального меню разворачиваются внутри (сдвигая содержимое ниже). Структуры DOM у двух режимов разные, её определяет mode.
+- **`--active` нужно синхронизировать с роутером**: активное состояние меню обычно следует текущему роуту — UI-слой слушает изменения роута и обновляет active index; core не касается роутинга.
+- **Tooltip в свёрнутом состоянии**: при `collapse: true` от элемента меню остаётся только значок, текст следует дополнять через `tooltip` (показывается при наведении). Это точка совместной работы двух компонентов.
+- **DOM-зависимость `moveMenuFocus`**: функция принимает `HTMLElement[]` и может вызываться только в браузере (пропуск при SSR); кроме того, она фильтрует по tabIndex, а не читает класс disabled — UI-слой должен обеспечивать tabIndex = -1 для отключённых элементов.
+- **Меню и dropdown: роли одинаковые, применение разное**: оба используют `role="menu"`. menu — постоянная навигация, dropdown — временный список действий — не подменяйте навигацию сайта dropdown-ом (исчезает при обновлении, нет глубоких ссылок).
+
+<FnPlayground module="menu" fn="toggleMenuOpen" params='{"openeds": ["a"], "key": "b", "uniqueOpened": true}' />

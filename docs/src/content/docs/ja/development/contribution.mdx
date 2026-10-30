@@ -1,0 +1,137 @@
+---
+title: コントリビューション
+description: '6 つのレッドライン、命名規約、コミットメッセージの規約と PR 前の自己チェックリスト'
+---
+
+@lh-ui/share への変更を歓迎します。本文は共同作業に参加するための**ハード制約**です——大部分の慣例は好みの問題ではなく、4 つの UI ライブラリが正常に動くための前提です。
+
+## 6 つのレッドライン
+
+### 1. `src/` は一切のフレームワーク依存を禁止
+
+```ts
+// ❌ 絶対に禁止
+import { ref } from 'vue'
+import { useState } from 'react'
+import { ... } from '@dcloudio/uniapp'
+
+// ✅ 許されるのは純関数と型だけ
+export function computeSomething(input: Foo): Bar { ... }
+```
+
+**理由**：share はファミリーの**唯一のフレームワーク非依存共有層**です。どこかひとつ `import 'vue'` があれば、React 版と uniapp 版は立ち行かなくなります。CI に grep ゲートがあります。
+
+リアクティビティの配線は各 UI 層の仕事です（`ref()` / `useState()` / `useSyncExternalStore()`）——core は純粋なデータだけを出力します。[lhlocale の設計](/ja/reference/locales#各端で-version-を購読する方法)を参照してください：純粋なイベントエミッターで、各端が自分で再レンダリング信号に変換します。
+
+### 2. `styles/` はコンポーネントスタイルの唯一ソース
+
+- スタイルをどの UI ライブラリにもコピーして手直しすることを禁止します。
+- **すべてのスタイル変更は本リポジトリ内でのみ行われます**。
+
+クロスフレームワークのトランジションクラス名の差異は [3 つの transition mixin](/ja/reference/transition-mixins) が収束させます——**コンポーネントスタイルにクラス名を二重に手書きすることは禁止**で、一律 `@include` します。状態を子孫ノードに載せたいときは第 2 引数を渡します。
+
+### 3. core の単体テストはこの 1 つのみ
+
+`tests/unit/` は**3 ライブラリが共有する**テスト結果です。UI ライブラリは本リポジトリの core 単体テストをコピーしてはなりません。
+
+### 4. ~~1px の細枠に `/* hairline */` マーカーが必須~~ —— **廃止済み**
+
+uniapp v3 は px をそのまま出力し rpx に変換しなくなったため、hairline マーカーは用途を失いました（`docs/bugfix-log.md` D-02 を参照）。`styles/` 内の既存 65 か所の履歴マーカーは通常のコメントとして残されますが、**新規の 1px 枠にマーカーは不要**です。構造的な枠（2px / 3px）はもともとマーカーなしでした。
+
+### 5. リリースの順序：share が先、UI ライブラリが後
+
+share の変更 → changeset → リリース → 各ライブラリは `pnpm up @lh-ui/share` で回帰します。**スキップできません**——UI ライブラリのリリースは公開済みの share tarball に依存しているからです。
+
+### 6. 自作シンボルには LH プレフィックスが必須
+
+新しい定数 / 型 / インターフェースを追加した時点で**直ちに遵守**し、後になって一括で直すようなことにしないでください（過去の改名は `lh-prefix-naming` changeset を参照）。
+
+## 命名規約
+
+plus リポジトリの `docs/project/development-guide.md` と揃え、ファミリー全体で統一しています：
+
+| 層 | 規約 | 例 |
+| --- | --- | --- |
+| リバースドメインのルート | `top.lhgb`（`www.lhgb.top` の逆順） | ファミリー全リポジトリの命名のルート；`package.json` の homepage / repository / author は `lhgb.top` を使用 |
+| JS / npm パッケージ名 | `@lh-ui/*` scope | npm のパッケージ名にドットは許されず、リバースドメインはメタ情報層に落とす |
+| 定数 | `LH_XXX`、`LH_<モジュール>_<概念>` | `LH_SIZE_DEFAULT`、`LH_THEME_PRESETS` |
+| デフォルト値の定数 | `DEFAULT` サフィックス | `LH_DRAWER_DIRECTION_DEFAULT` |
+| 型 / インターフェース | `LhXxx` | `LhThemePreset`、`LhSxProps` |
+| モジュールレベルのシングルトン / 小文字オブジェクト | `lhXxx` | `lhlocale` |
+| BEM クラス名 | `lh-xxx` | `lh-button__text--disabled` |
+| コンポーネントの name | `LhXxx` | `name: 'LhButton'` |
+
+### 適用除外の登録
+
+慣例として定着しており、プレフィックスを強制しないもの（変更する場合はここに理由を登録します）：
+
+- **言語パックのエクスポート `zhCN` / `enUS`** —— 標準的な locale 命名で、3 つの UI ライブラリが公開 API として再エクスポートしているため、改名の破壊面が大きすぎる。
+- **テーマプリセット名の文字列値**（`name: 'cerblue'` など） —— これはユーザーが ConfigProvider の `theme` に書く設定値で、変更するとすべての下流ユーザーの設定が壊れる；対応する **TS 識別子にはプレフィックスが付く**（`LhCerblue`）。
+- **サードパーティ依存のエクスポートシンボル** は強制しない。
+
+## ディレクトリの責務
+
+| ディレクトリ | 責務 |
+| --- | --- |
+| `src/core/<name>/` | コンポーネントの純関数ロジック（`logic.ts` / `types.ts` / `index.ts`）、フレームワークへのインポートゼロ |
+| `src/core/shared/` | クロスコンポーネントの共有コア（12 モジュール、[概要](/ja/core/overview)を参照） |
+| `src/theme/` | theme の TS 側（型 + 5 つのプリセット） |
+| `src/constants/` / `src/locales/` / `src/types/` / `src/utils/` | 定数 / 言語パック / 型 / 純粋ユーティリティ |
+| `styles/` | コンポーネント BEM スタイルの唯一ソース（`<name>/index.scss` + `theme/common/*.scss`） |
+| `tests/unit/` | core の単体テストはこの 1 つのみ |
+| `scripts/` | ビルドと検証のスクリプト |
+| `docs/` | ドキュメントサイト（Astro Starlight）、**npm 成果物に入らない** |
+
+## コミットメッセージの規約
+
+- **コメントとコミットメッセージは中国語で**。
+- **コミットメッセージは markdown ソースで非常に詳細に書く**：タイトル行 + 範囲の説明 + 追加 / 変更ファイルの一覧 + 設計の要点表 + 検証状況。
+- Prettier の設定：シングルクォート、セミコロンなし、2 スペース、printWidth 100。`pnpm format` は設定ファイルだけをカバーし、残りは手書きで合わせる。
+
+## core コンポーネント追加のチェックリスト
+
+1. `src/core/<name>/{logic,types,index}.ts` の 3 点セット
+2. `tests/unit/core/<name>.spec.ts`
+3. `src/core/index.ts` にエクスポートを追加
+4. `styles/<name>/index.scss`（なければどちらかの端がスタイル成果物を持たない、サイレントスキップする）
+5. changeset（minor）
+
+そのあとに走らせる：
+
+```bash
+pnpm test && pnpm lint && pnpm typecheck
+pnpm build                    # sync:exports が新しい exports キーを生成
+pnpm verify:dts && pnpm verify:styles
+```
+
+## PR 前の自己チェックリスト
+
+- [ ] `src/` の中に `import 'vue' | 'react' | '@dcloudio/*'` がひとつもない（レッドライン 1）
+- [ ] スタイルの変更は `styles/` のみ（レッドライン 2）
+- [ ] 色はすべて `var(--lh-*, fallback)` で、ハードコードされた色値の追加がない
+- [ ] 新しいトランジションクラス名は mixin を使い、`-enter-from` / `-leave-from` を裸書きしない
+- [ ] 新しいトークンは `var.scss` に追加した；値が `#{$lh-*}` 補間なら `var-dark.scss` に対応する上書きがある
+- [ ] 新しいシンボルに `LH` / `Lh` プレフィックスが付いている（レッドライン 6）
+- [ ] `pnpm test` / `pnpm lint` / `pnpm typecheck` が通る
+- [ ] `pnpm build` のあと `pnpm verify:dts` / `pnpm verify:styles` が通る
+- [ ] changeset があり、レベルが正しい
+- [ ] 新しいコンポーネントに `styles/<name>/index.scss` があり `tests/unit/core/<name>.spec.ts` が存在する（レッドライン 3）
+- [ ] トークン / クラス名 / アイコンを変更した場合は `pnpm docs:data` を走らせてドキュメントのデータを更新した
+
+## 既知の ToDo（今後の changeset として記録、拾う人を歓迎）
+
+「高さトークン専用」：
+
+1. 各コントロールの高さが不統一（input 37 / select 32 / cascader 27→32 / date-time 33 / input-number 32）。根本原因は `var.scss` に `--lh-control-height-*` トークンが存在しないこと
+2. input `--has-label` の非対称な `padding-top: 16px`
+3. spinner と icon の同名サイズ段階が不一致（small 16 vs 14）
+4. checkbox のチェックマークが固定 `top:2/left:5` で 50% 中央寄せではない（16px のボックスでは正しいが、サイズを変えるとずれる）
+5. switch の `translate(-50%,-50%)` が base と keyframes で重複してハードコードされている
+
+## 関連ドキュメント
+
+- [プロジェクト紹介](/ja/guide/introduction) —— ファミリー内での share の位置づけ
+- [命名規約](/ja/guide/naming) —— 命名規約の完全版
+- [各フレームワークのスタイル注入戦略](/ja/guide/injection) —— レッドライン 2 の実装メカニズム
+- [検証システム](/ja/development/verification) —— PR 前に走らせる検証
+- [リリースフロー](/ja/development/release) —— レッドライン 5 の完全なフロー

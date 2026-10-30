@@ -1,0 +1,60 @@
+---
+title: '@lh-ui/share'
+description: La única capa compartida independiente del framework de la familia lh-ui —— funciones puras de core / theme / fuente de estilos
+template: splash
+hero:
+  title: '@lh-ui/share'
+  tagline: La única <b>capa compartida independiente del framework</b> de la familia lh-ui —— 56 funciones puras de componentes core, 12 núcleos compartidos, sistema de temas de estilo chino, internacionalización pura basada en emitter, 58 conjuntos de fuentes de estilos de componentes. Una sola lógica que alimenta las bibliotecas UI de Vue3 / Vue2 / React / uniapp.
+  actions:
+    - text: Primeros pasos
+      link: /lhui/share/es/guide/getting-started
+      icon: right-arrow
+      variant: primary
+    - text: Presets de tema
+      link: /lhui/share/es/theme/presets
+      icon: sun
+    - text: GitHub
+      link: https://github.com/lhgb-top/lh-ui-share
+      icon: github
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid cols={3}>
+  <Card title="Funciones puras de core" icon="code-branch">
+    El cálculo de clases, las máquinas de estado y los paquetes de atributos de accesibilidad de los 56 componentes son funciones puras sin dependencias. La capa del framework se limita a cablear: la lógica tiene una única fuente y una única copia de pruebas unitarias.
+  </Card>
+  <Card title="Núcleo compartido" icon="puzzle">
+    Motor de posicionamiento popper, desplazamiento virtual, focus trap, navegación por teclado, props de estilos sx y sanitización de números: 12 módulos reutilizados directamente por todas las plataformas.
+  </Card>
+  <Card title="Tema de estilo chino" icon="pencil">
+    Cinco presets integrados (青花瓷 (porcelana azul) / 松花绿 (verde pino) / 朱砂 (cinabrio) / 水墨 (tinta china) / 藤黄 (amarillo herbáceo)), variables CSS + modo oscuro + sistema de patrones, con un script de contraste AA como guardián.
+  </Card>
+  <Card title="Internacionalización pura con emitter" icon="translate">
+    LhLocale es un emisor de eventos puro, sin ninguna reactividad de framework; cada plataforma se suscribe a version con su propio mecanismo de señales.
+  </Card>
+  <Card title="Única fuente de estilos" icon="open-book">
+    `styles/` es la única fuente de los estilos BEM de todos los componentes de la familia; tres mixins recogen las diferencias de clases de transición entre Vue2 / Vue3 / React.
+  </Card>
+  <Card title="Cero dependencias de framework" icon="padlock">
+    Empaquetado con `external: []` y cero dependencias totales; el gate `verify:dts` garantiza que no aparezca ninguna importación de frameworks en los artefactos.
+  </Card>
+</CardGrid>
+
+## Para quién es esta documentación
+
+- **Desarrolladores de las bibliotecas UI de cada plataforma** (lh-ui-plus / lh-ui-vue2 / lh-ui-react / lh-ui-uniapp): para consultar la firma, el valor de retorno y las reglas límite de cada función pura, y cómo sobrescribir los tokens de estilos.
+- **Desarrolladores independientes que usan share directamente**: proyectos que solo quieren la línea base de accesibilidad y los tokens del tema de estilo chino, sin importar ninguna biblioteca UI.
+- **Contribuyentes**: para entender las responsabilidades de cada directorio, las líneas rojas y el flujo de verificación y release.
+
+## Entender este paquete en cinco minutos
+
+```md
+- `src/core/<componente>/`     —— lógica de funciones puras (logic.ts / types.ts), sin importaciones de framework
+- `src/core/shared/`           —— núcleo compartido entre componentes (popper / virtual / sx / keyboard …)
+- `src/theme/`                 —— lado TS del tema: tipos + cinco presets + primitivas en tiempo de ejecución
+- `styles/`                    —— única fuente de estilos BEM de componentes + tokens de theme/common/*.scss
+- `src/{constants,locales,types,utils}/` —— constantes / paquetes de idioma / tipos / utilidades
+```
+
+Próximo paso: instala el paquete e importa los estilos en [Primeros pasos](/es/guide/getting-started), o consulta directamente [Entradas del paquete y subrutas](/es/guide/exports) para entender cómo importar a demanda.

@@ -1,0 +1,116 @@
+---
+title: empty —— État vide
+description: 'getEmptyClassNames distingue l''image personnalisée de l''image par défaut 水墨 (encre de Chine), le contenu (titre / description / actions) est assemblé par la couche UI'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+L'état vide est le « cas zéro donnée » des listes, des tableaux et des résultats de recherche. L'état de `core/empty` est extrêmement simple — un seul booléen `hasImage` — car sa décision visuelle centrale est « l'utilisateur a fourni une image ou non, et l'on utilise l'image 水墨 (encre de Chine) par défaut de la bibliothèque », ces deux cas n'ayant pas la même disposition (l'image personnalisée respecte ses dimensions d'origine, tandis que l'image par défaut est une illustration 水墨 (encre de Chine) sur toute la largeur, spécialement conçue).
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhEmpty` : tableau sans donnée, recherche sans résultat, liste vidée, droits insuffisants.
+- Scénarios personnalisés nécessitant de réutiliser le rendu visuel de l'état vide 水墨 (encre de Chine).
+- **À ne pas utiliser pour** : l'état de chargement. C'est la responsabilité de `LhSkeleton` ou `LhLoading` ; l'état vide signifie « les données sont certaines d'être zéro », pas « elles ne sont pas encore arrivées ».
+
+## Importation
+
+```ts
+import { getEmptyClassNames } from '@lh-ui/share/core/empty'
+import type { LhEmptyState } from '@lh-ui/share/core/empty'
+```
+
+## Intentions de conception
+
+Si `core/empty` n'a qu'un seul champ `hasImage`, c'est que tout le reste (titre, description, boutons d'action) est du **contenu** et non de l'**état** — le contenu est rendu directement par les slots/props, sans calcul nécessaire. Faire passer le contenu par core n'ajouterait qu'une couche d'indirection sans bénéfice.
+
+Cette frontière « on ne calcule que l'état, pas le contenu » est un principe général de la couche core de lh-ui : l'entrée d'une fonction de core doit être quelque chose qui **change la sortie**.
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getEmptyClassNames` | `(state: LhEmptyState) => string[]` | tableau de classes | Distingue l'image personnalisée de l'image par défaut |
+
+Exemple de sortie :
+
+```ts
+getEmptyClassNames({ hasImage: true })   // ['lh-empty', 'lh-empty--custom-image']
+getEmptyClassNames({ hasImage: false })  // ['lh-empty']
+```
+
+## Définitions de types
+
+```ts
+export interface LhEmptyState {
+  hasImage: boolean
+}
+```
+
+## Accessibilité
+
+`core/empty` ne fournit pas de paquet d'attributs aria. Les points clés d'accessibilité de l'état vide se trouvent dans la couche UI :
+
+- Quand l'état vide apparaît, la liste ou le tableau qui le précédait devrait utiliser `aria-live="polite"` ou notifier activement la fin du chargement des données, sinon l'utilisateur du lecteur d'écran reste sur l'ancienne perception « la liste a 0 élément ».
+- L'image 水墨 par défaut est **décorative** et devrait avoir `aria-hidden="true"` (à traiter au rendu par la couche UI).
+- Le texte de description porte la véritable information (« Aucune donnée, cliquez sur le bouton pour rafraîchir ») et doit être lisible.
+- Si l'état vide contient un bouton d'action, le bouton lui-même peut s'appuyer sur sa sémantique native.
+
+## Exemples d'utilisation
+
+```ts
+import { getEmptyClassNames } from '@lh-ui/share/core/empty'
+
+getEmptyClassNames({ hasImage: false })  // ['lh-empty']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getEmptyClassNames({ hasImage: !!image })">
+  <div class="lh-empty__image">
+    <slot name="image">
+      <InkWash />   <!-- image d'espace réservé 水墨 par défaut, aria-hidden -->
+    </slot>
+  </div>
+  <p class="lh-empty__description">{{ description }}</p>
+  <div class="lh-empty__actions"><slot name="actions" /></div>
+</div>
+```
+
+```tsx
+// React
+const hasImage = !!image
+return (
+  <div className={getEmptyClassNames({ hasImage }).join(' ')}>
+    <div className="lh-empty__image">{image ?? <DefaultInkWash aria-hidden="true" />}</div>
+    <p className="lh-empty__description">{description}</p>
+    <div className="lh-empty__actions">{actions}</div>
+  </div>
+)
+```
+
+```ts
+// uniapp : l'image 水墨 par défaut est un svg, sur les cibles non h5
+// il faut la remplacer par une ressource image (à traiter par chaque couche UI)
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-empty` | Classe de base : centrage, espacement vertical |
+| `.lh-empty--custom-image` | Image personnalisée : lève la contrainte de taille fixe de l'image par défaut |
+| `.lh-empty__image` | Zone de l'image |
+| `.lh-empty__description` | Texte de description (couleur de texte secondaire) |
+| `.lh-empty__actions` | Zone des boutons d'action |
+| `.lh-empty__illustration` / `__ink-*` | Éléments de l'illustration 水墨 par défaut (montagnes lointaines, estompe, sceau, cadre) |
+
+L'illustration 水墨 (encre de Chine) par défaut est l'un des éléments signatures du style chinois de lh-ui : elle est dessinée en pure CSS/SVG et possède une palette dédiée en mode sombre.
+
+## Remarques
+
+- La décision `hasImage` appartient à la couche UI : tout contenu transmis par l'utilisateur via la prop `image` ou le slot `image` compte comme « image personnalisée présente ».
+- L'état vide **doit apparaître à l'emplacement des données** (corps du tableau, conteneur de la liste) ; ne le transformez pas en notification globale — ce n'est pas un feedback, c'est un état de la donnée.
+- Les cas 404 / droits insuffisants ne sont pas des « données vides » : ils relèvent sémantiquement de l'avertissement, et `LhResult` (si disponible sur chaque plateforme) ou une mise en page personnalisée conviendront mieux que `LhEmpty`.
+
+<FnPlayground module="empty" fn="getEmptyClassNames" params='{"state": {"hasImage": false}}' />

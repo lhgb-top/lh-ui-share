@@ -1,0 +1,250 @@
+---
+title: tree —— 트리
+description: 'flattenTree 평탄화, getNodeCheckState 3상태, toggleCheckKeys 계단식과 조상 역추적, 지연 로딩 병합, tree/treeitem 의미'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+트리는 계층 데이터의 범용 컨테이너입니다: 파일 디렉터리, 조직 구조, 권한 트리, 계단식 메뉴. 어려운 점은 **재귀 구조의 상태 관리**입니다. 펼침, 선택, 지연 로딩은 모두 서브트리 전체에 대한 작업이고, 순환 참조 데이터, 비활성 노드, 중간 선택 상태도 처리해야 합니다. `core/tree`가 순수 함수 + 불변 업데이트로 이 알고리즘을 수렴시킵니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhTree`를 구현할 때: 디렉터리 탐색, 권한 할당, 조직 구조 표시, 분류 거르기.
+- 계층 데이터에 펼치기/접기, 선택(부모-자식 연동 포함), 지연 로딩이 필요한 장면.
+- **사용하면 안 되는 곳**: 두 계층 이내의 평면 분류(계단식 선택이나 분할 컨트롤이 더 수월); 선형 목록(`virtual-list` 사용).
+
+## 가져오기
+
+```ts
+import {
+  isTreeNodeLeaf,
+  flattenTree,
+  getDescendantKeys,
+  findTreeNode,
+  getNodeCheckState,
+  collectLeafKeys,
+  toggleCheckKeys,
+  findParentNode,
+  moveTreeFocus,
+  mergeLoadedChildren,
+  isNodeLoadable,
+  getTreeClassNames,
+  getTreeNodeClassNames,
+  getTreeAria,
+  getTreeNodeAria,
+} from '@lh-ui/share/core/tree'
+import type {
+  LhTreeNode,
+  LhFlatTreeNode,
+  LhTreeCheckState,
+} from '@lh-ui/share/core/tree'
+```
+
+## 설계 의도
+
+**렌더링은 곧 평탄화**: 트리는 UI에서 본질적으로 **들여쓰기 단계를 가진 목록**입니다. `flattenTree`는 깊이 우선으로 순회하고, `expandedKeys`에 걸린 서브트리만 펼쳐 평면 배열을 출력합니다(각 항목은 `level` / `parentKey` / `ancestorKeys`를 가짐). UI 계층은 1차원 배열에 `v-for`를 합니다. 이것이 재귀 컴포넌트보다 훨씬 단순하고, 가상 스크롤과도 자연스럽게 호환됩니다.
+
+**조상 체인 중복 판정 vs 전역 중복 판정**: 이 모듈의 재귀 함수들은 일반적으로 **조상 체인 seen**(`ancestors` / `nextSeen`을 한 계층씩 전달)을 쓰고, 전역 Set을 쓰지 않습니다. 대가는 보호가 단일 호출 내에서만 유효하다는 것이고, 이득은 **DAG에서 합법적으로 공유되는 서브트리가 잘못 건너뛰어지지 않는다**는 것과 교차 인스턴스 상태 누출이 없다는 것입니다. `table`의 `flattenLeafColumns`(전역 seen 사용)와 트레이드오프가 다름에 주의하세요. 표의 DAG 공유는 반드시 한 번만 내보내야(열 수 정렬) 하고, 트리의 DAG 공유는 경로가 다를 때 각각 한 번씩 세야 합니다.
+
+**비활성 노드는 전체 선택 분모에 들어가지 않음**: `collectCheckableLeafKeys`는 비활성 서브트리를 건너뜁니다. 그렇지 않으면 부모를 선택한 후 비활성 자손이 빠져서 **영원히 indeterminate**가 되고, 절대 전체 선택이 될 수 없습니다. 이것은 실제 경험 버그의 한 부류입니다.
+
+**로드되지 않은 비잎 노드**: `isLeaf !== true`이고 `children`이 없을 때, `collectCheckableLeafKeys`는 빈 배열을 반환하지만 `toggleCheckKeys`는 그 **자신의 키**를 `checkedKeys`에 씁니다. 지연 로딩 장면에서 사용자는 아직 자식을 로드하지 않은 노드를 먼저 선택할 수 있고, 로드 후에 UI 계층이 계단식을 적용할지 결정합니다.
+
+**`moveTreeFocus`는 이미 @deprecated**: 내비게이션 알고리즘은 `core/shared/keyboard.getNextListIndex`로 수렴했고, 이 껍데기는 예전 시그니처와 '현재 값이 유효하지 않을 때 첫 항목으로 되돌림'의 기존 의미를 유지합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `isTreeNodeLeaf` | `(node) => boolean` | 잎 여부 | `isLeaf` 우선, 그렇지 않으면 children으로 추론 |
+| `flattenTree` | `(nodes, expandedKeys, …) => LhFlatTreeNode[]` | 평면 목록 | 걸린 서브트리만 펼침 |
+| `getDescendantKeys` | `(node, seen?) => string[]` | 자손 키 | 조상 체인 중복 판정 |
+| `findTreeNode` | `(nodes, key, seen?) => LhTreeNode \| null` | 노드 | 깊이 찾기 |
+| `getNodeCheckState` | `(node, checkedKeys, checkStrictly?) => LhTreeCheckState` | 3상태 | 비활성 서브트리는 분모에 없음 |
+| `collectLeafKeys` | `(node, seen?) => string[]` | 선택 가능한 잎 키 | 비활성 건너뜀 |
+| `toggleCheckKeys` | `(roots, checkedKeys, key, options?) => string[]` | 새 선택 키 | 계단식 + 조상 역추적 |
+| `findParentNode` | `(nodes, key, …) => LhTreeNode \| null` | 부모 노드 | 최상위는 null 반환 |
+| `moveTreeFocus` | `(flat, currentKey, direction) => string \| null` | 목표 키 | **@deprecated** |
+| `mergeLoadedChildren` | `(nodes, loadedMap, seen?) => LhTreeNode[]` | 새 트리 | 지연 로딩 불변 병합 |
+| `isNodeLoadable` | `(node, lazy, loadedKeys) => boolean` | 로드 가능 여부 | 잎으로 선언되지 않고 로드되지 않음 |
+| `getTreeClassNames` | `(state: { showCheckbox }) => string[]` | 클래스명 | 선택 모드 |
+| `getTreeNodeClassNames` | `(state) => string[]` | 클래스명 | 펼침/선택됨/비활성/잎 |
+| `getTreeAria` | `(id?) => LhAriaAttrs` | aria 속성 묶음 | role=tree |
+| `getTreeNodeAria` | `(options) => LhAriaAttrs` | aria 속성 묶음 | treeitem 완전 의미 |
+
+## 타입 정의
+
+```ts
+export interface LhTreeNode {
+  key: string
+  label: string
+  children?: LhTreeNode[]
+  disabled?: boolean
+  isLeaf?: boolean       // 넘기지 않으면 children으로 추론
+}
+
+export interface LhFlatTreeNode {
+  node: LhTreeNode
+  key: string
+  level: number                 // 0부터
+  parentKey: string | null
+  ancestorKeys: string[]        // 조상 체인(자신 제외)
+  isLeaf: boolean
+}
+
+export type LhTreeCheckState = 'checked' | 'indeterminate' | 'unchecked'
+```
+
+## 접근성
+
+`getTreeAria` / `getTreeNodeAria`는 APG treeview 패턴의 완전한 의미를 출력합니다:
+
+```ts
+getTreeAria('lh-tree-1')  // { role: 'tree', id: 'lh-tree-1' }
+
+getTreeNodeAria({ level: 2, expanded: true, selected: true, checked: 'indeterminate' })
+// { role: 'treeitem', 'aria-level': 2, 'aria-expanded': true,
+//   'aria-selected': true, 'aria-checked': 'indeterminate' }
+
+getTreeNodeAria({ level: 1, leaf: true })
+// { role: 'treeitem', 'aria-level': 1 }  ← 잎 노드는 aria-expanded를 출력하지 않음
+```
+
+- `aria-level`은 1부터입니다(`flattenTree`의 `level`이 0부터이므로 aria에 넘길 때 **+1**).
+- **잎 노드는 `aria-expanded`를 출력하지 않습니다**. 의미 없는 `aria-expanded="false"`를 피하기 위해서이며, 이것은 APG의 명확한 요구입니다.
+- `aria-checked`의 세 값: `true` / `false` / `'indeterminate'`(문자열).
+- 키보드 상호작용(APG treeview): ↑/↓로 보이는 노드 사이를 이동, →로 펼치기/자식 노드 진입, ←로 접기/부모 노드로 복귀, Home/End로 처음과 끝, Enter로 선택.
+- **평탄화 후 `aria-level`의 출처**: DOM의 들여쓰기 깊이로 역추론하지 말고 `flattenTree`의 `level + 1`을 쓰세요.
+
+## 사용 예
+
+```ts
+import { flattenTree, toggleCheckKeys, getNodeCheckState } from '@lh-ui/share/core/tree'
+
+const tree = [
+  { key: '1', label: '개발부', children: [
+    { key: '1-1', label: '프론트엔드 팀', children: [{ key: '1-1-1', label: 'lh-ui' }] },
+    { key: '1-2', label: '백엔드 팀' },
+  ]},
+  { key: '2', label: '제품부' },
+]
+
+flattenTree(tree, ['1'])
+// [개발부(l0), 프론트엔드 팀(l1), 백엔드 팀(l1), 제품부(l0)]
+// 참고: 1-1-1은 나오지 않음. '1-1'이 expandedKeys에 없기 때문
+flattenTree(tree, ['1', '1-1'])
+// [개발부, 프론트엔드 팀, lh-ui(l2), 백엔드 팀, 제품부]
+
+toggleCheckKeys(tree, [], '1')
+// ['1', '1-1', '1-1-1', '1-2'] (자손을 계단식으로 모두 선택, 자신 포함)
+
+toggleCheckKeys(tree, ['1', '1-1', '1-1-1', '1-2'], '1-1-1')
+// ['1-2']  —— '1-1-1' 선택 해제 후 계단식 역추적: '1-1'은 더 이상 모두 선택이 아니므로 제거,
+// '1'도 더 이상 모두 선택이 아니므로 제거(역추적은 뿌리까지 계속 감)
+
+toggleCheckKeys(tree, ['1-1'], '1-2')
+// ['1-1', '1-2']  —— 조상만 역추적하고 다른 가지는 건드리지 않음
+
+getNodeCheckState(tree[0], ['1', '1-1', '1-1-1', '1-2'])  // 'checked' (선택 가능한 잎을 모두 선택)
+getNodeCheckState(tree[0], ['1-1-1'])                      // 'indeterminate' (선택 가능한 잎 2개 중 1개)
+getNodeCheckState(tree[0], ['1-1'])                        // 'unchecked' ('1-1'은 잎이 아님, 집계하지 않음)
+getNodeCheckState(tree[0], [])                             // 'unchecked'
+```
+
+```vue
+<!-- Vue3: 평탄화 + 가상 스크롤 친화적 렌더링 -->
+<div :class="getTreeClassNames({ showCheckbox })" v-bind="getTreeAria(treeId)">
+  <div
+    v-for="item in flatNodes"
+    :key="item.key"
+    class="lh-tree-node-row"
+    :style="{ paddingLeft: item.level * 18 + 'px' }"
+  >
+    <div
+      :class="getTreeNodeClassNames({
+        expanded: expandedKeys.includes(item.key),
+        selected: selectedKey === item.key,
+        disabled: item.node.disabled,
+        leaf: item.isLeaf,
+      })"
+      role="treeitem"
+      :aria-level="item.level + 1"
+      :aria-expanded="item.isLeaf ? undefined : expandedKeys.includes(item.key)"
+      @click="onSelect(item)"
+    >
+      <span v-if="!item.isLeaf" class="lh-tree-node__arrow" @click.stop="onToggle(item)">
+        {{ expandedKeys.includes(item.key) ? '▾' : '▸' }}
+      </span>
+      <input
+        v-if="showCheckbox"
+        type="checkbox"
+        :checked="checkState(item) === 'checked'"
+        :indeterminate.prop="checkState(item) === 'indeterminate'"
+        :disabled="item.node.disabled"
+        @change="onCheck(item)"
+      />
+      <span class="lh-tree-node__label">{{ item.node.label }}</span>
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// 선택 연결
+function onCheck(item: LhFlatTreeNode) {
+  checkedKeys.value = toggleCheckKeys(props.data, checkedKeys.value, item.key, { checkStrictly })
+}
+function checkState(item: LhFlatTreeNode) {
+  return getNodeCheckState(item.node, checkedKeys.value, checkStrictly)
+}
+```
+
+```ts
+// 지연 로딩
+async function onLoad(item: LhFlatTreeNode) {
+  if (!isNodeLoadable(item.node, lazy, loadedKeys.value)) return
+  loadingKeys.value = [...loadingKeys.value, item.key]
+  const children = await fetchChildren(item.key)
+  loadedMap.value = { ...loadedMap.value, [item.key]: children }
+  loadedKeys.value = [...loadedKeys.value, item.key]
+  // 불변 병합 후 다시 평탄화
+}
+const merged = computed(() => mergeLoadedChildren(props.data, loadedMap.value))
+```
+
+```tsx
+// React: expandedKeys / checkedKeys / selectedKey는 모두 제어형 상태;
+// flatNodes = useMemo(() => flattenTree(merged, expandedKeys), [merged, expandedKeys])
+```
+
+```ts
+// uniapp: <view> + 들여쓰기 padding; core의 모든 함수는 단말 무관 그대로 사용
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-tree` | 기본 클래스 |
+| `.lh-tree--checkbox` | 선택 모드(노드 안쪽 여백이 checkbox 자리 확보) |
+| `.lh-tree-node` | 노드 |
+| `.lh-tree-node--expanded` | 펼침(화살표 회전) |
+| `.lh-tree-node--selected` | 선택됨(주색 배경) |
+| `.lh-tree-node--disabled` | 비활성 |
+| `.lh-tree-node--leaf` | 잎(화살표 자리표시자 접기) |
+| `.lh-tree-node__arrow` / `__label` | 펼침 화살표 / 텍스트 |
+
+들여쓰기는 UI 계층의 `paddingLeft: level * 18px`로 구현되고(core은 픽셀을 관리하지 않음), 선택 배경은 `--lh-primary-color-light`, 화살표는 `--lh-text-color-secondary`.
+
+## 주의사항
+
+- **`level`은 0부터, `aria-level`은 1부터**. 이것이 이 모듈에서 가장 오류가 나기 쉬운 부분이며, `aria-level`을 바인딩할 때 반드시 +1 하세요.
+- **조상 체인 중복 판정의 유효 범위**: 보호는 단일 호출 내에서만 유효합니다. 같은 트리에 대한 두 번의 독립적인 `findTreeNode` 호출은 각자 중복을 판정하여 공유 서브트리를 두 번 순회합니다. 이것은 의도적인 것(DAG 합법 공유)이지 버그가 아닙니다.
+- **`checkStrictly`(부모-자식 비연동)**: `getNodeCheckState`가 2상태가 되고, `toggleCheckKeys`는 자신의 키만 바꾸며 조상을 역추적하지 않습니다. 권한 할당 장면에서 자주 씁니다.
+- **비활성 노드의 계단식 불변량**: `toggleCheckKeys`의 조상 역추적은 비활성 부모를 건너뜁니다. 그 키는 계단식으로 다시 쓰이지 않습니다. 비즈니스가 '비활성 부모 노드도 프로그래밍적으로 선택 가능'을 필요로 한다면 이 함수 대신 `checkedKeys`를 직접 다루세요.
+- **`isLeaf`가 `children`보다 우선**: `isLeaf: true`로 선언된 노드는 `children`이 있어도 잎으로 취급합니다(지연 로딩 장면에서 자주 사용: 잎으로 선언해 펼침을 막음).
+- **`mergeLoadedChildren`의 불변성**: 새 트리를 반환하고 넘겨진 `nodes`를 수정하지 않습니다. props.data는 사용 쪽이 보유하며, 직접 고치면 단방향 데이터 흐름이 망가집니다.
+- **`flattenTree`의 성능**: expandedKeys가 바뀔 때마다 전체를 다시 계산합니다. 깊은 계층 + 대규모 데이터일 때 서브트리에 memo를 고려하세요(UI 계층이 parentKey로 묶어 캐시).
+- **순환 참조 데이터**: 모든 재귀 함수는 조상 체인 중복 판정 보호가 있어 무한 재귀하지 않습니다. 하지만 **데이터 자체에 순환이 있는 것 자체가 오류**이며, 중복 판정은 단지 무너지지 않게 할 뿐입니다.
+
+<FnPlayground module="tree" fn="getNodeCheckState" params='{"node": {"key": "1", "label": "개발부", "children": [{"key": "1-1", "label": "프론트엔드 팀"}, {"key": "1-2", "label": "백엔드 팀"}]}, "checkedKeys": ["1-1"], "checkStrictly": false}' />

@@ -1,0 +1,128 @@
+---
+title: badge —— Бейдж
+description: 'getBadgeClassNames вычисляет три состояния: скрытие, точка, нулевое значение; count рассчитывается UI-слоем и передаётся готовым'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Бейдж — это визуальный носитель «количества уведомлений»: красная точка в углу, число или скрытый плейсхолдер. Модель состояний `core/badge` сворачивает **числовую семантику** в три логических значения — UI-слой сам решает, «равно ли число нулю» и «показывать ли его», а core лишь отображает эти три флага в классы.
+
+## Когда использовать
+
+- При реализации `LhBadge` на каждой платформе: классы выдаёт `getBadgeClassNames`.
+- Когда нужно переиспользовать визуальный бейджа на произвольных элементах (например, уголки `LhAvatar`, уголки пунктов `LhMenu`) — подключайте функции core напрямую.
+- **Не следует использовать**: логика усечения «99+», анимации и т. п. — это обязанности props UI-слоя, core не занимается обработкой чисел.
+
+## Импорт
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+import type { LhBadgeState, LhBadgeType } from '@lh-ui/share/core/badge'
+```
+
+## Замысел
+
+Из состояний бейджа наиболее важны три взаимоисключающих визуальных режима: `isHidden` / `isDot` / `isZero`:
+
+- `isDot`: число не показывается, только точка (сильное напоминание, число неизвестно или его не нужно знать).
+- `isZero`: значение равно 0. Многие дизайны выбирают «не скрывать даже 0» (чтобы пользователь ясно видел «ничего нет», а не «ещё не загрузилось»), визуально это ослабляется.
+- `isHidden`: полное скрытие (`display: none`) — «новых сообщений нет».
+
+Решение (value === 0, prop `hidden` и т. д.) принимает UI-слой, core получает лишь готовые выводы. Так на разных платформах могут быть разные стратегии «когда скрывать» при одинаковом визуальном поведении.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getBadgeClassNames` | `(state: LhBadgeState) => string[]` | массив классов | вычисляет все классы бейджа |
+
+Пример вывода:
+
+```ts
+getBadgeClassNames({ type: 'danger', size: 'small', isHidden: false, isDot: true, isZero: false })
+// ['lh-badge', 'lh-badge--danger', 'lh-badge--small', 'lh-badge--dot']
+```
+
+## Определения типов
+
+```ts
+export type LhBadgeType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhBadgeState {
+  type: LhBadgeType
+  size: LhComponentSize
+  isHidden: boolean
+  isDot: boolean
+  isZero: boolean
+}
+```
+
+## Доступность
+
+`core/badge` не выводит набор aria-атрибутов, но **доступность бейджа в UI-слое очень важна** и её часто делают неправильно:
+
+- Бейдж — это **декоративное визуальное усиление**; само содержание («3 непрочитанных») должно нести семантически нагруженный текст. Добавить бейджу `aria-hidden="true"` — безопасное значение по умолчанию.
+- Если бейдж — единственный источник информации (просто уголок без текста), необходимо задать `aria-label` или объявить его на родительском элементе, иначе пользователи скринридеров вообще не заметят «есть новые сообщения».
+- Числовые бейджи не должны зачитываться скринридером по одной цифре («9» и «9» превратятся в «девяносто девять») — следует форматировать как «99 плюс» или возложить это на `aria-label` UI-слоя.
+
+## Примеры использования
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+
+getBadgeClassNames({ type: 'primary', size: 'medium', isHidden: false, isDot: false, isZero: false })
+// ['lh-badge', 'lh-badge--primary', 'lh-badge--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span class="lh-badge-wrapper">
+  <slot />
+  <sup
+    v-if="!hidden"
+    :class="getBadgeClassNames({ type, size, isHidden: hidden, isDot, isZero: value === 0 })"
+    aria-hidden="true"
+  >
+    {{ isDot ? '' : displayValue }}
+  </sup>
+</span>
+```
+
+```tsx
+// React
+const cls = getBadgeClassNames({ type, size, isHidden, isDot, isZero })
+return (
+  <span className="lh-badge-wrapper">
+    {children}
+    {!isHidden && <sup className={cls.join(' ')} aria-hidden="true">{isDot ? '' : value}</sup>}
+  </span>
+)
+```
+
+```ts
+// uniapp: на не-h5 платформах бейдж часто делают через view с абсолютным позиционированием;
+// усечение числа (99+) обрабатывается props UI-слоя
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-badge` | базовый класс: абсолютно позиционированный уголок, скругление, размер шрифта, цвет текста |
+| `.lh-badge--{primary\|success\|warning\|danger\|info\|default}` | семантический тип (цвет фона) |
+| `.lh-badge--{small\|medium\|large}` | размерная шкала (включая `.lh-badge--mini` / `--x-large`) |
+| `.lh-badge--dot` | режим точки (фиксированный маленький круг, содержимое не отрисовывается) |
+| `.lh-badge--zero` | ослабление нулевого значения (прозрачность, меньший визуальный вес) |
+| `.lh-badge--hidden` | полное скрытие |
+| `.lh-badge__content` | узел содержимого |
+| `.lh-badge-zoom-enter-active` / `.lh-badge-zoom-leave-active` | масштабный переход появления/исчезновения |
+
+Позиция бейджа зависит от `position: relative` внешнего `.lh-badge-wrapper` (это обеспечивает UI-слой каждой платформы).
+
+## Замечания
+
+- Если `isDot` и `isZero` одновременно истинны, в стилях приоритет у `--dot` (режим точки не отрисовывает содержимое, модификатор нулевого значения лишён смысла) — UI-слою следует избегать такой комбинации.
+- В таблице типов есть `'default'`, но чаще всего у бейджей встречается `'danger'` (красная точка), а `'default'` — нейтрально-серый.
+- Классы переходов `lh-badge-zoom-*` — это Vue3-стиль `-enter-active` / `-leave-active`; на стороне Vue2 они выравниваются через mixin `lh-enter-both` (см. [mixin переходов](/ru/reference/transition-mixins)).
+
+<FnPlayground module="badge" fn="getBadgeClassNames" params='{"state": {"type": "danger", "size": "small", "isHidden": false, "isDot": true, "isZero": false}}' />

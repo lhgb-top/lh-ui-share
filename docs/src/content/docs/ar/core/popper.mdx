@@ -1,0 +1,154 @@
+---
+title: popper —— محرك تحديد موضع الطبقات المنبثقة
+description: 'ينفذ computePosition وضع 12 موضعًا، وقلب المحور الرئيسي، واحتجاز المحور المتقاطع، بمدخلات rect نقية، وقابل للاختبار الوحدوي مباشرة'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+التلميح tooltip، والطبقة popover، وتأكيد popconfirm، والقائمة المنسدلة dropdown، وقائمة select المنسدلة، ولوحة cascader، وتقويم date-picker——كل «ما يطفو بجوار المُطلِق» في lh-ui يحسب موقعه هذه الدالة وحدها.
+
+## لماذا لا نستخدم floating-ui / popper.js
+
+للأسرة أربعة أطراف (Vue3 / Vue2 / React / uniapp) ستحتاج جميعها إلى هذه الحزمة، فتصبح حجم مكتبة تحديد المواقع الخارجية وإيقاع تحديثاتها عبئًا مضاعفًا إلى أربعة. ومحرك التحديد في share يغطي فقط المجموعة الفرعية التي تستخدمها الأسرة فعلًا: 12 موضعًا، وقلب المحور الرئيسي، واحتجاز المحور المتقاطع، وإزاحة السهم، في نحو 300 سطرًا، بلا تبعيات، ودالة نقية في مدخلاتها ومخرجاتها——**لا تنشئ DOM، ولا تستمع إلى الأحداث، ولا تشغّل requestAnimationFrame**. فالجدولة والعرض يقررهما كل طرف من طبقة واجهة المستخدم (Vue3 يستخدم `watchEffect`، وReact يستخدم `useLayoutEffect`، وuniapp يستخدم أحداث تمرير الصفحة).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  computePosition,
+  parsePlacement,
+  getWindowViewport,
+  type LhPlacement,
+  type LhComputePositionOptions,
+} from '@lh-ui/share/core/shared/popper'
+```
+
+## الأنواع والثوابت
+
+```ts
+// 12 موضعًا = 4 اتجاهات × 3 محاذاة (ويُستغنى عن لاحقة center)
+export type LhPlacement =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhPlacementDir = 'top' | 'bottom' | 'left' | 'right'
+export type LhPlacementAlign = 'start' | 'center' | 'end'
+
+// أصغر بنية متماثلة مع DOMRect — تُصنع مباشرة كقيم حرفية عند الاختبار
+export interface LhDOMRectLike {
+  top: number
+  left: number
+  width: number
+  height: number
+  right: number
+  bottom: number
+}
+
+export interface LhComputePositionOptions {
+  placement?: LhPlacement       // افتراضي 'bottom'
+  gap?: number                  // المسافة عن المُطلِق، افتراضي 8
+  padding?: number              // هامش أمان إطار العرض، افتراضي 8
+  flip?: boolean                // قلب عند تجاوز المحور الرئيسي، افتراضي true
+  shift?: boolean               // احتجاز المحور المتقاطع، افتراضي true
+}
+
+export interface LhPopperPosition {
+  top: number
+  left: number
+  placement: LhPlacement        // الموضع الفعلي المُطبَّق بعد القلب
+  arrowOffset: number           // إزاحة السهم على المحور المتقاطع (px، تُحتسب من نقطة بداية المحور المتقاطع للطبقة المنبثقة)
+}
+```
+
+## جدول الدوال
+
+| الدالة | التوقيع | الدور |
+| --- | --- | --- |
+| `parsePlacement` | `(placement: LhPlacement) => { dir, align }` | تفكيك الموضع إلى «اتجاه + محاذاة»، والاتجاه غير الصالح يُرجع إلى `bottom`، والمحاذاة غير الصالحة تُرجع إلى `center` |
+| `buildPlacement` | `(dir: LhPlacementDir, align: LhPlacementAlign) => LhPlacement` | إعادة بناء الموضع من الاتجاه والمحاذاة (تُسقط اللاحقة عند `center`) |
+| `flipDir` | `(dir: LhPlacementDir) => LhPlacementDir` | قلب المحور الرئيسي: top↔bottom، وleft↔right |
+| `basePosition` | `(dir, align, trigger, popper, gap) => { top, left }` | الوضع الأساسي حسب الموضع (**دون اعتبار قيود إطار العرض**) |
+| `fitsInViewport` | `(dir, trigger, popper, viewport, gap, padding) => boolean` | هل تقع الطبقة المنبثقة كاملةً داخل إطار العرض في الاتجاه المحدد (تحديد المحور الرئيسي) |
+| `computePosition` | `(trigger, popper, viewport, options?) => LhPopperPosition` | **المدخل الرئيسي**: حساب التحديد الكامل |
+| `getWindowViewport` | `() => LhDOMRectLike` | بناء rect لإطار العرض من نافذة المتصفح؛ بحارس SSR، فبدون `window` تكون أبعاده 0 |
+| `isOutsideViewport` | `(rect, viewport) => boolean` | هل خرج rect من إطار العرض كليًا (عند التمرير، إذا غاب المُطلِق عن النظر ينبغي إغلاق الطبقة المنبثقة) |
+
+## مسار حساب computePosition
+
+```
+قلاب المحور الرئيسي (flip)
+  → لا يُقلب إلا إذا كان الاتجاه بعد القلب يتسع له (تجنب أن يكون القلب أسوأ)
+  → الوضع حسب الموضع (basePosition)
+  → احتجاز المحور المتقاطع (shift) على طول هامش أمان padding
+  → احتجاز المحور الرئيسي (عندما يكون flip مُفعَّلًا، ولا يتسع أي من الجانبين، يُلصق بالجانب الذي يمكن الإلصاق به)
+  → شبكة احتجاز الجانب الأدنى كشبكة أمان (احتياطي، يضمن عدم ظهور إحداثيات سالبة)
+```
+
+التصاميم الجوهرية:
+
+- **القلب مشروط**. والخطأ الشائع في التطبيقات هو «تجاوزٌ فقلب»، فيكون الناتج حين يكون المُطلِق في منتصف إطار العرض والطبقة المنبثقة عالية أن القلب يجعل الوضع أسوأ. لذا يسأل `computePosition` أولًا عبر `fitsInViewport` «هل يتسع للقلب؟»، فإن لم يتسع لم يُقلب، ويمضي إلى احتجاز المحور الرئيسي.
+- **إعادة الموضع الفعلي المُطبَّق**. بعد القلب يتحول حقل `placement` إلى الموضع الجديد، فتبدِّل طبقة واجهة المستخدم بناءً عليه صنف السهم (`is-top` / `is-bottom`)—إذ يجب أن يتوافق اتجاه السهم مع الموضع الفعلي، وإلا انفصل السهم بصريًا عن الطبقة المنبثقة.
+- **السهم يشير دائمًا إلى مركز المُطلِق**، و`arrowOffset` إزاحته على المحور المتقاطع، مُحتَجَز داخل حدود الطبقة المنبثقة؛ والحد الأعلى لـ `padding` هو نصف الطبقة المنبثقة، تفاديًا لانقلاب الحدين (وأن يخرج السهم عن الطبقة المنبثقة).
+
+## أمثلة الاستخدام
+
+### دالة نقية (يمكن اختبارها وحدويًا مباشرة)
+
+```ts
+const trigger = { top: 100, left: 50, width: 80, height: 32, right: 130, bottom: 132 }
+const popper = { top: 0, left: 0, width: 200, height: 120, right: 200, bottom: 120 }
+const viewport = { top: 0, left: 0, width: 375, height: 667, right: 375, bottom: 667 }
+
+computePosition(trigger, popper, viewport, { placement: 'top' })
+// يتسع للموضع فوق المُطلِق:
+// { top: 132 - 8 - 120, left: ..., placement: 'top', arrowOffset: ... }
+```
+
+### التوصيل في Vue3
+
+```ts
+// داخل مكوّن الطبقة المنبثقة
+function update() {
+  if (!triggerEl.value || !popperEl.value) return
+  const pos = computePosition(
+    triggerEl.value.getBoundingClientRect(),
+    popperEl.value.getBoundingClientRect(),
+    getWindowViewport(),
+    { placement: placementRef.value, gap: 8 },
+  )
+  popperEl.value.style.top = `${pos.top}px`
+  popperEl.value.style.left = `${pos.left}px`
+  actualPlacement.value = pos.placement
+}
+
+onMounted(() => {
+  watchEffect(update)          // إعادة الحساب عند تغير التبعيات التفاعلية
+  window.addEventListener('scroll', update, true)
+})
+```
+
+### التوصيل في React
+
+```tsx
+useLayoutEffect(() => {
+  if (!triggerRef.current || !popperRef.current) return
+  const pos = computePosition(/* ... */)
+  setPos(pos)
+}, [open, placement])
+```
+
+### التوصيل في uniapp
+
+يختلف تنفيذ `getBoundingClientRect` في uniapp بين الأطراف (ففي التطبيقات الصغيرة يلزم `uni.createSelectorQuery`)، وبعد أن تقيس طبقة واجهة المستخدم rect تستدعي `computePosition` نفسه، أما الخوارزمية فمتطابق تمامًا.
+
+## ملاحظات
+
+- **تُطهَّر المدخلات على مستوى الحقول أولًا**: الحقول غير المنتهية (NaN / Infinity) تُرجَّع إلى 0، فلا تتسرب القيم السيئة إلى الحسابات الهندسية.
+- **أمان SSR**: يُعيد `getWindowViewport()` rect بأبعاد 0 في بيئة بلا `window`؛ و`computePosition` ذاته لا يلمس DOM، فيمكن حساب موضع واحد مسبقًا في الخادم.
+- **دلالة `flip: false`**: يتقبل المستدعي بنفسه تجاوز المحور الرئيسي، وحينها يحتفظ المحور الرئيسي باحتجاز الجانب الأدنى فقط (فلن تُدفع الطبقة المنبثقة إلى إحداثيات سالبة). وتستخدمه سيناريوهات «الاتجاه الثابت» مثل `select` / `cascader`.
+- **لا يعالج الاستماع إلى Resize / Scroll**: الجدولة من شأن طبقة واجهة المستخدم؛ وكل ما يضمنه share هو «بمدخلات محددة، مخرجات محددة».
+- مع `LhPosition` (مجموعة `'top-left'` / `'bottom-right'`، راجع [types](/ar/core/types)) هما **نموذجان للموضع**: فـ `LhPosition` لسيناريوهات «الإلصاق بالحافة» مثل affix / backtop، وليس فيه لاحقتا محاذاة `-start` / `-end`؛ فلا تخلط بينهما.
+
+<FnPlayground module="popper" fn="computePosition" params='{"trigger": {"top": 100, "left": 50, "width": 80, "height": 32, "right": 130, "bottom": 132}, "popper": {"top": 0, "left": 0, "width": 200, "height": 120, "right": 200, "bottom": 120}, "viewport": {"top": 0, "left": 0, "width": 375, "height": 667, "right": 375, "bottom": 667}, "options": {"placement": "top"}}' />

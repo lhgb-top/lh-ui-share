@@ -1,0 +1,176 @@
+---
+title: 다크 모드
+description: 'data-theme=dark 전환 메커니즘, 컴파일 타임 베이크 함정과 verify:styles의 7번째 항목인 어두운색 도달성 게이트'
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+lh-ui의 모든 컴포넌트는 **기본적으로 밝은색과 어두운색을 지원합니다**. 이것은 사후에 추가된 테마가 아니라, 토큰 시스템의 설계 전제입니다.
+
+## 전환 메커니즘
+
+어두운색의 스위치는 JS가 아니라 CSS 선택器입니다:
+
+```scss
+// styles/theme/common/var-dark.scss
+[data-theme='dark'],
+.dark {
+  --lh-bg-color: #2A2520;
+  --lh-text-primary: #E8E0D8;
+  // ... 118개의 덮어쓰기
+}
+```
+
+두 가지 트리거 방식:
+
+```html
+<!-- 방식 1: data 속성(권장, 의미가 명확) -->
+<html data-theme="dark">
+
+<!-- 방식 2: class(기존 코드 / 서드파티 전환 라이브러리와의 호환) -->
+<body class="dark">
+```
+
+UI 계층(각 라이브러리의 ConfigProvider나 비즈니스 코드)이 이 속성 / 클래스명을 바꾸기만 하면, **모든 컴포넌트가 즉시 색을 바꿉니다** —— CSS 변수는 런타임에 평가되어 다시 렌더링의 비용이 없습니다.
+
+```ts
+function toggleDark(isDark: boolean) {
+  document.documentElement.dataset.theme = isDark ? 'dark' : 'light'
+}
+```
+
+## 어두운색은 덮어쓰기 계층
+
+어두운색 파일은 **118개**만 쓰며, 185개 전체를 새로 쓰는 것이 아닙니다. 전환이 필요한 토큰만 덮어쓰고, 나머지는 밝은색 값을 따릅니다.
+
+설계 원칙은 **의미 토큰의 재지정이지, 컴포넌트별 재작성이 아닙니다**:
+
+```scss
+// ✅ 좋은 방법: 어두운색에서 어두운색 의미 토큰을 가리킴
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);
+  --lh-table-cell-color: var(--lh-text-primary);
+}
+
+// ❌ 나쁜 방법: 어두운색에 구체적인 색을 고정
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: rgba(255, 255, 255, 0.85);   // text-primary와 분리되어, 이후 색 조정 시 두 곳을 고쳐야 함
+}
+```
+
+## 컴파일 타임 베이크 함정
+
+이것은 다크 모드에서 **가장 밟기 쉬운 함정**이며, `verify:styles`의 7번째 항목이 존재하는 이유입니다.
+
+### 함정의 원리
+
+`var.scss`에서 값이 `#{$lh-foo}` 형태인 토큰:
+
+```scss
+// var.scss
+:root {
+  --lh-menu-item-color: #{$lh-menu-item-color};   // SCSS 변수가 컴파일 타임에 구체적인 밝은색 값으로 치환됨
+}
+```
+
+SCSS 변수는 **컴파일 타임에 리터럴 값으로 구워지며**, 다음과 동등합니다:
+
+```scss
+:root {
+  --lh-menu-item-color: rgba(0, 0, 0, 0.88);   // 어두운색에서 자동으로 전환되지 않음!
+}
+```
+
+결과: 어두운색 모드에서 메뉴 / 표 / 타임라인의 글자가 밝은색 값을 그대로 써서, **검은 바탕에 검은 글자로 보이지 않게** 됩니다. 이런 누락은 실제로 발생했으며, 보충 기록은 0.4.0의 체인지셋을 보세요.
+
+### 해결
+
+`var-dark.scss`에서 어두운색 의미 토큰을 명시적으로 다시 가리킵니다:
+
+```scss
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);
+}
+```
+
+### 연쇄 폴백은 런타임에 평가되어 안전
+
+컴포넌트 SCSS 안의 연쇄 폴백:
+
+```scss
+.lh-button {
+  color: var(--lh-foo, var(--lh-bar, #333));
+}
+```
+
+`var()`의 폴백은 **런타임에 평가**됩니다: 연쇄상의 어느 토큰에 어두운색 덮어쓰기가 있기만 하면, 연쇄 전체가 전환을 따릅니다. **반복 선언이 필요 없습니다**.
+
+대조표:
+
+| 작성법 | 평가 시점 | 어두운색에서의 거동 |
+| --- | --- | --- |
+| `var(--lh-foo, fallback)` | 런타임 | ✅ 연쇄상 토큰에 어두운색 덮어쓰기가 있으면 전환 |
+| `#{$lh-foo}`(SCSS 보간) | 컴파일 타임 | ❌ 밝은색으로 구워져, var-dark에서 명시적 재지정이 필요 |
+| `mix($lh-a, $lh-b)` 등 SCSS 함수 | 컴파일 타임 | ❌ 마찬가지 |
+
+## 어두운 주색 프리셋의 명도 올리기
+
+5개 내장 프리셋 중 어두운 주색인 것(青花瓷 (청화백자) / 朱砂 (주사) / 水墨 (수묵))은 어두운색에서 주색이 페이지 바탕색에 "잠겨" 보입니다. `buildPresetDarkVars`가 자동으로 처리합니다:
+
+판정 규칙: `--lh-primary-color`와 어두운색 페이지 바탕 `#1A1A2E`(`DARK_PAGE_BG`)의 대비가 3 미만(`DARK_PRIMARY_CONTRAST_THRESHOLD`)이면 어두운 주색으로 판정하고, 그런 뒤:
+
+```css
+[data-theme='dark'],
+.dark {
+  --lh-primary-color: color-mix(in srgb, <리터럴 값> 55%, #fff);   /* 55% 밝게 */
+  --lh-primary-color-hover: color-mix(in srgb, var(--lh-primary-color) 70%, #fff);
+  --lh-primary-color-active: color-mix(in srgb, var(--lh-primary-color) 85%, #000);
+  --lh-color-on-primary: #101410;   /* 밝게 한 뒤에는 흰 글자의 대비가 오히려 부족하여 먹글자로 */
+  --lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent);
+  --lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff);
+}
+```
+
+**왜 주색 명도 올리기에 `var()`가 아니라 리터럴 값을 쓰는가**: `color-mix(in srgb, var(--lh-primary-color) 55%, #fff)`는 CSS 자기 참조 순환을 만듭니다(`--lh-primary-color`의 값이 자기 자신을 참조). 따라서 이 한 줄은 **리터럴 값을 대입**하고, 나머지는 `var()`로 현재 주색을 따릅니다.
+
+밝은 주색 프리셋(松花绿 (송화록) / 藤黄 (등황))은 명도 올리기가 필요 없지만, 여전히 `--lh-primary-color-bg`와 `--lh-selected-color`의 어두운색 재정의를 받습니다.
+
+## 프리셋 주입의 순서 의미
+
+`buildPresetStyleText`가 생성하는 텍스트는 `:root { ... }` 블록이 앞, `[data-theme='dark'], .dark { ... }` 블록이 뒤입니다. **같은 명시도에서는 뒤가 이기므로**, 밝은 주색 프리셋이 `:root`에 선언한 `--lh-selected-color`의 밝은색 값이 어두운색으로 새어 들어가지 않습니다.
+
+이것이 "`<style>`만 쓸 수 있고 인라인 style는 쓸 수 없는"의 근원이기도 합니다 —— 인라인 style의 명시도 1,0,0,0,0이 `var-dark.scss`의 어두운색 변수 전체를 누르고, 어두운색이 곧바로 무효가 됩니다([테마 시스템 개요](/ko/theme/overview#주입-제약-style만-허용-인라인-style-금지) 참고).
+
+## 어두운색 토큰 표
+
+<TokenTable />
+
+## 어두운색 완전성을 검증하는 방법
+
+세 가지 수단, 약한 것부터 강한 것 순:
+
+1. **`pnpm verify:styles`의 7번째 항목(어두운색 도달성)**: 정적 스캔으로 "밝은색이 구워졌으나 var-dark에 덮어쓰기가 없는" 토큰을 찾습니다. 이것이 CI 게이트입니다.
+2. **`pnpm verify:theme`(AA 4.5:1)**: `es/` 산출물을 읽어, 프리셋 테마의 밝은색 / 어두운색 양쪽에서의 대비를 계산합니다. 먼저 `pnpm build`가 필요합니다. CI는 실행하지 않으며, 수동으로 지킵니다.
+3. **시각 확인**: docs 사이트 / 각 라이브러리 playground에서 다크 모드로 전환하여 컴포넌트별로 살핍니다.
+
+새 토큰을 추가할 때의 자체 점검 목록:
+
+- [ ] 이 토큰은 어두운색에서 전환이 필요한가?
+- [ ] 필요하다면 `var-dark.scss`에 덮어쓰기를 보충했는가?
+- [ ] 그 값이 `#{$lh-*}` 보간인가? (그렇다 → 반드시 어두운색 덮어쓰기 보충)
+- [ ] 컴포넌트에서 이것을 소비하는 것이 `var(--lh-x, fallback)` 연쇄인가?
+
+## 알려진 유산
+
+어두운색 완전성은 0.4.0에서 한 차례 체계적으로 보충되었습니다(메뉴 / 표 / 타임라인 등의 글자가 보이지 않던 문제, 체인지셋 참고). 나머지 알려진 항목은 "높이 토큰 전문 작업"과 함께 향후 처리 예정입니다.
+
+## 관련 문서
+
+- [테마 시스템 개요](/ko/theme/overview)
+- [디자인 토큰](/ko/theme/tokens)
+- [테마 프리셋](/ko/theme/presets)
+- [스타일 소스](/ko/reference/styles)
+- [verify:styles의 6개 항목](/ko/development/verification)

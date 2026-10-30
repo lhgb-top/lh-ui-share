@@ -1,0 +1,175 @@
+---
+title: calendar —— Календарь
+description: 'переход через границу месяца shiftCalendarMonth, нормализация интервала normalizeCalendarSpan, переключение множественного выбора toggleCalendarDate, aria-current=date'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Календарь — это **постоянно видимая панель дат**: date-picker прячет панель во всплывающем слое, а calendar разворачивает её на странице. Поддерживаются три режима выбора — одиночный, интервал, множественный — а также ограничение диапазона выбираемых дат. `core/calendar` повторно использует алгоритм сетки date-picker (`generateCalendarDays`), накладывая сверху сдвиг, ограничения диапазона и переключение состояния выбора.
+
+## Когда использовать
+
+- В каждой платформе реализован `LhCalendar`: просмотр расписания, отметка посещений, страницы выбора дат для гостиниц и авиабилетов.
+- Сценарии, где даты должны быть **постоянно видны**, а не выбраны во всплывающем окне.
+- **Не использовать для**: внутри форм, где место ограничено (используйте `date-picker`, всплывающий слой экономит место); когда нужна одна дата, а страница и так перегружена.
+
+## Импорт
+
+```ts
+import {
+  getCalendarClassNames,
+  shiftCalendarDate,
+  shiftCalendarMonth,
+  isCalendarDateDisabled,
+  clampDateToRange,
+  isCalendarSelected,
+  normalizeCalendarSpan,
+  isCalendarInSpan,
+  toggleCalendarDate,
+  getCalendarCellAria,
+  generateCalendarDays,
+  isSameDay,
+} from '@lh-ui/share/core/calendar'
+import type { LhCalendarRange, LhCalendarSelection } from '@lh-ui/share/core/calendar'
+```
+
+## Замысел дизайна
+
+**Направление зависимости семантично**: calendar импортирует `generateCalendarDays` из `date-picker`, а не заново реализует его в `core/shared/date` — алгоритм сетки календаря находится в зоне ответственности date-picker, а calendar — это его календарное представление. Общие же примитивы (`compareDate` / `isDateDisabled` / `isSameDay`) берутся напрямую из общего ядра, и calendar не зависит обратно от логики date-picker. Это соглашение о слоях: «общие примитивы уходят вниз, предметные алгоритмы остаются на месте».
+
+**Терпимость к развёрнутому интервалу**: `isCalendarDateDisabled` и `clampDateToRange` сначала нормализуют интервал через `normalizeCalendarSpan` — передача пользователем `[end, start]` (в обратном порядке) не приведёт к полной блокировке или неправильному клампу. UI-слой не обязывает вызывающую сторону сортировать значения заранее.
+
+**Нормализация в `shiftCalendarMonth`**: `year * 12 + month + delta` с последующим обратным разложением в год и месяц, а `((total % 12) + 12) % 12` обрабатывает отрицательный остаток от деления — при отрицательном delta с переходом через границу года (например, январь и -2) месяц не превратится в -1.
+
+**Неизменяемое переключение множественного выбора**: `toggleCalendarDate` убирает совпадающий элемент, иначе добавляет и сортирует по времени — возвращается новый массив, который можно напрямую использовать для реактивного обновления, причём порядок стабилен (UI не прыгает).
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `getCalendarClassNames` | `() => string[]` | `['lh-calendar']` | класс контейнера |
+| `shiftCalendarDate` | `(date, days) => Date` | новый Date | сдвиг по дням (с безопасным переходом через месяц) |
+| `shiftCalendarMonth` | `(year, month, delta) => { year, month }` | год и месяц | сдвиг по месяцам |
+| `isCalendarDateDisabled` | `(date, range?) => boolean` | отключена ли | без ограничений всегда false |
+| `clampDateToRange` | `(date, range?) => Date` | дата после клампа | возврат вышедшей даты на границу |
+| `isCalendarSelected` | `(date, selected) => boolean` | выбрана ли | определение того же дня |
+| `normalizeCalendarSpan` | `(a, b) => [Date, Date]` | нормализованный интервал | гарантия start ≤ end |
+| `isCalendarInSpan` | `(date, start, end) => boolean` | внутри ли замкнутого интервала | при null на любом конце возвращает false |
+| `toggleCalendarDate` | `(dates, date) => Date[]` | новый массив | совпадение — удалить, иначе — добавить с сортировкой |
+| `getCalendarCellAria` | `(options: { date, selected, range? }) => LhAriaAttrs` | пакет aria-атрибутов | aria-current / aria-disabled |
+
+## Определения типов
+
+```ts
+export type LhCalendarRange = [Date, Date]
+export type LhCalendarSelection = 'single' | 'range' | 'multiple'
+```
+
+Структура данных сетки повторно использует `LhDatePickerDayData` (см. date-picker).
+
+## Доступность
+
+Вывод `getCalendarCellAria` очень сдержан — **атрибуты выводятся только при наличии состояния** (соглашение об опускании ложных значений в `LhAriaAttrs`):
+
+```ts
+getCalendarCellAria({ date: selectedDate, selected: selectedDate, range: undefined })
+// { 'aria-current': 'date' }
+
+getCalendarCellAria({ date: new Date(2026, 0, 1), selected: null, range: [new Date(2026, 2, 1), new Date(2026, 3, 1)] })
+// { 'aria-disabled': true }
+
+getCalendarCellAria({ date: someDate, selected: null })
+// {} (при отсутствии состояния — пустой объект)
+```
+
+- Выбранный день помечается `aria-current="date"` (а не `aria-selected`) — календарь является навигационным элементом, и в APG принято выражать «текущую позицию» через current.
+- Отключённые дни помечаются `aria-disabled`, и клики, и навигация с клавиатуры на UI-слое должны пропускать такие ячейки.
+- Взаимодействие с клавиатурой: после фокуса на ячейке перемещение ↑/↓/←/→ через `shiftCalendarDate(date, ±1|±7)`, а выбор — Enter/Space.
+- Сетка в целом должна иметь `role="grid"` — та же структура, что и у панели date-picker.
+
+## Примеры использования
+
+```ts
+import {
+  shiftCalendarMonth, normalizeCalendarSpan, toggleCalendarDate, isCalendarInSpan,
+} from '@lh-ui/share/core/calendar'
+
+shiftCalendarMonth(2026, 0, -2)   // { year: 2025, month: 10 } (корректный отрицательный остаток)
+shiftCalendarMonth(2026, 11, 1)   // { year: 2027, month: 0 }
+normalizeCalendarSpan(new Date(2026, 3, 1), new Date(2026, 2, 1))
+// [2026-03-01, 2026-04-01] (развёрнутый интервал нормализуется автоматически)
+isCalendarInSpan(new Date(2026, 2, 15), new Date(2026, 2, 1), new Date(2026, 2, 28))  // true
+isCalendarInSpan(new Date(2026, 2, 15), null, null)  // false (null на любом конце)
+toggleCalendarDate([new Date(2026, 2, 1)], new Date(2026, 2, 5))
+// [2026-03-01, 2026-03-05] (добавление с сортировкой)
+toggleCalendarDate([new Date(2026, 2, 1), new Date(2026, 2, 5)], new Date(2026, 2, 1))
+// [2026-03-05] (совпадение — удаление)
+```
+
+```vue
+<!-- Vue3: режим интервала -->
+<div :class="getCalendarClassNames()">
+  <div class="lh-calendar__header">
+    <button type="button" @click="shift(-1)">‹</button>
+    <span class="lh-calendar__title">{{ year }} г. {{ month + 1 }}</span>
+    <button type="button" @click="shift(1)">›</button>
+  </div>
+  <div class="lh-calendar__body" role="grid">
+    <div v-for="row in weekRows(days)" :key="row[0].date.getTime()" class="lh-calendar__row" role="row">
+      <button
+        v-for="cell in row"
+        :key="cell.date.getTime()"
+        type="button"
+        class="lh-calendar__cell"
+        :class="cellClass(cell)"
+        role="gridcell"
+        v-bind="getCalendarCellAria({ date: cell.date, selected: selected, range: allowedRange })"
+        @click="onPick(cell.date)"
+      >
+        {{ cell.day }}
+      </button>
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// Двухшаговый выбор в режиме интервала (правила UI-слоя, в core не встроены)
+// if (!rangeStart || (rangeStart && rangeEnd)) { rangeStart = date; rangeEnd = null }
+// else rangeEnd = date  (при дате раньше rangeStart нормализует normalizeCalendarSpan)
+```
+
+```tsx
+// React: режим множественного выбора
+// const [dates, setDates] = useState<Date[]>([])
+// onClick: setDates(toggleCalendarDate(dates, cell.date))
+```
+
+```ts
+// uniapp: сетка через <view> + @touchstart; функции ограничений диапазона и
+// переключения выбора из core используются как есть
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-calendar` | базовый класс |
+| `.lh-calendar__header` / `__title` | навигация в шапке |
+| `.lh-calendar__body` | область сетки |
+| `.lh-calendar__row` | одна неделя |
+| `.lh-calendar__cell` | ячейка даты |
+| `.lh-calendar__cell.is-today` / `.is-selected` / `.is-in-range` / `.is-start` / `.is-end` / `.is-disabled` / `.is-other-month` | модификаторы состояния |
+
+Выбор — `--lh-primary-color`, сегменты интервала — основной цвет с низкой прозрачностью, у текущего дня рамка, отключённые даты — `--lh-text-disabled`.
+
+## Замечания
+
+- **Отсчёт month с 0**: как в date-picker и нативном `Date`, на UI отображается `+1`.
+- **Отношение трёх режимов выбора к core**: `LhCalendarSelection` — это только объявление типа, а функции core не зависят от режима: `isCalendarSelected` обслуживает single, `isCalendarInSpan` — range, `toggleCalendarDate` — multiple. Подключение режимов находится на UI-слое.
+- **Промежуточное состояние в режиме интервала**: когда `rangeStart` уже выбран, а `rangeEnd` ещё нет, ячейки под наведением должны подсвечивать средний сегмент в реальном времени (UI-слой рендерит с временным концом); `generateCalendarDays` из core принимает null в качестве rangeEnd и не падает.
+- **Назначение `clampDateToRange`**: при внешней установке значения (например, `v-model` передаёт дату вне диапазона) происходит возврат в допустимый интервал; UI-слой вызывает его один раз при отслеживании изменения значения.
+- **Производительность постоянно видимой панели**: в отличие от date-picker, сетка считается не в момент открытия, а при перелистывании месяцев — не нужно пересчитывать `generateCalendarDays` каждый кадр (он создаёт 35–42 объекта Date).
+- **Граница с date-picker**: они делят данные сетки, но **не делят модель состояния** — `LhDatePickerState` у date-picker заточен под взаимодействие во всплывающем слое, а у calendar нет состояния видимости.
+
+<FnPlayground module="calendar" fn="shiftCalendarMonth" params='{"year": 2026, "month": 0, "delta": -2}' />

@@ -1,0 +1,126 @@
+---
+title: space —— تباعد
+description: 'يُطبِّع resolveSpaceGaps الدرجات المسبقة/الأرقام/المصفوفات إلى CSS gap ويضع علامة على استخدام الرموز، ويحسب getSpaceClassNames أصناف التخطيط'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+يحلّ `space` أكثر المشكلات شيوعًا في مكتبة المكوّنات: ترتيب مجموعة من العناصر بتباعد ثابت. وليس إطار تخطيط (فذلك `LhGrid`)، بل «تباعد بدلالة» — فـ `small` / `medium` / `large` رموز تصميم، والرقم ضبط دقيق مؤقت، والمصفوفة تحكّم منفصل في تباعد العمود والصف.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhSpace`: مجموعات الأزرار، وترتيب عناصر النماذج، وتخطيط عناصر البطاقة.
+- أي مكان يحتاج إلى التعبير داخل المكوّن عن «افصل بين هذه العناصر».
+- **لا يجب استخدامه**: عند الحاجة إلى شبكة ثنائية الأبعاد (استخدم `LhGrid`)، أو إلى المحاذاة المتقدمة لـ flex (اكتب الأنماط مباشرة). لا يدير space سوى التباعد، وتُمرَّر المحاذاة عبر `align`.
+
+## طريقة الاستيراد
+
+```ts
+import { getSpaceClassNames, resolveSpaceGaps, resolveSpaceAlignment } from '@lh-ui/share/core/space'
+import type { LhSpaceState, LhSpaceSizeInput, LhSpaceAlignment } from '@lh-ui/share/core/space'
+```
+
+## نية التصميم
+
+جوهر `resolveSpaceGaps` هو **التمييز بين «الرمز» و«القيمة الحرفية»**:
+
+- الدرجات المسبقة (`small` / `medium` / `large`) تُخرج `var(--lh-spacing-*)` مع إعادة `usesTokens: true` — فيتغير التباعد مع تخصيص السمة.
+- يُعامَل الرقم كقيمة حرفية بالبكسل مع إعادة `usesTokens: false` — فالتباعد قرار لمرة واحدة من المستدعي.
+- المصفوفة `[columnGap, rowGap]` تتحكم في المحورين كل على حدة.
+
+ولماذا يُكشَف عن `usesTokens`؟ لأن استراتيجية العرض في الطرف البصري تختلف: عند استخدام الرموز يمكن إهمال اسم الصنف (فالـ gap مدفوع مباشرةً بمتغيّر CSS)، وعند استخدام القيم الحرفية يجب كتابة نمط مضمّن. ويغني هذا العلمُ الطرفَ البصري عن مطابقة القيمة المُخرَجة بالتعابير النمطية.
+
+لا تشير الدرجات إلا إلى رموز spacing **المُسجَّلة فعلًا** في `var.scss`، وتتطابق قيم الاحتياط مع القيم الافتراضية للرموز — فلا يظهر أثر فعلي إلا إذا استبدل المستخدم `--lh-spacing-*`، وتضمن `verify:styles` هذا الاتساق.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getSpaceClassNames` | `(state: LhSpaceState) => string[]` | مصفوفة أسماء الأصناف | معدّلات الاتجاه، والتفاف، والحجم |
+| `resolveSpaceGaps` | `(size: LhSpaceSizeInput) => { columnGap: string; rowGap: string; usesTokens: boolean }` | وصف gap | تطبيع size إلى CSS gap |
+| `resolveSpaceAlignment` | `(alignment: string) => string` | قيمة CSS | تمرير قيمة المحاذاة |
+
+تعيين `resolveSpaceGaps`:
+
+| المدخل | columnGap / rowGap | usesTokens |
+| --- | --- | --- |
+| `'small'` | `var(--lh-spacing-sm, 8px)` | true |
+| `'medium'` | `var(--lh-spacing-base, 16px)` | true |
+| `'large'` | `var(--lh-spacing-xl, 24px)` | true |
+| `24` (رقم) | `24px` | false |
+| `[16, 8]` | `16px` / `8px` | false |
+
+- الحدود: يُتراجع العنصر الناقص أو القيمة غير المنتهية في المصفوفة إلى `0` (تفادي `"undefinedpx"`)؛ ولا يدعم الجمع بين الدرجات المسبقة والأرقام (مثل `['medium', 8]`).
+
+## تعريف الأنواع
+
+```ts
+export type LhSpaceAlignment = 'start' | 'center' | 'end' | 'baseline'
+export type LhSpaceSizeInput = 'small' | 'medium' | 'large' | number | [number, number]
+
+export interface LhSpaceState {
+  direction: 'horizontal' | 'vertical'
+  wrap: boolean
+  size: string    // حساب أسماء الأصناف لا يقبل سوى الدرجات المسبقة
+}
+```
+
+انتبه إلى تقسيم العمل في الأنواع: لا يقبل `LhSpaceState.size` (لأسماء الأصناف) سوى سلاسل الدرجات المسبقة؛ بينما يقبل `LhSpaceSizeInput` (لحساب gap) الأرقام والمصفوفات إضافةً إلى ذلك. ولا يمكن أن يظهر `lh-space--16px` في أسماء الأصناف.
+
+## إمكانية الوصول
+
+`space` عنصر تخطيط صرف، لا يُخرج سمات aria، وهو بذاته غير مرئي لقارئ الشاشة. ويحتفظ المحتوى الذي يغلِّفه بدلالاته الأصلية كلٌّ على حدة — وهذا ما يميز space عن الحاويات مثل `<button>`: فهو لا يضيف أي طبقة دلالية.
+
+## أمثلة الاستخدام
+
+```ts
+import { getSpaceClassNames, resolveSpaceGaps } from '@lh-ui/share/core/space'
+
+getSpaceClassNames({ direction: 'horizontal', wrap: true, size: 'small' })
+// ['lh-space', 'lh-space--horizontal', 'lh-space--small', 'lh-space--wrap']
+
+resolveSpaceGaps('medium')
+// { columnGap: 'var(--lh-spacing-base, 16px)', rowGap: 'var(--lh-spacing-base, 16px)', usesTokens: true }
+
+resolveSpaceGaps([16, 8])
+// { columnGap: '16px', rowGap: '8px', usesTokens: false }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSpaceClassNames({ direction, wrap, size })" :style="gapStyle">
+  <slot />
+</div>
+```
+
+```tsx
+// React
+const gaps = resolveSpaceGaps(size)
+const style = { columnGap: gaps.columnGap, rowGap: gaps.rowGap }
+return <div className={getSpaceClassNames({ direction, wrap, size }).join(' ')} style={style}>{children}</div>
+```
+
+```ts
+// uniapp: gap مدعوم جيدًا على الأطراف غير h5 (nvue/uvue كلاهما يدعمه)؛
+// وإن لم يدعم طرف ما gap، يتراجع الطرف البصري إلى إضافة margin للعناصر الأبناء
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-space` | الصنف الأساسي: حاوية flex |
+| `.lh-space--horizontal` / `.lh-space--vertical` | الاتجاه (flex-direction) |
+| `.lh-space--wrap` | السماح بالالتفاف |
+| `.lh-space--{small\|medium\|large}` | أصناف الدرجات (مع رموز `--lh-spacing-*`) |
+
+أصناف الدرجات والمُخرجات المسبقة لـ `resolveSpaceGaps` **تعبيران عن الرمز نفسه**: تذهب أسماء الأصناف عبر متغيّرات SCSS المستوردة بـ `@use` (وقت البناء)، ويذهب gap عبر متغيّرات CSS (وقت التشغيل). وتتطابق قيمتاهما، ويتحقق `verify:styles` من ذلك.
+
+## ملاحظات
+
+- **لا تخلط**: `resolveSpaceGaps(['medium', 8])` غير مدعوم (فالتنفيذ لا يتعرف على المزج)، وإذا أردت تباعدًا مختلفًا للمحورين فاستخدم الأرقام جميعها `[16, 8]`.
+- ** الاختيار بين الرقم والرمز**: ينبغي أن تذهب القيم الافتراضية داخل المكتبة إلى الدرجات (تتغير مع السمة)، أما الضبط الدقيق المؤقت في أماكن الاستدعاء فيكون بالأرقام.
+- الالتفاف (`wrap`) معناه فقط تحت horizontal؛ أما vertical + wrap فبلا أثر.
+- `resolveSpaceAlignment` في الوقت الحالي مجرد تمرير مباشر، وتعيين كلمات flex المفتاحية يتم في طبقة الأنماط (مدفوع بأسماء الأصناف).
+
+<FnPlayground module="space" fn="resolveSpaceGaps" params='{"size": "medium"}' />

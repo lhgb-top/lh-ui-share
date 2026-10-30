@@ -1,0 +1,99 @@
+---
+title: format —— interpolación de textos
+description: 'formatMessage sustituye los marcadores {key} por los valores de los parámetros; los marcadores desconocidos se conservan tal cual; lo comparten rate / pagination'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`共 {total} 条`, `{n} 星`, `第 {index} 步`: las plantillas de texto de los paquetes de idioma necesitan sustituir sus marcadores por números en tiempo de ejecución. Esta capacidad de interpolación vivía originalmente dentro del singleton de locales, pero, al ser usada por componentes de core (el número de estrellas de rate, las páginas de pagination), hacía que core **dependiera en sentido inverso** de los efectos secundarios del singleton a nivel de módulo de locales. Al descenderla a una función pura de cadenas, la interpolación de textos de los componentes de core ya no depende de ningún singleton.
+
+## Importación
+
+```ts
+// Desde el núcleo compartido (recomendado)
+import { formatMessage } from '@lh-ui/share/core/shared/format'
+
+// O desde la entrada de locales (la superficie de exportación se mantiene)
+import { formatMessage } from '@lh-ui/share/locales'
+```
+
+## Tabla de funciones
+
+| Función | Firma | Acción |
+| --- | --- | --- |
+| `formatMessage` | `(template: string, params?: Record<string, unknown>) => string` | Sustituye los marcadores `'{key}'` por los valores de `params` |
+
+## Detalles del comportamiento
+
+```ts
+formatMessage('Total: {total}', { total: 42 })  // 'Total: 42'
+formatMessage('{n} estrellas', { n: 5 })        // '5 estrellas'
+formatMessage('sin marcador de posición')       // 'sin marcador de posición'
+formatMessage('marcador desconocido {missing}') // 'marcador desconocido {missing}'
+```
+
+Tres reglas:
+
+1. **Los marcadores desconocidos se conservan tal cual**. Ni error ni sustitución por cadena vacía: quien llama normalmente ya ha obtenido del paquete de idioma una plantilla con marcadores, y que un marcador no tenga parámetro correspondiente significa que la etapa anterior olvidó pasarlo; conservarlo tal cual mantiene el problema visible en la UI (en vez de tragárselo en silencio).
+2. **Los valores pasan por `String(...)` de forma uniforme**: números y booleanos pueden interpolarse.
+3. **`params` por defecto es `{}`**: si no se pasan parámetros, la plantilla se transmite sin más.
+
+## La relación con lhlocale
+
+El interior de `lhlocale.t(path, params)` es «consultar el paquete de idioma → obtener la plantilla → llamar a `formatMessage`»:
+
+```ts
+// Implementación interna de locales (simplificada)
+t(path, fallbackOrParams) {
+  const template = resolve(path) ?? fallback
+  return typeof fallbackOrParams === 'object'
+    ? formatMessage(template, fallbackOrParams)
+    : template
+}
+```
+
+Que `@lh-ui/share/locales` reexporte `formatMessage` es deliberado: formaba parte de la antigua superficie de exportación y, tras el descenso a core, se mantiene la ruta de importación, de modo que los niveles inferiores no necesitan ningún cambio.
+
+## Cuándo usarlo y cuándo no
+
+| Escenario | ¿Lo uso? |
+| --- | --- |
+| Interpolación de textos dentro de componentes de core | ✅ Usar `formatMessage` directamente (sin importar el singleton de locales) |
+| Interpolación de textos en código de negocio | ✅ Más seguro que `str.replace` (conserva los marcadores desconocidos) |
+| Hace falta consultar el paquete de idioma + interpolar | ❌ Usar `lhlocale.t(path, params)`, en un solo paso |
+| La plantilla necesita condicionales / plurales | ❌ Esta función solo hace sustitución simple; los textos condicionales se dividen en varias claves del paquete de idioma |
+
+## Ejemplos de uso
+
+### El texto del total en pagination
+
+```ts
+// Interior del componente
+const totalText = computed(() =>
+  formatMessage(lhlocale.t('pagination.total'), { total: props.total }),
+)
+// Paquete de idioma: '共 {total} 条'  →  '共 42 条'
+```
+
+### El anuncio del número de estrellas de rate
+
+```ts
+const ariaLabel = formatMessage(lhlocale.t('rate.stars'), { n: currentValue.value })
+// Paquete de idioma: '{n} 星'  →  '5 星'
+```
+
+### Utilidad de cadenas de uso general
+
+```ts
+// Interpolación pura que no involucra al paquete de idioma
+formatMessage('Paso {index} de {total}', { index: 2, total: 5 })
+// 'Paso 2 de 5'
+```
+
+## Advertencias
+
+- **La sintaxis del marcador es `{key}`** (llaves simples), no `${key}` ni `{{key}}`.
+- **No admite plantillas anidadas**: los valores de `params` pasan por `String()` una sola vez, sin análisis recursivo.
+- **Rendimiento**: una única llamada no hace más que un bucle de `String.replace`; no la invoques repetidamente sobre la misma plantilla dentro de un bucle de alta frecuencia: a la capa UI le basta con una caché `computed`.
+
+<FnPlayground module="format" fn="formatMessage" params='{"template": "共 {total} 条", "params": {"total": 42}}' />

@@ -1,0 +1,141 @@
+---
+title: virtual —— виртуальная прокрутка
+description: 'computeRange / computeWindow — диапазон виртуальной прокрутки фиксированной высоты; virtual-list и table разделяют один алгоритм'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Раньше у виртуальной прокрутки фиксированной высоты было две реализации — в `virtual-list` и в `table`, и даже значение по умолчанию для overscan у них различалось (2 и 3): исправишь граничный случай в одном, а второй остаётся незамеченным. `shared/virtual` выделяет алгоритм в единственную реализацию, и оба места делают лишь тонкую обёртку.
+
+## Когда использовать
+
+- **Виртуальный список / таблица**: при тысячах строк данных рендерятся только те десять-другой, что попадают во вьюпорт.
+- **Горизонтальная виртуальная прокрутка**: `computeWindow` не зависит от оси и столь же подходит для горизонтальной timeline или горизонтально прокручиваемой панели tabs.
+- **Не использовать**: в сценариях с переменной высотой доступна **только возможность «взять смещение»** (`getItemOffsetAt`); алгоритма окна с переменной высотой здесь нет — для виртуальной прокрутки с динамическими высотами UI-слой должен поддерживать таблицу накопленных высот, а этот модуль даёт лишь шаг получения смещения.
+
+## Импорт
+
+```ts
+import {
+  computeRange,
+  computeWindow,
+  getItemOffsetAt,
+  LH_VIRTUAL_OVERSCAN,
+  type LhVirtualRange,
+} from '@lh-ui/share/core/shared/virtual'
+```
+
+## Типы и константы
+
+```ts
+export interface LhVirtualRange {
+  start: number        // начальный индекс диапазона рендеринга (включительно)
+  end: number          // конечный индекс диапазона рендеринга (не включительно)
+  offsetY: number      // смещение начального элемента относительно верха контейнера (стартовая точка «растяжения» высоты)
+  totalHeight: number  // суммарная высота всех данных (чтобы растянуть контейнер)
+}
+
+export interface LhAxisRange {
+  start: number
+  end: number
+  offset: number
+  totalSize: number
+}
+
+export const LH_VIRTUAL_OVERSCAN = 2   // количество строк overscan по умолчанию
+```
+
+## Таблица функций
+
+| Функция | Сигнатура | Назначение |
+| --- | --- | --- |
+| `computeRange` | `(scrollTop, viewportHeight, itemHeight, total, overscan?) => LhVirtualRange` | виртуальный интервал фиксированной высоты по вертикали |
+| `computeWindow` | `(scrollOffset, viewportSize, itemSize, total, overscan?) => LhAxisRange` | окно фиксированной высоты, не зависящее от оси (для горизонтали) |
+| `getItemOffsetAt` | `(items: { offset: number }[], index: number) => number` | получение смещения прокрутки для заданного элемента в режиме переменной высоты |
+
+## Логика вычислений
+
+Ядро `computeRange` — три шага:
+
+1. **Индекс первого элемента**: `first = floor(scrollTop / itemHeight)`, затем в обе стороны расширяется на `overscan` строк.
+2. **Индекс последнего элемента**: `end = min(total, start + visible + overscan × 2)`, где `visible = ceil(viewportHeight / itemHeight)`.
+3. **Общая высота**: `totalHeight = total × itemHeight` — растягивает контейнер до реальной высоты, чтобы пропорции полосы прокрутки были правильными.
+
+Возвращаемый `offsetY` — это «позиция начала рендеринга в общей высоте»; UI-слой использует его как `translateY` контейнера содержимого (или как padding-top).
+
+## Защита границ
+
+Защита этого модуля направлена в первую очередь на **кадр, в котором данные схлопываются**: пользователь смотрит на 500-ю строку, данные внезапно превращаются в 10 записей, `scrollTop` ещё не успел вернуться браузером, и простой алгоритм вычислит `start = 490 > end`, а `slice()` вернёт пустой массив → белый экран.
+
+Решение: `first` клампится к `total - 1`, что гарантирует выполнение `start <= end` всегда. Родственные предохранители:
+
+| Плохой вход | Поведение |
+| --- | --- |
+| `itemHeight` нефинитное / ≤ 0 | возвращается полностью нулевой интервал (ничего не рендерится, без исключения) |
+| `total` нефинитное / ≤ 0 | возвращается полностью нулевой интервал |
+| `scrollTop` нефинитное | откат к 0 |
+| `viewportHeight` нефинитное | откат к 0 (→ рендерится только часть overscan, без белого экрана) |
+| `overscan` нефинитное | откат к `LH_VIRTUAL_OVERSCAN` |
+
+## Примеры использования
+
+### Чистая функция
+
+```ts
+computeRange(400, 300, 40, 1000)
+// first = 10, visible = 8, overscan = 2
+// start = 10 - 2 = 8, end = min(1000, 10 + 8 + 4) = 22
+// offsetY = 8 * 40 = 320, totalHeight = 40000
+// → рендерятся элементы 8~21, контейнер translateY 320px
+```
+
+### Подключение во Vue3
+
+```vue
+<template>
+  <div class="lh-virtual-list" @scroll="onScroll" :style="{ height: `${viewportHeight}px` }">
+    <div :style="{ height: `${range.totalHeight}px` }">
+      <div :style="{ transform: `translateY(${range.offsetY}px)` }">
+        <LhVirtualItem v-for="i in visibleItems" :key="i.index" :data="i.data" />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+const range = ref<LhVirtualRange>({ start: 0, end: 0, offsetY: 0, totalHeight: 0 })
+
+function onScroll(e: Event) {
+  range.value = computeRange(
+    (e.target as HTMLElement).scrollTop,
+    viewportHeight.value,
+    props.itemHeight,
+    props.data.length,
+  )
+}
+</script>
+```
+
+### Горизонтальная прокрутка
+
+```ts
+// Тот же алгоритм, другая ось
+const window = computeWindow(scrollLeft, viewportWidth, itemWidth, total)
+```
+
+### Прокрутка к заданному элементу (переменная высота)
+
+```ts
+// UI-слой поддерживает таблицу накопленных смещений [{ offset: 0 }, { offset: 40 }, ...]
+const offset = getItemOffsetAt(itemOffsets, targetIndex)
+container.scrollTop = offset
+```
+
+## Замечания
+
+- **Фиксированная высота — предпосылка**: `computeRange` предполагает, что высота каждого элемента строго одинакова. Если высоты элементов меняются, UI-слою нужно самому поддерживать таблицу высот и использовать `getItemOffsetAt` для переходов — алгоритма окна с переменной высотой в этом модуле нет.
+- **`getItemOffsetAt` при выходе за границы возвращает 0**: пустой список и выход индекса за пределы — оба дают 0, исключений нет.
+- **Компромисс overscan**: `LH_VIRTUAL_OVERSCAN = 2` — баланс между «не мигает при быстрой прокрутке» и «лишними рендерящимися строками»; при быстрой прокрутке область overscan гарантирует, что контент для следующего кадра уже отрендерен. Значение можно переопределить параметром, но при значении меньше 1 появится мерцание.
+- **`computeWindow` и `computeRange` имеют один источник**: первый делегирует второму с переименованием полей; поведение полностью идентично, и для вертикальных сценариев можно использовать любой из них.
+
+<FnPlayground module="virtual" fn="computeRange" params='{"scrollTop": 400, "viewportHeight": 300, "itemHeight": 40, "total": 1000}' />

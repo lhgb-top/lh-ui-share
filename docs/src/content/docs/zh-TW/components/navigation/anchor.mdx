@@ -1,0 +1,166 @@
+---
+title: 'anchor 錨點 —— 導航'
+description: 'flattenAnchorItems 深度優先扁平化（祖先鏈防循環）、resolveActiveAnchor 捲動聯動高亮、level 層級縮排'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+錨點是「長文件的目錄側欄」：文件站右側的「基礎用法 / API / 注意事項」，點了捲動到對應標題，捲動時高亮目前所在節。它和 `menu` 的區別是——錨點關聯的是**同一頁內的內容位置**，不是不同的頁面。
+
+## 何時使用
+
+- 各端實作 `<LhAnchor>`：文件站目錄、長文導讀、API 文件章節導航、落地頁區塊導航。
+- 頁面內容**長到需要快速跳轉**，且區塊有明確標題。
+- **不該用它**：站內頁面間導航（用 `menu` / `breadcrumb`）；短頁面（一視區內不需要目錄）；區塊無標題（錨點依賴標題文字作為連結文案）。
+
+## 匯入方式
+
+```ts
+import {
+  flattenAnchorItems,
+  collectAnchorIds,
+  resolveActiveAnchor,
+  getAnchorClassNames,
+  getAnchorLinkClassNames,
+} from '@lh-ui/share/core/anchor'
+import type { LhAnchorItem, LhFlatAnchorItem } from '@lh-ui/share/core/anchor'
+```
+
+## 設計意圖
+
+**樹狀結構 → 扁平列表**：錨點的設定是樹（章節套小節），但渲染是一維列表（帶縮排）。`flattenAnchorItems` 深度優先遍歷，**保持文件順序**——順序錯亂的目錄比沒有目錄更糟。`level` 記錄原始深度，驅動縮排樣式。
+
+**祖先鏈 seen 防循環引用**：`seen` 是**目前 DFS 路徑上的祖先集合**（不是全域集合）。註解明確寫了「祖先鏈判重保護循環引用」——如果資料裡 A 的 children 包含 A 自身（髒資料），全域 seen 只能去重，祖先鏈能直接打斷遞迴不死循環。這是樹狀資料結構型錯誤的兜底。
+
+**`resolveActiveAnchor` 的「最後一個越過閾值」**：在按文件順序排列的偏移量裡找**最後一個 `offset <= currentTop`** 的錨點。關鍵細節：**遇到第一個 `offset > currentTop` 就 break**——因為 offsets 有序，後面的只會更大，繼續遍歷是浪費。這是 O(n) 但帶提前終止的寫法。
+
+**未命中回首項**：捲動到所有錨點之前（頁面頂部）時傳回 `ids[0]`——首項始終高亮，避免「沒有高亮項」的困惑狀態。空陣列傳回空字串（UI 層不渲染高亮）。
+
+**`offsets` 與 `ids` 必須同序**：函式簽名要求兩個陣列——偏移量由 UI 層逐個 `getBoundingClientRect()` 測量後按同一順序傳入。順序錯位會得到錯誤的高亮項，這是呼叫方契約，core 無法驗證。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `flattenAnchorItems` | `(items, level?, seen?) => LhFlatAnchorItem[]` | 扁平列表 | 深度優先保序 |
+| `collectAnchorIds` | `(items) => string[]` | id 列表 | 扁平順序的 id 陣列 |
+| `resolveActiveAnchor` | `(ids, offsets, currentTop) => string` | 啟動 id | 捲動聯動判定 |
+| `getAnchorClassNames` | `(state: { direction }) => string[]` | 類別名 | 容器方向 |
+| `getAnchorLinkClassNames` | `(state: { active, level }) => string[]` | 類別名 | 啟動狀態 + 層級縮排 |
+
+## 類型定義
+
+```ts
+export interface LhAnchorItem {
+  id: string          // 目標元素 id
+  title: string       // 顯示文字
+  children?: LhAnchorItem[]
+}
+
+export interface LhFlatAnchorItem {
+  id: string
+  title: string
+  level: number       // 原始深度（根為 0），驅動縮排
+}
+```
+
+## 無障礙
+
+錨點連結指向**同一頁內的錨點**，標準做法是原生 `<a href="#section">`：
+
+```html
+<a href="#usage" class="lh-anchor__link">使用示例</a>
+...
+<section id="usage" tabindex="-1">…</section>
+```
+
+- **原生錨點跳轉 + tabindex="-1"**：點選 `<a href="#id">` 瀏覽器會捲動並嘗試聚焦目標。目標非聚焦元素時跳轉後焦點不動——給目標加 `tabindex="-1"` 讓它能接收程式化焦點，跳轉後讀屏軟體從該處開始讀。這是 WAI-ARIA 推薦的無障礙錨點模式。
+- **aria-current 標記目前節**：`getAnchorLinkClassNames` 的 `--active` 是視覺類，無障礙上建議 UI 層對啟動連結補 `aria-current="location"`（同頁位置語義，與 `breadcrumb` 的 `aria-current="page"` 區分）。
+- **跳轉不要改變 URL hash 的副作用**：hash 變化會進瀏覽器歷史，點五次錨點要按五次返回才能離開頁面。UI 層可用 `history.replaceState` 或 `scrollIntoView` 替代預設跳轉——這是互動取捨，core 不管。
+- **`nav` 包裹 + aria-label**：同 `breadcrumb`，`<nav aria-label="本頁目錄">` 宣告它是一個導航區。
+
+## 使用範例
+
+```ts
+import {
+  flattenAnchorItems, collectAnchorIds, resolveActiveAnchor,
+} from '@lh-ui/share/core/anchor'
+
+const items = [
+  { id: 'intro', title: '介绍', children: [
+    { id: 'why', title: '为什么用' },
+  ] },
+  { id: 'usage', title: '使用' },
+]
+
+flattenAnchorItems(items)
+// [ { id: 'intro', title: '介绍', level: 0 },
+//   { id: 'why', title: '为什么用', level: 1 },
+//   { id: 'usage', title: '使用', level: 0 } ]
+
+collectAnchorIds(items)  // ['intro', 'why', 'usage']
+
+// 捲動聯動：offsets 是各錨點相對容器頂部的位置（與 ids 同序）
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 350)  // 'why'
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 50)   // 'intro'（未越過 why）
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 0)    // 'intro'（未命中回首項）
+resolveActiveAnchor([], [], 0)  // ''（空列表）
+```
+
+```ts
+// UI 層：捲動監聽 + 偏移量測量
+const activeId = ref('')
+
+function refresh() {
+  const flat = flattenAnchorItems(props.items)
+  const ids = flat.map((item) => item.id)
+  const offsets = ids.map((id) => {
+    const el = document.getElementById(id)
+    return el ? el.getBoundingClientRect().top - containerTop : Infinity
+  })
+  activeId.value = resolveActiveAnchor(ids, offsets, scrollTop.value)
+}
+
+onMounted(() => window.addEventListener('scroll', refresh, { passive: true }))
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhAnchor :items="items" :offset-top="80" @click="onAnchorClick" />
+</template>
+```
+
+```tsx
+// React：useEffect 註冊 scroll 監聽；偏移量測量用 ref 陣列 + getBoundingClientRect；
+// 節流用 requestAnimationFrame 或 throttle（scroll 高頻觸發）
+```
+
+```ts
+// uniapp：<scroll-view scroll-into-view="id"> 是小程序原生錨點跳轉；
+// 捲動聯動用 scroll-view 的 scroll 事件取 scrollTop
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-anchor` | 容器 |
+| `.lh-anchor--{vertical\|horizontal}` | 方向（縱向側欄 / 橫向頂部導航） |
+| `.lh-anchor__link` | 錨點連結 |
+| `.lh-anchor__link--level-{0..n}` | 層級縮排（padding-left 遞增） |
+| `.lh-anchor__link--active` | 啟動狀態（主色 + 左側指示條） |
+
+啟動色 `--lh-primary-color`；普通連結 `--lh-text-regular`；層級縮排單位 `--lh-anchor-indent`（如 12px/級）。
+
+## 注意事項
+
+- **偏移量測量要減去容器偏移**：如果錨點在一個捲動的內部容器裡（不是 window 捲動），`getBoundingClientRect().top` 要減去容器頂部位置，否則高亮永遠偏移。這是最常見的 bug。
+- **`getBoundingClientRect` 是強制版面配置**：每次 scroll 事件裡對 N 個元素呼叫會觸發 N 次重排。最佳化：快取偏移量、只在內容尺寸變化時重算；或用 IntersectionObserver 逐個觀察。
+- **吸頂遮擋的偏移補償**：頁面有固定頭部（`affix`）時，錨點跳轉後目標可能被頭部遮住。給目標元素加 `scroll-margin-top`（CSS）或在 UI 層的捲動量裡減去頭部高度——這是版面配置協作點。
+- **動態內容的偏移量失效**：內容高度變化（展開摺疊、圖片載入完）後快取的偏移量就錯了。內容變化時要重新測量。
+- **`seen` 的祖先鏈語義**：`flattenAnchorItems` 的第三個參數 `seen` 是**路徑上的祖先**，預設 `new Set()`。業務側一般不傳——它主要是防髒資料死循環。若兩個兄弟子樹引用了同一節點（DAG 共享），祖先鏈會讓它在每個路徑都出現一次（與 `tree` 的祖先鏈 vs `table` 的全域 seen 是同一個取捨）。
+- **空 `id` 與重複 `id`**：`id` 必須全域唯一（HTML 錨點要求）。`document.getElementById` 只傳回第一個匹配——重複 id 會導致跳轉錯誤，core 無法驗證。
+- **錨點 vs 目錄路由**：錨點關聯同頁位置；如果「目錄」的每項是不同頁面，那是 `menu` 不是 `anchor`——別混用（錨點不重新整理頁面、不進路由歷史的管理方式不同）。
+
+<FnPlayground module="anchor" fn="resolveActiveAnchor" params='{"ids": ["intro", "why", "usage"], "offsets": [0, 300, 600], "currentTop": 350}' />

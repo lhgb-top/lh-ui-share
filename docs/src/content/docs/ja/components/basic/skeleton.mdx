@@ -1,0 +1,151 @@
+---
+title: skeleton —— スケルトン
+description: 'getSkeletonRowWidths が末行を短くする幅のシーケンスを生成、getSkeletonAria がプレースホルダー를隠し UI 層に aria-busy の併用を求める'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+スケルトンは「読み込み完了前」のプレースホルダーです：灰色のブロックで間もなく現れるレイアウトをシミュレートし、ユーザーに「この後に何が見えるか」の予測を持たせます。`core/skeleton` はテキスト行の幅のシーケンス（末行は短く、実際の段落のように）を計算し、「これはプレースホルダーであって内容ではない」というアクセシビリティのシグナルを準備します。
+
+## いつ使うか
+
+- 各端が `LhSkeleton` を実装する：カードの読み込み、リストの読み込み、文章の読み込み。
+- 任意の領域で「読み込み中」の視覚を表現したい場合、スケルトンは loading の回転よりも「これからのレイアウトに近い」ものです。
+- **使うべきでない**：読み込み時間が極めて短い（300ms 未満）ケース——一瞬表示されるスケルトンはかえって邪魔です。「データが空」にも使わないでください、それは `LhEmpty` の役目です。
+
+## インポート方法
+
+```ts
+import {
+  getSkeletonClassNames,
+  getSkeletonItemClassNames,
+  getSkeletonRowWidths,
+  getSkeletonAria,
+} from '@lh-ui/share/core/skeleton'
+import type { LhSkeletonState, LhSkeletonVariant } from '@lh-ui/share/core/skeleton'
+```
+
+## 設計意図
+
+`getSkeletonRowWidths(rows)` の末行 `60%` は細かいけれど重要な設計です：実際のテキスト段落の最終行はほぼ常に満杯ではありません。すべて等幅のスケルトンは「文字」ではなく「ストライプの壁紙」に見えてしまい、この 60% がプレースホルダーに「テキスト感」を与えます。
+
+`rows > 1` のときだけ末行を短くします：1 行しかない場合はそれで完全な 1 行です（1 行だけ短くすると逆にタイトルが truncate されたように見えます）。`rows <= 0` は空の配列を返し、エラーを投げません。
+
+`getSkeletonAria()` は常に `{ 'aria-hidden': true }` を返します——スケルトンの内容は情報量ゼロで、スクリーンリーダーが読み上げるべきではありません。しかし**隠すだけでは不十分**です：ソースコードのコメントは UI 層に対し、外側のコンテナに `aria-busy="true"` を同時に取り付けることを求めています。これによりデータの準備が整ったときにスクリーンリーダーが実際の内容を改めて読み上げます。この 2 つの属性は一対です：`aria-hidden` がノイズを摘み取り、`aria-busy` が「後で読み直す」ことを示します。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getSkeletonClassNames` | `(state: LhSkeletonState) => string[]` | クラス名配列 | アニメーション、アバター付きモディファイア |
+| `getSkeletonItemClassNames` | `(variant: LhSkeletonVariant, animated: boolean) => string[]` | クラス名配列 | プレースホルダーブロックの形状とアニメーション |
+| `getSkeletonRowWidths` | `(rows: number) => string[]` | 幅のシーケンス | テキスト行の幅を生成 |
+| `getSkeletonAria` | `() => LhAriaAttrs` | aria 属性パック | 常に `{ 'aria-hidden': true }` |
+
+出力例：
+
+```ts
+getSkeletonRowWidths(3)   // ['100%', '100%', '60%']
+getSkeletonRowWidths(1)   // ['100%']
+getSkeletonRowWidths(0)   // []
+getSkeletonItemClassNames('text', true)
+// ['lh-skeleton-item', 'lh-skeleton-item--text', 'lh-skeleton-item--animated']
+```
+
+## 型定義
+
+```ts
+export type LhSkeletonVariant = 'text' | 'rect' | 'circle'
+
+export interface LhSkeletonState {
+  animated: boolean
+  avatar: boolean
+}
+```
+
+## アクセシビリティ
+
+```ts
+// UI 層の外側のコンテナ
+const aria = { 'aria-busy': true }   //「内容を読み込み中、準備完了後に読み直してください」を示す
+// スケルトン要素自体
+const skeletonAria = getSkeletonAria()  // { 'aria-hidden': true }
+```
+
+よくある誤りはどちらか一方しかしないことです：`aria-hidden` だけだとスクリーンリーダーのユーザーはデータの準備完了後に新しい内容を見逃します（読み済みだと思い込むため）；`aria-busy` だけだとスクリーンリーダーがスケルトンの空っぽの内容を読み上げようとしてしまいます。
+
+## 使用例
+
+```ts
+import { getSkeletonRowWidths, getSkeletonItemClassNames } from '@lh-ui/share/core/skeleton'
+
+getSkeletonRowWidths(4)
+// ['100%', '100%', '100%', '60%']
+
+getSkeletonItemClassNames('circle', false)
+// ['lh-skeleton-item', 'lh-skeleton-item--circle']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSkeletonClassNames({ animated, avatar })" aria-busy="true">
+  <div v-if="avatar" class="lh-skeleton__avatar">
+    <div :class="getSkeletonItemClassNames('circle', animated)" />
+  </div>
+  <div class="lh-skeleton__content">
+    <div
+      v-for="(w, i) in getSkeletonRowWidths(rows)"
+      :key="i"
+      :class="getSkeletonItemClassNames('text', animated)"
+      :style="{ width: w }"
+      v-bind="getSkeletonAria()"
+    />
+  </div>
+</div>
+```
+
+```tsx
+// React
+const widths = getSkeletonRowWidths(rows)
+return (
+  <div className={getSkeletonClassNames({ animated, avatar }).join(' ')} aria-busy={true}>
+    <div className="lh-skeleton__content">
+      {widths.map((w, i) => (
+        <div
+          key={i}
+          className={getSkeletonItemClassNames('text', animated).join(' ')}
+          style={{ width: w }}
+          {...getSkeletonAria()}
+        />
+      ))}
+    </div>
+  </div>
+)
+```
+
+```ts
+// uniapp：アニメーションは非 h5 端で滑らかでないことがあり、各端の UI 層はプラットフォームに応じて animated を降級解除できる
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-skeleton` | ベースクラス：レイアウト |
+| `.lh-skeleton--animated` | shimmer スキャンアニメーションを有効化 |
+| `.lh-skeleton--with-avatar` | アバター + テキストの組み合わせレイアウト（アバターの左側にスペースを確保） |
+| `.lh-skeleton-item` | 単一のプレースホルダーブロック |
+| `.lh-skeleton-item--{text\|rect\|circle}` | 形状：テキスト行 / 矩形 / 円 |
+| `.lh-skeleton-item--animated` | スキャンアニメーション |
+| `.lh-skeleton__avatar` / `.lh-skeleton__content` | アバターエリアとコンテンツエリア |
+
+プレースホルダーブロックの色は `--lh-skeleton-*` トークンを使い（背景よりやや濃いグレー + スキャンのハイライト）、ダークモードでは自動的に暗くします。
+
+## 注意事項
+
+- `rows` が 0 または負数のときは空の配列を返し、UI 層は行をレンダリングしません——これは正当な入力であり、エラーではありません。
+- スケルトンの**レイアウトは実際の内容と一致すべき**（同じカード構造、同じ行数）です。そうでないと読み込み完了時にレイアウトが跳ねます。`LhCard` の `loading` 状態を使うとスケルトンを単独で置くより手間がかかりません。
+- shimmer アニメーションは一部のユーザーにとって前庭刺激の原因になります；`prefers-reduced-motion` を尊重する責任はスタイル層（`@media` の中でアニメーションを無効化）にあり、core 層は関知しません。
+- `aria-busy` は**データコンテナ**に取り付けるべきで、スケルトン自身ではありません——スケルトンが破棄されたら `aria-busy` も一緒に取り除きます。
+
+<FnPlayground module="skeleton" fn="getSkeletonRowWidths" params='{"rows": 3}' />

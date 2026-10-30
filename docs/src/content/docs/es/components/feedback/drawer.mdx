@@ -1,0 +1,179 @@
+---
+title: drawer —— Cajón
+description: 'normalización de tamaño con normalizeDrawerSize, estilos de panel en cuatro direcciones, compuerta de cierre canDrawerClose, diferencias semánticas frente a dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Un drawer es un panel que se desliza desde el borde de la pantalla. Su diferencia con el cuadro de diálogo no está en el código, sino en la **semántica de uso**: el diálogo es «interrumpe y debe resolverse», el drawer es «se desliza para mostrar y se puede abandonar en cualquier momento». Por eso el drawer no atrapa el foco por defecto ni bloquea el desplazamiento (es configurable), y la máscara puede cerrar al hacer clic o directamente no mostrarse.
+
+## Cuándo usarlo
+
+- Cada framework implementa `LhDrawer`: detalle lateral deslizante, panel de filtros, formularios de varios pasos, panel a pantalla completa en móvil.
+- Escenarios que necesitan un panel lateral deslizante con más contenido del que cabe en un diálogo.
+- **No usarlo para**: confirmaciones que exigen resolución (usa `dialog`); avisos instantáneos (usa `message`); pistas de texto puro (usa `tooltip`).
+
+## Importación
+
+```ts
+import {
+  LH_DRAWER_DIRECTION_DEFAULT,
+  LH_DRAWER_SIZE_DEFAULT,
+  normalizeDrawerSize,
+  getDrawerPanelStyle,
+  getDrawerClass,
+  canDrawerClose,
+  shouldDrawerTrapFocus,
+  getDrawerAria,
+} from '@lh-ui/share/core/drawer'
+import type { LhDrawerDirection, LhDrawerState } from '@lh-ui/share/core/drawer'
+```
+
+## Intención de diseño
+
+**Los valores por defecto de `canDrawerClose` son simétricos a los de dialog, pero distintos**:
+
+- `maskClosable` es **false** por defecto — el drawer suele contener filtros o un formulario de varios pasos; pulsar la máscara por error perdería el estado.
+- `closeOnEsc` es **true** por defecto — igual que dialog, deja una salida de teclado.
+
+Los comentarios registran un trozo de historia: `closeOnEsc` antes solo se declaraba en el state y la lógica nunca lo leía, así que la **compuerta de cierre era pura decoración**; una vez completado como función calculable, Esc pasó a estar realmente controlado por ese conmutador. Este tipo de brecha de «props declaradas pero no consumidas por la lógica» es el bug latente más frecuente de los modelos de estado.
+
+**El nombre de `shouldDrawerTrapFocus` lleva el prefijo del componente**: tiene la misma firma que el `shouldTrapFocus` de dialog pero distinta semántica (los nombres de los campos del state son diferentes: `modelValue` frente a `visible`). Al agregar las exportaciones en star, una ambigüedad de nombres sería descartada silenciosamente por TS, por lo que según el convenio de este repo se distinguen explícitamente (en línea con el tratamiento de `getDefaultDelay → getPopconfirmDefaultDelay`).
+
+**Orientación consciente del tamaño**: `getDrawerPanelStyle` aplica size a width (left/right) o a height (top/bottom) según la dirección — es la decisión de «una prop size expresa dos dimensiones», más sencilla que dos props `width` / `height`.
+
+**Constantes por defecto**: `LH_DRAWER_DIRECTION_DEFAULT = 'right'` y `LH_DRAWER_SIZE_DEFAULT = '30%'`, para que las referencien los `withDefaults` / defaultProps de la capa UI y garantizar la coherencia entre los tres frameworks.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `normalizeDrawerSize` | `(size: string \| number \| undefined) => string` | cadena de tamaño | número → px, vacío → por defecto |
+| `getDrawerPanelStyle` | `(direction, size?) => Record<string, string>` | estilos | la dirección decide width/height |
+| `getDrawerClass` | `(state: { direction }) => string[]` | clases | modificador de dirección |
+| `canDrawerClose` | `(state, reason: 'maskClick' \| 'escape') => boolean` | si se permite cerrar | compuerta de cierre |
+| `shouldDrawerTrapFocus` | `(state: { modelValue, lockScroll }) => boolean` | si se atrapa el foco | decisión (sin tocar el DOM) |
+| `getDrawerAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | bolsa de atributos aria | semántica de dialog |
+
+## Definiciones de tipos
+
+```ts
+export type LhDrawerDirection = 'right' | 'left' | 'top' | 'bottom'
+
+export interface LhDrawerState {
+  direction?: LhDrawerDirection
+  size?: string | number
+  modelValue?: boolean
+  title?: string
+  maskClosable?: boolean
+  showClose?: boolean
+  lockScroll?: boolean
+  closeOnEsc?: boolean
+}
+
+export const LH_DRAWER_DIRECTION_DEFAULT: LhDrawerDirection = 'right'
+export const LH_DRAWER_SIZE_DEFAULT = '30%'
+```
+
+## Accesibilidad
+
+A nivel de accesibilidad, un drawer **sigue siendo un dialog** (APG no tiene un patrón específico de drawer):
+
+```ts
+getDrawerAria({ id: 'lh-drawer-1', titleId: 'lh-drawer-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-drawer-1', 'aria-labelledby': 'lh-drawer-title' }
+```
+
+- Ten en cuenta que `aria-modal: true` se emite **de forma incondicional**, aunque la capa UI no muestre máscara ni atrape el foco. Si tu drawer no es modal (no bloquea el fondo), la capa UI debería usar `aria-modal: false` u otro rol, para que los lectores de pantalla no crean que el fondo es inalcanzable.
+- Decisión sobre la gestión del foco: un drawer modal (`lockScroll` y con máscara) debería atrapar el foco; un drawer no modal (sin máscara, con el fondo operativo) **no debería hacerlo** — `shouldDrawerTrapFocus` devuelve false y la capa UI no activa focus-trap.
+- **Gestos de deslizamiento y teclado**: en móvil, deslizar desde el borde hacia la derecha para cerrar es interacción por gesto; su equivalente de teclado es Esc (la rama `escape` de `canDrawerClose`). Ambos deben estar disponibles a la vez, o los usuarios de teclado no podrán cerrarlo.
+- Los drawers en dirección top/bottom deberían ocupar toda la anchura en móvil; `aria-modal` y la trampa de foco se aplican igual.
+
+## Ejemplos de uso
+
+```ts
+import { normalizeDrawerSize, getDrawerPanelStyle, canDrawerClose } from '@lh-ui/share/core/drawer'
+
+normalizeDrawerSize(300)      // '300px'
+normalizeDrawerSize('50%')    // '50%'
+normalizeDrawerSize(undefined) // '30%' (por defecto)
+normalizeDrawerSize('')       // '30%'
+
+getDrawerPanelStyle('right', 300)   // { width: '300px' }
+getDrawerPanelStyle('bottom', '40%') // { height: '40%' }
+getDrawerPanelStyle('left')          // { width: '30%' }
+
+canDrawerClose({ maskClosable: false, closeOnEsc: true }, 'maskClick')  // false
+canDrawerClose({ maskClosable: false, closeOnEsc: true }, 'escape')     // true
+canDrawerClose({}, 'escape')   // true (por defecto Esc cierra)
+canDrawerClose({}, 'maskClick') // false (por defecto hacer clic en la máscara no cierra)
+
+getDrawerClass({ direction: 'right' })  // ['lh-drawer', 'lh-drawer--right']
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-drawer-fade">
+    <div v-if="visible" :class="getDrawerClass({ direction })">
+      <div v-if="showMask" class="lh-drawer__mask" @click="onMaskClick" />
+      <transition :name="`lh-drawer-slide-${direction}`">
+        <div
+          v-if="visible"
+          class="lh-drawer__panel"
+          :class="`lh-drawer__panel--${direction}`"
+          :style="getDrawerPanelStyle(direction, size)"
+          v-bind="getDrawerAria({ id: drawerId, titleId })"
+        >
+          <header class="lh-drawer__header">
+            <h3 class="lh-drawer__title" :id="titleId">{{ title }}</h3>
+            <button v-if="showClose" type="button" class="lh-drawer__close" aria-label="Cerrar" @click="close">✕</button>
+          </header>
+          <div class="lh-drawer__body"><slot /></div>
+          <footer v-if="$slots.footer" class="lh-drawer__footer"><slot name="footer" /></footer>
+        </div>
+      </transition>
+    </div>
+  </transition>
+</teleport>
+```
+
+```tsx
+// React: una slide transition por cada una de las cuatro direcciones; la clase de dirección
+// controla el punto de salida del transform
+// right: translateX(100%) → 0; bottom: translateY(100%) → 0
+```
+
+```ts
+// uniapp: fixed + animación transform; el cierre deslizando desde el borde se decide en
+// @touchstart/@touchmove/@touchend por tu cuenta
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-drawer` | clase base |
+| `.lh-drawer--{right\|left\|top\|bottom}` | dirección (decide la animación de la máscara y el posicionamiento del panel) |
+| `.lh-drawer__mask` | máscara |
+| `.lh-drawer__panel` | el panel en sí |
+| `.lh-drawer__panel--{dirección}` | posicionamiento del panel (fixed + pegado al borde correspondiente) |
+| `.lh-drawer__header` / `__title` / `__close` | cabecera |
+| `.lh-drawer__body` | zona de contenido (desplazable) |
+| `.lh-drawer__footer` | pie |
+
+El panel usa `--lh-bg-color`; la máscara, `rgba(0, 0, 0, 0.45)` (algo más clara que la de dialog, porque semánticamente el drawer es menos modal).
+
+Los nombres de las clases de transición están recogidos por el mixin `lh-transition-ends` de `styles/theme/common/transition.scss` (diferencias entre frameworks del sufijo `-leave-to`), de modo que los estilos del componente ya no escriben las clases por duplicado (línea roja 2).
+
+## Advertencias
+
+- **Unidades de `size`**: los números son px y las cadenas se usan tal cual (admite `'30%'` / `'50vh'`). `'50%'` es relativo al **viewport**, no al elemento que lo abre.
+- **Tamaño por defecto de los drawers top/bottom**: `LH_DRAWER_SIZE_DEFAULT` es `'30%'`, lo que para las direcciones top/bottom significa el 30% de la altura del viewport — un drawer a pantalla completa en móvil debería pasar explícitamente `'100%'`.
+- **Dirección y animación de transición**: cada una de las cuatro direcciones necesita su propia animación slide (el punto de salida del transform es distinto). La capa UI elige el nombre de transition según la dirección; core no gestiona animaciones.
+- **Drawers anidados**: abrir un drawer derecho sobre otro drawer derecho hace que el segundo cubra el primero; distínguelos con direcciones o zIndex diferentes. La devolución del foco sigue la misma regla que dialog (al cerrar el interior, el foco vuelve al elemento que abrió el interior).
+- **Desplazamiento del contenido**: cuando el contenido del drawer es muy largo, pon `__body` con `overflow: auto`; el pie inferior permanece fijo en el viewport (layout flex), no dejes que el contenido empuje el pie fuera de la pantalla.
+- **La brecha histórica de `closeOnEsc`**: en versiones antiguas esta props se declaraba pero la lógica no la leía; el comportamiento solo fue efectivo tras la actualización — si en lo ahora dependías del comportamiento antiguo de «Esc siempre cierra», asegúrate de pasar `closeOnEsc` explícitamente.
+- **Elección entre drawer y dialog**: para interrupciones usa dialog (confirmar un borrado); para visualización en paralelo usa drawer (detalle de un pedido). Aquello que no exige al usuario detenerse no debería usar una capa modal.
+
+<FnPlayground module="drawer" fn="getDrawerPanelStyle" params='{"direction": "bottom", "size": "40%"}' />

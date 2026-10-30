@@ -1,0 +1,153 @@
+---
+title: divider —— فاصل
+description: 'يميّز getDividerRole بين دلالتي separator/presentation، ويقرر needsAriaOrientation تصريح الاتجاه العمودي، ويتقدّم borderStyle على dashed'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الفاصل أكثر المكوّنات «رِقّة»، لكن دلالة إمكانية الوصول فيه هي الأولى بالرعاية: خطٌّ يفصل بين منطقتين، هل هو **بنية مفيدة** لقارئ الشاشة أم **ضجيج**؟ يجعل `core/divider` هذا القرار صريحًا عبر `getDividerRole` — فالفاصل ذو النص هو `separator` حقيقي، أما الخط الزخرفي الصرف فهو `presentation` (يُخرَج من شجرة إمكانية الوصول).
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhDivider`: تُحسَب أسماء الأصناف، والدور الدلالي، وتصريح الاتجاه بالكامل عبر core.
+- تقسيم النماذج، وتجميع محتوى البطاقات، وفصل فقرات المقالات.
+- **لا يجب استخدامه**: لجعله أداة لتباعد التخطيط. التباعد مسؤولية `LhSpace` أو padding، والفاصل عنصر **دلالي**.
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getDividerClassNames,
+  getDividerRole,
+  needsAriaOrientation,
+} from '@lh-ui/share/core/divider'
+import type {
+  LhDividerState,
+  LhDividerDirection,
+  LhDividerLabelPosition,
+  LhDividerRole,
+} from '@lh-ui/share/core/divider'
+```
+
+## نية التصميم
+
+للفاصل تعبيران عن «الخط المتقطع»: prop القديم `dashed` المنطقي، والحقل الجديد `borderStyle` النصي. وأولوية `getDividerClassNames` هي **`borderStyle` الصريح غير الفارغ > `dashed`**، ولا توجد أنماط مقابلة إلا لـ `'dashed'` / `'dotted'` — فتمرير `'solid'` أو أي قيمة غير صالحة لا يُنتج صنفًا قذرًا، ويُرسم بخط متصل افتراضيًا. هذا تصميم هجرة تدريجي: لا يزال الكود القديم الذي يمرر `dashed` يعمل، ويمكن للكود الجديد التعبير عن أنماط حدّ أغنى عبر `borderStyle`.
+
+شرط `needsAriaOrientation` هو `hasContent && direction === 'vertical'`، وكلا الشرطين لازم:
+
+- الاتجاه الأفقي هو **الاتجاه الافتراضي** لـ separator في APG، والتصريح بـ `aria-orientation="horizontal"` معلومة زائدة.
+- عند انعدام النص يكون الدور `presentation`، وقد أُخرج العنصر من شجرة إمكانية الوصول، فلا متلقّي لتصريح الاتجاه.
+
+والاتجاه العمودي يدعم النص مثل الأفقي (يُرتَّب النص العمودي على طول الخط)، فحالة «ذو نص وعمودي» قابلة للتحقق؛ و`labelPosition` دلالة أفقية، أما نص الاتجاه العمودي فيكون موسّطًا دائمًا، ولا يُنتج `getDividerClassNames` معدّلات `--label-*` للاتجاه العمودي.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getDividerClassNames` | `(state: LhDividerState) => string[]` | مصفوفة أسماء الأصناف | معدّلات الاتجاه، والخط المتقطع، والنص |
+| `getDividerRole` | `(hasContent: boolean) => LhDividerRole` | `'separator'` / `'presentation'` | الدور الدلالي |
+| `needsAriaOrientation` | `(direction: 'horizontal' \| 'vertical', hasContent: boolean) => boolean` | قيمة منطقية | هل يحتاج التصريح بـ aria-orientation |
+
+مثال على المُخرجات:
+
+```ts
+getDividerClassNames({ direction: 'horizontal', dashed: false, hasContent: true, labelPosition: 'center', borderStyle: null })
+// ['lh-divider', 'lh-divider--horizontal', 'lh-divider--with-text', 'lh-divider--label-center']
+
+getDividerRole(true)   // 'separator'
+getDividerRole(false)  // 'presentation'
+needsAriaOrientation('vertical', true)   // true
+needsAriaOrientation('vertical', false)  // false
+```
+
+## تعريف الأنواع
+
+```ts
+export type LhDividerDirection = 'horizontal' | 'vertical'
+export type LhDividerLabelPosition = 'left' | 'center' | 'right'
+export type LhDividerRole = 'separator' | 'presentation'
+
+export interface LhDividerState {
+  direction: LhDividerDirection
+  dashed: boolean
+  hasContent: boolean
+  labelPosition: LhDividerLabelPosition
+  borderStyle?: string        // عند تحديده صراحةً يتقدّم على dashed
+}
+```
+
+## إمكانية الوصول
+
+تُجمَّع إمكانية الوصول للفاصل من ثلاثة أجزاء، وعلى الطرف البصري استخدامها كما هي:
+
+```ts
+const role = getDividerRole(hasContent)              // 'separator' | 'presentation'
+const orientation = needsAriaOrientation(direction, hasContent)
+const aria = { role, ...(orientation ? { 'aria-orientation': 'vertical' } : {}) }
+```
+
+- **الفاصل ذو النص**: `role="separator"`، فينطق قارئ الشاشة «فاصل» ويدرك أنه يقسم المحتوى إلى قسمين.
+- **الخط الزخرفي الصرف**: `role="presentation"`، فيُزال من شجرة إمكانية الوصول.
+- **عمودي + ذو نص**: يُضاف `aria-orientation="vertical"`، لأن العمودي ليس الاتجاه الافتراضي.
+
+## أمثلة الاستخدام
+
+```ts
+import { getDividerClassNames, getDividerRole } from '@lh-ui/share/core/divider'
+
+getDividerClassNames({ direction: 'vertical', dashed: true, hasContent: false, labelPosition: 'left', borderStyle: null })
+// ['lh-divider', 'lh-divider--vertical', 'lh-divider--dashed']
+```
+
+```vue
+<!-- Vue3 -->
+<div
+  :class="getDividerClassNames({ direction, dashed, hasContent: !!slots.default, labelPosition, borderStyle })"
+  :role="getDividerRole(!!slots.default)"
+  :aria-orientation="needsAriaOrientation(direction, !!slots.default) ? 'vertical' : undefined"
+>
+  <span v-if="slots.default" class="lh-divider__label"><slot /></span>
+</div>
+```
+
+```tsx
+// React
+const hasContent = !!children
+const cls = getDividerClassNames({ direction, dashed, hasContent, labelPosition, borderStyle })
+return (
+  <div
+    className={cls.join(' ')}
+    role={getDividerRole(hasContent)}
+    aria-orientation={needsAriaOrientation(direction, hasContent) ? 'vertical' : undefined}
+  >
+    {hasContent && <span className="lh-divider__label">{children}</span>}
+  </div>
+)
+```
+
+```ts
+// uniapp: دعم role/aria محدود على الأطراف غير h5، ويمكن التراجع إلى عرض أسماء الأصناف فقط
+// (إعطاء الأولوية للتماثل البصري)
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- | --- |
+| `.lh-divider` | الصنف الأساسي: التموضع، لون الحد |
+| `.lh-divider--horizontal` / `.lh-divider--vertical` | الاتجاه (يحدد على أي جانب يكون الحد) |
+| `.lh-divider--dashed` | خط متقطع (توافق مع prop القديم dashed) |
+| `.lh-divider--with-text` | ذو نص: يفسح الحد مكان المنتصف |
+| `.lh-divider--label-{left\|center\|right}` | محاذاة النص |
+| `.lh-divider__label` | عقدة النص (تحمل تباعدًا على الجانبين وخلفية تحجب الحد) |
+
+يُستخدم لون الحد `var(--lh-border-color)`، ويُقلب تلقائيًا في الوضع الداكن.
+
+## ملاحظات
+
+- يتقدّم `borderStyle` على `dashed`، ولا يعمل إلا `'dashed'` / `'dotted'` — وهذا تكلُّف مقصود، لتفضي عدم تعريض كل قيم CSS border-style كـ prop.
+- يحتاج الفاصل العمودي إلى حاوية أب ذات ارتفاع محدد (عادةً صف flex)، وإلا ينكمش الارتفاع إلى 0.
+- `role="presentation"` و`role="none"` متكافئان في APG، ويستخدم هذا المكوّن `presentation` (لتوافق أقدم أفضل).
+- عند الحكم على `hasContent` انتبه إلى حالة «فتحة لا يُعرض منها سوى فراغ»، ويكون `!!slots.default?.()` أكثر أمانًا في Vue.
+
+<FnPlayground module="divider" fn="getDividerClassNames" params='{"state": {"direction": "horizontal", "dashed": false, "hasContent": true, "labelPosition": "center", "borderStyle": null}}' />

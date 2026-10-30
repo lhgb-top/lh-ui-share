@@ -1,0 +1,62 @@
+---
+/**
+ * 页脚覆写（Starlight `components.Footer` override）
+ *
+ * 保留 Starlight 原页脚（上一页/下一页、编辑链接、更新时间），并在其下追加
+ * 家族统一的备案/版权行。数据来自 docs/.beian/beian.json —— 由工作区根
+ * scripts/sync-beian.mjs 从 lh-feng-mo-workspace 的 sharedSite 真源生成
+ * （含本站 beian.local.json 覆盖，机制见工作区 docs/备案资源同步方案.md）。
+ *
+ * 渲染约定（与家族另九站一致）：
+ * - 中文界面（lang 以 zh 开头）：版权 | ICP 备案 | 公安备案（带徽标图标）。
+ * - 非中文界面：仅版权（英文署名）。
+ * - 结束年份取当前年，禁止硬编码。
+ *
+ * 原页脚通过 `@astrojs/starlight/components/Footer.astro`（包导出的 dist 副本）
+ * 直接引用；不要写 `virtual:starlight/components/Footer` —— 那会解析回本覆写自身。
+ */
+import OriginalFooter from '@astrojs/starlight/components/Footer.astro'
+import beian from '../../.beian/beian.json'
+
+const { lang } = Astro.locals.starlightRoute
+const base = String(import.meta.env.BASE_URL).replace(/\/$/, '')
+const isZh = String(lang).startsWith('zh')
+
+const year = new Date().getFullYear()
+const cy = beian.copyright
+const parts = [`Copyright © ${cy.foundedYear}-${year} ${isZh ? cy.holder : cy.holderEn}`]
+if (cy.suffixHtml) parts.push(cy.suffixHtml)
+
+const b = beian.beian
+if (b && !b.hide && isZh) {
+  parts.push(`<a href="${b.icp.url}" target="_blank" rel="noopener">${b.icp.label}</a>`)
+  const icon = `${base}${b.police.icon}`
+  parts.push(
+    `<a href="${b.police.url}" target="_blank" rel="noopener">` +
+      `<img src="${icon}" alt="公安备案徽标" style="height:1em;width:auto;vertical-align:-0.15em;margin:0 2px">` +
+      `${b.police.label}</a>`,
+  )
+}
+const html = parts.join(' | ')
+---
+
+<OriginalFooter />
+<p class="lh-beian" set:html={html} />
+
+<style>
+  .lh-beian {
+    text-align: center;
+    margin-inline: auto;
+    margin-block: 1.5rem 0;
+    max-width: var(--sl-content-width, 48rem);
+    color: var(--sl-color-gray-3);
+    font-size: var(--sl-text-sm);
+    line-height: 1.6;
+  }
+
+  .lh-beian :global(a) {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+</style>

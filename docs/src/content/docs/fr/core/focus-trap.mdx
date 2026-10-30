@@ -1,0 +1,154 @@
+---
+title: 'focus-trap —— Gestion du focus'
+description: "Énumération des éléments focusables, piège à focus pour Tab, registre de propriété inert avec enregistrement à l'ouverture / restitution à la fermeture, partagé par Dialog / Drawer / Popover"
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Les **composants de superposition** que sont les boîtes de dialogue modales, les tiroirs et les visionneuses d'images ont trois obligations envers le focus : se souvenir de l'endroit où se trouvait l'utilisateur à l'ouverture, maintenir le Tab à l'intérieur de la couche flottante pendant qu'elle est ouverte, et restituer le focus à la fermeture. Réécrire ces trois choses dans dialog / drawer / popover / popconfirm / image-viewer entraîne nécessairement des dérives ; `shared/focus-trap` en est l'implémentation unique.
+
+## Import
+
+```ts
+import {
+  getFocusableElements,
+  focusFirst,
+  focusLast,
+  saveActiveElement,
+  restoreActiveElement,
+  trapTabKey,
+  supportsInert,
+  setInertOutside,
+} from '@lh-ui/share/core/shared/focus-trap'
+```
+
+## Tableau des fonctions
+
+| Fonction | Signature | Rôle |
+| --- | --- | --- |
+| `getFocusableElements` | `(container: HTMLElement \| null \| undefined) => HTMLElement[]` | énumère les éléments du conteneur accessibles via Tab |
+| `focusFirst` | `(container) => boolean` | focusse le premier élément focusable, `false` s'il n'y en a pas |
+| `focusLast` | `(container) => boolean` | focusse le dernier élément focusable, `false` s'il n'y en a pas |
+| `saveActiveElement` | `() => HTMLElement \| null` | enregistre l'élément actif courant pour une restitution ultérieure (garde SSR) |
+| `restoreActiveElement` | `(el: HTMLElement \| null \| undefined) => void` | restitue le focus |
+| `trapTabKey` | `(container: HTMLElement, event: KeyboardEvent) => boolean` | gère Tab / Shift+Tab, piège le focus dans le conteneur |
+| `supportsInert` | `() => boolean` | l'environnement courant prend-il en charge l'attribut `inert` |
+| `setInertOutside` | `(container, active: boolean, locked?: HTMLElement[]) => HTMLElement[]` | pose / lève inert sur le DOM extérieur au conteneur |
+
+## Le comportement détaillé de chaque fonction
+
+### getFocusableElements
+
+On commence par faire correspondre les candidats à l'aide de sélecteurs : `a[href]`, `button:not([disabled])`, `input:not([disabled]):not([type="hidden"])`, `select` / `textarea:not([disabled])`, `video[controls]`, `audio[controls]`, `[contenteditable]:not([contenteditable="false"])`, `[tabindex]:not([tabindex="-1"])`. On écarte ensuite, avec `isHiddenForFocus` **en remontant la chaîne d'ancêtres**, les éléments masqués par `disabled` / tabindex négatif / `hidden` / `aria-hidden="true"` / `display:none` / `visibility:hidden`.
+
+Ce parcours de la chaîne d'ancêtres est crucial : une couche flottante téléportée est souvent affectée par l'`aria-hidden` d'un parent, et ne tester que l'élément lui-même laisse passer des cas. Si `container` est vide, la fonction renvoie `[]`.
+
+### focusFirst / focusLast
+
+Le focus est posé avec `{ preventScroll: true }`. **Pourquoi** : dans le premier tick qui suit la téléportation de la couche flottante vers body, la position de l'élément peut encore être provisoire, et un `focus()` par défaut ferait défiler la page jusqu'à cette position temporaire. Empêcher le défilement évite cette secousse visuelle. En l'absence d'élément focusable, la fonction renvoie `false`, et la couche UI décide alors de poser le focus sur le conteneur lui-même (`tabindex="-1"`).
+
+### saveActiveElement / restoreActiveElement
+
+À l'ouverture de la couche flottante, `const last = saveActiveElement()` ; à la fermeture, `restoreActiveElement(last)`. Les conditions de saut de la restitution :
+
+- `el` vide, pas de `document` : retour immédiat.
+- `!el.isConnected` : le bouton déclencheur a été démonté par `v-if` (détruit en même temps que la fermeture, par exemple) — pas de focus.
+- **La cible est verrouillée par un `inert` d'ancêtre** : on fait un `blur()` de l'élément actuellement focusé à la place. C'est la voie de repli garantie par la spécification — après le blur, le focus retourne à body, sans rester bloqué sur un élément verrouillé.
+
+### trapTabKey
+
+```
+event.key !== 'Tab' ou event.defaultPrevented  →  renvoie false (non pris en charge)
+aucun focus disponible dans le conteneur  →  preventDefault(), renvoie true (on piège, le focus ne doit pas sortir)
+le focus est sur une borne  →  preventDefault(), saut à l'autre extrémité, renvoie true
+```
+
+La détection des bornes utilise **l'indice dans la liste** et non une comparaison de références. Pourquoi : le focus peut se trouver sur un élément du conteneur qui n'est pas dans la séquence Tab (le conteneur lui-même avec `tabindex="-1"` lorsqu'il est focusé, par exemple) ; `document.activeElement` est alors introuvable dans le résultat de `getFocusableElements()` (`idx === -1`), et l'algorithme le traite comme « avant le premier élément » : Shift+Tab saute au dernier élément, Tab simple au premier — ce qui correspond à l'intuition.
+
+### setInertOutside et le registre de propriété
+
+`inert` est un attribut standard du W3C (pris en charge par tous les navigateurs depuis 2024) : un élément doté d'`inert` devient, ainsi que tout son sous-arbre, masqué aux technologies d'assistance, non focusable et non cliquable. C'est un verrouillage de l'arrière-plan plus radical que le « piège à focus Tab » — l'utilisateur de lecteur d'écran ne s'aventure pas par erreur dans le contenu masqué de la page.
+
+Le chemin du verrouillage dans `setInertOutside` : on remonte du `container` le long de la chaîne d'ancêtres jusqu'à `body`, et à chaque niveau on marque inert **les sous-arbres frères qui ne contiennent pas container**. Ainsi, seuls la couche flottante et sa chaîne d'ancêtres restent accessibles, tout le reste est verrouillé.
+
+La difficulté, ce sont les **superpositions de couches flottantes** : ouvrir un popover dans un dialog ne doit pas déverrouiller le dialog à la fermeture du popover. La solution est le registre de propriété (une `WeakMap`) :
+
+- au verrouillage, chaque nœud verrouillé enregistre « qui l'a verrouillé » ; les appels répétés ne font qu'enregistrer la propriété, **sans setAttribute répété** (idempotent).
+- au déverrouillage, on ne retire inert d'un nœud que lorsqu'**aucun conteneur n'en détient plus la propriété**.
+- le paramètre `locked` est une liste d'exemption supplémentaire (par exemple un autre conteneur d'overlay encore ouvert) : ces nœuds ne sont pas verrouillés même s'ils ne sont pas sur la chaîne d'ancêtres de container.
+
+Valeur de retour : un tableau des nœuds verrouillés au moment du verrouillage (pour le débogage / les assertions de test), `[]` au déverrouillage.
+
+Cas limites : sans prise en charge d'inert, la fonction renvoie `[]` (repli sur la solution du piège à focus de trapTabKey) ; sans `document.body`, elle renvoie `locked` ; lorsque le conteneur est déjà détaché du document, elle libère d'abord les propriétés résiduelles puis renvoie `locked` dédoublonné.
+
+### supportsInert
+
+Pour l'amélioration progressive : les vieux navigateurs (Safari antérieur à 15.4) n'ont pas `inert`, et `setInertOutside` renvoie alors directement un tableau vide ; le composant doit **malgré tout activer `trapTabKey`** comme solution de repli. Les deux solutions peuvent coexister, inert étant la couche la plus radicale.
+
+## Exemples d'utilisation
+
+### Le cycle de vie complet du focus d'une boîte de dialogue modale
+
+```ts
+// Composant dialog Vue3
+let lastFocused: HTMLElement | null = null
+let lockedNodes: HTMLElement[] = []
+
+function open() {
+  lastFocused = saveActiveElement()
+  dialogVisible.value = true
+  nextTick(() => {
+    if (!panelRef.value) return
+    focusFirst(panelRef.value)
+    lockedNodes = setInertOutside(panelRef.value, true)
+  })
+}
+
+function close() {
+  setInertOutside(panelRef.value, false, lockedNodes)
+  dialogVisible.value = false
+  restoreActiveElement(lastFocused)
+}
+
+function onKeydown(e: KeyboardEvent) {
+  trapTabKey(panelRef.value, e)   // une valeur de retour false indique qu'il ne s'agissait pas de Tab : on confie à une autre logique
+}
+```
+
+### Le câblage React
+
+```tsx
+useEffect(() => {
+  if (!open) return
+  const last = saveActiveElement()
+  focusFirst(panelRef.current)
+  const locked = setInertOutside(panelRef.current, true)
+
+  const onKeydown = (e: KeyboardEvent) => trapTabKey(panelRef.current, e)
+  document.addEventListener('keydown', onKeydown)
+
+  return () => {
+    document.removeEventListener('keydown', onKeydown)
+    setInertOutside(panelRef.current, false, locked)
+    restoreActiveElement(last)
+  }
+}, [open])
+```
+
+### Les couches flottantes imbriquées
+
+```ts
+// Le dialog est ouvert, on ouvre un popover à l'intérieur
+const popoverLocked = setInertOutside(popoverRef.value, true, lockedNodes)
+// Fermeture du popover : le dialog est toujours dans la liste d'exemption lockedNodes, il ne sera pas déverrouillé
+setInertOutside(popoverRef.value, false, popoverLocked)
+```
+
+## Points d'attention
+
+- **Sans risque en SSR** : `saveActiveElement` renvoie `null` en l'absence de `document` ; `getFocusableElements` renvoie `[]` lorsqu'elle reçoit `null`. En revanche, `trapTabKey` / `setInertOutside` nécessitent le DOM et ne s'appellent que côté client.
+- **N'oubliez pas de restituer le focus** : c'est une exigence absolue d'accessibilité. Verrouiller sans restituer fait perdre le focus à l'utilisateur clavier à chaque fermeture de couche flottante — une expérience exécrable.
+- **Le déclencheur démonté par `v-if`** : `restoreActiveElement` ignore les éléments déjà `disconnected` (`isConnected === false`) ; le focus retourne alors naturellement à body — ne forcez pas un `focus()` sur un nœud absent du document.
+- **Le registre de propriété est un état de niveau module** : la `WeakMap` est ramassée par le GC automatiquement, mais toutes les instances d'un même processus partagent une même table — c'est délibéré, sans quoi deux couches flottantes s'ignoreraient l'une l'autre et se déverrouilleraient mutuellement par erreur.
+
+<FnPlayground module="focus-trap" fn="supportsInert" params='{}' />

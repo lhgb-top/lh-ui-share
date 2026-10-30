@@ -1,0 +1,133 @@
+---
+title: date —— primitivas de fecha
+description: 'getDaysInMonth / isDateDisabled / formatDate / parseDate, el núcleo común de date-picker y de la aritmética de intervalos del calendario'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+La aritmética de fechas es el cuerpo algorítmico de date-picker y el núcleo común de la selección de intervalos de calendar. El `Date` nativo tiene varias trampas clásicas (los años de dos dígitos, el desbordamiento arrastrado de `new Date(2023, 1, 30)`); este módulo las trata de forma unificada.
+
+## Convenciones
+
+**month siempre empieza en 0**, igual que el `Date` nativo (`0` = enero, `11` = diciembre). Es el origen de los usos erróneos más frecuentes de este módulo: el «marzo» que la capa UI recibe debe pasarse como `2`.
+
+**Solo se compara la parte de fecha**: `isSameDay` / `compareDate` no miran horas, minutos ni segundos, de acuerdo con la semántica de «seleccionar un día».
+
+## Importación
+
+```ts
+import {
+  getDaysInMonth,
+  getFirstDayOfMonth,
+  isSameDay,
+  isSameMonth,
+  compareDate,
+  isDateDisabled,
+  formatDate,
+  parseDate,
+} from '@lh-ui/share/core/shared/date'
+```
+
+## Tabla de funciones
+
+| Función | Firma | Acción |
+| --- | --- | --- |
+| `getDaysInMonth` | `(year: number, month: number) => number` | Días del mes (`month` desde 0) |
+| `getFirstDayOfMonth` | `(year: number, month: number) => number` | Día de la semana del primer día del mes (`0` = domingo) |
+| `isSameDay` | `(a: Date, b: Date) => boolean` | Si es el mismo día |
+| `isSameMonth` | `(a: Date, b: Date) => boolean` | Si son el mismo año y el mismo mes |
+| `compareDate` | `(a: Date, b: Date) => number` | Compara la parte de fecha; devuelve la diferencia en milisegundos |
+| `isDateDisabled` | `(date, minDate, maxDate, disabledDate) => boolean` | Si está deshabilitada |
+| `formatDate` | `(date: Date, format: string) => string` | Formatea una fecha |
+| `parseDate` | `(str: string, format: string) => Date \| null` | Analiza una cadena de fecha |
+
+## Normalización del año de dos dígitos
+
+`getDaysInMonth` y `getFirstDayOfMonth` normalizan internamente los `year ∈ [0, 99]` (`+1900`). **Por qué**: en JS, `new Date(99, 0, 1)` se interpreta como **1999-01-01** (el comportamiento especial del constructor `Date` con años de 0 a 99); sin normalización, el día de la semana del primer día del mes saldría erróneo. Los años normales de cuatro dígitos no se ven afectados.
+
+## El orden de evaluación de isDateDisabled
+
+```
+disabledDate?.(date) devuelve verdadero  →  true
+date es anterior a minDate (minDate no null)  →  true
+date es posterior a maxDate (maxDate no null)  →  true
+en caso contrario                          →  false
+```
+
+Cuando `minDate` / `maxDate` / `disabledDate` son `null` se omite esa condición: tanto «solo límite superior» como «solo validación personalizada» funcionan. El orden es deliberado: **la validación personalizada tiene prioridad**, de modo que la semántica de `disabledDate` sea «estas fechas no son seleccionables, pase lo que pase con el intervalo» (festivos, fechas con existencias 0).
+
+## Los token de formatDate / parseDate
+
+Token admitidos, de anchura fija: `yyyy` / `MM` / `dd` / `HH` / `mm` / `ss`.
+
+- **Cualquier orden**: `'MM/dd/yyyy'`, `'yyyy-MM-dd HH:mm'` son ambos válidos.
+- **Si aparecen varias veces, se sustituyen todos**: los dos `dd` de `'yyyy-MM-dd'` se sustituyen por el mismo valor.
+- **El año se rellena con ceros hasta 4 dígitos**: `formatDate(new Date(23, 0, 1), 'yyyy')` → `'0023'`.
+- **Ambas funciones son simétricas**: `parseDate(formatDate(d, fmt), fmt)` debería devolver el mismo día (mismo mes, mismo año, mismo día; horas, minutos y segundos, según los token).
+
+```ts
+formatDate(new Date(2026, 9, 12), 'yyyy-MM-dd')   // '2026-10-12'
+formatDate(new Date(2026, 9, 12, 14, 5), 'yyyy-MM-dd HH:mm')  // '2026-10-12 14:05'
+parseDate('2026-10-12', 'yyyy-MM-dd')             // Date(2026, 9, 12)
+parseDate('inválido', 'yyyy-MM-dd')               // null
+```
+
+### Los dos casos en que parseDate devuelve null
+
+1. **La cadena no se corresponde con el formato**: `parseInt` devuelve `NaN`.
+2. **El valor no es legítimo**: `2023-02-30` lo deslizaría silenciosamente el `Date` nativo al 2 de marzo; la función **vuelve a leer para validar** tras construirlo y, al detectar el deslizamiento, lo declara ilegítimo y devuelve `null`. Esta es la clave de la validación del campo de entrada de date-picker: cuando alguien escribe una fecha que no existe, el componente es capaz de detectarlo.
+
+Valores por defecto de los token ausentes: año = año actual, mes = `0`, día = `1`, hora / minuto / segundo = `0`. Por eso `parseDate('10-12', 'MM-dd')` devuelve «el 12 de octubre del año en curso a las 00:00:00».
+
+## Ejemplos de uso
+
+### Renderizar el panel del calendario
+
+```ts
+// Año y mes de la vista actual
+const year = 2026
+const month = 9   // Desde 0 = octubre
+
+const days = getDaysInMonth(year, month)          // 31
+const firstDay = getFirstDayOfMonth(year, month)  // 4 = jueves → rellenar antes 4 casillas vacías
+```
+
+### Deshabilitación por intervalo
+
+```ts
+const min = new Date(2026, 0, 1)
+const max = new Date(2026, 11, 31)
+
+isDateDisabled(new Date(2026, 5, 1), min, max, null)          // false
+isDateDisabled(new Date(2025, 5, 1), min, max, null)          // true (anterior a min)
+isDateDisabled(new Date(2026, 5, 1), null, null, (d) =>       // true (validación personalizada)
+  d.getDay() === 0)                                           // Los domingos no son seleccionables
+```
+
+### Integración con el componente
+
+```ts
+// Interior del componente date-picker
+function isDisabled(date: Date) {
+  return isDateDisabled(date, props.minDate, props.maxDate, props.disabledDate)
+}
+
+function onInput(value: string) {
+  const parsed = parseDate(value, props.format)
+  if (parsed === null) {
+    errorMessage.value = 'Formato de fecha incorrecto'
+    return
+  }
+  modelValue.value = parsed
+}
+```
+
+## Advertencias
+
+- **month empieza en 0**: cuando la capa UI muestra «octubre» debe pasar `9`. El estado del panel de date-picker usa internamente el contador desde 0 de forma uniforme y solo se `+1` al renderizar.
+- **`year >= 10000` no se soporta**: supera la capacidad expresiva de los token de anchura fija y `formatDate` devolverá resultados inesperados. No es una restricción práctica (`input[type=date]` también solo soporta hasta 9999).
+- **`compareDate` devuelve la diferencia en milisegundos**: la diferencia de `Date.UTC(...)`, un número positivo significa que `a` es posterior. Solo compara la parte de fecha, sin la hora del día.
+- **El `disabledDate` de `isDateDisabled` se llama en cada casilla en cada renderizado**: 42 casillas del calendario × cada cambio de vista; no hagas cálculos pesados aquí, la caché es responsabilidad de la capa UI.
+- **Zona horaria**: todo se basa en `Date` de la zona horaria local, sin conversiones a UTC. Las aplicaciones multi-zona las unifica la capa UI antes de pasar los valores.
+
+<FnPlayground module="date" fn="getDaysInMonth" params='{"year": 2026, "month": 9}' />

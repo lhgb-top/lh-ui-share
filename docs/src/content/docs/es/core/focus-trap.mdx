@@ -1,0 +1,154 @@
+---
+title: focus-trap —— gestión del foco
+description: 'Enumeración de elementos enfocables, trampa de foco para Tab, registro de titularidad de inert con guardado al abrir y devolución al cerrar; compartido por Dialog / Drawer / Popover'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Los **componentes de cobertura** (cuadros de diálogo modales, drawers, vista previa de imágenes) tienen tres obligaciones con el foco: al abrir, recordar dónde estaba el foco; mientras está abierto, mantener Tab dentro de la capa flotante; al cerrar, devolver el foco. Si estas tres cosas se escriben una y otra vez en dialog / drawer / popover / popconfirm / image-viewer, terminan divergiendo; `shared/focus-trap` es su implementación única.
+
+## Importación
+
+```ts
+import {
+  getFocusableElements,
+  focusFirst,
+  focusLast,
+  saveActiveElement,
+  restoreActiveElement,
+  trapTabKey,
+  supportsInert,
+  setInertOutside,
+} from '@lh-ui/share/core/shared/focus-trap'
+```
+
+## Tabla de funciones
+
+| Función | Firma | Acción |
+| --- | --- | --- |
+| `getFocusableElements` | `(container: HTMLElement \| null \| undefined) => HTMLElement[]` | Enumera los elementos del contenedor que reciben el Tab |
+| `focusFirst` | `(container) => boolean` | Enfoca el primer elemento enfocable; si no lo hay, `false` |
+| `focusLast` | `(container) => boolean` | Enfoca el último elemento enfocable; si no lo hay, `false` |
+| `saveActiveElement` | `() => HTMLElement \| null` | Registra el elemento activo actual para devolverlo después (con guardia SSR) |
+| `restoreActiveElement` | `(el: HTMLElement \| null \| undefined) => void` | Devuelve el foco |
+| `trapTabKey` | `(container: HTMLElement, event: KeyboardEvent) => boolean` | Gestiona Tab / Shift+Tab manteniendo el foco dentro del contenedor |
+| `supportsInert` | `() => boolean` | Si el entorno actual soporta el atributo `inert` |
+| `setInertOutside` | `(container, active: boolean, locked?: HTMLElement[]) => HTMLElement[]` | Añade / quita inert al DOM exterior al contenedor |
+
+## Detalles del comportamiento de cada función
+
+### getFocusableElements
+
+Primero empareja candidatas con el selector: `a[href]`, `button:not([disabled])`, `input:not([disabled]):not([type="hidden"])`, `select` / `textarea:not([disabled])`, `video[controls]`, `audio[controls]`, `[contenteditable]:not([contenteditable="false"])`, `[tabindex]:not([tabindex="-1"])`. Luego, con `isHiddenForFocus`, **a lo largo de la cadena de ancestros** excluye los elementos ocultos por `disabled` / tabindex negativo / `hidden` / `aria-hidden="true"` / `display:none` / `visibility:hidden`.
+
+Lo de la cadena de ancestros es clave: las capas flotantes teletransportadas suelen verse afectadas por el `aria-hidden` de un padre; si solo se comprueba el propio elemento, se falla en la detección. Si `container` es vacío, devuelve `[]`.
+
+### focusFirst / focusLast
+
+Enfocan con `{ preventScroll: true }`. **Por qué**: durante el primer tick tras teletransportar la capa flotante a body, la posición del elemento puede seguir siendo provisional y el `focus()` por defecto desplazaría la página hasta esa posición temporal. Evitar el scroll elimina este salto visual. Si no hay elementos enfocables, devuelve `false`, y la capa UI decide entonces si poner el foco en el propio contenedor (`tabindex="-1"`).
+
+### saveActiveElement / restoreActiveElement
+
+Al abrir la capa flotante, `const last = saveActiveElement()`; al cerrarla, `restoreActiveElement(last)`. Las condiciones de omisión de la devolución:
+
+- `el` vacío o sin `document`: retorno directo.
+- `!el.isConnected`: el botón disparador se desmontó con `v-if` (por ejemplo, se destruye al mismo tiempo que se cierra); no se enfoca.
+- **El destino está bloqueado por un ancestro `inert`**: se hace `blur()` del elemento enfocado actual. Es la ruta de respaldo que garantiza la especificación: tras el blur, el foco vuelve a body y no se queda atascado en un elemento bloqueado.
+
+### trapTabKey
+
+```
+event.key !== 'Tab' o event.defaultPrevented  →  devuelve false (sin tratamiento)
+Sin foco disponible dentro del contenedor  →  preventDefault(), devuelve true (atrapado, que no se escape el foco)
+Foco en un extremo  →  preventDefault(), salta al otro extremo, devuelve true
+```
+
+La determinación de los extremos usa **índices de lista**, no comparación de referencias. El motivo: el foco puede caer en un elemento del contenedor que no está en la secuencia Tab (por ejemplo, el propio contenedor con `tabindex="-1"` recibe el foco); en ese caso, `document.activeElement` no aparece en el resultado de `getFocusableElements()` (`idx === -1`) y el algoritmo lo trata como «antes del principio»: Shift+Tab salta al último elemento y Tab normal al primero, de acuerdo con la intuición.
+
+### setInertOutside y el registro de titularidad
+
+`inert` es un atributo estándar del W3C (con apoyo en todos los navegadores desde 2024): al añadir `inert` a un elemento, este y todo su subárbol quedan ocultos a las tecnologías de asistencia, no son enfocables ni pulsables. Es un bloqueo del fondo más radical que la «trampa de foco del Tab»: quien usa un lector de pantalla no se cuela por error en el contenido de la página que está cubierto.
+
+La ruta de bloqueo de `setInertOutside`: desde `container` se asciende por la cadena de ancestros hasta `body` y, en cada nivel, se marcan como inert **los subárboles hermanos que no contienen el container**. Así, solo la capa flotante y su cadena de ancestros son accesibles; todo lo demás queda bloqueado.
+
+La dificultad es la **superposición de múltiples capas flotantes**: si dentro de un dialog se abre un popover, al cerrar el popover no hay que desbloquear también el dialog. La solución es el registro de titularidad (`WeakMap`):
+
+- Al bloquear, cada nodo bloqueado registra «quién lo bloqueó»; las llamadas repetidas solo registran la titularidad y **no repiten el setAttribute** (idempotente).
+- Al desbloquear, el inert solo se retira de un nodo cuando **ningún contenedor sigue reteniendo la titularidad** sobre él.
+- El parámetro `locked` es una lista de exención adicional (p. ej., el contenedor de otro overlay que sigue abierto): esos nodos no se bloquean aunque no estén en la cadena de ancestros del container.
+
+Valor de retorno: al bloquear es el arreglo de nodos bloqueados (para depuración / aserciones de test); al desbloquear, `[]`.
+
+Casos límite: si no se soporta inert, devuelve `[]` (retrocede al esquema de trampa de foco de trapTabKey); si no hay `document.body`, devuelve `locked`; si el contenedor se ha salido del documento, libera primero la titularidad residual y luego devuelve el `locked` deduplicado.
+
+### supportsInert
+
+Para mejora progresiva: los navegadores antiguos (Safari anterior a 15.4) no tienen `inert` y `setInertOutside` devolverá directamente un arreglo vacío; en ese caso el componente debe **seguir activando `trapTabKey`** como respaldo. Ambos esquemas pueden coexistir; inert es la capa más radical.
+
+## Ejemplos de uso
+
+### El ciclo de vida completo del foco de un cuadro modal
+
+```ts
+// Componente dialog de Vue3
+let lastFocused: HTMLElement | null = null
+let lockedNodes: HTMLElement[] = []
+
+function open() {
+  lastFocused = saveActiveElement()
+  dialogVisible.value = true
+  nextTick(() => {
+    if (!panelRef.value) return
+    focusFirst(panelRef.value)
+    lockedNodes = setInertOutside(panelRef.value, true)
+  })
+}
+
+function close() {
+  setInertOutside(panelRef.value, false, lockedNodes)
+  dialogVisible.value = false
+  restoreActiveElement(lastFocused)
+}
+
+function onKeydown(e: KeyboardEvent) {
+  trapTabKey(panelRef.value, e)   // Si devuelve false es que no era Tab: se lo pasamos a otra lógica
+}
+```
+
+### Cableado en React
+
+```tsx
+useEffect(() => {
+  if (!open) return
+  const last = saveActiveElement()
+  focusFirst(panelRef.current)
+  const locked = setInertOutside(panelRef.current, true)
+
+  const onKeydown = (e: KeyboardEvent) => trapTabKey(panelRef.current, e)
+  document.addEventListener('keydown', onKeydown)
+
+  return () => {
+    document.removeEventListener('keydown', onKeydown)
+    setInertOutside(panelRef.current, false, locked)
+    restoreActiveElement(last)
+  }
+}, [open])
+```
+
+### Capas flotantes anidadas
+
+```ts
+// El dialog ya está abierto y dentro de él se abre un popover
+const popoverLocked = setInertOutside(popoverRef.value, true, lockedNodes)
+// Al cerrar el popover: el dialog sigue en la lista de exención lockedNodes y no se desbloquea
+setInertOutside(popoverRef.value, false, popoverLocked)
+```
+
+## Advertencias
+
+- **Seguro para SSR**: `saveActiveElement` devuelve `null` cuando no hay `document`; `getFocusableElements` devuelve `[]` al recibir `null`. Pero `trapTabKey` / `setInertOutside` necesitan el DOM: se llaman únicamente en el cliente.
+- **No olvides devolver el foco**: es un requisito estricto de accesibilidad. Si solo bloqueas y no devuelves, quien usa el teclado pierde el foco en body cada vez que se cierra una capa flotante; la experiencia es mala.
+- **El disparador desmontado con `v-if`**: `restoreActiveElement` omite los elementos `disconnected` (`isConnected === false`); en ese caso el foco vuelve naturalmente a body y no hay que forzar un `focus()` sobre un nodo que no está en el documento.
+- **El registro de titularidad es estado a nivel de módulo**: el `WeakMap` se recolecta automáticamente, pero varias instancias en un mismo proceso comparten la misma tabla: es deliberado, pues de lo contrario dos capas flotantes no conocerían la existencia de la otra y se desbloquearían por error mutuamente.
+
+<FnPlayground module="focus-trap" fn="supportsInert" params='{}' />

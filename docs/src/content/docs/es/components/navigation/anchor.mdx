@@ -1,0 +1,167 @@
+---
+title: anchor ancla —— Navegación
+description: 'flattenAnchorItems con aplanado en profundidad (cadena de ancestros anti-ciclos), resolveActiveAnchor con resaltado vinculado al desplazamiento, sangrado por nivel'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Un ancla es «el índice lateral de un documento largo»: el panel «Uso básico / API / Advertencias» a la derecha de un sitio de documentación; al pulsar, desplaza hasta el título correspondiente y, al desplazar, resalta la sección actual. La diferencia con `menu` es que el ancla se asocia a **posiciones del contenido dentro de la misma página**, no a páginas distintas.
+
+## Cuándo usarlo
+
+- Implementar `<LhAnchor>` en cada extremo: índices de sitios de documentación, guías de lectura larga, navegación por secciones de documentación de API, navegación por bloques de landing pages.
+- Páginas cuyo contenido es **lo bastante largo como para necesitar saltos rápidos** y cuyos bloques tienen títulos claros.
+- **Cuándo no usarlo**: navegación entre páginas del sitio (usar `menu` / `breadcrumb`); páginas cortas (no hace falta índice dentro de una pantalla); bloques sin título (el ancla depende del texto del título como texto del enlace).
+
+## Importación
+
+```ts
+import {
+  flattenAnchorItems,
+  collectAnchorIds,
+  resolveActiveAnchor,
+  getAnchorClassNames,
+  getAnchorLinkClassNames,
+} from '@lh-ui/share/core/anchor'
+import type { LhAnchorItem, LhFlatAnchorItem } from '@lh-ui/share/core/anchor'
+```
+
+## Intención de diseño
+
+**Estructura de árbol → lista aplanada**: la configuración de anclas es un árbol (secciones que contienen subsecciones), pero el renderizado es una lista unidimensional (con sangrado). `flattenAnchorItems` recorre en profundidad **preservando el orden del documento**: un índice desordenado es peor que no tener índice. `level` registra la profundidad original e impulsa el estilo del sangrado.
+
+**Cadena de ancestros `seen` contra referencias circulares**: `seen` es el **conjunto de ancestros en la ruta DFS actual** (no un conjunto global). El comentario lo deja explícito: «cadena de ancestros, detección de duplicados contra referencias circulares». Si en los datos los children de A contienen al propio A (datos sucios), un seen global solo eliminaría duplicados, mientras que la cadena de ancestros corta la recursión directamente y evita un bucle infinito. Es la red de seguridad ante errores estructurales en datos con forma de árbol.
+
+**El «último que cruza el umbral» de `resolveActiveAnchor`**: busca, entre los desplazamientos ordenados según el documento, el **último ancla cuyo `offset <= currentTop`**. Detalle clave: **al encontrar el primer `offset > currentTop` se hace break**, pues los offsets están ordenados y los siguientes solo serán mayores; seguir iterando sería un desperdicio. Es una implementación O(n) con terminación anticipada.
+
+**Si no hay coincidencia, se vuelve al primer elemento**: al desplazar por encima de todos los anclas (parte superior de la página) se devuelve `ids[0]`: el primer elemento permanece siempre resaltado, evitando el estado confuso de «ningún elemento resaltado». Con un arreglo vacío se devuelve la cadena vacía (la capa UI no renderiza resaltado).
+
+**`offsets` e `ids` deben seguir el mismo orden**: la firma exige ambos arreglos: los desplazamientos los mide la capa UI uno a uno con `getBoundingClientRect()` y se pasan en el mismo orden. Un desajuste produce el elemento resaltado equivocado; es un contrato de quien llama, core no puede validarlo.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Acción |
+| --- | --- | --- | --- |
+| `flattenAnchorItems` | `(items, level?, seen?) => LhFlatAnchorItem[]` | Lista aplanada | Aplanado en profundidad conservando el orden |
+| `collectAnchorIds` | `(items) => string[]` | Lista de ids | Arreglo de ids en orden aplanado |
+| `resolveActiveAnchor` | `(ids, offsets, currentTop) => string` | id activo | Detección vinculada al desplazamiento |
+| `getAnchorClassNames` | `(state: { direction }) => string[]` | Nombres de clase | Dirección del contenedor |
+| `getAnchorLinkClassNames` | `(state: { active, level }) => string[]` | Nombres de clase | Estado activo + sangrado por nivel |
+
+## Definiciones de tipos
+
+```ts
+export interface LhAnchorItem {
+  id: string          // id del elemento de destino
+  title: string       // Texto mostrado
+  children?: LhAnchorItem[]
+}
+
+export interface LhFlatAnchorItem {
+  id: string
+  title: string
+  level: number       // Profundidad original (la raíz es 0), impulsa el sangrado
+}
+```
+
+## Accesibilidad
+
+Los enlaces de ancla apuntan a **un ancla dentro de la misma página**; la práctica estándar es el `<a href="#section">` nativo:
+
+```html
+<a href="#usage" class="lh-anchor__link">Ejemplos de uso</a>
+...
+<section id="usage" tabindex="-1">…</section>
+```
+
+- **Salto nativo a un ancla + tabindex="-1"**: al pulsar `<a href="#id">`, el navegador se desplaza e intenta enfocar el destino. Si el destino no es enfocable, el foco no se mueve tras el salto; añadir `tabindex="-1"` al destino permite recibir foco programático, de modo que el lector de pantalla empieza a leer desde ahí. Es el patrón de ancla accesible recomendado por WAI-ARIA.
+- **aria-current marca la sección actual**: `--active` de `getAnchorLinkClassNames` es una clase visual; en materia de accesibilidad se recomienda que la capa UI añada `aria-current="location"` al enlace activo (semántica de posición dentro de la página, frente al `aria-current="page"` de `breadcrumb`).
+- **El salto no debe tener el efecto secundario de alterar el hash de la URL**: los cambios de hash entran en el historial del navegador; tras pulsar cinco anclas habría que pulsar cinco veces atrás para salir de la página. La capa UI puede usar `history.replaceState` o `scrollIntoView` en lugar del salto por defecto: es una decisión de interacción; core no interviene.
+- **Envoltorio `nav` + aria-label**: al igual que `breadcrumb`, `<nav aria-label="En esta página">` declara que se trata de una región de navegación.
+
+## Ejemplos de uso
+
+```ts
+import {
+  flattenAnchorItems, collectAnchorIds, resolveActiveAnchor,
+} from '@lh-ui/share/core/anchor'
+
+const items = [
+  { id: 'intro', title: 'Introducción', children: [
+    { id: 'why', title: 'Por qué usarlo' },
+  ] },
+  { id: 'usage', title: 'Uso' },
+]
+
+flattenAnchorItems(items)
+// [ { id: 'intro', title: 'Introducción', level: 0 },
+//   { id: 'why', title: 'Por qué usarlo', level: 1 },
+//   { id: 'usage', title: 'Uso', level: 0 } ]
+
+collectAnchorIds(items)  // ['intro', 'why', 'usage']
+
+// Vinculación al desplazamiento: offsets es la posición de cada ancla respecto a la parte superior del contenedor (en el mismo orden que ids)
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 350)  // 'why'
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 50)   // 'intro' (no cruza why)
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 0)    // 'intro' (sin coincidencia, se vuelve al primero)
+resolveActiveAnchor([], [], 0)  // '' (lista vacía)
+```
+
+```ts
+// Capa UI: observación del desplazamiento + medición de desplazamientos
+const activeId = ref('')
+
+function refresh() {
+  const flat = flattenAnchorItems(props.items)
+  const ids = flat.map((item) => item.id)
+  const offsets = ids.map((id) => {
+    const el = document.getElementById(id)
+    return el ? el.getBoundingClientRect().top - containerTop : Infinity
+  })
+  activeId.value = resolveActiveAnchor(ids, offsets, scrollTop.value)
+}
+
+onMounted(() => window.addEventListener('scroll', refresh, { passive: true }))
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhAnchor :items="items" :offset-top="80" @click="onAnchorClick" />
+</template>
+```
+
+```tsx
+// React: useEffect registra el listener de scroll; la medición de los desplazamientos usa
+// un arreglo de refs + getBoundingClientRect; la limitación de frecuencia, con
+// requestAnimationFrame o throttle (scroll se dispara a alta frecuencia)
+```
+
+```ts
+// uniapp: <scroll-view scroll-into-view="id"> es el salto de ancla nativo del miniprograma;
+// la vinculación al desplazamiento usa el evento scroll del scroll-view para obtener scrollTop
+```
+
+## Estilos y tokens
+
+| Nombre de clase | Semántica |
+| --- | --- |
+| `.lh-anchor` | Contenedor |
+| `.lh-anchor--{vertical\|horizontal}` | Dirección (barra lateral vertical / navegación superior horizontal) |
+| `.lh-anchor__link` | Enlace de ancla |
+| `.lh-anchor__link--level-{0..n}` | Sangrado por nivel (padding-left creciente) |
+| `.lh-anchor__link--active` | Estado activo (color principal + barra indicadora a la izquierda) |
+
+Color activo `--lh-primary-color`; enlace normal `--lh-text-regular`; unidad de sangrado por nivel `--lh-anchor-indent` (p. ej., 12px/nivel).
+
+## Advertencias
+
+- **La medición del desplazamiento debe restar el desplazamiento del contenedor**: si los anclas están dentro de un contenedor con desplazamiento interno (no el desplazamiento de window), `getBoundingClientRect().top` debe restar la posición superior del contenedor; de lo contrario el resaltado queda siempre desplazado. Es el bug más frecuente.
+- **`getBoundingClientRect` fuerza el formato**: llamarlo para N elementos en cada evento scroll provoca N reflujos. Optimizaciones: almacenar los desplazamientos en caché y recalcularlos solo cuando cambian las dimensiones del contenido, u observar cada elemento con IntersectionObserver.
+- **Compensación del desplazamiento cuando hay un encabezado fijo**: si la página tiene una cabecera fija (`affix`), el destino del salto de ancla puede quedar tapado por la cabecera. Añade `scroll-margin-top` (CSS) al elemento de destino, o resta la altura de la cabecera en la cantidad de desplazamiento de la capa UI: es un punto de colaboración de maquetación.
+- **Los desplazamientos queden obsoletos con contenido dinámico**: si cambia la altura del contenido (expandir/contraer, imágenes que terminan de cargar), los desplazamientos en caché dejan de ser correctos. Cuando el contenido cambia hay que volver a medir.
+- **La semántica de cadena de ancestros de `seen`**: el tercer parámetro de `flattenAnchorItems`, `seen`, son **los ancestros a lo largo de la ruta**, por defecto `new Set()`. El lado de negocio normalmente no lo pasa: existe sobre todo para evitar bucles infinitos con datos sucios. Si dos subárboles hermanos referencian el mismo nodo (un DAG compartido), la cadena de ancestros hará que el nodo aparezca una vez en cada ruta (la misma disyuntiva que entre la cadena de ancestros de `tree` y el seen global de `table`).
+- **`id` vacío o `id` duplicado**: el `id` debe ser único a nivel global (es un requisito de los anclajes HTML). `document.getElementById` solo devuelve la primera coincidencia: un id duplicado provoca saltos erróneos y core no puede validarlo.
+- **Ancla frente a ruta de índice**: el ancla se asocia a posiciones de la misma página; si cada elemento del «índice» es una página distinta, entonces es `menu` y no `anchor`: no los mezcles (el ancla no recarga la página y su gestión del historial de navegación es distinta).
+
+<FnPlayground module="anchor" fn="resolveActiveAnchor" params='{"ids": ["intro", "why", "usage"], "offsets": [0, 300, 600], "currentTop": 350}' />

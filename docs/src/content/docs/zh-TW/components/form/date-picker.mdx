@@ -1,0 +1,250 @@
+---
+title: date-picker —— 日期選擇
+description: 'generateCalendarDays 六週網格、LhDateAdapter 日期轉接器接縫、五種模式、dialog 語義'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+日期選擇是 UI 庫裡最複雜的控制項之一：它要在一張 6×7 的網格裡同時表達「本月日期 / 上下月填充 / 今天 / 選取 / 區間高亮 / 停用」六種狀態。`core/date-picker` 把日曆網格生成、月份年份面板、以及**日期轉接器接縫**收斂為純函式，UI 層只管渲染和接線。
+
+## 何時使用
+
+- 各端實作 `LhDatePicker`：生日、日程、訂單日期、起止日期段。
+- 值是「日期」或「日期段」的場景。
+- **不該用它**：只要時間（用 `time-picker`）；讓使用者自由輸入任意文字日期（用 `input` + 自行驗證更靈活）。
+
+## 匯入方式
+
+```ts
+import {
+  generateCalendarDays,
+  generateMonths,
+  generateYears,
+  getDatePickerClassNames,
+  getDatePickerTriggerAria,
+  getDatePickerPanelAria,
+  // 通用日期原語（自 shared/date 再匯出，保持既有引用路徑不變）
+  parseDate,
+  formatDate,
+  compareDate,
+  isSameDay,
+  isSameMonth,
+  isDateDisabled,
+  getDaysInMonth,
+  getFirstDayOfMonth,
+} from '@lh-ui/share/core/date-picker'
+import type {
+  LhDatePickerMode,
+  LhDatePickerDayData,
+  LhDatePickerMonthData,
+  LhDatePickerYearData,
+  LhDatePickerState,
+  LhFirstDayOfWeek,
+  LhDateAdapter,
+} from '@lh-ui/share/core/date-picker'
+```
+
+## 設計意圖
+
+**轉接器是本模組的核心設計**。`LhDateAdapter` 是一個刻意保持最小的接縫（parse / format / getDaysInMonth / getFirstDayOfMonth / compare / isSameDay / addDays 七個方法）：預設實作包裝共享核心 `core/shared/date` 的手寫演算法，需要接入 dayjs / date-fns / `Intl` 時實作介面即可，**core 層不依賴任何日期庫**。
+
+注入有兩條路徑：
+
+- 顯式參數（推薦）：`generateCalendarDays(year, month, …, firstDayOfWeek, myAdapter)`——不汙染全域狀態，多實例互不干擾。
+- `setDateAdapter(adapter)`（**@deprecated**）：模組級單例。標記廢棄的原因是**跨實例洩漏**——一個頁面裡兩個日期選擇器，注入操作會互相汙染。保留它僅為相容下游既有呼叫，不再新增消費者。
+
+**循環依賴的拆解**：早期 `logic.ts` 與 `adapter.ts` 互相 import，現已把通用原語下沉到 `core/shared/date`，adapter 只依賴核心、不再反向 import logic，破除了環參照（見提交 9e21865）。
+
+**網格填充的對齊**：`totalCells = Math.ceil(days.length / 7) * 7` 保證格子總數是 7 的倍數（5 或 6 列），`firstDayOfWeek` 透過 `(firstDay - firstDayOfWeek + 7) % 7` 計算前置空位——`+7` 是為了避免負數取模。
+
+**區間天級比較**：單元格日期是本地 00:00，而 `rangeStart` / `rangeEnd` 可能攜帶時刻，直接比較會讓「結束日」同時被判為 `isInRange`。統一用 `adapter.compare` 做天級比較。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `generateCalendarDays` | `(year, month, selected, rangeStart, rangeEnd, today, firstDayOfWeek?, adapter?) => LhDatePickerDayData[]` | 42 或 35 格 | 六狀態網格 |
+| `generateMonths` | `(year, selected) => LhDatePickerMonthData[]` | 12 項 | 月份面板 |
+| `generateYears` | `(startYear, selected) => LhDatePickerYearData[]` | 年份面板 | 年份選擇 |
+| `getDatePickerClassNames` | `(state: { size, disabled, visible }) => string[]` | 類別名 | 尺寸/停用/展開 |
+| `getDatePickerTriggerAria` | `(visible, panelId?) => LhAriaAttrs` | aria 屬性包 | haspopup dialog |
+| `getDatePickerPanelAria` | `(id?) => LhAriaAttrs` | aria 屬性包 | role=dialog |
+| `parseDate` / `formatDate` | `(value, format) => Date \| null` / `(date, format) => string` | 互逆 | 定寬 token |
+| `compareDate` | `(a, b) => number` | 天級比較 | 去掉時刻 |
+| `isSameDay` / `isSameMonth` | `(a, b) => boolean` | 是否同天/同月 | 選取判定 |
+| `isDateDisabled` | `(date, min, max, disabledDate?) => boolean` | 是否停用 | 三來源合併 |
+| `getDaysInMonth` / `getFirstDayOfMonth` | `(year, month) => number` | 天數/首日星期 | 網格計算 |
+
+## 類型定義
+
+```ts
+export type LhDatePickerMode = 'date' | 'month' | 'year' | 'datetime' | 'range'
+export type LhFirstDayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6  // 0=週日（預設）
+
+export interface LhDatePickerDayData {
+  date: Date
+  day: number
+  month: number        // 0 起
+  year: number
+  isCurrentMonth: boolean  // 本月 vs 上下月填充
+  isToday: boolean
+  isSelected: boolean
+  isInRange: boolean   // 僅 range 模式，開區間
+  isStart: boolean
+  isEnd: boolean
+}
+
+export interface LhDatePickerMonthData { month: number; year: number; isSelected: boolean }
+export interface LhDatePickerYearData  { year: number; isSelected: boolean }
+
+export interface LhDateAdapter {
+  parse(value: string, format: string): Date | null
+  format(date: Date, format: string): string
+  getDaysInMonth(year: number, month: number): number
+  getFirstDayOfMonth(year: number, month: number): number
+  compare(a: Date, b: Date): number
+  isSameDay(a: Date, b: Date): boolean
+  addDays(date: Date, amount: number): Date
+}
+```
+
+## 無障礙
+
+日期面板以 **dialog** 彈出，語義與 time-picker 同源（都走 `getPopupTriggerAria`，`haspopup: 'dialog'`）：
+
+```ts
+getDatePickerTriggerAria(true, 'lh-date-panel')
+// { 'aria-expanded': true, 'aria-haspopup': 'dialog', 'aria-controls': 'lh-date-panel' }
+
+getDatePickerPanelAria('lh-date-panel')
+// { role: 'dialog', id: 'lh-date-panel' }
+```
+
+網格本身應掛 `role="grid"`，每列 `role="row"`、每格 `role="gridcell"`；月份/年份面板用 `role="listbox"`。鍵盤互動（UI 層實作）：
+
+- 面板內 ↑/↓/←/→ 在格子間移動（`adapter.addDays(date, ±1|±7)`），Enter 選取；
+- 上下月填充格（`isCurrentMonth: false`）移動過去時會**自動翻月**；
+- Esc 關閉面板，焦點回到觸發器；
+- `disabledDate` 傳回 true 的格子要 `aria-disabled="true"` 且不可選取。
+
+## 使用範例
+
+```ts
+import { generateCalendarDays, parseDate, formatDate, isDateDisabled } from '@lh-ui/share/core/date-picker'
+
+// 2026 年 10 月（month 0 起），週日起始
+const days = generateCalendarDays(2026, 9, parseDate('2026-10-12', 'yyyy-MM-dd'), null, null, new Date(), 0)
+days.length        // 35 或 42
+days.filter((d) => d.isCurrentMonth).length  // 31
+days[0]            // 前置填充的 2026-09-27（週日）
+days.find((d) => d.isToday)?.day   // 12（若今天在 2026-10）
+
+parseDate('2026-10-12', 'yyyy-MM-dd')  // Date(2026, 9, 12)
+formatDate(new Date(2026, 9, 12), 'yyyy-MM-dd')  // '2026-10-12'
+parseDate('not a date', 'yyyy-MM-dd')  // null
+isSameDay(new Date(2026, 9, 12, 5), new Date(2026, 9, 12, 23))  // true
+```
+
+```ts
+// 接入 dayjs 適配器（顯式參數，不汙染全域）
+import type { LhDateAdapter } from '@lh-ui/share/core/date-picker'
+import dayjs from 'dayjs'
+import customParseFormat from 'dayjs/plugin/customParseFormat'
+dayjs.extend(customParseFormat)
+
+const dayjsAdapter: LhDateAdapter = {
+  parse: (v, f) => { const d = dayjs(v, f, true); return d.isValid() ? d.toDate() : null },
+  format: (d, f) => dayjs(d).format(f),
+  getDaysInMonth: (y, m) => dayjs(new Date(y, m, 1)).daysInMonth(),
+  getFirstDayOfMonth: (y, m) => dayjs(new Date(y, m, 1)).day(),
+  compare: (a, b) => dayjs(a).startOf('day').valueOf() - dayjs(b).startOf('day').valueOf(),
+  isSameDay: (a, b) => dayjs(a).isSame(dayjs(b), 'day'),
+  addDays: (d, n) => dayjs(d).add(n, 'day').toDate(),
+}
+
+const days = generateCalendarDays(2026, 9, null, null, null, new Date(), 1, dayjsAdapter)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getDatePickerClassNames({ size, disabled, visible })">
+  <input
+    class="lh-date-picker__input"
+    :value="value ? formatDate(value, format) : ''"
+    v-bind="getDatePickerTriggerAria(visible, panelId)"
+    @click="open"
+  />
+  <div v-if="visible" class="lh-date-picker__panel" v-bind="getDatePickerPanelAria(panelId)">
+    <div class="lh-date-picker__header">
+      <button type="button" class="lh-date-picker__prev" @click="prevMonth">‹</button>
+      <span class="lh-date-picker__title">{{ year }} 年 {{ month + 1 }} 月</span>
+      <button type="button" class="lh-date-picker__next" @click="nextMonth">›</button>
+    </div>
+    <div class="lh-date-picker__body" role="grid">
+      <div v-for="row in weekRows" :key="row[0].date.getTime()" class="lh-date-picker__row" role="row">
+        <button
+          v-for="cell in row"
+          :key="cell.date.getTime()"
+          type="button"
+          class="lh-date-picker__cell"
+          :class="{
+            'is-other-month': !cell.isCurrentMonth,
+            'is-today': cell.isToday,
+            'is-selected': cell.isSelected,
+            'is-in-range': cell.isInRange,
+            'is-start': cell.isStart,
+            'is-end': cell.isEnd,
+          }"
+          role="gridcell"
+          :aria-disabled="isDateDisabled(cell.date, minDate, maxDate, disabledDate)"
+          @click="onPick(cell)"
+        >
+          {{ cell.day }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+```tsx
+// React：range 模式的兩段式選擇
+// 第一次點選設 rangeStart（rangeEnd 清空），第二次點選設 rangeEnd（早於 start 則互換）
+// generateCalendarDays 每次渲染重算，isInRange 自動高亮中間段
+```
+
+```ts
+// uniapp：<picker mode="date"> 是內置組件（start/end 限定範圍）；
+// 自訂面板用 <scroll-view> + 網格，core 的 generateCalendarDays 照用
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-date-picker` | 基礎類 |
+| `.lh-date-picker--{small\|large}` | 尺寸檔 |
+| `.lh-date-picker--disabled` | 停用 |
+| `.lh-date-picker__input` | 觸發輸入框 |
+| `.lh-date-picker__panel` | 彈出面板 |
+| `.lh-date-picker__header` / `__prev` / `__next` / `__title` | 頭部導覽 |
+| `.lh-date-picker__body` | 網格區 |
+| `.lh-date-picker__row` | 一週 |
+| `.lh-date-picker__cell` | 日期格（is- 前綴狀態修飾） |
+| `.lh-date-picker__cell.is-other-month` / `.is-today` / `.is-selected` / `.is-in-range` / `.is-start` / `.is-end` | 六狀態 |
+| `.lh-date-picker__footer` | 快捷欄（今天/清空） |
+
+選取 `--lh-primary-color`，區間 `--lh-primary-color` 的低透明度，今天描邊 `--lh-primary-color`，上下月填充文字 `--lh-text-disabled`。
+
+## 注意事項
+
+- **month 一律 0 起**（與原生 `Date` 一致），UI 層顯示要 `+1`。這是最常見的 off-by-one 來源。
+- **`firstDayOfWeek` 與語言包連動**：`zh-CN` 通常 1（週一），`en-US` 通常 0（週日）；寫在 ConfigProvider 或 locale 裡，別硬編碼。
+- **`setDateAdapter` 的跨實例洩漏**：多日期選擇器共存的頁面不要用全域注入，改顯式參數。
+- **`parseDate` / `formatDate` 的定寬 token**：`yyyy` / `MM` / `dd` / `HH` / `mm` / `ss`，**大小寫敏感**（`mm` 是分、`MM` 是月）。parse 與 format 必須用同一個 format 字串，否則往返斷裂。
+- **`datetime` 模式**：面板內嵌 time-picker 的列，時間部分用 `core/time-picker` 的函式；合併值時注意 `compareDate` 會**丟棄時刻**，比較選取態用 `isSameDay`。
+- **`range` 模式的交換**：core 不負責「第二次點選早於第一次則互換」的互動規則，UI 層自己判斷。
+- **`disabledDate` 與 min/max 是合併關係**：`isDateDisabled(date, min, max, disabledDate)` 三個來源任一命中即停用。
+- **6 列 vs 5 列**：`totalCells` 向上取整到 7 的倍數，某些月份是 35 格（5 列）、有些是 42 格（6 列），面板高度要能容納 6 列，否則月份切換時面板跳動。
+
+<FnPlayground module="date-picker" fn="parseDate" params='{"value": "2026-10-12", "format": "yyyy-MM-dd"}' />

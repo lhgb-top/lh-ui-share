@@ -1,0 +1,234 @@
+---
+title: grid شبكة —— تخطيط
+description: 'شبكة CSS Grid من 24 عمودًا: تحديد نقطة الكسر عبر resolveBreakpoint، التراجع نحو الأصغر عبر resolveResponsiveSize، وتكييف span/offset/push/pull إلى grid-column'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الشبكة هي الهيكل العظمي للتخطيط: تُقطّع الصفحة إلى 24 عمودًا، ويُرتّب المحتوى وفق نسب أعمدة،
+ويتغيّر استجابيًا وفق نقاط الكسر. شبكة lh-ui مبنية على **CSS Grid** (وليس نسب flex من حيث العرض)،
+مما يوفّر دقة تموضع أعلى ويدعم تحديد نقطة بداية صريح. ما يديره `core/grid` هو **تحديد نقطة الكسر،
+والتراجع الاستجابي، وحسابات التكييف لتموضع الأعمدة**——فـ CSS وحدها لا تستطيع حساب «التراجع نحو
+الأصغر» و«التكييف عند تجاوز الحد».
+
+## متى يُستخدم
+
+- لتطبيق `<LhRow>` / `<LhCol>` في كل طرف: التخطيط الرئيسي للصفحة، وترتيب النماذج في عمودين أو
+  ثلاثة، وجدران البطاقات، ولوحات المعلومات.
+- عندما تكون أعمدة عرض **استجابية** مطلوبة (ثلاثة أعمدة على الحاسب، وعمودان على الجهاز اللوحي،
+  وعمود واحد على الهاتف).
+- **لا ينبغي استخدامه**: محاذاة عنصرين بسيطة يمينًا ويسارًا (استخدام flex أو `space` أكثر
+  مباشرة)؛ التخطيطات الانسيابية ذات العرض غير المحدد (نِسب أعمدة الشبكة الثابتة تكون مقيدة هنا).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_GRID_COLUMNS,
+  LH_GRID_BREAKPOINTS,
+  LH_GRID_BREAKPOINT_ORDER,
+  resolveBreakpoint,
+  resolveResponsiveSize,
+  getGridRowClassNames,
+  normalizeColSize,
+  clampSpan,
+  getColStyle,
+  getGridColClassNames,
+} from '@lh-ui/share/core/grid'
+import type {
+  LhGridBreakpoint, LhGridSpan, LhColSize, LhBreakpointSizes,
+} from '@lh-ui/share/core/grid'
+```
+
+## نية التصميم
+
+**CSS Grid وليس نسب flex**: كل عمود في شبكة flex هو `width: x/24`، والتفاف الأسطر يعتمد على
+flex-wrap، وتُلغى فجوات الأعمدة بهامش سالب——مجموعة حيل. أما CSS Grid فيستخدم مباشرةً
+`grid-template-columns: repeat(24, 1fr)`، والفجوات عبر `gap`، وتموضع الأعمدة عبر `grid-column`،
+بدلالة نظيفة. الثمن هو عدم دعم IE——ولكن جميع الأطراف المستهدفة لـ lh-ui (المتصفحات الحديثة +
+متصفحات التطبيقات المصغّرة) تُغطّيه.
+
+**التراجع نحو الأصغر عند نقاط الكسر**: تبدأ `resolveResponsiveSize(sizes, 'md')` من فئة md وتبحث
+نحو الأصغر، لتصطدم بأول فئة **مُعلَنة**. إذا كتب المستخدم `{ xs: 24, lg: 12 }` فقط، فعند عرض md
+(768~1024) سيعود التكوين إلى 24 الخاص بـ xs——**وليس undefined**. هذه هي التجربة الأساسية لـ
+الـ API الاستجابي: يُعلن المستخدم نقاط الكسر الرئيسية فقط، وتتبع الفئات الوسطى تكوين الشاشة
+الصغيرة تلقائيًا.
+
+**`span = 0` قيمة حارسة لا خطأ**: `span: 0, offset: 6` تعني «لا تشغل أي عمود، فقط ادفع المحتوى
+التالي 6 أعمدة». عندئذٍ تُخرج `getColStyle` القيمة `7 / 25` (تمتد إلى العمود الأخير) بدلاً من
+`7 / span 0`——فالأخيرة تجعل العنصر ينكمش إلى صفري العرض.
+
+**تكييف نقطة البداية يمنع تفجير الحاوية**: `offset 21 + span 8` يحسب نقطة بداية 22، وهو خارج
+الحدود. تُكيّف `getColStyle` نقطة البداية إلى `24 + 1 - 8 = 17`——أي يُزاح العنصر بأكمله حتى يسع.
+وكتب التعليق السبب: `grid-column` المتجاوز للحد يجعل Grid يُنشئ **مسارات ضمنية** تُوسّع عرض
+الحاوية.
+
+**الحد الفاصل بين التموضع التلقائي والصريح**: span الخالص يستخدم `span N` (بدون تحديد نقطة
+بداية، يرتّبه Grid تلقائيًا)؛ ومع offset/push/pull يُستخدم `start / span N` (نقطة بداية صريحة
+تُوقف الترتيب التلقائي). ويسجّل التعليق فخًا حقيقيًا: إذا كُتب span الخالص بالصيغة
+`1 / span N`، تبدأ كل أعمدة الصف نفسه من العمود 1، فلا يملك Grid سوى دفع ما يليه إلى الصف
+التالي——بصريًا يتحوّل إلى «ترتيب عمودي».
+
+**جدول تخطيط أسماء الأصناف بدلاً من الوصل المباشر**: إذا وُصلت أسماء الأصناف مباشرةً، فإن
+`justify="center"` و `align="center"` ستنتجان فئتين متضاربتين `lh-row--center` (justify تمرر
+عبر justify-items، وalign تمرر عبر align-items، وهما خاصيتا CSS مختلفتان). مع جدول التخطيط
+الصريح: center الخاصة بـ justify → `lh-row--center`، وcenter الخاصة بـ align → `lh-row--middle`
+(fئة center اسم مستعار توافقي لـ middle، يتوافق مع عادات الـ API في المكتبات السائدة). وفائدة
+إضافية: القيم غير المعروفة لا تُنتج أسماء أصناف غير صالحة.
+
+## جدول الدوال
+
+| الدالة / الثابت | التوقيع | الناتج | الدور |
+| --- | --- | --- | --- |
+| `resolveBreakpoint` | `(width: number) => LhGridBreakpoint` | فئة الكسر | عرض إطار العرض → الفئة |
+| `resolveResponsiveSize` | `(sizes, breakpoint) => LhColSize \| undefined` | الحجم الفعّال | تراجع إلى أقرب فئة مُعلنة أصغر |
+| `getGridRowClassNames` | `(state: { justify?, align?, wrap? }) => string[]` | أسماء الأصناف | المحاذاة / الالتفاف |
+| `normalizeColSize` | `(size?: LhColSize) => LhGridSpan` | كائن الوصف | رقم → `{ span }` |
+| `clampSpan` | `(span?: number) => number` | عدد صحيح في [0, 24] | القيم غير المنتهية تُرجع 0 |
+| `getColStyle` | `(size?: LhColSize) => Record<string, string>` | أنماط مضمّنة | تموضع grid-column |
+| `getGridColClassNames` | `(size?: LhColSize) => string[]` | أسماء الأصناف | span / offset |
+
+الثوابت: `LH_GRID_COLUMNS = 24`، و`LH_GRID_BREAKPOINTS` (xs 0 / sm 640 / md 768 / lg 1024 /
+xl 1280)، و`LH_GRID_BREAKPOINT_ORDER` (من الأكبر إلى الأصغر).
+
+## تعريفات الأنواع
+
+```ts
+export type LhGridBreakpoint = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+
+export interface LhGridSpan {
+  span?: number        // عدد الأعمدة المشغولة (0 = لا شغل، يستخدم لتموضع offset فقط)
+  offset?: number      // عدد الأعمدة الفارغة في البداية
+  push?: number        // إزاحة نقطة البداية نحو الأمام
+  pull?: number        // إزاحة نقطة البداية نحو الخلف
+}
+
+export type LhColSize = number | LhGridSpan
+export type LhBreakpointSizes = Partial<Record<LhGridBreakpoint, LhColSize>>
+```
+
+## إمكانية الوصول
+
+الشبكة هي أصل تخطيط خالص، **ليس لها دلالة إمكانية وصول بحد ذاتها**——لا تضِف role إلى
+Row/Col. دلالة المحتوى يوفّرها المكوّن الداخلي. ومبدأ ذو صلة:
+
+- **تغيّر التخطيط لا يجب أن يغيّر ترتيب DOM**: عند إعادة الترتيب الاستجابي يبقى ترتيب Col في
+  DOM ثابتًا، وتتغيّر فقط الأعمدة البصرية. إذا احتاج المحتوى ترتيبًا مختلفًا عند نقاط كسر مختلفة
+  («المحتوى الرئيسي على يسار الحاسب وفي أعلى الهاتف»)، استخدم ترتيب المصدر + نمط `order`، ولا
+  تبدّل ترتيب DOM——فقارئ الشاشة يقرأ بترتيب DOM، وعدم تطابق الترتيب البصري مع ترتيب الإعلان
+  يسبّب ارتباكًا.
+
+## أمثلة الاستخدام
+
+```ts
+import {
+  resolveBreakpoint, resolveResponsiveSize, getColStyle, clampSpan,
+} from '@lh-ui/share/core/grid'
+
+resolveBreakpoint(800)   // 'md'
+resolveBreakpoint(600)   // 'xs' (< 640)
+resolveBreakpoint(1300)  // 'xl'
+
+// تراجع نحو الأصغر: فئة md غير مُعلنة → تُؤخذ xs
+resolveResponsiveSize({ xs: 24, lg: 12 }, 'md')  // 24
+resolveResponsiveSize({ xs: 24, lg: 12 }, 'lg')  // 12
+resolveResponsiveSize({ xs: 24 }, 'xl')          // 24
+resolveResponsiveSize(undefined, 'md')           // undefined (لا إعلان)
+```
+
+```ts
+getColStyle(8)             // { gridColumn: 'span 8' } (تموضع تلقائي)
+getColStyle({ span: 8, offset: 4 })
+// { gridColumn: '5 / span 8' } (نقطة البداية = offset+1، بعد التكييف لم تتجاوز الحد)
+getColStyle({ span: 0, offset: 6 })
+// { gridColumn: '7 / 25' } (قيمة حارسة: لا شغل للأعمدة، تمتد إلى العمود الأخير)
+getColStyle({ span: 8, offset: 21 })
+// { gridColumn: '17 / span 8' } (تكييف تجاوز الحد: نقطة البداية 22 → 17)
+getColStyle({ span: 8, push: 4 })
+// { gridColumn: '5 / span 8' } (push 4 = إزاحة نقطة البداية 4 نحو الأمام)
+getColStyle({ span: 8, pull: 4 })
+// { gridColumn: '1 / span 8' } (نقطة البداية 5-4=1، تكييف عند الحد الأدنى 1)
+getColStyle({})            // { gridColumn: 'span 24' } (بدون إعلان يشغل الكل)
+
+clampSpan(8)    // 8
+clampSpan(30)   // 24 (تكييف إلى الحد الأعلى)
+clampSpan(-5)   // 0
+clampSpan(NaN)  // 0 (القيم غير المنتهية تُرجع 0)
+```
+
+```vue
+<!-- Vue3: ثلاثة أعمدة استجابية → عمودان → عمود واحد -->
+<template>
+  <LhRow :gutter="16">
+    <LhCol v-for="item in list" :key="item.id" :xs="24" :sm="12" :lg="8">
+      <LhCard>{{ item.title }}</LhCard>
+    </LhCol>
+  </LhRow>
+</template>
+```
+
+```vue
+<!-- نموذج بعمودين + زر موضَع عبر offset -->
+<template>
+  <LhRow :gutter="20">
+    <LhCol :span="12"><LhFormItem label="الاسم" prop="name" /></LhCol>
+    <LhCol :span="12"><LhFormItem label="البريد الإلكتروني" prop="email" /></LhCol>
+    <LhCol :span="12" :offset="12">
+      <LhButton type="primary" @click="submit">إرسال</LhButton>
+    </LhCol>
+  </LhRow>
+</template>
+```
+
+```tsx
+// React: مراقبة نقاط الكسر تتم في طبقة واجهة المستخدم عبر مراقبة resize أو useMediaQuery
+// لتشغيل الحالة؛ ويُستدعى getColStyle في render كدالة نقية
+```
+
+```ts
+// uniapp: <view> + grid؛ لا يوجد window في جانب التطبيقات المصغّرة، وتُحدَّد نقطة الكسر من
+// طبقة واجهة المستخدم عبر safeArea/windowWidth من uni.getSystemInfoSync() أو تحويل res.rpx،
+// بينما يُستخدم resolveBreakpoint الخاص بـ core كما هو
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-row` | حاوية الصف (`display: grid; grid-template-columns: repeat(24, 1fr)`) |
+| `.lh-row--{end\|center\|space-between\|space-around}` | محاذاة أفقية (justify-items) |
+| `.lh-row--{middle\|bottom}` | محاذاة عمودية (align-items) |
+| `.lh-row--nowrap` | بدون التفاف |
+| `.lh-col` | حاوية العمود |
+| `.lh-col--{1..24}` | عدد أعمدة span |
+| `.lh-col--offset-{1..24}` | عدد أعمدة الإزاحة |
+
+رمز التباعد `--lh-row-gutter` (تباعد الصفوف، يُستبدل عبر خاصية `gutter`)؛ ويُحقَّق التباعد بين
+الأعمدة عبر `gap` الخاص بـ grid.
+
+## ملاحظات
+
+- **`gutter` و grid gap**: فجوة grid فعّالة على الصفوف والأعمدة **في الوقت نفسه**؛ وعند الرغبة في
+  تباعد الأعمدة فقط دون الصفوف، يجب على حاوية الصف تجاوز `row-gap: 0` بشكل منفصل.
+- **نقاط الكسر الاستجابية تحتاج إلى مراقبة من طبقة واجهة المستخدم**: `resolveBreakpoint` دالة
+  نقية، وعلى طبقة واجهة المستخدم مراقبة resize بنفسها (أو استخدام `matchMedia`) لتمرير العرض.
+  ولا يوجد window في الشاشة الأولى لـ SSR، فيُصرَّر افتراضيًا إلى فئة xs ثم يُصحَّح بعد التنشيط
+  من جهة العميل.
+- **لا تخلط التموضع التلقائي مع الصريح**: في الصف نفسه، إذا استخدم أحد الأعمدة span خالصًا
+  وآخر offset، فإن العمود ذا التموضع الصريح سيُوقف الترتيب التلقائي——وقد لا تكون نتيجة ترتيب
+  الصف بديهية. إمّا كلها span خالص أو كلها صريح.
+- **الفرق بين `push` / `pull` و `offset`**: الثلاثة كلها تُعدّل نقطة البداية لكن بدلالات مختلفة——
+  `offset` يعني «ترك فراغًا في البداية» (دلالة شغل مساحة)، بينما `push/pull` يعنيان «الإزاحة»
+  (ترتيب بصري). وفي التنفيذ يُعدّل الثلاثة نقطة البداية داخل `getColStyle`، **وعلى مستوى أسماء
+  الفئات لا يقابل سوى offset صنف** (يذهب push/pull عبر الأنماط المضمّنة فقط).
+- **نظام الإحداثيات ذو الـ 24 عمودًا قيد صارم**: `span 25` يُكيَّف إلى 24؛
+  `offset 24 + span 1` تُكيَّف نقطة بدايته إلى 24. إذا احتاج جانب العمل درجة دقّة تتجاوز 24،
+  فاستخدم تداخل `LhRow` بدلاً من زيادة عدد الأعمدة.
+- **الشبكات المتداخلة**: وضع `LhRow` داخل `LhCol` يُعيد الحساب من 24 عمودًا——الشبكة الفرعية لا
+  ترث سياق span الخاص بالشبكة الأب. وهذا سلوك CSS Grid الطبيعي.
+- **تعايش أسماء أصناف span مع الأنماط المضمّنة**: `lh-col--8` الناتج من `getGridColClassNames`
+  و`grid-column` الناتج من `getColStyle` هما آليتان مختلفتان (أسماء الأصناف للاستعلامات الإعلامية
+  في SCSS، والأنماط المضمّنة للاستجابة عبر JavaScript). **على طبقة واجهة المستخدم اختيار إحداهما**،
+  فكتابتهما معًا تجعل إحداهما تتجاوز الأخرى (تفوز الأنماط المضمّنة).
+
+<FnPlayground module="grid" fn="getColStyle" params='{"size": {"span": 8, "offset": 4}}' />

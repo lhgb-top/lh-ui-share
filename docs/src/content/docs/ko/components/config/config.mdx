@@ -1,0 +1,164 @@
+---
+title: 'config 전역 설정 —— 설정'
+description: 'mergeConfig 3계층 병합, LH_THEME_DEFAULT=cerblue, getEffectiveXxx 값 가져오기 체인(core는 프리셋 이름만 반환, DOM 주입은 UI 계층이 수행)'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ConfigProvider는 '전역 스위치의 단일 입구'입니다: 애플리케이션을 `<LhConfigProvider :size="..." :theme="..." :locale="...">`로 한 번 감싸면, 내부의 모든 컴포넌트 기본 크기, 테마, 언어, z-index 기준선이 일괄적으로 바뀝니다. 이것은 아무것도 렌더링하지 않고 **설정 컨텍스트**만 제공합니다. `core/config`이 관리하는 것은 설정의 병합과 값 가져오기 체인입니다. 구체적인 적용 방식(CSS 변수 주입, locale 인스턴스 제공)은 UI 계층에 있습니다.
+
+## 언제 사용할까
+
+- 각 단말이 `<LhConfigProvider>`를 구현할 때: 애플리케이션 루트 감싸기, 테마 전환, 국제화 전환, 전역 크기 조정.
+- **컴포넌트 간 기본값을 통일**하고, **실행 시점에 전환**하고 싶은 경우.
+- **사용하면 안 되는 곳**: 단일 컴포넌트의 크기/테마(해당 컴포넌트에 props를 직접 전달하면 됩니다. ConfigProvider는 '기본값' 계층입니다).
+
+## 가져오기
+
+```ts
+import {
+  mergeConfig,
+  getEffectiveSize,
+  getEffectiveZIndex,
+  getEffectiveTheme,
+} from '@lh-ui/share/core/config'
+import {
+  LH_THEME_DEFAULT,
+  createDefaultConfig,
+} from '@lh-ui/share/core/config'
+import type { LhConfigState } from '@lh-ui/share/core/config'
+```
+
+## 설계 의도
+
+**3계층 병합의 우선순위**: `mergeConfig(defaults, global, local)`은 평탄화 병합으로, 나중 것이 앞선 것을 덮습니다. `기본값 < 전역(ConfigProvider) < 지역(컴포넌트 props)`. `createDefaultConfig()`가 바닥을 깔아 모든 필드에 값이 있도록 보장합니다(빠진 설정이 undefined가 되어 하위의 구조 분해가 실패하는 일이 없습니다).
+
+**`size`의 기본값은 'medium'이 아니라 undefined입니다**: 이것은 의도적입니다. undefined는 '미설정, SCSS 토큰의 기본값 사용'을 의미합니다. core가 'medium'을 준다면 `styles/`의 `--lh-control-height-medium` 기본 단계와 결합이 끊어져, 토큰의 기본 단계를 바꿔도 반영되지 않습니다. **undefined는 '스타일 계층으로 되돌아감'이라는 신호**입니다.
+
+**`getEffectiveTheme`는 프리셋 이름만 반환**: `'cerblue'` 같은 문자열을 반환하고, **vars 객체를 반환하지 않고 DOM에 손대지 않습니다**. UI 계층은 이름을 받은 후 `getThemeVars(name)`로 vars를 가져오고, `buildPresetStyleText(vars)`로 `<style>` 텍스트를 생성하여 주입합니다. 이 분리 덕분에 core는 제로 DOM을 유지하고(적색선 1), UI 계층이 주입 시점과 위치를 제어합니다.
+
+**`LH_THEME_DEFAULT = 'cerblue'`의 이중 출처 동기화**: 기본 프리셋 이름과 `styles/theme/common/variables.scss`의 기본 주색(`$lh-primary`)은 반드시 같은 출처여야 합니다. `theme.spec.ts`에 회귀 수호가 있습니다. 기본 테마를 바꿀 때는 양쪽을 함께 바꿔야 하며, 그렇지 않으면 JS 쪽이 주입하는 프리셋과 SCSS가 컴파일한 기본 색이 어긋납니다.
+
+**zIndex 기준선은 2000**: 팝업 계열 컴포넌트(dialog/drawer/popover/dropdown...)가 이 기준선에서 증가합니다. 전역 기준선을 높이는 것은 '비즈니스 페이지에 더 높은 z-index 요소가 있는' 충돌 상황에 쓰입니다. 이것이 ConfigProvider가 존재하는 고전적인 이유 중 하나입니다.
+
+## 함수 표
+
+| 함수 / 상수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `createDefaultConfig` | `() => LhConfigState` | 기본 설정 | 바닥값 |
+| `mergeConfig` | `(defaults, global, local) => LhConfigState` | 병합된 설정 | 기본 < 전역 < 지역 |
+| `getEffectiveSize` | `(localSize?, globalSize?) => LhComponentSize \| undefined` | 유효 크기 | undefined는 스타일 계층으로 폴백 |
+| `getEffectiveZIndex` | `(localZIndex?, globalZIndex) => number` | 유효 z-index | 지역 ?? 전역 |
+| `getEffectiveTheme` | `(localTheme?, globalTheme?) => LhThemePresetName` | 유효 프리셋 이름 | 이름만 반환, DOM에 손대지 않음 |
+
+상수: `LH_THEME_DEFAULT = 'cerblue'`.
+
+## 타입 정의
+
+```ts
+export interface LhConfigState {
+  size: LhComponentSize | undefined    // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  zIndex: number                       // 팝업 기준선
+  locale: LhComponentLanguage          // 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR' | 'de-DE' | 'fr-FR'
+  theme: LhThemePresetName             // 프리셋 이름(registerTheme로 등록한 커스텀 이름도 유효)
+}
+```
+
+`size`의 5단계는 `LH_SIZE_CONST`(`src/constants`)에서 왔으며, 그중 `old: 'x-large'`는 **고령자 전용 단계**의 의미 별칭입니다(큰 글자, 큰 컨트롤). 값은 `x-large`와 같으며, 고령 친화 장면에 의미 있는 설정 입구를 줍니다.
+
+`locale`의 6가지 언어는 `LH_LANGUAGE_CONST`에서 왔으며, 기본은 `LH_LANGUAGE_DEFAULT = 'zh-CN'`입니다.
+
+## 접근성
+
+ConfigProvider와 접근성의 직접적인 관계는 한 곳뿐입니다: **locale 전환은 컴포넌트 내장 문구의 언어를 바꿉니다**(폼 검증의 '이 필드는 필수입니다' / 'This field is required' 등). 이것은 `locales`의 `lhlocale` 인스턴스로 하달됩니다. `core/locales`와 `reference/locales` 문서를 참고하세요.
+
+- **언어 전환의 적용 범위**: locale은 ConfigProvider가 context로 하달하며, **이미 렌더링된 컴포넌트가 즉시 반응**합니다(반응형 업데이트). SSG 상황에서는 첫 화면의 언어가 빌드 시점에 결정되고, 클라이언트 활성화 후 사용자 설정에 따라 전환됩니다.
+- **테마 전환은 다시 렌더링하지 않음**: 테마는 CSS 변수 주입으로 적용되고, 컴포넌트 스타일은 `var(--lh-*)`로 소비합니다. 테마를 전환할 때 style 요소의 내용만 바꿀 뿐 컴포넌트 DOM은 움직이지 않습니다. 이것은 설계상의 핵심 분리입니다.
+
+## 사용 예
+
+```ts
+import {
+  mergeConfig, getEffectiveSize, getEffectiveZIndex, getEffectiveTheme, createDefaultConfig,
+} from '@lh-ui/share/core/config'
+
+createDefaultConfig()  // { size: undefined, zIndex: 2000, locale: 'zh-CN', theme: 'cerblue' }
+
+mergeConfig(
+  {},                       // 컴포넌트 수준 기본(보통 비움)
+  { size: 'small', theme: 'ink' },  // 전역 ConfigProvider
+  { size: 'large' },        // 지역 props
+)
+// { size: 'large', zIndex: 2000, locale: 'zh-CN', theme: 'ink' }
+
+getEffectiveSize('large', 'small')   // 'large'
+getEffectiveSize(undefined, 'small') // 'small'
+getEffectiveSize(undefined, undefined)  // undefined (SCSS 기본 단계로 폴백)
+
+getEffectiveZIndex(3000, 2000)  // 3000
+getEffectiveZIndex(undefined, 2500)  // 2500
+
+getEffectiveTheme('ink', 'cerblue')   // 'ink'
+getEffectiveTheme(undefined, 'cerblue')  // 'cerblue'
+getEffectiveTheme(undefined, undefined)  // 'cerblue' (LH_THEME_DEFAULT 폴백)
+```
+
+```ts
+// UI 계층: 테마 주입(<style> 요소만 쓰고 documentElement의 인라인 style에 쓰지 마세요.
+// 인라인 style의 명시도가 var-dark.scss의 다크 변수 전체 블록보다 높아
+// 다크 모드 색 조합이 왜곡됩니다)
+import { getThemeVars, buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyTheme(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+  const styleText = buildPresetStyleText(vars)
+  let el = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!el) {
+    el = document.createElement('style')
+    el.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(el)
+  }
+  el.textContent = styleText
+}
+```
+
+```vue
+<!-- Vue3: 루트 감싸기 -->
+<template>
+  <LhConfigProvider :size="size" :theme="theme" :locale="locale">
+    <App />
+  </LhConfigProvider>
+</template>
+```
+
+```tsx
+// React: createContext + useContext로 하달; 테마 전환은 effect에서 applyTheme 호출
+```
+
+```ts
+// uniapp: 전역 설정은 globalData나 store에 보관; 테마 주입도 같은 모델(h5 단말은 <style> 작성,
+// 미니 프로그램 단말은 page의 style 속성으로 CSS 변수를 항목별로 전달. 미니 프로그램은 <style> 주입을 지원하지 않음)
+```
+
+## 스타일과 토큰
+
+ConfigProvider는 자체 스타일이 없습니다. 영향을 주는 토큰:
+
+| 설정 | 영향을 받는 토큰 |
+| --- | --- |
+| `size` | `--lh-control-height-mini/small/medium/large/x-large`(컴포넌트의 size 클래스명으로 선택) |
+| `theme` | `--lh-*` 토큰 전체(`buildPresetStyleText`가 `:root` 블록 생성) |
+| `zIndex` | `--lh-z-index-{dialog/drawer/popover/...}`의 기준선 |
+
+## 주의사항
+
+- **`size: undefined`는 누락이 아니라 의도된 기능**: '스타일 계층의 기본 단계로 되돌아감'을 의미합니다. `getEffectiveSize`는 'medium'을 하드코딩하지 않고 undefined까지 연쇄 폴백합니다. SCSS 기본 단계를 바꾸면 전역 기본 크기가 바뀝니다.
+- **테마는 반드시 `<style>` 요소에**: `buildPresetStyleText`의 주석이 명확히 경고합니다. `documentElement`의 인라인 style에 쓰면 명시도가 `var-dark.scss`의 다크 덮어쓰기 블록 전체보다 높아져 다크 모드 색 조합이 왜곡됩니다.
+- **`theme`는 registerTheme로 등록한 커스텀 이름도 받음**: `registerTheme(preset)`로 등록한 후, ConfigProvider의 theme에 커스텀 이름을 넣을 수 있습니다. `getThemeVars`가 찾아줍니다. 프리셋은 내장 5개에 한정되지 않습니다.
+- **중첩 ConfigProvider**: 지역이 전역을 덮고, 안쪽이 바깥쪽을 덮습니다. 전형적인 용법: 어떤 영역이 더 큰 크기를 필요로 할 때(터스트 조작대 등) 별도로 한 겹 감쌉니다.
+- **locale과 theme의 적용 방식은 다름**: locale은 context(반응형 데이터 흐름)를 따르고, theme은 CSS 변수 주입(DOM 조작)을 따릅니다. locale 전환은 UI 계층이 `lhlocale.setLocale()`을 호출하고, theme 전환은 UI 계층이 `applyTheme`을 호출합니다. 둘을 하나의 effect에 섞지 마세요.
+- **SSR의 테마 깜빡임**: 서버는 사용자의 테마를 모릅니다(cookie/localStorage에 있음). 첫 화면을 기본 테마로 렌더링하고 클라이언트 활성화 후 전환하면 한 번 깜빡입니다. 흔한 해법은 `<head>`에 동기 스크립트를 인라인으로 넣어 미리 localStorage를 읽고 `data-theme`를 주입하는 것입니다. 이것은 배포 계층의 일이며 core는 관여하지 않습니다.
+- **zIndex 기준선의 의미**: 2000으로 정한 것은 비즈니스 계층에 0~1999의 공간을 남겨두기 위함입니다(내비게이션 바, 커스텀 떠있는 요소). 비즈니스에 z-index 9999 요소가 팝업을 가린다면, 컴포넌트별로 고치지 말고 전역 기준선을 높이세요.
+
+<FnPlayground module="config" fn="mergeConfig" params='{"defaults": {}, "global": {"size": "small", "theme": "ink"}, "local": {"size": "large"}}' />

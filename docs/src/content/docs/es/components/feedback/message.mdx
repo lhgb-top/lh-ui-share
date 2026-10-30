@@ -1,0 +1,206 @@
+---
+title: message —— Mensaje global
+description: 'duración semántica con resolveMessageDuration, recorte de cola con clampMessageQueue, mapeo de roles de live region (alert/status)'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Un mensaje global es la «retroalimentación ligera tras una operación»: guardado con éxito, error de red, copia con éxito. Se desliza desde la parte superior de la pantalla, permanece unos segundos y desaparece solo, sin interrumpir lo que hace el usuario. `core/message` gestiona la **contabilidad de la cola de mensajes**: la duración se deduce por semántica, el recorte al superar el límite, la generación de registros y el rol de live region.
+
+## Cuándo usarlo
+
+- Cada framework implementa `LhMessage` (API de servicio: `LhMessage.success('Guardado')`): retroalimentación de operaciones, avisos ligeros de error, aviso de carga en curso.
+- Notificaciones instantáneas de texto corto que no requieren ninguna acción del usuario.
+- **No usarlo para**: confirmaciones que exigen acción del usuario (usa `dialog` / `popconfirm`); contenidos más extensos o con título (usa `notification`); barras de aviso fijas dentro de la página (usa `alert`).
+
+## Importación
+
+```ts
+import {
+  LH_MESSAGE_DURATION_DEFAULT,
+  LH_MESSAGE_MAX_DEFAULT,
+  LH_MESSAGE_OFFSET_DEFAULT,
+  getMessageRole,
+  getMessageIconName,
+  getMessageClassNames,
+  resolveMessageDuration,
+  clampMessageQueue,
+  createMessageRecord,
+} from '@lh-ui/share/core/message'
+import type { LhMessageType, LhMessageRecord, LhMessageState } from '@lh-ui/share/core/message'
+```
+
+## Intención de diseño
+
+**La duración semántica de `resolveMessageDuration`**: el tipo `loading` devuelve **0 (sin cierre automático)** por defecto — un mensaje de «cargando» que desaparece solo es absurdo; debe cerrarlo explícitamente el código de negocio. Pero **si se pasa duration de forma explícita, se respeta**: `resolveMessageDuration(0, 'loading')` devuelve 0 (explícito) y `resolveMessageDuration(undefined, 'loading')` también devuelve 0 (valor semántico por defecto); ambos llegan al mismo resultado por caminos distintos; `resolveMessageDuration(5000, 'loading')` devuelve 5000 (el valor explícito prevalece).
+
+**`clampMessageQueue` devuelve los registros eliminados**: no solo devuelve los que se conservan, también devuelve `removed` — es responsabilidad del llamador invocar su `onClose`. Este diseño es importante: cuando se recorta la cola, los mensajes se eliminan a la fuerza y, si no se dispara onClose, las devoluciones de llamada de limpieza del negocio (telemetría, reseteo de estado) no se ejecutan nunca.
+
+**Mapeo de roles de live region** (mismo paradigma que `alert` / `notification`): `warning` / `danger` / `error` → `role="alert"` (**interrumpe y se anuncia de inmediato**); el resto → `role="status"` (**cola de anuncio suave**). La distinción tiene un sentido práctico: los errores suelen requerir que el usuario lo sepa de inmediato, mientras que los éxitos pueden esperar a que el usuario termine su operación actual.
+
+**`getMessageIconName` devuelve null para loading**: el icono giratorio de loading lo renderiza el componente `LhSpinner` (necesita animación), no es un icono estático — la capa UI renderiza un componente u otro en consecuencia.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `getMessageRole` | `(type: LhMessageType) => LhAlertRole` | 'alert' \| 'status' | rol de live region |
+| `getMessageIconName` | `(type) => string \| null` | nombre del icono | loading devuelve null |
+| `getMessageClassNames` | `(state: LhMessageState) => string[]` | clases | tipo + cerrable |
+| `resolveMessageDuration` | `(duration: number \| undefined, type) => number` | milisegundos | loading por defecto 0 |
+| `clampMessageQueue` | `(items, max) => { kept, removed }` | resultado del recorte | conserva los últimos max |
+| `createMessageRecord` | `(partial, seq) => LhMessageRecord` | registro | completa duración y desplazamiento por defecto |
+
+Constantes: `LH_MESSAGE_DURATION_DEFAULT = 3000`, `LH_MESSAGE_MAX_DEFAULT = 5` y `LH_MESSAGE_OFFSET_DEFAULT = 20`.
+
+## Definiciones de tipos
+
+```ts
+export type LhMessageType = 'info' | 'success' | 'warning' | 'danger' | 'error' | 'loading'
+
+export interface LhMessageRecord {
+  id: number
+  type: LhMessageType
+  content: string
+  duration: number     // 0 significa que no se cierra solo
+  showClose: boolean
+  offset: number       // desplazamiento en px desde la parte superior del viewport
+  sx?: LhSxProps
+  onClose?: () => void
+}
+
+export interface LhMessageState {
+  type: LhMessageType
+  showClose: boolean
+}
+```
+
+`LhMessageType` añade `loading` a las constantes semánticas generales (`LH_TYPES_CONST`: info/success/warning/danger/error).
+
+## Accesibilidad
+
+```ts
+getMessageRole('danger')   // 'alert'
+getMessageRole('warning')  // 'alert'
+getMessageRole('info')     // 'status'
+getMessageRole('success')  // 'status'
+getMessageRole('loading')  // 'status'
+```
+
+- Un elemento con `role="alert"` **se anuncia tan pronto como aparece en el DOM**, ideal para errores; `role="status"` se anuncia en cola, ideal para éxitos e infos.
+- **Complemento de aria-live**: al renderizar, la capa UI suele acompañarlo con `aria-live="polite"` (status) o `aria-live="assertive"` (alert) — el `role` ya lo implica y repetirlo no suele hacer daño, pero algunos lectores de pantalla soportan mejor el role; escribir ambos es lo más seguro.
+- **Anuncio de mensajes duplicados**: tres «Guardado con éxito» seguidos se anuncian tres veces, y eso es correcto (cada uno es un evento nuevo). Si quieres suprimirlos, que la capa de negocio detecte los duplicados.
+- **Botón de cerrar**: `aria-label="Cerrar"` (botón de icono sin texto).
+
+## Ejemplos de uso
+
+```ts
+import { resolveMessageDuration, clampMessageQueue, createMessageRecord } from '@lh-ui/share/core/message'
+
+resolveMessageDuration(undefined, 'success')  // 3000
+resolveMessageDuration(undefined, 'loading')  // 0 (la carga no se cierra sola)
+resolveMessageDuration(5000, 'loading')       // 5000 (el valor explícito prevalece)
+
+clampMessageQueue([{ id: 1 }, { id: 2 }, { id: 3 }], 2)
+// { kept: [{ id: 2 }, { id: 3 }], removed: [{ id: 1 }] }  ← se elimina el más antiguo
+
+clampMessageQueue([{ id: 1 }, { id: 2 }], 0)  // { kept: [...], removed: [] } (max <= 0 no recorta)
+
+createMessageRecord({ type: 'success', content: 'Guardado', showClose: true }, 7)
+// { id: 7, type: 'success', content: 'Guardado', showClose: true,
+//   duration: 3000, offset: 20 }
+```
+
+```ts
+// Implementación del servicio (capa UI): cola única + contador autoincremental
+let seq = 0
+const queue = ref<LhMessageRecord[]>([])
+
+function open(type: LhMessageType, content: string, options?: Partial<LhMessageRecord>) {
+  const record = createMessageRecord(
+    { type, content, showClose: false, ...options },
+    ++seq,
+  )
+  queue.value = [...queue.value, record]
+  // Cola por encima del límite: se elimina el más antiguo y se dispara su onClose
+  const { kept, removed } = clampMessageQueue(queue.value, LH_MESSAGE_MAX_DEFAULT)
+  removed.forEach((r) => r.onClose?.())
+  queue.value = kept
+  // Cierre automático
+  if (record.duration > 0) {
+    setTimeout(() => close(record.id), record.duration)
+  }
+  return record.id
+}
+
+const api = {
+  info: (c: string, o?) => open('info', c, o),
+  success: (c: string, o?) => open('success', c, o),
+  warning: (c: string, o?) => open('warning', c, o),
+  error: (c: string, o?) => open('error', c, o),
+  loading: (c: string, o?) => open('loading', c, o),
+}
+```
+
+```vue
+<!-- Vue3: capa de renderizado -->
+<teleport to="body">
+  <div class="lh-message" :style="{ top: offset + 'px' }">
+    <transition-group name="lh-message-fade" tag="div" class="lh-message__list">
+      <div
+        v-for="record in queue"
+        :key="record.id"
+        :class="getMessageClassNames({ type: record.type, showClose: record.showClose })"
+        :role="getMessageRole(record.type)"
+      >
+        <LhSpinner v-if="record.type === 'loading'" :size="14" />
+        <LhIcon v-else :name="getMessageIconName(record.type)!" />
+        <span class="lh-message__content">{{ record.content }}</span>
+        <button v-if="record.showClose" type="button" aria-label="Cerrar" @click="close(record.id)">✕</button>
+      </div>
+    </transition-group>
+  </div>
+</teleport>
+```
+
+```ts
+// Uso típico de loading: se abre al guardar y se cierra al terminar
+const id = LhMessage.loading('Guardando…')
+await save()
+LhMessage.close(id)
+LhMessage.success('Guardado')
+```
+
+```tsx
+// React: createPortal renderiza la cola; el cierre gestiona el temporizador de cada mensaje con clearTimeout
+```
+
+```ts
+// uniapp: posicionamiento fixed + animación; la cola usa el mismo modelo y, fuera de h5,
+// LhSpinner se implementa con un view girando
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-message` | contenedor (fixed, centrado arriba) |
+| `.lh-message__list` | cola (transition-group) |
+| `.lh-message__item` | un solo mensaje |
+| `.lh-message__item--{info\|success\|warning\|danger\|error\|loading}` | tipo semántico (color del icono + borde/fondo) |
+| `.lh-message__item--closable` | cerrable (reserva espacio para el botón de cerrar) |
+| `.lh-message__content` | texto |
+
+Cuatro colores semánticos: `--lh-info-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`; fondo `--lh-bg-color` + borde ligero + sombra.
+
+## Advertencias
+
+- **El mensaje `loading` debe cerrarse a mano**: `resolveMessageDuration(undefined, 'loading')` devuelve 0 y no desaparece solo. Olvidar cerrarlo deja un «Cargando» permanente — es el uso erróneo más frecuente.
+- **La relación entre `error` y `danger`**: ambos se mapean al rol `alert` y al icono `error` — `danger` es el nombre de las constantes semánticas generales y `error` es su alias (para alinearse con la API habitual `LhMessage.error()`). La capa de negocio puede usar cualquiera de los dos.
+- **Límite de la cola `LH_MESSAGE_MAX_DEFAULT = 5`**: en escenarios de alta frecuencia (como el progreso de una subida) es fácil superar 5 mensajes y que se recorten — el `onClose` de los registros recortados lo dispara el llamador, y los temporizadores del negocio deben limpiarse al unísono.
+- **El significado de `offset`**: es el desplazamiento **inicial** desde la parte superior del viewport; la separación entre mensajes apilados la acumula la capa UI según la altura (sigue el `computeStackOffsets` de `notification`).
+- **Unicidad del `id`**: el `seq` del servicio se incrementa a nivel de módulo; si conviven varias instancias (microfrontends), hace falta un prefijo de id externo para evitar conflictos.
+- **Seguridad SSR**: el servicio de mensajes depende del DOM (teleport, setTimeout); bajo SSR debería omitir la creación automática y quedar disponible solo tras la activación en el cliente.
+- **El callejón sin salida de `duration: 0` con `showClose: false`**: un mensaje que no se cierra solo ni puede cerrarse a mano permanece para siempre — salvo que el negocio guarde el id y llame a `close(id)`. Deja siempre al menos una vía de cierre para el usuario.
+
+<FnPlayground module="message" fn="resolveMessageDuration" params='{"duration": null, "type": "loading"}' />

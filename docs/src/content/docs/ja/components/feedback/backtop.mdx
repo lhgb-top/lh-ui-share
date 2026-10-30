@@ -1,0 +1,172 @@
+---
+title: backtop —— 上に戻る
+description: 'resolveScrollTarget のスクロールルート解析、prefers-reduced-motion への降格、scrollend の機能検出とデバウンスのフォールバック'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+長いページを最後までスクロールしたユーザーが先頭に戻るには、ホイールを狂ったように回すしかありません。`backtop` は右下のフローティングボタンで、一定距離スクロールしたときだけ現れ、クリックすると滑らかに先頭へ戻ります。ロジックは複雑でありませんが、**スクロール API の互換性の落とし穴が特に多い**です——スクロールのルートは誰か、スムーズスクロールをどう降格させるか、スクロールの終了をどう検出するか。`core/backtop` がこれらをすべて引き受けます。
+
+## いつ使うか
+
+- 各端末で `<LhBackTop>` を実装するケース：長いリスト、長いドキュメント、管理画面データテーブルの先頭戻り入口。
+- ページの高さが明らかに 1 画面を超える（通常 2〜3 画面以上）ときに表示する価値があります。
+- **使うべきでないケース**：短いページ（1 画面に満たない。ボタンは永遠に現れず、コードの無駄）；モバイルのネイティブページでホイール / ジェスチャーで素早く戻れるもの（モバイルのシステムジェスチャーがすでにカバーしている。h5 のインラインページはケースバイケース）。
+
+## インポート方法
+
+```ts
+import {
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  LH_BACKTOP_SCROLLEND_DELAY,
+  getBackTopClassNames,
+  resolveScrollTarget,
+  getScrollTop,
+  backToTop,
+  isBackTopVisible,
+  supportsScrollEnd,
+} from '@lh-ui/share/core/backtop'
+```
+
+## 設計意図
+
+**スクロールルートの優先順位**：`document.scrollingElement` を `document.documentElement` より優先します。これは潔癖症ではありません——一部のページ（`body { overflow }` を使っているもの）で本当にスクロールしているのは body で、`documentElement.scrollTop` は常に 0 になり、可視性の判定が完全に失效します。`scrollingElement` は W3C がこの混乱を統一するために発明した標準プロパティです。
+
+**`getScrollTop` は `instanceof Window` ではなく `instanceof HTMLElement` を使う**：コメントには「realm をまたぐ安全性」と書かれています——ページに iframe がある場合、iframe が渡してきた Window オブジェクトは現在の realm の `Window` コンストラクタと**等しくなく**、`x instanceof Window` は誤って false になります。HTMLElement で判定すれば（要素にはこの問題がない）回避できます。非常に細かいですが、現実に存在する落とし穴です。
+
+**スムーズスクロールの 2 段階の降格**：① `prefers-reduced-motion` が有効な場合は `auto`（アニメーションなし）に降格します——前庭機能障害のユーザーは継続するスクロールでめまいを感じます。これはアクセシビリティの必須要件です；② 対象要素に `scrollTo` メソッドがない（古い jsdom などの環境）場合は `scrollTop = 0` を直接書き込みます。
+
+**`supportsScrollEnd` の機能検出**：`scrollend` イベントは Chromium 114+ / Safari 18.2+ にしかありません——これを使えばスクロールが**本当に静止した**ときに正確に可視状態を更新できます（スクロール中に頻繁に scrollTop を読むとパフォーマンスコストがかかる）。サポートされていない場合は、呼び出し側が `scroll` イベント + `LH_BACKTOP_SCROLLEND_DELAY`（150ms）のデバウンスにフォールバックして擬似的に再現します。
+
+**可視性は純関数**：`isBackTopVisible(scrollTop, height)` は数値を比較するだけです——UI 層が自分でスクロールを監視し、自分で scrollTop を格納します。core はいかなるリアクティブな状態も持ちません。これにより単体テストは数値の境界を直接 assert できます。
+
+## 関数表
+
+| 関数 / 定数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getBackTopClassNames` | `(state: { visible }) => string[]` | クラス名 | 可視状態が表示/非表示アニメーションを駆動 |
+| `resolveScrollTarget` | `(target?: string \| HTMLElement) => HTMLElement \| Window` | スクロール対象 | セレクターの不一致時は window にフォールバック |
+| `getScrollTop` | `(target) => number` | スクロール距離 | コンテナ / ビューポートに適応 |
+| `backToTop` | `(target, smooth) => void` | なし | スムーズに先頭へ（降格を含む） |
+| `isBackTopVisible` | `(scrollTop, visibilityHeight) => boolean` | 可視かどうか | 閾値の判定 |
+| `supportsScrollEnd` | `(target) => boolean` | サポートするか | 機能検出 |
+
+定数：`LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT = 200`、`LH_BACKTOP_SCROLLEND_DELAY = 150`。
+
+## 型定義
+
+```ts
+export interface LhBackTopState {
+  visible: boolean      // 現在可視かどうか（表示/非表示のクラス名を駆動）
+  target?: string | HTMLElement
+  visibilityHeight?: number
+  smooth?: boolean      // スムーズスクロールするか（デフォルト true）
+}
+```
+
+## アクセシビリティ
+
+```ts
+// ボタンのアクセシビリティ属性は UI 層で組み立てる：
+const aria = {
+  type: 'button',
+  'aria-label': '上に戻る',   // アイコンボタンにテキストはない。必ずラベルを与える
+}
+```
+
+- **`type="button"`**：先頭戻りボタンが `<form>` の中にあると、デフォルトの `type="submit"` がフォームの送信を引き起こします——これが最もよくある小バグです。
+- **aria-label は必須**：純粋なアイコンボタン（上矢印）はスクリーンリーダーにとって名無しです。`aria-label="上に戻る"` があれば読み上げられます。
+- **aria-hidden と可視性の同期**：不可視のときはアクセシビリティツリーから取り除きます（`aria-hidden="true"` または `v-if` でアンマウント）。スクリーンリーダーが見えないボタンにナビゲートするのを防ぎます。
+- **キーボードで到達可能**：ボタンはネイティブの `<button>` です。Tab でフォーカス + Enter/Space でトリガーでき、天然でサポートします。`<div @click>` で作らないでください。
+- **prefers-reduced-motion の二重の意味**：アクセシビリティの要件（前庭の安全）であると同時に、低スペック端末でのスムーズスクロールのもたつきを避けるものです。`backToTop` の内部で処理済みで、UI 層は判定する必要がありません。
+
+## 使用例
+
+```ts
+import {
+  resolveScrollTarget, getScrollTop, isBackTopVisible, backToTop, supportsScrollEnd,
+  LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT, LH_BACKTOP_SCROLLEND_DELAY,
+} from '@lh-ui/share/core/backtop'
+
+isBackTopVisible(200, 200)  // true（>= 閾値）
+isBackTopVisible(199, 200)  // false
+isBackTopVisible(0, 200)    // false
+
+supportsScrollEnd(window)         // モダンブラウザでは true
+supportsScrollEnd(someEl)         // Chromium 114+ / Safari 18.2+ でのみ true
+```
+
+```ts
+// 監視戦略：scrollend があれば静止時にだけ判定し、なければ scroll + デバウンス
+const target = resolveScrollTarget(props.target)
+let visible = ref(false)
+
+function refresh() {
+  visible.value = isBackTopVisible(
+    getScrollTop(target),
+    props.visibilityHeight ?? LH_BACKTOP_VISIBILITY_HEIGHT_DEFAULT,
+  )
+}
+
+if (supportsScrollEnd(target)) {
+  target.addEventListener('scrollend', refresh)
+} else {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  target.addEventListener('scroll', () => {
+    clearTimeout(timer)
+    timer = setTimeout(refresh, LH_BACKTOP_SCROLLEND_DELAY)
+  })
+}
+
+function onClick() {
+  backToTop(target, props.smooth ?? true)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <button
+    type="button"
+    class="lh-backtop"
+    :class="getBackTopClassNames({ visible })"
+    aria-label="上に戻る"
+    :aria-hidden="!visible"
+    @click="backToTop(target, true)"
+  >
+    <LhIcon name="arrow-up" />
+  </button>
+</template>
+```
+
+```tsx
+// React：useEffect でスクロール監視を登録 / 解除（target と visibilityHeight に依存）；
+// smooth は props で制御し、reduced-motion は core の内部で処理
+```
+
+```ts
+// uniapp：<button open-type?> は適用不可。<view> + @tap を使う；
+// ミニプログラム側のページスクロールは onPageScroll（uniapp 組み込み）、
+// 要素のスクロールは scroll-view の scroll イベントを使う
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-backtop` | ボタンコンテナ（fixed 右下） |
+| `.lh-backtop--visible` | 可視（フェードイン / 上にスライドする入場アニメーションを駆動） |
+
+デフォルトの非表示は `opacity: 0; visibility: hidden`（display ではなく visibility を使い、トランジションアニメーションを保持）；円形ボタン `--lh-backtop-size`（例：40px）；背景色 `--lh-bg-color` + シャドウ `--lh-box-shadow-base`；z-index `--lh-z-index-backtop`。
+
+## 注意事項
+
+- **スクロール監視は解除する**：コンポーネントが破棄されるときに `removeEventListener` しないと、すでに取り除かれた DOM を参照したままになりメモリリークします。Vue の `onUnmounted` / React の useEffect のクリーンアップを使います。
+- **`window` 監視の特殊性**：`scroll` イベントは window ではパッシブかつ高頻度で、必ずデバウンスするか scrollend を使わなければなりません。毎回 `getScrollTop` を読むと、極端に長いページではひっかかります。
+- **対象要素自身がスクロールするシーン**：テーブル内部のスクロール（ページのスクロールではない）では `target` をテーブルコンテナに向けます——そうしないとボタンの可視性がページスクロールに連動し、実際に先頭に戻りたいコンテナと無関係になります。
+- **スムーズスクロールが CSS で上書きされる**：ページに `html { scroll-behavior: smooth }` があると、`scrollTo({ behavior: 'auto' })` が CSS に上書きされます——`backToTop` の reduced-motion の降格が効きません。厳密に降格させる必要がある場合、UI 層は一時的にその CSS を取り除きます。
+- **iOS Safari のスクロール慣性**：iOS のスクロールには慣性があり、scrollend は慣性が終わったときにだけトリガーされます；デバウンスのフォールバック 150ms は高速にスワイプしたときに可視状態を早めに更新する（ボタンが一瞬ちらつく）可能性があります。これは既知の妥協です。
+- **可視閾値 200 の意味**：約半画面の高さ（ビューポートの高さによる）。ドキュメント系のページでは小さく（100）、ツール系のページでは大きく（500）できます——`visibilityHeight` prop がそのためのものです。
+- **ボタンがコンテンツを遮らないように**：fixed 配置 + 右下。モバイルではボトムナビゲーションバーを避けてください（安全域の高さを空ける）。
+
+<FnPlayground module="backtop" fn="isBackTopVisible" params='{"scrollTop": 300, "visibilityHeight": 200}' />

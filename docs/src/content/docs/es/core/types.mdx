@@ -1,0 +1,110 @@
+---
+title: types —— tipos unión compartidos
+description: 'LhComponentSize / LhComponentLanguage / LhComponentType / LhPosition, derivados de las constantes de constants'
+---
+
+Cuatro tipos unión compartidos por los componentes de core. Sus valores no son uniones de literales escritas a mano, sino que **se derivan de las constantes `as const` de `src/constants/`**: para añadir una talla o un idioma, basta cambiar la constante y el tipo la sigue automáticamente.
+
+## Importación
+
+```ts
+import type {
+  LhComponentSize,
+  LhComponentLanguage,
+  LhComponentType,
+  LhPosition,
+} from '@lh-ui/share/core/shared/types'
+```
+
+## Los cuatro tipos
+
+| Tipo | Definición | Valores reales |
+| --- | --- | --- |
+| `LhComponentSize` | `(typeof LH_SIZE_CONST)[keyof typeof LH_SIZE_CONST]` | `'small' \| 'medium' \| 'large' \| 'mini' \| 'x-large'` |
+| `LhComponentLanguage` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | `'zh-CN' \| 'en-US' \| 'ja-JP' \| 'ko-KR' \| 'de-DE' \| 'fr-FR'` |
+| `LhComponentType` | `(typeof LH_TYPES_CONST)[keyof typeof LH_TYPES_CONST] \| 'default' \| 'primary'` | `'success' \| 'warning' \| 'error' \| 'info' \| 'danger' \| 'default' \| 'primary'` |
+| `LhPosition` | Unión de literales | `'top' \| 'top-left' \| 'top-right' \| 'bottom' \| 'bottom-left' \| 'bottom-right' \| 'left' \| 'right'` |
+
+### El `'x-large'` de LhComponentSize
+
+Es la **talla específica para personas mayores** (tipografía grande, zona táctil grande). Atención a la estructura de la constante:
+
+```ts
+// src/constants/index.ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',
+  large: 'large',
+  mini: 'mini',
+  old: 'x-large',   // La clave es old, el valor es 'x-large'; // específica para personas mayores
+} as const
+```
+
+**La clave y el valor no coinciden** (`old` ↔ `'x-large'`); lo que aparece en la unión del tipo es el **valor** `'x-large'`. Mientras tanto, el interruptor que activa el modo para personas mayores en las props del componente es otro campo booleano, `old?: boolean` (véase [LhBaseProps](/es/reference/types)): el valor del enumerado de tallas y la prop interruptora son dos cosas distintas; no los mezcles.
+
+### Los dos colores base de LhComponentType
+
+`'default'` / `'primary'` no están en `LH_TYPES_CONST` (que contiene los cinco **colores semánticos**: success / warning / error / info / danger), sino que se añaden en el nivel del tipo con `| 'default' | 'primary'`. No son una «semántica de estado», sino los colores de aspecto base de componentes como el botón.
+
+### LhPosition y LhPlacement son dos modelos
+
+| | `LhPosition` | `LhPlacement` ([popper](/es/core/popper)) |
+| --- | --- | --- |
+| Uso | Posicionamiento pegado al borde (affix / backtop) | Posicionamiento de capas flotantes (tooltip / popover) |
+| Valores | `'top'` / `'top-left'` / `'top-right'` / `'bottom'` / `'bottom-left'` / `'bottom-right'` / `'left'` / `'right'` | `'top'` / `'top-start'` / `'top-end'` / `'bottom'` / `'bottom-start'` / `'bottom-end'` / `'left'` / `'left-start'` / `'left-end'` / `'right'` / `'right-start'` / `'right-end'` |
+| Sufijo de alineación | `-left` / `-right` (solo los dos extremos) | `-start` / `-end` (alineación semántica, soporta el volteo RTL) |
+
+Los `-left` / `-right` de `LhPosition` son una **dirección física**; los `-start` / `-end` de `LhPlacement` son una **dirección lógica** (en una maquetación RTL se voltean automáticamente). No conviertas de una a otra para usarlas indistintamente.
+
+## Por qué se derivan de las constantes
+
+```ts
+// Contraejemplo: unión escrita a mano; al añadir un idioma hay que tocar dos sitios
+type LhComponentLanguage = 'zh-CN' | 'en-US'  // ← Es fácil que se desincronice de la constante
+
+// Lo que hace este repositorio: la constante es la fuente única
+type LhComponentLanguage = (typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]
+```
+
+Para añadir un idioma basta con una línea en `LH_LANGUAGE_CONST` y se actualizan automáticamente el tipo, `LhLocaleType` y la validación de parámetros de `setLocale`. Es un punto concreto del escalonamiento «constantes `LH_XXX`, tipos `LhXxx`» de las [convenciones de nomenclatura](/es/guide/naming).
+
+## Ejemplos de uso
+
+### Props del componente
+
+```ts
+import type { LhComponentSize, LhComponentType } from '@lh-ui/share/core/shared/types'
+
+interface LhButtonProps {
+  type?: LhComponentType   // Autocompleta 'primary' | 'success' | …
+  size?: LhComponentSize   // Autocompleta 'small' | 'medium' | …
+}
+```
+
+### La versión genérica con extensiones de negocio
+
+El lado del negocio suele necesitar «el tipo del componente + unos cuantos tipos propios»; `src/types/components/base.ts` ofrece una versión genérica (véase la [referencia de types](/es/reference/types)):
+
+```ts
+import type { LhTypes } from '@lh-ui/share/types'
+
+type MyButtonType = LhTypes<'brand' | 'dangerous'>
+// → LhComponentType | 'brand' | 'dangerous'
+```
+
+### Validación en tiempo de ejecución
+
+El tipo en sí no valida en tiempo de ejecución. En el interior del componente se hace la comprobación de valores con la constante:
+
+```ts
+import { LH_SIZE_CONST } from '@lh-ui/share/constants'
+
+const isValidSize = (v: string): v is LhComponentSize =>
+  Object.values(LH_SIZE_CONST).includes(v as LhComponentSize)
+```
+
+## Advertencias
+
+- **Solo se exportan tipos**: este módulo importa las constantes con `import type` y, tras la compilación, no genera código de tiempo de ejecución (más allá de la propia constante). Las importaciones de tipo puro no afectan al tamaño del paquete.
+- **`'mini'` y `'x-large'` son niveles adicionales**: `small / medium / large` son las tres tallas habituales; `mini` sirve para escenarios compactos en línea (botones de acción dentro de una tabla) y `x-large` es la talla accesible para personas mayores. No todos los componentes soportan los cinco niveles: consulta la documentación de cada componente.
+- **`LhPosition` no entra en la superficie pública de `src/types`**: vive en `core/shared/types` y debe importarse desde `@lh-ui/share/core/shared/types`; no está en `@lh-ui/share/types`.

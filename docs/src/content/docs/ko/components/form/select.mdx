@@ -1,0 +1,154 @@
+---
+title: select —— 드롭다운 선택기
+description: 'findSelectOption 정밀 매칭, getSelectOptionId 결정적 id, combobox/listbox/option 3단계 접근성 속성 팩'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+드롭다운 선택기는 "트리거 + 플로팅 레이어 목록" 패턴의 가장 간결한 구현입니다. `core/select`가 관리하는 것은 옵션 검색, 결정적 option id 생성, 그리고 APG combobox 패턴의 3단계 접근성 속성 팩입니다. **위치 계산은 여기에 없습니다**——플로팅 레이어의 좌표는 `core/shared/popper`가 담당합니다 ([popper](/ko/core/popper) 참조).
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhSelect`.
+- 단일 선택 상황; 다중 선택은 캐스케이드 또는 checkbox-group를 사용.
+- **사용하면 안 되는 경우**: 옵션에 트리 형태의 계층이 필요할 때 (`cascader` 사용), 옵션이 수백 개를 넘을 때 (`virtual-list` 가상화를 고려).
+
+## 임포트 방법
+
+```ts
+import {
+  findSelectOption,
+  getNextEnabledIndex,
+  getSelectOptionId,
+  getSelectTriggerAria,
+  getSelectListboxAria,
+  getSelectOptionAria,
+} from '@lh-ui/share/core/select'
+import type { LhSelectOption, LhSelectState } from '@lh-ui/share/core/select'
+```
+
+## 설계 의도
+
+`getSelectOptionId(listboxId, index)`의 "결정적"이라는 성질은 APG combobox 패턴이 작동하기 위한 전제입니다: 트리거는 `aria-activedescendant`로 현재 하이라이트 항목을 참조하며, 양쪽이 반드시 **동일한 DOM id**를 가리켜야 합니다. UI 계층이 id를 마음대로 생성한 뒤 동기화할 방법을 궁리하기보다는, core 계층에서 `${listboxId}-option-${index}`로 규정하고 양쪽이 모두 이 규칙대로 값을 가져가게 합니다.
+
+이 함수의 방어도 마찬가지로 중요합니다: `listboxId`가 비어 있거나, index가 정수가 아니거나, `index < 0` (-1은 하이라이트 없음을 뜻함)일 때 **undefined**를 반환합니다——undefined인 속성은 프레임워크의 v-bind에서 무시되어, 존재하지 않는 요소를 가리키는 `aria-activedescendant`가 만들어지지 않습니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `findSelectOption` | `(options: LhSelectOption[], value: unknown) => LhSelectOption \| undefined` | 옵션 | `Object.is`로 value를 정밀 매칭 |
+| `getNextEnabledIndex` | `(options: LhSelectOption[], currentIndex: number, direction: 1 \| -1) => number` | 인덱스 | **@deprecated**, `shared/keyboard.getNextListIndex`으로 전환 |
+| `getSelectOptionId` | `(listboxId: string \| undefined, index: number) => string \| undefined` | id | 결정적 이음, 잘못된 입력은 undefined 반환 |
+| `getSelectTriggerAria` | `(options: { visible: boolean; listboxId?: string; highlightedIndex: number }) => LhAriaAttrs` | aria 속성 팩 | combobox 트리거 |
+| `getSelectListboxAria` | `(id?: string) => LhAriaAttrs` | aria 속성 팩 | listbox 컨테이너 |
+| `getSelectOptionAria` | `(options: { listboxId?: string; index: number; selected: boolean; disabled?: boolean }) => LhAriaAttrs` | aria 속성 팩 | 단일 옵션 |
+
+## 타입 정의
+
+```ts
+export interface LhSelectOption {
+  label: string
+  value: unknown
+  disabled?: boolean
+}
+
+export interface LhSelectState {
+  options: LhSelectOption[]
+  highlightedIndex: number
+}
+```
+
+## 접근성
+
+3단계 속성 팩이 완전한 combobox 패턴을 구성합니다:
+
+```ts
+// 트리거: aria-haspopup="listbox" + aria-expanded + aria-controls
+getSelectTriggerAria({ visible: true, listboxId: 'my-listbox', highlightedIndex: 2 })
+// { role: 'combobox', 'aria-expanded': true, 'aria-controls': 'my-listbox',
+//   'aria-haspopup': 'listbox', 'aria-activedescendant': 'my-listbox-option-2' }
+
+// 플로팅 레이어: role="listbox" + id (트리거의 aria-controls와 대응)
+getSelectListboxAria('my-listbox')  // { role: 'listbox', id: 'my-listbox' }
+
+// 옵션: role="option" + id + aria-selected
+getSelectOptionAria({ listboxId: 'my-listbox', index: 2, selected: true })
+// { role: 'option', id: 'my-listbox-option-2', 'aria-selected': true }
+```
+
+키보드 상호작용의 완전한 루프 (UI 계층이 구현, core가 알고리즘 제공): ArrowDown/Up으로 `highlightedIndex`를 이동하고 (`shared/keyboard.getNextListIndex`를 사용, 양끝 순환, disabled 건너뜀), Enter로 선택, Esc로 닫습니다. **시각적 하이라이트는 반드시 `highlightedIndex`와 동일 출처**여야 하며, 그렇지 않으면 "aria는 A를 가리키는데 눈에는 B가 보이는" 일이 생깁니다.
+
+## 사용 예시
+
+```ts
+import { findSelectOption, getSelectOptionId, getSelectTriggerAria } from '@lh-ui/share/core/select'
+
+const options = [
+  { label: '青花瓷', value: 'cerblue' },
+  { label: '水墨', value: 'shuimo', disabled: true },
+]
+findSelectOption(options, 'cerblue')   // { label: '青花瓷', value: 'cerblue' }
+findSelectOption(options, 'nope')      // undefined
+getSelectOptionId('lb', 0)             // 'lb-option-0'
+getSelectOptionId('lb', -1)            // undefined (하이라이트 없음)
+getSelectOptionId(undefined, 0)        // undefined
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-select', `lh-select--${size}`, { 'lh-select--open': visible, 'lh-select--disabled': disabled }]">
+  <button
+    class="lh-select__trigger"
+    v-bind="getSelectTriggerAria({ visible, listboxId, highlightedIndex })"
+    @click="toggle"
+  >
+    <span class="lh-select__value" :class="{ 'lh-select__value--placeholder': !selected }">
+      {{ selected ? selected.label : placeholder }}
+    </span>
+    <LhIcon class="lh-select__arrow" name="more" :size="12" />
+  </button>
+  <div v-if="visible" :id="listboxId" class="lh-select__dropdown" v-bind="getSelectListboxAria(listboxId)">
+    <div
+      v-for="(opt, i) in options"
+      :key="i"
+      class="lh-select__option"
+      :class="{ 'lh-select__option--highlighted': i === highlightedIndex, 'lh-select__option--selected': i === selectedIdx, 'lh-select__option--disabled': opt.disabled }"
+      v-bind="getSelectOptionAria({ listboxId, index: i, selected: i === selectedIdx, disabled: opt.disabled })"
+      @click="choose(opt)"
+    >{{ opt.label }}</div>
+  </div>
+</div>
+```
+
+```tsx
+// React: visible 상태 + useRef로 listboxId 보관 (useId로 안정적 id 생성)
+```
+
+```ts
+// uniapp: 플로팅 레이어는 view의 절대 위치; aria-activedescendant는 h5가 아닌 말단에서 지원되지 않으며,
+// 키보드 탐색은 포커스 이동으로만 간소화 (focus 항목), 스크린 리더는 focus 이벤트로 읽음
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-select` | 기본 클래스 |
+| `.lh-select--{small\|large}` / `--disabled` / `--open` | 상태 수식 |
+| `.lh-select__trigger` | 트리거 버튼 |
+| `.lh-select__value` / `--placeholder` | 표시 값 / 플레이스홀더 상태 |
+| `.lh-select__arrow` / `__clear` / `__actions` | 화살표 / 지우기 / 조작 영역 |
+| `.lh-select__dropdown` / `--teleported` | 플로팅 레이어 (teleported는 body로 전송되었음을 뜻함) |
+| `.lh-select__option` / `--highlighted` / `--selected` / `--disabled` | 옵션의 네 가지 상태 |
+| `.lh-select__empty` | 옵션 없음 플레이스홀더 |
+| `.lh-select-fade-*` | 플로팅 레이어 등장/사라짐 전환 (Vue3 클래스명, Vue2 말단은 mixin으로 맞춤) |
+
+## 주의사항
+
+- **`===`가 아니라 `Object.is`**: `findSelectOption`은 `Object.is`를 사용하여, `NaN`과 `-0` 같은 경계를 올바르게 처리합니다 (실제 옵션 값에서 쓰일 일은 거의 없지만).
+- **`getNextEnabledIndex`는 폐기됨**: 구현은 `shared/keyboard.getNextListIndex`로 통합되었고 이 함수는 전환만 하며, 예전 시그니처를 보존합니다. 새 코드는 커널을 직접 임포트하세요.
+- **id의 안정성**: `listboxId`는 컴포넌트 수명 주기 내에서 바뀌면 안 됩니다 (그렇지 않으면 `aria-activedescendant`가 옛 id를 가리킴), 각 말단의 안정적 id 생성을 사용하세요.
+- **텔레포트 (teleport)**: 플로팅 레이어를 body로 전송해도 `aria-controls`는 여전히 유효하지만 (같은 문서 내), **포커스 관리**에 주의해야 합니다——옵션 클릭 후 포커스는 트리거로 되돌아와야 합니다.
+
+<FnPlayground module="select" fn="findSelectOption" params='{"options": [{"label": "青花瓷", "value": "cerblue"}, {"label": "水墨", "value": "shuimo"}], "value": "cerblue"}' />

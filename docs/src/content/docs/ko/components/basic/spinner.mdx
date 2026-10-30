@@ -1,0 +1,113 @@
+---
+title: spinner —— 회전 로딩 그래픽
+description: 'LH_SPINNER_SIZE_PX 크기별 지름 매핑 표, getSpinnerClassNames가 크기 수정자 클래스를 출력'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`spinner`는 순수한 '회전 그래픽'입니다. 로딩 덮개가 아니고(그것은 `LhLoading`입니다) 스켈레톤도 아니며(그것은 `LhSkeleton`입니다) 재사용 가능한 **회전 요소**입니다: 버튼 안의 로딩 아이콘, 메시지 알림 안의 loading 아이콘, 카드 로딩 모서리의 회전표가 모두 이것입니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhSpinner`를 구현할 때, 그리고 어떤 컴포넌트 내부에서든 회전 그래픽이 필요한 곳(button loading, message loading 등).
+- **사용하면 안 되는 곳**: 전체 화면 로딩, 영역 로딩. 그것은 `LhLoading`의 책임입니다(`spinner`는 그 일부일 뿐).
+
+## 가져오기
+
+```ts
+import { getSpinnerClassNames } from '@lh-ui/share/core/spinner'
+import { LH_SPINNER_SIZE_PX, LH_SPINNER_SIZE_CONST } from '@lh-ui/share/core/spinner'
+import type { LhSpinnerSize } from '@lh-ui/share/core/spinner'
+```
+
+## 설계 의도
+
+spinner의 크기 체계는 전역 크기 단계와 정렬됩니다(`LH_SPINNER_SIZE_CONST`는 `LH_SIZE_CONST`를 직접 전개). 하지만 **픽셀 매핑은 독립적**입니다. 컴포넌트의 'medium'은 24px이고 버튼의 medium 높이는 37px로, 그래픽과 컨테이너가 같은 크기일 필요는 없습니다. 이 독립성은 곳곳의 매직 넘버에 흩어지지 않고 상수에 기록되어 있습니다.
+
+`LH_SPINNER_SIZE_PX`가 유일한 진실의 원천이며, UI 계층은 직접 `size === 'small' ? 16 : 24`를 쓰지 않고 이것을 읽어 SVG/요소의 width/height를 설정합니다.
+
+## 함수와 상수 표
+
+| 내보내기 | 시그니처 / 값 | 역할 |
+| --- | --- | --- |
+| `getSpinnerClassNames` | `(state: { size: LhSpinnerSize }) => string[]` | 클래스명 배열 |
+| `LH_SPINNER_SIZE_CONST` | `{ small: 'small', medium: 'medium', large: 'large', mini: 'mini', 'x-large': 'x-large' }` | 크기 열거(`LH_SIZE_CONST`와 정렬) |
+| `LH_SPINNER_SIZE_PX` | `{ mini: 12, small: 16, medium: 24, large: 32, 'x-large': 40 }` | 크기 → 지름 px |
+
+```ts
+getSpinnerClassNames({ size: 'small' })  // ['lh-spinner', 'lh-spinner--small']
+LH_SPINNER_SIZE_PX['large']              // 32
+```
+
+## 타입 정의
+
+```ts
+export type LhSpinnerSize =
+  (typeof LH_SPINNER_SIZE_CONST)[keyof typeof LH_SPINNER_SIZE_CONST]
+// 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+```
+
+## 접근성
+
+`core/spinner`는 aria 속성 묶음을 제공하지 않습니다. 회전 그래픽의 접근성 처리는 **어디에 나타나는지**에 따라 달라집니다:
+
+- **버튼 안의 spinner**: 버튼에 `aria-busy="true"`를 주고, spinner 자체는 `aria-hidden`.
+- **메시지 알림 안의 spinner**: 메시지의 live-region role이 이미 '처리 중'을 전달하므로, spinner는 장식화합니다.
+- **독립적으로 '로딩 중'을 표시**: 반드시 읽을 수 있는 글자(예: '로딩 중...')를 함께 써야 합니다. 그래픽만 있는 것은 스크린 리더 사용자에게 정보가 없는 것이나 다름없습니다.
+
+일반 원칙: **회전 그래픽 자체는 항상 `aria-hidden`**이어야 하며, 정보는 그 주변의 의미(aria-busy, role, 글자)가 담습니다.
+
+## 사용 예
+
+```ts
+import { getSpinnerClassNames, LH_SPINNER_SIZE_PX } from '@lh-ui/share/core/spinner'
+
+getSpinnerClassNames({ size: 'medium' })  // ['lh-spinner', 'lh-spinner--medium']
+LH_SPINNER_SIZE_PX['medium']              // 24
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="getSpinnerClassNames({ size })"
+  :width="px" :height="px"
+  viewBox="0 0 50 50"
+  aria-hidden="true"
+>
+  <circle class="lh-spinner__circle" cx="25" cy="25" r="20" fill="none" />
+</svg>
+```
+
+```tsx
+// React
+const px = LH_SPINNER_SIZE_PX[size]
+return (
+  <svg className={getSpinnerClassNames({ size }).join(' ')} width={px} height={px} viewBox="0 0 50 50" aria-hidden="true">
+    <circle className="lh-spinner__circle" cx="25" cy="25" r="20" fill="none" />
+  </svg>
+)
+```
+
+```ts
+// uniapp: h5가 아닌 단말에서는 svg 애니메이션 지원이 부족하므로, 보통 CSS border 회전 방식이나 GIF로 교체합니다;
+// LH_SPINNER_SIZE_PX의 지름 값은 여전히 적용됩니다(border 방식의 너비/높이)
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-spinner` | 기본 클래스: 회전 애니메이션(`animation: lh-spinner-rotate`) |
+| `.lh-spinner--{mini\|small\|medium\|large\|x-large}` | 크기 단계(너비/높이 설정) |
+| `.lh-spinner__circle` | SVG circle: 부분 호 테두리 + `stroke-linecap: round` |
+
+선 색상은 기본 `currentColor`(부모 글자색 상속)이며, 회전 속도는 스타일 계층에서 정의하고 `prefers-reduced-motion`에서 CSS 미디어 쿼리로 일시 정지합니다.
+
+## 주의사항
+
+- **크기 일관성**: `LH_SPINNER_SIZE_PX`의 small은 16px이고 아이콘의 small은 14px입니다([아이콘](/ko/components/basic/icon) 참고). 이것은 알려진 단계 불일치로 '높이 토큰 특별 조사'에 기록되어 향후 changeset으로 통일 예정이며, 현 시점에서는 직접 계산하지 말고 상수 표를 사용하세요.
+- `getSpinnerClassNames`는 `size`의 유효성을 검증하지 않으며(타입이 보장), 범위를 벗어난 값을 넘기면 스타일 없는 더러운 클래스가 산출됩니다.
+- SVG circle의 테두리 호 각도(`stroke-dasharray`)는 스타일 계층에 약 75% 호로 고정되어 있습니다. 호를 바꾸려면 core가 아니라 스타일을 바꾸세요.
+- 회전 애니메이션은 CSS keyframes이며, `prefers-reduced-motion`의 존중은 스타일 계층에 있습니다.
+
+<FnPlayground module="spinner" fn="getSpinnerClassNames" params='{"state": {"size": "medium"}}' />

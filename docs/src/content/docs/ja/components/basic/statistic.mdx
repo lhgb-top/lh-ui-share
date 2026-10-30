@@ -1,0 +1,131 @@
+---
+title: statistic —— 統計数値
+description: 'formatStatisticValue が固定精度 + 桁区切りを実現。超大きな整数は文字列パスで精度を落とさず、precision は safePrecision でサニタイズ'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+統計数値コンポーネントは「重要な数字」を表示します：DAU、売上、完了率。その中核のリスクはレイアウトではなく**精度**です：`Number(12345678901234567890).toFixed(2)` は JS では誤った結果になります（安全整数を超えるため）、`(0.1).toFixed` 系の丸めにも浮動小数点の罠があります。`core/statistic` の `formatStatisticValue` がこれらの穴を共有層で一度に埋め、3 端で共用します。
+
+## いつ使うか
+
+- 各端が `LhStatistic` を実装する：ダッシュボードの数値、レポートサマリー、達成度の表示。
+- 任意の数値を「固定小数位 + 桁区切り」でフォーマットしたいケース。コンポーネントを使わなくても直接 `formatStatisticValue` を呼べます。
+- **使うべきでない**：通貨記号、単位換算、タイムゾーンのフォーマット——これらは業務層の仕事です；日付のフォーマットは `core/shared/date` を使います。
+
+## インポート方法
+
+```ts
+import { formatStatisticValue, getStatisticClassNames } from '@lh-ui/share/core/statistic'
+import type { LhStatisticState } from '@lh-ui/share/core/statistic'
+```
+
+## 設計意図
+
+`formatStatisticValue` の 3 つの精度の防線：
+
+1. **不正な入力でエラーを投げない**：NaN / Infinity はそのまま `String(value)` を返し、「数でないもの」のフォーマットは試みません。
+2. **precision のサニタイズ**：`toFixed(101)` は RangeError を投げるため、事前に `shared/sanitize` の `safePrecision` で `[0, 100]` の整数にサニタイズします。この防線は `input-number` と共用します（[input-number](/ja/components/form/input-number) を参照）。
+3. **超大きな整数は文字列パスへ**：整数部分が `Number.MAX_SAFE_INTEGER` を超える場合は全行程で Number の変換を経ません——丸めは文字列の十進法で桁上げ（内部の `incrementDigits`）し、桁区切りは文字列のスライス（`formatBigString`）で行います。これが `99999999999999999999` のフォーマットを正しく保証できる唯一の方式です。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `formatStatisticValue` | `(value: number \| string, state: Pick<LhStatisticState, 'precision' \| 'separator'>) => string` | フォーマット文字列 | 精度 + 桁区切り |
+| `getStatisticClassNames` | `(prefixCls?: string) => string[]` | クラス名配列 | コンテナクラス、プレフィックス変更可 |
+
+挙動の詳細：
+
+| 入力 | 出力 | パス |
+| --- | --- | --- |
+| `1234567.891`, `{ precision: 2, separator: ',' }` | `'1,234,567.89'` | toFixed + 桁区切り |
+| `1234567.8`, `{ precision: 0, separator: '' }` | `'1234568'` | 区切りなし |
+| `'99999999999999999999'`, `{ precision: 0, separator: ',' }` | `'99,999,999,999,999,999,999'` | 文字列パス |
+| `NaN`, 任意 | `'NaN'` | そのまま返す |
+| `'abc'`, 任意 | `'abc'` | `Number('abc')` は NaN |
+
+区切り文字は**整数のグループ化**にのみ使い、小数点は `.` で固定です（各端の表示でローカライズされた小数点が必要な場合は UI 層で置き換えます）。
+
+## 型定義
+
+```ts
+export interface LhStatisticState {
+  precision: number      // 小数位（safePrecision で [0, 100] にサニタイズ）
+  separator: string      // 桁区切り文字、空文字はグループ化しないことを示す
+}
+```
+
+## アクセシビリティ
+
+`core/statistic` は aria 属性パックを出力しません。統計数値のアクセシビリティの要点は UI 層にあります：
+
+- 数値自体は通常のテキストでスクリーンリーダーが読めますが、**桁区切りのカンマは「カンマ」と読まれます**（「1,234,567」が「いちカンマにさんよん…」と読まれるなど）。数値ブロック全体に `aria-label` を提供し、言葉による表現（「百二十三万四千五百六十七」や「1 2 3 4 5 6 7」の桁読み）を使うべきです。
+- 数値変化時のアニメーション（目標値までのスクロール）は純粋な視覚で情報を担いません；アニメーション中に数値が読めない場合は、値が確定するまで古い値の aria-label を保持します。
+
+## 使用例
+
+```ts
+import { formatStatisticValue } from '@lh-ui/share/core/statistic'
+
+formatStatisticValue(9876543.21, { precision: 1, separator: ' ' })
+// '9 876 543.2'
+
+formatStatisticValue(0.1 + 0.2, { precision: 2, separator: '' })
+// '0.30'  （0.30000000000000004 の一部ではなく）
+
+formatStatisticValue('12345678901234567890', { precision: 0, separator: ',' })
+// '12,345,678,901,234,567,890'
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getStatisticClassNames()">
+  <span v-if="prefix" class="lh-statistic__prefix">{{ prefix }}</span>
+  <span class="lh-statistic__content">
+    <span class="lh-statistic__title">{{ title }}</span>
+    <span class="lh-statistic__value" :aria-label="ariaLabel">
+      {{ formatStatisticValue(value, { precision, separator }) }}
+    </span>
+  </span>
+  <span v-if="suffix" class="lh-statistic__suffix">{{ suffix }}</span>
+</div>
+```
+
+```tsx
+// React
+const text = formatStatisticValue(value, { precision, separator })
+return (
+  <div className="lh-statistic">
+    <span className="lh-statistic__content">
+      <span className="lh-statistic__title">{title}</span>
+      <span className="lh-statistic__value" aria-label={spoken}>{text}</span>
+    </span>
+  </div>
+)
+```
+
+```ts
+// uniapp：純粋な文字列出力で端差分なし；アニメーションは各端のスクロール方案を使う
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-statistic` | ベースクラス：レイアウト |
+| `.lh-statistic__title` | タイトル（セカンダリの文字色、小さな文字サイズ） |
+| `.lh-statistic__content` | コンテンツエリア（タイトル + 数値の縦並び） |
+| `.lh-statistic__value` | 数値（メインの文字色、大きな文字サイズ、等幅数字 `font-variant-numeric: tabular-nums`） |
+| `.lh-statistic__prefix` / `.lh-statistic__suffix` | 接頭辞 / 接尾辞（¥、% など） |
+
+数値のフォントは `--lh-font-family-numeric` トークン（存在する場合）を使い、数字の幅を揃えます。
+
+## 注意事項
+
+- **precision の上限は 100**：超えると `safePrecision` がエラーを投げずに切り詰めます；負の precision は 0 になります。
+- **文字列入力のセマンティクス**：`formatStatisticValue('123', ...)` はまず `Number('123')` を試し、成功すれば数値パスに進みます；`'abc'` になって初めてそのまま返します。超大きな整数の文字列は**必ず文字列として渡してください**——数値リテラル `99999999999999999999` を渡すと JS のソースレベルで既に精度が失われており、core でも救えません。
+- UI 層で桁区切りを自作する `toLocaleString` を**使わない**でください：実行時の locale に影響され、3 端で一致しない可能性があります；一律に `formatStatisticValue` を使います。
+- `getStatisticClassNames` の `prefixCls` パラメータはプレフィックスの変更を許可し（デフォルトは `lh-statistic`）、一部の端で既存のクラス名と共存する必要があるケースに使います。
+
+<FnPlayground module="statistic" fn="formatStatisticValue" params='{"value": 1234567.891, "state": {"precision": 2, "separator": ","}}' />

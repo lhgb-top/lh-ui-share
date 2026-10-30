@@ -1,0 +1,146 @@
+---
+title: rate —— 별점
+description: 'clampRate 클램프, stepRate 반별 스텝, getStarFill 별별 채우기 단계, slider 의미 속성 팩'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+별점은 "점수 매기기"를 **이산적인 별 선택**으로 바꿉니다: 사용자는 숫자를 입력하는 대신 별을 켭니다. `core/rate`가 관리하는 것은 별별 채우기 단계 (꽉 찬 별/반 별/빈 별), 반별 스텝과 부동소수 누적, 그리고 APG slider 의미입니다——별점 컨트롤은 접근성 측면에서 라디오 그룹이 아니라 슬라이더입니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhRate`: 상품/서비스 평가, 난이도 표시, 만족도 조사.
+- 값 범위가 1~N의 정수 (또는 반별을 허용하는 0.5 스텝)인 상황.
+- **사용하면 안 되는 경우**: 정밀한 소수나 임의 범위의 연속 값이 필요할 때 (`slider` 또는 `input-number` 사용); 읽기 전용 표시이면서 상호작용이 필요 없을 때도 rate를 쓸 수 있지만 `readonly` 상태로 전환해야 합니다.
+
+## 임포트 방법
+
+```ts
+import {
+  LH_RATE_MAX_DEFAULT,
+  clampRate,
+  stepRate,
+  getStarFill,
+  getRateAriaText,
+  getRateClassNames,
+  getRateAria,
+} from '@lh-ui/share/core/rate'
+import type { LhRateState } from '@lh-ui/share/core/rate'
+```
+
+## 설계 의도
+
+`stepRate`는 가감 후에 `Math.round(next * 10) / 10`을 수행합니다——이는 불필요한 것이 아니라 **부동소수 누적에 대한 방어**입니다: 0.5 스텝은 JS에서 `0.5 → 1.0 → 1.5`로 문제가 없지만, `0.1 + 0.2 !== 0.3` 같은 함정은 다른 스텝 값에서 나타납니다. 일률적으로 소수점 첫째 자리를 유지해 결과를 깨끗한 소수로 고정합니다. `getStarFill`의 판정 순서는 `full → half → empty`입니다: 먼저 꽉 찬 별을 판정하고 반 별을 판정하여, `value=2.5`일 때 3번째 별이 `empty`가 아니라 `half`가 되도록 보장합니다.
+
+`getRateAriaText`는 `formatMessage`로 `{n}`을 보간하며, 문구 템플릿은 언어팩 (`rate.ariaText`)에서 오고, 숫자는 먼저 같은 round를 거친 후 문자열로 변환합니다——aria 문구와 시각적 채우기는 반드시 동일하게 정규화된 값에 기반해야 합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `clampRate` | `(value: number \| undefined, max: number) => number` | 클램프값 | 비숫자는 0으로, 상한은 max |
+| `stepRate` | `(value, direction: 1 \| -1, allowHalf, max) => number` | 스텝값 | 반별 0.5 스텝, 소수점 첫째 자리 |
+| `getStarFill` | `(value, index, allowHalf) => 'full' \| 'half' \| 'empty'` | 채우기 단계 | index번째 별 (1부터 시작) |
+| `getRateAriaText` | `(value, template: string) => string` | aria 문구 | `{n}` 보간 별 |
+| `getRateClassNames` | `(state: LhRateState & { readonly, disabled }) => string[]` | 클래스명 | 읽기 전용/비활성 수식 |
+| `getRateAria` | `(options: { value, max, disabled?, ariaValueText? }) => LhAriaAttrs` | aria 속성 팩 | slider 의미 |
+
+## 타입 정의
+
+```ts
+export interface LhRateState {
+  max: number
+  value: number
+  allowHalf: boolean
+}
+
+export const LH_RATE_MAX_DEFAULT = 5
+```
+
+## 접근성
+
+`getRateAria`는 **slider 의미**를 출력합니다 (radiogroup이 아님): 별점의 값은 연속적으로 조정 가능하며 (특히 반별 모드), APG의 rating 패턴은 흔히 slider로 구현됩니다. 키보드 상호작용은 slider 규약을 따릅니다: ←/→로 한 단계 감/증.
+
+```ts
+getRateAria({ value: 4.5, max: 5 })
+// { role: 'slider', 'aria-valuenow': 4.5, 'aria-valuemin': 0, 'aria-valuemax': 5 }
+
+getRateAria({ value: 0, max: 5, disabled: true, ariaValueText: '0 별' })
+// { role: 'slider', 'aria-valuenow': 0, 'aria-valuemin': 0, 'aria-valuemax': 5,
+//   'aria-disabled': true, 'aria-valuetext': '0 별' }
+```
+
+`aria-valuetext`는 **valuenow보다 우선하여 읽힙니다**——스크린 리더는 "4.5"가 아니라 "4개 반"이라고 읽습니다. 각 별 버튼에는 별도로 `aria-label`이 필요합니다 (UI 계층에서 `getRateAriaText(value, t('rate.ariaText'))`로 생성).
+
+## 사용 예시
+
+```ts
+import { getStarFill, stepRate, clampRate } from '@lh-ui/share/core/rate'
+
+getStarFill(3.5, 3, true)   // 'full'
+getStarFill(3.5, 4, true)   // 'half'
+getStarFill(3.5, 4, false)  // 'empty' (꽉 찬 별 모드에서 3.5의 4번째 별은 빈 별)
+getStarFill(3.5, 5, true)   // 'empty'
+stepRate(3, 1, true, 5)     // 3.5
+stepRate(3.5, 1, true, 5)   // 4
+stepRate(0, -1, true, 5)    // 0 (클램프)
+clampRate(undefined, 5)     // 0
+clampRate(9, 5)             // 5
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getRateClassNames({ max, value, allowHalf, readonly, disabled })">
+  <div
+    class="lh-rate__star-list"
+    v-bind="getRateAria({ value, max, disabled, ariaValueText: getRateAriaText(value, t('rate.ariaText')) })"
+    tabindex="0"
+    @keydown.left="onStep(-1)"
+    @keydown.right="onStep(1)"
+  >
+    <button
+      v-for="i in max"
+      :key="i"
+      type="button"
+      class="lh-rate__star"
+      :class="`lh-rate__star--${getStarFill(value, i, allowHalf)}`"
+      @click="onSelect(i)"
+    >
+      <LhIcon :name="getStarFill(value, i, allowHalf) === 'empty' ? 'star' : 'star-fill'" />
+    </button>
+  </div>
+</div>
+```
+
+```tsx
+// React: 반별 모드에서는 hover 상태로 value를 결정, 모바일에서는 별 전체 클릭
+// 스텝: const next = stepRate(value, dir, allowHalf, max); onChange(clampRate(next, max))
+```
+
+```ts
+// uniapp: <view>로 max개의 별을 순회; h5가 아닌 말단에서는 aria 지원이 제한적이며 getRateAria의 undefined 속성은 무시됨
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-rate` | 기본 클래스 |
+| `.lh-rate--readonly` | 읽기 전용 (hover 하이라이트 숨김, 포인터 비활성화) |
+| `.lh-rate--disabled` | 비활성 |
+| `.lh-rate__star-list` | 별 그룹 컨테이너 (tabindex와 키보드 이벤트는 여기에 부착) |
+| `.lh-rate__star` | 단일 별 버튼 |
+| `.lh-rate__star--full` / `--half` / `--empty` | 채우기 단계 (반별은 절반 가리기 오버레이 사용) |
+| `.lh-rate__text` | 점수 문구 (예: "3.5점") |
+
+별 색은 `--lh-warning-color` (노랑), 빈 별은 `--lh-fill-color` / `--lh-border-color`입니다.
+
+## 주의사항
+
+- **`getStarFill`의 index는 1부터 시작**, 순회는 `v-for="i in max"` (max 포함)를 사용하고 `v-for="i in max - 1"`이 아님.
+- **반별과 꽉 찬 별의 일관성**: `allowHalf`가 바뀐 후, `stepRate`와 `getStarFill`에 반드시 같은 값을 전달해야 하며, 그렇지 않으면 클릭과 키보드 스텝의 단계가 맞지 않습니다.
+- **읽기 전용 상태의 의미**: `readonly`는 클래스명만 전환하고 (시각적으로 상호작용 비활성화), `getRateAria`는 `aria-disabled`를 출력하지 않습니다——읽기 전용 별점도 여전히 스크린 리더가 이해 가능한 별점 값으로 인식되어야 하며 (`aria-valuetext`에 의존), 이것이 disabled와의 차이입니다.
+- **`max`의 경계**: `LH_RATE_MAX_DEFAULT`는 5입니다; UI 계층이 max 변경을 허용하지만, 별이 너무 많으면 (예: 20) 좁은 화면에서 넘치므로 자체 줄바꿈이 필요합니다.
+- **value가 소수인데 allowHalf가 false**: core는 이 조합을 검증하지 않으며, `getStarFill`은 3.5를 "3개 full + 4번째 empty"로 처리합니다——호출자의 설정 오류에 해당하며, 시각적으로는 잘라낸 것처럼 나타납니다.
+
+<FnPlayground module="rate" fn="getStarFill" params='{"value": 3.5, "index": 4, "allowHalf": true}' />

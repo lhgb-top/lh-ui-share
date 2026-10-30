@@ -1,0 +1,177 @@
+---
+title: drawer —— الدرج
+description: 'normalizeDrawerSize لتوحيد الأبعاد، أنماط لوحة الاتجاهات الأربعة، بوابة الخروج canDrawerClose، والفروق الدلالية عن dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الدرج هو لوحة تنزلق من حافة الشاشة. يكمن الفرق عن مربع الحوار ليس في الكود، بل في **دلالة الاستخدام**: مربع الحوار «يُقاطع، ويجب التعامل معه»، أما الدرج فهو «عرض جانبي، يمكن مغادرته في أي وقت». لذلك لا يُقيِّد الدرج التركيز افتراضياً ولا يقفل التمرير (قابل للضبط)، ويمكن أن يكون القناع قابلاً للنقر للإغلاق أو ألا يُعرض إطلاقاً.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `LhDrawer`: العرض الجانبي للتفاصيل، لوحات الفلترة، النماذج متعددة الخطوات، اللوحات الكاملة على الأجهزة المحمولة.
+- المشاهد التي تتطلب انزلاقاً جانبياً ومحتوى أطول من مربع الحوار.
+- **لا ينبغي استخدامه**: التأكيدات التي تتطلب معالجة إلزامية (استخدم `dialog`)؛ التنبيهات اللحظية (استخدم `message`)؛ التنبيهات النصية البحتة (استخدم `tooltip`).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_DRAWER_DIRECTION_DEFAULT,
+  LH_DRAWER_SIZE_DEFAULT,
+  normalizeDrawerSize,
+  getDrawerPanelStyle,
+  getDrawerClass,
+  canDrawerClose,
+  shouldDrawerTrapFocus,
+  getDrawerAria,
+} from '@lh-ui/share/core/drawer'
+import type { LhDrawerDirection, LhDrawerState } from '@lh-ui/share/core/drawer'
+```
+
+## القصد التصميمي
+
+**قيم `canDrawerClose` الافتراضية متماثلة مع dialog ولكن مختلفة**:
+
+- `maskClosable` يكون **false** افتراضياً—فالدرج يحمل غالباً فلاتر أو نماذج متعددة الخطوات، ولمس القناع بالخطأ يضيّع الحالة.
+- `closeOnEsc` يكون **true** افتراضياً—كما في dialog، لإبقاء مخرج طوارئ للوحة المفاتيح.
+
+تُسجّل التعليقات جزءاً من التاريخ: كان `closeOnEsc` مُعلَناً سابقاً في state فقط دون أن يقرأه logic إطلاقاً، فكانت **بوابة الخروج موجودة شكلياً**؛ وبعد استكماله كدالة قابلة للحساب أصبح Esc خاضعاً فعلياً لهذا المفتاح. هذه الفجوة من نوع «خصائص (props) مُعلَنة ولكنها لا تُستهلك في logic» هي من أكثر علل state models خفاءً.
+
+**تسمية `shouldDrawerTrapFocus` تحمل سابقة المكوّن**: لها التوقيع نفسه لـ `shouldTrapFocus` الخاص بـ dialog ولكن بدلالة مختلفة (أسماء حقول state مختلفة: `modelValue` مقابل `visible`). عند تجميع التصديرات في star كان من الممكن أن تتساقط حالات الغموض التي تحمل الاسم نفسه بصمت في TS، لذا فُصلت صراحةً وفق اتفاق هذا المستودع (بمحاذاة معالجة `getDefaultDelay → getPopconfirmDefaultDelay`).
+
+**إدراك الاتجاه في الأبعاد**: يُطبِّق `getDrawerPanelStyle` الـ size على width (بالنسبة لـ left/right) أو height (بالنسبة لـ top/bottom) وفقاً للاتجاه—وهذا تنازل «يُعبِّر prop واحد (size) عن بُعدين»، وهو أبسط من propين منفصلين `width` / `height`.
+
+**ثوابت القيم الافتراضية**: `LH_DRAWER_DIRECTION_DEFAULT = 'right'` و`LH_DRAWER_SIZE_DEFAULT = '30%'`، لكي تستعين بها `withDefaults` / defaultProps في طبقة UI، ضماناً للتماثل بين الأطراف الثلاثة.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `normalizeDrawerSize` | `(size: string \| number \| undefined) => string` | سلسلة الأبعاد | رقم → px، والقيمة الفارغة → الافتراضي |
+| `getDrawerPanelStyle` | `(direction, size?) => Record<string, string>` | الأنماط | الاتجاه هو الذي يحدد width/height |
+| `getDrawerClass` | `(state: { direction }) => string[]` | أسماء الأصناف | مُعدِّل الاتجاه |
+| `canDrawerClose` | `(state, reason: 'maskClick' \| 'escape') => boolean` | هل يُسمح بالإغلاق | بوابة الخروج |
+| `shouldDrawerTrapFocus` | `(state: { modelValue, lockScroll }) => boolean` | هل يتم التقييد | قرار (دون لمس DOM) |
+| `getDrawerAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | حزمة سمات aria | دلالة dialog |
+
+## تعريفات الأنواع
+
+```ts
+export type LhDrawerDirection = 'right' | 'left' | 'top' | 'bottom'
+
+export interface LhDrawerState {
+  direction?: LhDrawerDirection
+  size?: string | number
+  modelValue?: boolean
+  title?: string
+  maskClosable?: boolean
+  showClose?: boolean
+  lockScroll?: boolean
+  closeOnEsc?: boolean
+}
+
+export const LH_DRAWER_DIRECTION_DEFAULT: LhDrawerDirection = 'right'
+export const LH_DRAWER_SIZE_DEFAULT = '30%'
+```
+
+## إمكانية الوصول
+
+يبقى الدرج على صعيد إمكانية الوصول **مربع حوار** (لا يوجد في APG نمط مخصص للدرج):
+
+```ts
+getDrawerAria({ id: 'lh-drawer-1', titleId: 'lh-drawer-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-drawer-1', 'aria-labelledby': 'lh-drawer-title' }
+```
+
+- لاحظ أن `aria-modal: true` يُخرَج **بلا قيد شرط**—حتى لو لم تعرض طبقة UI قناعاً ولم تُقيِّد التركيز. إذا كان درجك غير مشروط (لا يحجب الخلفية)، فعلى طبقة UI استبدال `aria-modal: false` أو دور آخر، كي لا يعتقد قارئ الشاشة خطأً أن الخلفية غير قابلة للوصول.
+- تنازل إدارة التركيز: الدرج المشروط (`lockScroll` مع وجود قناع) يجب أن يُقيِّد التركيز؛ أما الدرج غير المشروط (بلا قناع، ويمكن التفاعل مع الخلفية في الوقت نفسه) **فلا يجب تقييده**—يُعيد `shouldDrawerTrapFocus` القيمة false ولا تُفعّل طبقة UI focus-trap.
+- **إيماءات السحب ولوحة المفاتيح**: السحب من الحافة للإغلاق على الأجهزة المحمولة هو تفاعل إيمائي، ومقيله على لوحة المفاتيح هو Esc (الفرع `escape` في `canDrawerClose`). يجب أن يتوافر الاثنان معاً، وإلا فلن يتمكن مستخدمو لوحة المفاتيح من الإغلاق.
+- يجب أن يملأ الدرج في اتجاهَي top/bottom عرض الشاشة على الأجهزة المحمولة، مع بقاء `aria-modal` وتقييد التركيز كالمعتاد.
+
+## أمثلة الاستخدام
+
+```ts
+import { normalizeDrawerSize, getDrawerPanelStyle, canDrawerClose } from '@lh-ui/share/core/drawer'
+
+normalizeDrawerSize(300)      // '300px'
+normalizeDrawerSize('50%')    // '50%'
+normalizeDrawerSize(undefined) // '30%' (الافتراضي)
+normalizeDrawerSize('')       // '30%'
+
+getDrawerPanelStyle('right', 300)   // { width: '300px' }
+getDrawerPanelStyle('bottom', '40%') // { height: '40%' }
+getDrawerPanelStyle('left')          // { width: '30%' }
+
+canDrawerClose({ maskClosable: false, closeOnEsc: true }, 'maskClick')  // false
+canDrawerClose({ maskClosable: false, closeOnEsc: true }, 'escape')     // true
+canDrawerClose({}, 'escape')   // true (الإغلاق بـ Esc مسموح افتراضياً)
+canDrawerClose({}, 'maskClick') // false (الإغلاق بنقر القناع غير مسموح افتراضياً)
+
+getDrawerClass({ direction: 'right' })  // ['lh-drawer', 'lh-drawer--right']
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-drawer-fade">
+    <div v-if="visible" :class="getDrawerClass({ direction })">
+      <div v-if="showMask" class="lh-drawer__mask" @click="onMaskClick" />
+      <transition :name="`lh-drawer-slide-${direction}`">
+        <div
+          v-if="visible"
+          class="lh-drawer__panel"
+          :class="`lh-drawer__panel--${direction}`"
+          :style="getDrawerPanelStyle(direction, size)"
+          v-bind="getDrawerAria({ id: drawerId, titleId })"
+        >
+          <header class="lh-drawer__header">
+            <h3 class="lh-drawer__title" :id="titleId">{{ title }}</h3>
+            <button v-if="showClose" type="button" class="lh-drawer__close" aria-label="إغلاق" @click="close">✕</button>
+          </header>
+          <div class="lh-drawer__body"><slot /></div>
+          <footer v-if="$slots.footer" class="lh-drawer__footer"><slot name="footer" /></footer>
+        </div>
+      </transition>
+    </div>
+  </transition>
+</teleport>
+```
+
+```tsx
+// React: حركة انزلاق لكل من الاتجاهات الأربعة؛ وصنف الاتجاه هو الذي يحدد نقطة بداية transform
+// right: translateX(100%) → 0؛ bottom: translateY(100%) → 0
+```
+
+```ts
+// uniapp: تحديد fixed + حركة transform؛ ويُحكم على الإغلاق بسحب الحافة يدوياً عبر @touchstart/@touchmove/@touchend
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-drawer` | الصنف الأساسي |
+| `.lh-drawer--{right\|left\|top\|bottom}` | الاتجاه (يحدد حركة القناع وتموضع اللوحة) |
+| `.lh-drawer__mask` | القناع |
+| `.lh-drawer__panel` | جسم اللوحة |
+| `.lh-drawer__panel--{direction}` | تموضع اللوحة (fixed + ملامسة الحافة المقابلة) |
+| `.lh-drawer__header` / `__title` / `__close` | الرأس |
+| `.lh-drawer__body` | منطقة المحتوى (قابلة للتمرير) |
+| `.lh-drawer__footer` | التذييل |
+
+اللوحة `--lh-bg-color`، والقناع `rgba(0, 0, 0, 0.45)` (أخف قليلاً من dialog، فالدرج دلالةً أقل اشتراطاً).
+
+تُدار أسماء أصناف الحركة الانتقالية بواسطة mixin اسمه `lh-transition-ends` في `styles/theme/common/transition.scss` (لسد فجوة الفرق بين الأطراف في `-leave-to`)، ولم تعد أنماط المكوّنات تكتب اسمين مزدوجين يدوياً (الخط الأحمر 2).
+
+## ملاحظات
+
+- **وحدة `size`**: الرقم هو px، والسلسلة تُمرَّر كما هي (تدعم `'30%'` / `'50vh'`). `'50%'` تكون نسبةً إلى **إطار العرض**، لا إلى العنصر المُطلِق.
+- **الحجم الافتراضي لأدراج top/bottom**: `LH_DRAWER_SIZE_DEFAULT` هو `'30%'`، أي ارتفاع 30% من إطار العرض بالنسبة لاتجاهَي top/bottom—ويجب تمرير `'100%'` صراحةً للأدراج الكاملة على الأجهزة المحمولة.
+- **الاتجاه والحركة الانتقالية**: يحتاج كل اتجاه من الاتجاهات الأربعة إلى حركة انزلاق خاصة (نقطة بداية transform مختلفة). تختار طبقة UI اسم الحركة وفقاً للاتجاه، أما core فلا يتدخل في الحركة.
+- **الأدراج المتداخلة**: فتح درج أيمن داخل درج أيمن يجعل الثاني يغطي الأول؛ استخدم اتجاهات مختلفة أو zIndex للتمييز. وتُعاد حالة التركيز كما في dialog (عند إغلاق الداخلي يُعاد التركيز إلى عنصره المُطلِق).
+- **تمرير المحتوى**: عندما يكون محتوى الدرج طويلاً جداً، اضبط `overflow: auto` على `__body`؛ ويبقى التذييل ثابتاً ضمن إطار العرض (تخطيط flex)، ولا تدع المحتوى يدفع التذييل للخارج.
+- **الفجوة التاريخية في `closeOnEsc`**: في الإصدارات القديمة كان هذا prop مُعلَناً دون أن يقرأه logic، ولم يصبح السلوك نافذاً إلا بعد الترقية—إذا كان هناك من يعتمد على السلوك القديم «Esc يُغلق دائماً»، فانتبه لتمرير `closeOnEsc` صراحةً.
+- **الاختيار بين dialog والدرج**: للتفاعلات المقاطعة استخدم dialog (تأكيد الحذف)، وللعرض المتوازي استخدم drawer (تفاصيل الطلب). ما لا يحتاج المستخدم للتوقف لمعالجته لا ينبغي أن يستخدم طبقة مشروطة.
+
+<FnPlayground module="drawer" fn="getDrawerPanelStyle" params='{"direction": "bottom", "size": "40%"}' />

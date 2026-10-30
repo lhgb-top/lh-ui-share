@@ -1,0 +1,133 @@
+---
+title: 0.4.0 移行ガイド
+description: LH プレフィックス改名マッピング表 —— 型・定数・プリセット識別子の機械的置換リスト
+---
+
+# 0.4.0 移行ガイド
+
+0.4.0 では本リポジトリのサードパーティ以外の公開シンボルに `LH` プレフィックスを一括で付与し、
+plus リポジトリの `docs/project/development-guide.md` にあるファミリー命名規約と揃えました
+（背景は[命名規約](/ja/guide/naming)を参照）。
+
+**すべて識別子レベルの機械的置換**で、動作は変わらず、エクスポートパスも変わりません。各 UI
+ライブラリ（plus / vue2 / uniapp）は改名済みです。独立ユーザーは以下のマッピング表に従って
+import を変更してください。
+
+## 型 / インターフェイス：`LhXxx`
+
+| 旧 | 新 | 所属 |
+| --- | --- | --- |
+| `ThemePreset` | `LhThemePreset` | `theme` |
+| `ThemePresetName` | `LhThemePresetName` | `theme` |
+| `ThemeVars` | `LhThemeVars` | `theme` |
+| `SxProps` | `LhSxProps` | `core/shared/sx` |
+| `DOMRectLike` | `LhDOMRectLike` | `core/shared/popper` |
+| `ComputePositionOptions` | `LhComputePositionOptions` | `core/shared/popper` |
+| `PopperPosition` | `LhPopperPosition` | `core/shared/popper` |
+| `PtAttrs` | `LhPtAttrs` | `core/shared/pt` |
+| `SanitizeNumberOptions` | `LhSanitizeNumberOptions` | `core/shared/sanitize` |
+| `VirtualRange` | `LhVirtualRange` | `core/shared/virtual` |
+| `AxisRange` | `LhAxisRange` | `core/shared` |
+| `LocalePath` | `LhLocalePath` | `locales` |
+| `Leaves` | `LhLeaves` | `types/locale` |
+| `LocaleOptions` | `LhLocaleOptions` | `types/locale` |
+
+## 定数：`LH_<モジュール>_<概念>`
+
+| 旧 | 新 | 所属 |
+| --- | --- | --- |
+| `DEFAULT_THEME` | `LH_THEME_DEFAULT` | `core/config` |
+| `DEFAULT_DRAWER_DIRECTION` | `LH_DRAWER_DIRECTION_DEFAULT` | `core/drawer` |
+| `DEFAULT_DRAWER_SIZE` | `LH_DRAWER_SIZE_DEFAULT` | `core/drawer` |
+| `DEFAULT_DROPDOWN_PLACEMENT` | `LH_DROPDOWN_PLACEMENT_DEFAULT` | `core/dropdown` |
+| `DROPDOWN_TRIGGERS` | `LH_DROPDOWN_TRIGGERS` | `core/dropdown` |
+| `DEFAULT_POPCONFIRM_TYPE` | `LH_POPCONFIRM_TYPE_DEFAULT` | `core/popconfirm` |
+| `DEFAULT_POPCONFIRM_PLACEMENT` | `LH_POPCONFIRM_PLACEMENT_DEFAULT` | `core/popconfirm` |
+| `POPOVER_TRIGGERS` | `LH_POPOVER_TRIGGERS` | `core/popover` |
+| `DEFAULT_POPOVER_PLACEMENT` | `LH_POPOVER_PLACEMENT_DEFAULT` | `core/popover` |
+| `THEME_PRESETS` | `LH_THEME_PRESETS` | `theme` |
+| `PRESET_THEME_STYLE_ID` | `LH_PRESET_THEME_STYLE_ID` | `theme` |
+
+デフォルト値の定数は **`LH_<モジュール>_<概念>_DEFAULT`**（DEFAULT は**末尾**）であり、
+`LH_DEFAULT_<...>` ではない点に注意してください。
+
+## テーマプリセットオブジェクト：小文字 → `LhXxx`
+
+| 旧 | 新 |
+| --- | --- |
+| `cerblue` | `LhCerblue` |
+| `songhua` | `LhSonghua` |
+| `zhusha` | `LhZhusha` |
+| `shuimo` | `LhShuimo` |
+| `golden` | `LhGolden` |
+
+## 変更しないもの（適用除外）
+
+以下のシンボルは**元の名前を維持**します。移行時に触らないでください：
+
+| シンボル | 理由 |
+| --- | --- |
+| `zhCN` / `enUS` | 標準的な locale 命名であり、3 つの UI ライブラリの公開 API として再エクスポートされる |
+| プリセット名の**文字列値**（`name: 'cerblue'` など） | ユーザーが ConfigProvider の `theme` に書く設定値で、変更するとすべての下流設定が壊れる |
+| 関数名（`getThemeVars` / `sxToStyle` など） | 今回は定数 / 型 / インターフェイス / クラスのみを収束 |
+
+```ts
+// ✅ 移行後
+import { LH_THEME_PRESETS, LhCerblue, getThemeVars } from '@lh-ui/share/theme'
+import type { LhThemePreset, LhSxProps } from '@lh-ui/share/core/shared/sx'
+
+const preset: LhThemePreset = LhCerblue
+getThemeVars('cerblue')          // 文字列値は変わらない
+```
+
+## 一括置換の例
+
+```ts
+// before
+import { THEME_PRESETS, PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+import type { SxProps, ThemeVars } from '@lh-ui/share'
+
+// after
+import { LH_THEME_PRESETS, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+import type { LhSxProps, LhThemeVars } from '@lh-ui/share'
+```
+
+## 今回のリリースのその他の内容
+
+改名のほか、0.4.0 には次の未リリース changeset が含まれます：
+
+- **ローカル連携とスタイルガバナンス**（minor）——ファミリー構成の alias 機構、
+  `verify:styles` の 6 項目検証の導入
+- **3 リポジトリ監査修正**（minor）
+- **高さトークン特集**（minor）——`--lh-control-height-*` トークンを新設してコントロールの
+  外高を統一。**視覚的な破壊的変更あり**：後述の「コントロールの高さの変化」を参照
+- **divider 縦方向サポートの文案**（minor）——縦区切り線がデフォルトスロットの文案を
+  サポートし、`aria-orientation="vertical"` がついに到達可能に
+- **GUI リグレッション欠陥バッチ**（patch）——Form 必須文案の優先度（ユーザー定義の
+  `message` が合成ルールに飲み込まれなくなる）、深い主色プリセットの暗色での明度調整
+  （水墨などのプリセットの主要ボタンが暗色でもほぼ見えなくなる問題）など
+- **date-picker 循環依存の解体**（patch）——`formatDate` / `parseDate` を
+  `core/shared/date` へ降格し、`logic ↔ adapter` の二項循環を単方向に分解
+- **divider のボーダースタイルと単体テスト**（patch）
+- **フォームコントロールの中央揃え修正**（patch）
+- **steps のタイトル折り返しと行分割**（patch）
+- **hairline マーカー規則の廃止**（patch）——uniapp v3 は px を直接出力するため、新規の
+  1px ボーダーに `/* hairline */` マーカーは不要に（過去の 65 箇所のマーカーは通常の
+  コメントとして残す）
+- **ドキュメントサイト**（minor）——いまご覧のこのサイトです
+
+## コントロールの高さの変化（視覚的な破壊的変更）
+
+`--lh-control-height-{mini,small,medium,large,x-large}` トークンを新設（意味はコントロールの
+**外高 border-box**）。すべてのフォームコントロールがトークンを参照するようになりました。
+従来、多くのコントロールは `box-sizing: border-box` を宣言していなかったため、外高で統一した
+結果、以下のコントロールの実際のレンダリング高さは**低く**なります：
+
+| コントロール | 変化 |
+| --- | --- |
+| input | padding 由来から固定高さに変更：mini 28→20、small 32→24、medium 39→32、large 50→40 |
+| その他のフォームコントロール | 同じ高さ段に統一され、同一フォーム内で混在しても垂直中心とベースラインが揃う |
+
+これは**視覚**レベルの破壊（DOM 構造と API は不変）です。プロジェクトに旧ピクセル値を
+前提としたスナップショットテストや固定高さレイアウトがある場合は、リグレッション確認が
+必要です。

@@ -1,0 +1,163 @@
+---
+title: テーマシステム概要
+description: '5 つのランタイムプリミティブと SCSS トークンのデュアルソース同期：JS 側が CSS 変数を注入し、コンポーネントは var() だけを消費する'
+---
+
+import PresetPreview from '../../../../components/PresetPreview.astro'
+
+lh-ui のテーマシステムは**デュアルソース**です。この点を先にはっきりさせておきます：
+
+| ソース | 内容 | 消費方法 |
+| --- | --- | --- |
+| `styles/theme/common/var.scss` + `var-dark.scss` | CSS カスタムプロパティ（`--lh-*`） | コンポーネントの SCSS で `var(--lh-*)`、ランタイム評価 |
+| `styles/theme/common/variables.scss` | SCSS 変数（`$lh-*`） | コンパイル期に具体的な値にベイクされ計算に使われる（色関数、シャドウ合成など） |
+| `src/theme/themes/index.ts` | 5 つのプリセットの `vars` マッピング | JS がランタイムで `<style>` に注入（ConfigProvider / ThemeStudio） |
+
+**コンポーネントが認識するのは CSS 変数だけです**。JS 側のテーマシステムが存在する意義は、ある設計トークンのセットを**ランタイムで** DOM の部分木に注入し、コンポーネントが再コンパイルなしでスキンを切り替えられるようにすることです。
+
+## 2 つのパス
+
+### 1. プリセットテーマ（すぐに使える）
+
+5 つの内蔵プリセット：青花瓷（せいがじ）/ 松花绿（しょうかりょく）/ 朱砂（しゅしゃ）/ 水墨（すいぼく）/ 藤黄（とうおう）。UI 層は `buildPresetStyleText(vars)` で `<style>` テキストを生成して DOM に書き込みます。
+
+```ts
+import { LH_THEME_PRESETS, buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+const preset = LH_THEME_PRESETS[0]                    // 青花瓷
+const styleText = buildPresetStyleText(preset.vars)  // CSS テキストに組み立てる
+// → <style id="lh-preset-theme"> に注入
+```
+
+詳細は[テーマプリセット](/ja/theme/presets)を参照。
+
+### 2. ランタイムカスタマイズ（themeVars）
+
+ConfigProvider は `themeVars` を受け取り、キーは**省略記法**です（`--lh-` プレフィックスが自動的に補われます）：
+
+```vue
+<lh-config-provider :theme-vars="{ 'primary-color': '#1677ff' }">
+  <App />
+</lh-config-provider>
+```
+
+詳細は[ランタイムカスタマイズ](/ja/theme/customization)を参照。
+
+## 5 つのランタイムプリミティブ
+
+`src/theme/index.ts` がエクスポートします（実装は `src/theme/themes/index.ts`）：
+
+| プリミティブ | シグネチャ | 用途 |
+| --- | --- | --- |
+| `LH_THEME_PRESETS` | `LhThemePreset[]` | すべてのプリセットの配列、docs と ConfigProvider がこれを走査する |
+| `registerTheme(preset)` | `(preset: LhThemePreset) => void` | プリセットを登録または上書き（同名なら上書き、内蔵プリセットも上書き可能） |
+| `getThemePreset(name)` | `(name: LhThemePresetName) => LhThemePreset \| undefined` | 名前からプリセットを取得 |
+| `getThemeVars(name)` | `(name: LhThemePresetName) => LhThemeVars \| undefined` | 名前からその vars を取得（未登録なら `undefined`） |
+| `buildPresetStyleText(vars)` | `(vars: Record<string, string>) => string` | vars を注入可能な `<style>` テキストに組み立てる |
+
+加えてコントラスト比計算のプリミティブ（`verify:theme` と ThemeStudio が使用）：
+
+| プリミティブ | シグネチャ | 用途 |
+| --- | --- | --- |
+| `getRelativeLuminance(color)` | `(color: string \| undefined) => number \| undefined` | WCAG の相対輝度（非 hex なら `undefined`） |
+| `getContrastRatio(a, b)` | `(a, b: string \| undefined) => number \| undefined` | WCAG のコントラスト比（1〜21） |
+| `buildPresetDarkVars(vars)` | `(vars: Record<string, string>) => Record<string, string>` | プリセットの vars から暗色ブロックの変数を導出 |
+| `LH_PRESET_THEME_STYLE_ID` | `'lh-preset-theme'` | 注入先要素の固定 id |
+
+## 型
+
+```ts
+export type LhThemePresetName =
+  | 'cerblue' | 'songhua' | 'zhusha' | 'shuimo' | 'golden'
+  | (string & {})          // ← カスタム名を開放しつつ、リテラルの自動補完も残す
+
+export interface LhThemePreset {
+  name: LhThemePresetName
+  label: string            // 中国語名称
+  labelEn: string          // 英語名称
+  description: string      // テーマの説明
+  vars: Record<string, string>   // CSS 変数のマッピング
+}
+
+export type LhThemeVars = Record<string, string>
+```
+
+`LhThemePresetName` 末尾の `(string & {})` は TS のテクニックです：最初の 5 つのリテラルの自動補完を保ちつつ、`registerTheme({ name: 'my-brand', ... })` で任意の文字列を渡せるようにします。未登録の名前は `getThemePreset` / `getThemeVars` で `undefined` を返します。
+
+## 注入制約：style 要素のみ許可
+
+これはテーマシステムで**最も重要な制約**で、一度罠を踏んでいます：
+
+```ts
+// ✅ 正しい：<style> 要素を書く、詳細度 0,1,0
+const el = document.createElement('style')
+el.id = LH_PRESET_THEME_STYLE_ID
+el.textContent = buildPresetStyleText(vars)
+document.head.appendChild(el)
+
+// ❌ 誤り：documentElement のインライン style に書く、詳細度 1,0,0,0
+Object.assign(document.documentElement.style, vars)
+```
+
+**理由**：インライン style の詳細度は**いかなるスタイルシートよりも高く**、`var-dark.scss` の暗色変数の宣言全体（`[data-theme='dark'], .dark { --lh-*: ... }`）を圧倒してしまいます——ダークモードの配色が歪み、暗色変数がインラインの明色の値で蓋をされます。
+
+`buildPresetStyleText` が生成するテキストの構造：
+
+```css
+:root {
+  --lh-primary-color: #2B4C7C;
+  /* ...プリセットの vars 全部 */
+}
+
+[data-theme='dark'],
+.dark {
+  --lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent);
+  --lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff);
+  /* 主色が深いプリセットは主色をさらに明るくする */
+}
+```
+
+暗色ブロックは `:root` ブロックの**後**にあり、同一の詳細度では後者が勝ちます——したがって主色が浅いプリセットが `:root` で宣言した `--lh-selected-color` の明色の値は暗色に漏れ込みません。暗色ブロックの内容は `buildPresetDarkVars` が導出します。
+
+## buildPresetDarkVars の暗色導出
+
+3 つのルール：
+
+1. **2 つの変数を無条件に再定義**（`var()` で参照し、適用先の要素上で評価され、現在の主色に追従）：
+   - `--lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent)`
+   - `--lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff)`
+
+2. **深い主色の明るさ補正**：`--lh-primary-color` が暗色のページ地 `#1A1A2E`（`DARK_PAGE_BG`）に対するコントラスト比が 3 未満（`DARK_PRIMARY_CONTRAST_THRESHOLD`）なら深い主色と判定し、さらに明るくします：
+   - `--lh-primary-color: color-mix(in srgb, <字面値> 55%, #fff)` —— **字面値を直接代入**します。`color-mix(var(--lh-primary-color) …)` は CSS の自己参照ループを形成するため
+   - `--lh-primary-color-hover: color-mix(in srgb, var(--lh-primary-color) 70%, #fff)`
+   - `--lh-primary-color-active: color-mix(in srgb, var(--lh-primary-color) 85%, #000)`
+   - `--lh-color-on-primary: #101410`（`INK_ON_LIGHTENED_PRIMARY`）—— 明るくした後は白字のコントラストが逆に 3:1 に満たなくなるため、墨字に切り替える
+
+3. コントラスト比の計算は `getContrastRatio(getRelativeLuminance(primary), getRelativeLuminance(DARK_PAGE_BG))` を使います。非 hex の値（`var()` を含む動的な値）は `undefined` を返し、「判定不能」として扱います——だからプリセット vars の主色は字面の hex でなければなりません。
+
+## デュアルソース同期
+
+**内蔵テーマの主色を変更するときは、両方を同期して変更します**：
+
+1. `src/theme/themes/index.ts` のプリセットの `vars['--lh-primary-color']`（JS のランタイム注入用）
+2. `styles/theme/common/variables.scss` の `$lh-primary-color`（コンポーネントの SCSS の計算用）
+
+`tests/unit/theme.spec.ts` に一致性の回帰テストがあり、`pnpm test` を走らせれば不同期を弾きます。
+
+## テーマにできないこと
+
+- **コントロールの高さは変えられません**：高さトークン `--lh-control-height-*` はまだ確立されていません（各コントロールの高さが不統一、「高さトークン専用」として今後の changeset に記録済み）。
+- **コンポーネントの構造は変えられません**：テーマはトークンの値を交換するだけで、レイアウトと DOM 構造は変わりません。
+- **紋様は独立したシステムです**：[中華風紋様](/ja/theme/patterns)を参照。
+
+## プリセットプレビュー
+
+<PresetPreview />
+
+## 関連ドキュメント
+
+- [テーマプリセット](/ja/theme/presets) —— 5 つの内蔵プリセットの詳解
+- [デザイントークン](/ja/theme/tokens) —— 明色 185 + 暗色 118 の全表
+- [ランタイムカスタマイズ](/ja/theme/customization) —— themeVars / componentTheme / patternComponents
+- [ダークモード](/ja/theme/dark-mode) —— 仕組みとコンパイル期にベイクされる罠
+- [中華風紋様](/ja/theme/patterns) —— 6 種の内蔵テクスチャ

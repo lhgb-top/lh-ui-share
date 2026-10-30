@@ -1,0 +1,230 @@
+---
+title: keyboard —— خوارزميات التنقل بلوحة المفاتيح
+description: 'ثوابت مفاتيح LH_KEYS، وثلاث مجموعات خوارزميات للقوائم / الشبكات / range مع type-ahead، يشترك فيها select / menu / tree / tabs'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+التفاعل بلوحة المفاتيح في المكوّنات سهلة الوصول له جواب معياري (أنماط listbox / menu / grid في APG)، ولكن حساب «إلى أي عنصر يقفز مفتاح السهم العلوي» لو كُتب في select / menu / tree / tabs / segmented لَأخطأ كل واحد بطريقته. يحوِّله `shared/keyboard` إلى دوال نقية: المدخلات «قائمة + الفهرس الحالي + اتجاه»، والمخرجات «الفهرس الهدف».
+
+**طبقة core لا تستمع إلى أي مفتاح**—فالاستماع إلى أحداث لوحة المفاتيح من شأن طبقة واجهة المستخدم (`@keydown` في Vue3، و`onKeyDown` في React). وما تقدمه هذه الوحدة هو الحكم والحساب فقط.
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_KEYS,
+  isActivationKey,
+  getNextListIndex,
+  getNextGridCell,
+  getNextRangeValue,
+  findTypeAheadIndex,
+  getRovingTabIndex,
+  type LhListNavigationOptions,
+} from '@lh-ui/share/core/shared/keyboard'
+```
+
+## الثوابت والأنواع
+
+```ts
+// ثوابت أسماء المفاتيح (KeyboardEvent.key)، يُمنع في طبقة واجهة المستخدم كتابة قيمًا حرفية مكشوفة
+export const LH_KEYS = {
+  Escape: 'Escape',
+  Enter: 'Enter',
+  Space: ' ',          // تنبيه: القيمة مسافة واحدة
+  ArrowUp: 'ArrowUp',
+  ArrowDown: 'ArrowDown',
+  ArrowLeft: 'ArrowLeft',
+  ArrowRight: 'ArrowRight',
+  Home: 'Home',
+  End: 'End',
+  Tab: 'Tab',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
+} as const
+
+// يقبل حدثًا حقيقيًا أو قيمة key مكشوفة (لا غنى عنها لاختبار الدوال النقية)
+export type LhKeyEvent = KeyboardEvent | { key: string }
+
+// اتجاه التنقل: إزاحة عددية أو قيمتا حارس البداية والنهاية
+export type LhListDirection = 1 | -1 | 'first' | 'last'
+
+// الحد الأدنى من قيود عنصر القائمة: تكفيه علامة التعطيل، ويُحدد المستدعي الشكل الدقيق
+export interface LhListItem {
+  disabled?: boolean
+}
+
+export interface LhListNavigationOptions<T = unknown> {
+  loop?: boolean                    // تكرار من الأول إلى الأخير، افتراضي true
+  skipDisabled?: boolean            // تخطي العناصر المعطلة، افتراضي true
+  isDisabled?: (item: T) => boolean // حكم تعطيل مخصص، افتراضيًا يقرأ item.disabled
+}
+
+export interface LhGridNavOptions {
+  cols: number                      // عدد الأعمدة في كل صف
+  total: number                     // إجمالي خلايا الشبكة
+  loop?: boolean                    // تكرار داخل الصف / في الشبكة بأكملها، افتراضي false (عند الحد يُعاد null وتتولى طبقة واجهة المستخدم قلب الصفحة)
+}
+
+export interface LhRangeNavOptions {
+  min: number
+  max: number
+  step: number                      // خطوة مفاتيح الأسهم؛ غير المنتهية أو ≤0 تتدهور إلى 1 ولا يبقى سوى الاحتجاز عند الحدود
+  pageStep?: number                 // خطوة PageUp / PageDown، افتراضي max(step, (max-min)/10)
+}
+```
+
+## جدول الدوال
+
+### الحكم على المفاتيح
+
+| الدالة | التوقيع | الدور |
+| --- | --- | --- |
+| `isActivationKey` | `(e: LhKeyEvent) => boolean` | Enter أو Space |
+| `isArrowKey` | `(e: LhKeyEvent) => boolean` | مفاتيح الأسهم الأربعة |
+| `isEscapeKey` | `(e: LhKeyEvent) => boolean` | Escape (إغلاق الطبقة المنبثقة) |
+| `isHomeOrEndKey` | `(e: LhKeyEvent) => boolean` | Home / End (القفز إلى طرفي القائمة) |
+| `isSpaceKey` | `(e: LhKeyEvent) => boolean` | المسافة (المشاهد التي يلزم تمييزها عن Enter، كقلب الصفحات داخل حاوية قابلة للتمرير) |
+| `isHorizontalArrowKey` | `(e: LhKeyEvent) => boolean` | مفاتيح الأسهم الأفقية |
+| `isVerticalArrowKey` | `(e: LhKeyEvent) => boolean` | مفاتيح الأسهم العمودية |
+
+يكتفي `isHorizontalArrowKey` / `isVerticalArrowKey` بـ **الحكم على المفتاح الفيزيائي**—ففي تخطيط RTL ماذا يعني «السهم الأيسر»، «العنصر السابق» أم «العنصر التالي»، هو دلالة طبقة واجهة المستخدم، والخوارزم لا يقلبها نيابة عنك.
+
+### حساب التنقل
+
+| الدالة | التوقيع | الدور |
+| --- | --- | --- |
+| `getNextListIndex` | `<T>(items, current, direction, options?) => number` | تنقل القوائم العام، يُعيد الفهرس الهدف |
+| `findTypeAheadIndex` | `(labels: string[], query: string, startIndex?) => number` | تطابق أول حرف في type-ahead |
+| `getRovingTabIndex` | `<T>(items, activeIndex) => number` | roving tabindex: يُعيد فهرس العنصر الذي يجب أن يكون tabindex 0 |
+| `getNextGridCell` | `(current, key, opts: LhGridNavOptions) => number \| null` | تنقل الشبكة ثنائية الأبعاد (شبكة الأيام، شبكة الأشهر) |
+| `getNextRangeValue` | `(current, key, opts: LhRangeNavOptions) => number` | تنقل أداة range (خطو لوحة المفاتيح في slider) |
+
+### دلالة القيمة المُعادة من getNextListIndex
+
+هذا أكثر المواضع عرضة لسوء الاستعمال، فله شرح مستقل:
+
+| الحالة | القيمة المُعادة |
+| --- | --- |
+| `'first'` / `'last'` | الوصول المباشر إلى أول / آخر عنصر **مُمكَّن** |
+| التنقل العادي | الفهرس الهدف |
+| بلا تكرار وقد وصلنا إلى الحد | **التوقف عند الحد** (يُعيد فهرس الحد، لا -1) |
+| قائمة فارغة / جميع العناصر معطلة و`skipDisabled` | `-1` (لا يوجد عنصر متاح) |
+| عناصر الحد فقط معطلة وقد وصلنا إلى الحد | `-1` |
+| `current` خارج النطاق أو `-1` | يُعامل على أنه «غير محدد»: في الاتجاه الإيجابي يُؤخذ العنصر الأول، وفي السالب الأخير |
+
+**في حال عدم التكرار لا يُعاد -1 للدلالة على «بلغ النهاية»**—بل يُعيد فهرس الحد ليقف التركيز عند ذلك العنصر. وتقرر طبقة واجهة المستخدم بناءً عليه ما إذا كانت ستستدعي `preventDefault`؛ ولا يُعاد -1 إلا عند «عدم وجود عنصر قابل للاختيار فعلًا».
+
+### ما يُعيده getRovingTabIndex هو فهرس
+
+اسم الدالة قد يُضلِّل: فهي **تُعيد «فهرس العنصر الذي يجب أن يكون tabindex 0»**، لا قيمة tabindex ذاتها. ويضع المستدعي القيم بناءً عليه:
+
+```ts
+const activeIndex = getRovingTabIndex(items, selectedIndex)
+items.forEach((item, i) => (item.tabindex = i === activeIndex ? 0 : -1))
+```
+
+وهكذا يُضمَن أن في المجموعة بأكملها **يوجد دائمًا مرساة يمكن الدخول إليها عبر Tab**؛ وعندما لا يتوفر عنصر لـ `activeIndex` يُرجع إلى أول عنصر مُمكَّن، فلا يحدث أن تصبح المجموعة كلها -1 فلا تستطيع لوحة المفاتيح الدخول إليها.
+
+### قواعد المطابقة في findTypeAheadIndex
+
+- يتحقق التطابق حين **تبدأ** تسمية العنصر بسلسلة الاستعلام (غير حساس لحالة الأحرف).
+- يبدأ البحث الدائري **بعد** `startIndex` (افتراضي `-1`، أي من البداية).
+- يدعم تراكم عدة أحرف: فالمستخدم يكتب `zh` بسرعة، فتُراكم طبقة واجهة المستخدم سلسلة الاستعلام خلال 500ms، وتُفرغ عند انقضاء المهلة.
+- لا تطابق / `query` فارغ / `labels` فارغ ← `-1`.
+
+### التدفق بين الصفوف في getNextGridCell
+
+يتدفّق ArrowRight **عند نهاية الصف إلى بداية الصف التالي** (حركة متصلة داخل الإطار، ولا يُعاد `null` إلا بعد تجاوز حدود الشبكة بأكملها)؛ ويتحرك ArrowDown / ArrowUp عموديًا بمقدار `±cols`؛ أما Home / End فهما **بداية الصف / نهايته** (عند نقصان الصف الأخير عن `cols` تُجمّع نهاية الصف إلى `total`، فلا تقفز خارج الشبكة).
+
+المفاتيح غير التنقلية، وتجاوز الحد بلا تكرار، و`current` خارج النطاق، و`cols` / `total` ≤ 0 ← `null`.
+
+وكون `loop` افتراضيًا `false` مقصود: ففي لوحة التاريخ يعني «التجاوز الأيمن» عادةً **الانتقال إلى الشهر التالي**، وهذا القرار من شأن طبقة واجهة المستخدم، والخوارزم يقول فقط «بلغ النهاية».
+
+### getNextRangeValue يحتجز ولا يُسوِّي
+
+```ts
+getNextRangeValue(25, 'ArrowUp', { min: 0, max: 100, step: 10 })
+// 25 + 10 = 35 (دون محاذاة step)
+```
+
+**لماذا لا يُسوَّى**: فلو كانت القيمة الحالية 25 (قيمة غير محاذاة نتجت عن سحب المستخدم)، لقفز خوارزم التسوية أولًا إلى 30 ثم إلى 40، فتبدو وكأنها قفزت مرتين. وبالاكتفاء بالاحتجاز + الخطوة تبقى المحاذاة مسؤولية طبقة المكوّن عند كتابة localValue (الارتداد إلى التدريج عند إفلات السحب).
+
+والمفاتيح غير التنقلية **تُعيد `current` كما هو**—فيستدل المستدعي على «هل يلزمني معالجة هذا الضغط؟»، ويقرر ما إذا كان سيستدعي `preventDefault`.
+
+## أمثلة الاستخدام
+
+### تنقل لوحة المفاتيح في select (roving tabindex + list nav)
+
+```ts
+function onKeydown(e: KeyboardEvent) {
+  if (isArrowKey(e)) {
+    e.preventDefault()
+    const next = getNextListIndex(
+      options.value,
+      selectedIndex.value,
+      e.key === LH_KEYS.ArrowDown ? 1 : -1,
+      { loop: true },
+    )
+    if (next !== -1) selectedIndex.value = next
+  } else if (isHomeOrEndKey(e)) {
+    selectedIndex.value = getNextListIndex(
+      options.value,
+      -1,
+      e.key === LH_KEYS.Home ? 'first' : 'last',
+    )
+  } else if (isActivationKey(e)) {
+    open.value = !open.value
+  } else if (isEscapeKey(e)) {
+    open.value = false
+  }
+}
+```
+
+### شبكة أيام date-picker
+
+```ts
+const next = getNextGridCell(focusedIndex.value, e.key, {
+  cols: 7,                    // 7 أيام في الأسبوع
+  total: daysInMonth.value,   // عدد أيام الشهر الحالي
+})
+if (next === null) {
+  // تجاوز الحد ← قلب إلى الشهر السابق / التالي (تقرره طبقة واجهة المستخدم)
+  switchMonth(e.key === LH_KEYS.ArrowRight ? 1 : -1)
+} else {
+  focusedIndex.value = next
+}
+```
+
+### خطو لوحة المفاتيح في slider
+
+```ts
+if (isArrowKey(e) || isHomeOrEndKey(e) || e.key === LH_KEYS.PageUp || e.key === LH_KEYS.PageDown) {
+  e.preventDefault()
+  modelValue.value = getNextRangeValue(modelValue.value, e.key, {
+    min: props.min,
+    max: props.max,
+    step: props.step,
+  })
+}
+```
+
+### التنقل بإدخال الأحرف
+
+```ts
+// تراكم سلسلة الاستعلام (تُدير طبقة واجهة المستخدم مهلة 500ms)
+typeAheadBuffer.value += e.key
+const idx = findTypeAheadIndex(labels, typeAheadBuffer.value, selectedIndex.value)
+if (idx !== -1) selectedIndex.value = idx
+```
+
+## ملاحظات
+
+- **الاستماع في طبقة واجهة المستخدم**: توصيل `onKeydown`، وتوقيت `preventDefault`، واستدعاءات `focus()` بعد تبديل التركيز، كلها مسؤولية مكوّنات كل إطار؛ أما core فلا يقدم غير نتائج الحساب.
+- **تخطيط RTL**: يتحقق قلب دلالة مفتاحَي الأسهم الأيسر والأيمن بأن تعكس طبقة واجهة المستخدم `direction` قبل الاستدعاء، ويحتفظ الخوارزم بدلالته المادية للمفاتيح.
+- **القيمة الافتراضية لـ `isDisabled`**: يقرأ `item.disabled`، فإذا تعذرت القراءة اعتُبر غير معطّل—وعند تمرير عناصر من النوع `{}` تكون جميع العناصر قابلة للتنقل.
+- **أمان القائمة الفارغة**: جميع دوال التنقل تُعيد `-1` / `null` مع القائمة الفارغة، فيكفي أن تتحقق منها طبقة واجهة المستخدم، دون أن تُرفع أي خطأ.
+
+<FnPlayground module="keyboard" fn="getNextListIndex" params='{"items": [{"disabled": false}, {"disabled": true}, {"disabled": false}, {"disabled": false}], "current": 0, "direction": 1, "options": {"loop": true}}' />

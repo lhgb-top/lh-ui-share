@@ -1,0 +1,179 @@
+---
+title: dialog —— Диалог
+description: 'трафарет закрытия canClose, решение о центре фокуса shouldTrapFocus, три варианта позиционирования getDialogStyle, семантика dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Диалог — это модальный слой, который «прерывает текущий поток и требует, чтобы пользователь сначала разобрался с этим»: подтверждение удаления, заполнение формы, показ деталей. Его суть не в визуале, а в **блокировке фокуса и прокрутки** — модальность означает, что страница позади него недоступна для взаимодействия. `core/dialog` сводит «можно ли закрыть», «нужно ли перехватывать фокус» и «стили позиционирования» к чистым функциям, а сам перехват выполняет `core/shared/focus-trap`.
+
+## Когда использовать
+
+- В каждой платформе реализован `LhDialog`: подтверждение опасных действий, самостоятельные формы (более сфокусированные, чем выдвижная панель), показ важной информации.
+- Сценарии, требующие **модальности** (прерывание основного потока, обязательная обработка).
+- **Не использовать для**: немодальных коротких уведомлений (используйте `message` / `notification`); выдвижных панелей деталей, выезжающих сбоку (используйте `drawer`, он не перекрывает весь экран); простых подтверждений (используйте `popconfirm`, он легче).
+
+## Импорт
+
+```ts
+import {
+  canClose,
+  getDialogStyle,
+  getDialogPopperClass,
+  shouldTrapFocus,
+  getDialogAria,
+} from '@lh-ui/share/core/dialog'
+import type { LhDialogState } from '@lh-ui/share/core/dialog'
+```
+
+## Замысел дизайна
+
+**Два значения по умолчанию у `canClose` асимметричны**:
+
+- `closeOnClickModal` по умолчанию **false** (клик по маске не закрывает) — диалог обычно содержит форму или подтверждение, требующие явного действия пользователя; случайное закрытие по маске привело бы к потере введённых данных.
+- `closeOnPressEscape` по умолчанию **true** (Esc закрывает) — пользователям клавиатуры нужен запасной выход, это соглашение паттерна APG dialog.
+
+Эта асимметрия — намеренный опыт разработки: **защита от случайных действий, но с оставленным путём отступления**.
+
+**`shouldTrapFocus` принимает только решение**: он возвращает «включать ли перехват фокуса», а сам перехват реализуется UI-слоем совместно с `core/shared/focus-trap` (saveActiveElement + focusFirst при открытии, trapTabKey при keydown, inert обрабатывается setInertOutside, restoreActiveElement при закрытии возвращает фокус). Слой core не касается DOM.
+
+**Разделение труда в позиционировании `getDialogStyle`**: `top` / `center` / `bottom` обрабатываются выравниванием flexbox контейнера, а `marginTop` применяется только при `position: 'top'` или без явного указания — наложение marginTop поверх center/bottom конфликтовало бы с flexbox.
+
+**Класс visible у `getDialogPopperClass`**: используется как начальное/конечное состояние перехода для анимации, а не для управления видимостью (видимостью управляют `v-if` / `v-show`).
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `canClose` | `(state, reason: 'modalClick' \| 'escape') => boolean` | разрешено ли закрытие | трафарет закрытия |
+| `getDialogStyle` | `(state: { top?, zIndex?, position? }) => Record<string, string>` | стили | позиционирование и z-index |
+| `getDialogPopperClass` | `(state: LhDialogState) => string[]` | имена классов | состояние visible |
+| `shouldTrapFocus` | `(state: { visible, lockScroll }) => boolean` | перехватывать ли фокус | решение (без работы с DOM) |
+| `getDialogAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | пакет aria-атрибутов | семантика dialog |
+
+## Определения типов
+
+```ts
+export interface LhDialogState {
+  visible: boolean
+  lockScroll: boolean
+  closeOnClickModal: boolean   // по умолчанию false
+  closeOnPressEscape: boolean  // по умолчанию true
+  width: string | number | undefined
+  top: string | undefined
+  zIndex: number | undefined
+  position: 'top' | 'center' | 'bottom' | undefined
+}
+```
+
+## Доступность
+
+`getDialogAria` выводит семантику APG modal dialog:
+
+```ts
+getDialogAria({ id: 'lh-dialog-1', titleId: 'lh-dialog-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-dialog-1', 'aria-labelledby': 'lh-dialog-title' }
+
+getDialogAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true` сообщает программам чтения экрана, что фон недоступен (полноценным становится только в сочетании с inert / focus-trap).
+- **При наличии заголовка обязательно передавать `titleId`**; без заголовка `aria-labelledby` не выводится, и тогда UI-слой должен обеспечить запасной вариант `aria-label` — диалог без доступного имени объявляется программой чтения как пустое «диалоговое окно».
+- Управление фокусом (UI-слой): при открытии фокус входит в диалог (на первый фокусируемый элемент или в область содержимого), при закрытии **возвращается элементу-триггеру** — это стандартное соглашение перехвата фокуса, а пропуск возврата дезориентирует пользователей клавиатуры.
+- **`aria-modal` не Ersatz**: это лишь объявление, реальная изоляция фона опирается на реализацию inert в `core/shared/focus-trap`. «Ложная модальность», которая только объявляется, но не изолирует — частый дефект.
+- Если в диалоге есть форма, семантика Enter для отправки / Esc для закрытия должна быть ясной (при несохранённых изменениях перед закрытием по Esc следует запрашивать повторное подтверждение).
+
+## Примеры использования
+
+```ts
+import { canClose, shouldTrapFocus, getDialogStyle } from '@lh-ui/share/core/dialog'
+
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'modalClick')  // false
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'escape')      // true
+canClose({}, 'escape')        // true (по умолчанию Esc закрывает)
+canClose({}, 'modalClick')    // false (по умолчанию клик по маске не закрывает)
+
+shouldTrapFocus({ visible: true, lockScroll: true })   // true
+shouldTrapFocus({ visible: true, lockScroll: false })  // false
+shouldTrapFocus({ visible: false, lockScroll: true })  // false
+
+getDialogStyle({ top: '15vh', position: 'top', zIndex: 2000 })
+// { marginTop: '15vh', zIndex: '2000' }
+getDialogStyle({ top: '15vh', position: 'center' })
+// {} (center центрируется flexbox, marginTop не накладывается)
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-dialog-fade">
+    <div v-if="visible" class="lh-dialog__wrapper" :style="{ zIndex }">
+      <div class="lh-dialog__mask" @click="onMaskClick" />
+      <div
+        :class="getDialogPopperClass({ visible })"
+        :style="getDialogStyle({ top, zIndex, position })"
+        v-bind="getDialogAria({ id: dialogId, titleId })"
+      >
+        <header class="lh-dialog__header">
+          <h3 class="lh-dialog__title" :id="titleId">{{ title }}</h3>
+          <button v-if="showClose" type="button" class="lh-dialog__close" aria-label="Закрыть" @click="close">✕</button>
+        </header>
+        <div class="lh-dialog__body"><slot /></div>
+        <footer class="lh-dialog__footer"><slot name="footer" /></footer>
+      </div>
+    </div>
+  </transition>
+</teleport>
+```
+
+```ts
+function onMaskClick() {
+  if (canClose({ closeOnClickModal, closeOnPressEscape }, 'modalClick')) close()
+}
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && canClose({ closeOnClickModal, closeOnPressEscape }, 'escape')) close()
+}
+
+// Перехват фокуса (совместно с shared/focus-trap)
+watch(visible, async (v) => {
+  if (v) { savedFocus = saveActiveElement(); await nextTick(); focusFirst(dialogRef.value) }
+  else { restoreActiveElement(savedFocus) }
+})
+```
+
+```tsx
+// React: для переходов используйте CSSTransition или headless-подход; перехват фокуса — на том же ядре focus-trap
+```
+
+```ts
+// uniapp: <view> + фиксированное позиционирование; блокировку прокрутки обрабатывает UI-слой
+// (в мини-программах нет прокрутки body, которую можно заблокировать,
+// область содержимого оборачивают в scroll-view); canClose / getDialogAria из core используются как есть
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-dialog__wrapper` | внешний слой (flex-центрирование + zIndex) |
+| `.lh-dialog__mask` | маска (полупрозрачный чёрный) |
+| `.lh-dialog__popper` | тело диалога |
+| `.lh-dialog__popper--visible` | развёрнутое состояние (конечная точка перехода) |
+| `.lh-dialog__header` / `__title` / `__close` | шапка |
+| `.lh-dialog__body` | область содержимого |
+| `.lh-dialog__footer` | область кнопок в подвале |
+
+Маска `rgba(0, 0, 0, 0.5)`; тело использует `--lh-bg-color` + скругление `--lh-radius-base` + тень; ширина управляется пропом `width` (по умолчанию 50%).
+
+## Замечания
+
+- **Конфликт `closeOnClickModal` с формами**: для диалогов с формой рекомендуется явно задавать `false` (это и значение по умолчанию), чтобы пользователь не потерял введённые данные при случайном клике по маске.
+- **Связь `lockScroll` с перехватом фокуса**: `shouldTrapFocus` требует, чтобы `lockScroll` также был true — блокировка прокрутки обычно означает полную модальность, при которой перехват фокуса — сопутствующее поведение. Блокировка прокрутки без перехвата фокуса создаёт разрывающий опыт, когда «Tab убегает на страницу позади».
+- **Вложенные диалоги**: zIndex внутреннего диалога должен быть выше внешнего (управляется счётчиком с автоувеличением), а перехват фокуса должен вкладывать сохранённый фокус (при закрытии внутреннего фокус возвращается внутреннему элементу-триггеру, а не самому внешнему).
+- **Управление zIndex**: core только записывает переданное значение в стили и не увеличивает его. UI-слой должен использовать глобальный счётчик zIndex (чтобы избежать конфликтов z-index с message / notification).
+- **Момент монтирования переходной анимации**: переключение `v-if` немедленно размонтирует DOM; анимации закрытия требуется содействие `<transition>` — если DOM уничтожается посреди анимации, возврат фока не получится; используйте `@after-leave`, чтобы отложить реальную логику размонтирования.
+- **`position: 'bottom'`**: диалог с нижним позиционированием (в стиле мобильного action sheet) выравнивается через flex-end во flexbox, `top` не действует.
+- **`width` в процентах**: `'50%'` отсчитывается от ширины маски; на узких мобильных экранах лучше указать `'90%'` или конкретное px-значение.
+
+<FnPlayground module="dialog" fn="canClose" params='{"state": {"closeOnClickModal": false, "closeOnPressEscape": true}, "reason": "escape"}' />

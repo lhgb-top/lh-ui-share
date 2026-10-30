@@ -1,0 +1,175 @@
+---
+title: popover —— الطبقة المنبثقة
+description: 'طبقة عائمة تحوي محتوى تفاعلياً: تأخير إخفاء 100ms عند hover، role=dialog + aria-labelledby، ودلالة aria-haspopup للعنصر المُطلِق'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Popover هو «tooltip يمكنه احتمال الأشياء»: يمكن أن يحوي التنبيه أزراراً، ونماذج، وقوائم، وصوراً. وهو لا يحلّ محل tooltip—فالأخير يحمل نصاً صرفاً ويحظر التفاعل؛ كما لا يحلّ محل dialog—فالأخير مشروط ويخطف التركيز. طبقة `core/popover` رقيقة كـ tooltip، والاختلاف كله في **الوزن التفاعلي**.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `<LhPopover>`: تفاصيل على هيئة بطاقة، لوحات فلترة، نماذج مضمّنة، مجموعات أزرار عمليات.
+- المشاهد التي تحتاج من المستخدم **البقاء داخل الطبقة والتفاعل معها**.
+- **لا ينبغي استخدامه**: تنبيه نصي من جملة واحدة (استخدم `tooltip`، فهو أخف وأكثر ضبطاً)؛ التأكيدات القوية التي تقاطع تدفق المستخدم (استخدم `dialog` المشروط)؛ عمليات التأكيد الثاني (استخدم `popconfirm`، فهو أدق دلالة).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_POPOVER_TRIGGERS,
+  LH_POPOVER_PLACEMENT_DEFAULT,
+  getPopoverClass,
+  getPopoverWidthStyle,
+  getPopoverTriggerAria,
+  getPopoverPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+import type { LhPopoverTrigger, LhPopoverState } from '@lh-ui/share/core/popover'
+```
+
+## القصد التصميمي
+
+**مبرر وجود تأخير الإخفاء 100ms**: إخفاء tooltip يكون 0ms (يختفي فور مغادرة المؤشر)، بينما يترك popover 100ms—**ليتمكن المؤشر من السير من العنصر المُطلِق إلى الطبقة**. ففي أثناء انتقال المؤشر من المُطلِق إلى الطبقة يغادر العنصر المُطلِق لحظياً، وسيؤجل تأخير 0ms إلى إغلاق الطبقة في منتصف الطريق، فلا يستطيع المستخدم الدخول إليها أصلاً. هذا قيد مباشر يفرضه قابلية تفاعل popover.
+
+**`LH_POPOVER_TRIGGERS` كثابت تحقق**: طرق التفعيل تعداد محدود (click/hover/focus/manual)، ويُصدَّر كمصفوفة readonly لكي تستخدمه طبقة UI في التحقق من props (الـ validator في Vue، أو تأكيد وقت التشغيل في React)، وهو في الوقت نفسه المقابل وقت التشغيل لنوع TS.
+
+**`role="dialog"` لا `"tooltip"`**: تنص WAI-ARIA على أنه لا يجوز أن يحوي tooltip عناصر تفاعلية، والطبقات العائمة القابلة للتفاعل يجب أن تكون بدلالة dialog. مع `aria-labelledby` يشير إلى عنصر العنوان، فيعلن قارئ الشاشة العنوان عند الفتح بدلاً من المحتوى كاملاً.
+
+**اعتراض disabled في `canCloseOnEscape`**: الإغلاق بـ Esc مسموح افتراضياً، ويُعترض عند `disabled`—ففي الحالة المعطّلة لا ينبغي أن تُطلَق الطبقة أصلاً، ويمنع هذا الحارس طبقة مفتوحة من أن يُغلِقها Esc بعد تعطيل المكوّن (فالتعطيل في دلالات العمل يعني عادة «قفل العمليات»).
+
+**السهم اختياري**: لا يُضاف الصنف `--arrow` إلا عندما يكون `arrow !== false`—فالسهم يحتاج حسابات تموضع إضافية (`computeArrowOffset` في `shared/popper`)، ويمكن للطبقات المنبثقة الإخبارية الاستغناء عنه.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | التأخير | افتراضياً 200 / 100 |
+| `getPopoverClass` | `(state: { placement, arrow?, popperClass? }) => string[]` | أسماء الأصناف | الموضع + السهم + مخصّص |
+| `getPopoverWidthStyle` | `(width?: string \| number) => Record<string, string>` | أنماط مضمّنة | توحيد العرض |
+| `getPopoverTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | حزمة aria | aria-expanded/controls/haspopup |
+| `getPopoverPopperAria` | `(id?, titleId?) => LhAriaAttrs` | حزمة aria | role=dialog + aria-labelledby |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | هل يُسمح | الاعتراض عند disabled |
+
+الثوابت: `LH_POPOVER_TRIGGERS` (4 طرق تفعيل)، `LH_POPOVER_PLACEMENT_DEFAULT = 'top'`.
+
+## تعريفات الأنواع
+
+```ts
+export type LhPopoverTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopoverState {
+  placement?: LhPlacement        // 12 موضعاً (shared/popper)
+  trigger?: LhPopoverTrigger
+  width?: string | number        // عرض الطبقة المنبثقة
+  title?: string
+  visible?: boolean
+  disabled?: boolean
+  arrow?: boolean                // افتراضياً true
+  showAfter?: number
+  hideAfter?: number
+}
+```
+
+## إمكانية الوصول
+
+```ts
+getPopoverTriggerAria(true, 'pop-1')
+// { 'aria-expanded': true, 'aria-controls': 'pop-1', 'aria-haspopup': 'true' }
+getPopoverTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'true' }
+
+getPopoverPopperAria('pop-1', 'pop-1-title')
+// { role: 'dialog', id: 'pop-1', 'aria-labelledby': 'pop-1-title' }
+```
+
+- **ثلاثية العنصر المُطلِق**: يُعلن `aria-haspopup` «سأُظهر شيئاً»، ويُعلن `aria-expanded` «هل هو مفتوح الآن»، ويشير `aria-controls` إلى «أي عنصر ستظهر». ويعتمد مستخدم لوحة المفاتيح على حالة expanded لفهم الوضع الراهن.
+- **`aria-controls` يحتاج وجود الطبقة**: لا يوجد id إلا عندما تُعرَض الطبقة عبر `v-if`؛ وعند عدم تمرير popperId لا يُخرَج سوى expanded/haspopup. **لا تدع controls يشير إلى عنصر أُزيل**—فبعد الإغلاق تُحذف الطبقة، ويصبح controls الخاص بالمُطلِق معلَّقاً (يتسامح قارئ الشاشة، ولكن التحقق الصارم سيُخطئ).
+- **العنوان هو الواجهة**: يشير `aria-labelledby` إلى `<div class="lh-popover__title" :id="titleId">`. اكتب في العنوان ما هذه الطبقة المنبثقة بوضوح («شروط الفلترة»، «تفاصيل الطلب»)، ولا تكتب فعلاً («اضغط هنا»).
+- **إدارة التركيز من شأن طبقة UI**: دلالة `role="dialog"` لا تأتي مع تقييد تركيز—هل يُقيَّد التركيز وأين يقع التركيز الابتدائي، أمرٌ تحدده طبقة UI باستخدام `shared/focus-trap`. والطبقات المنبثقة غير المشروطة عادة **لا تُقيَّد** (يبقى المستخدم قادراً على التعامل مع بقية الصفحة)، ولكن يجب أن يُغلق بالنقر خارجه.
+- **الفتح بلوحة المفاتيح**: في تفعيل click، يكفي أن يكون المُطلِق زراً ليُفتح بـ Enter/Space؛ أما تفعيل hover فلا يمكن الوصول إليه بمستخدم لوحة المفاتيح—**لا توفّر العمليات الأساسية عبر hover وحده**.
+
+## أمثلة الاستخدام
+
+```ts
+import {
+  getDefaultDelay, getPopoverClass, getPopoverWidthStyle, canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 100 }
+getDefaultDelay(0, 0)                   // { show: 0, hide: 0 } (فوري صريح)
+
+getPopoverClass({ placement: 'bottom' })
+// ['lh-popover__popper', 'lh-popover__popper--bottom', 'lh-popover__popper--arrow']
+getPopoverClass({ placement: 'top', arrow: false })
+// ['lh-popover__popper', 'lh-popover__popper--top']
+getPopoverClass({ placement: 'top', popperClass: 'my-pop' })
+// ['lh-popover__popper', '…--top', '…--arrow', 'my-pop']
+
+getPopoverWidthStyle(240)     // { width: '240px' }
+getPopoverWidthStyle('50%')   // { width: '50%' }
+getPopoverWidthStyle(undefined) // {}
+
+canCloseOnEscape({ disabled: false })  // true
+canCloseOnEscape({ disabled: true })   // false
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopover :width="280" trigger="click" title="شروط الفلترة">
+    <template #reference>
+      <LhButton>فلترة</LhButton>
+    </template>
+    <div class="filter-body">
+      <LhCheckbox v-model="form.active">المُفعَّلة فقط</LhCheckbox>
+      <LhButton type="primary" @click="apply">تطبيق</LhButton>
+    </div>
+  </LhPopover>
+</template>
+```
+
+```ts
+// الإغلاق بالنقر خارج (طبقة UI): يستمع document إلى click، ويتحقق هل الهدف خارج المُطلِق والطبقة
+function onDocumentClick(e: MouseEvent) {
+  if (!triggerEl.value?.contains(e.target as Node) && !popperEl.value?.contains(e.target as Node)) {
+    state.visible = false
+  }
+}
+watch(() => state.visible, (v) => {
+  v ? document.addEventListener('click', onDocumentClick) : document.removeEventListener('click', onDocumentClick)
+})
+```
+
+```tsx
+// React: useRef للحصول على عُقَد المُطلِق والطبقة؛ والنقر الخارجي عبر خطاف useClickOutside مخصّص؛
+// تُنقَل الطبقة (portal) إلى document.body كي لا تُقصّ بسبب overflow:hidden للعنصر الأب
+```
+
+```ts
+// uniapp: طبقة <view>؛ ويُنفَّذ «الإغلاق بالنقر الخارج» في التطبيقات المصغّرة عبر catchtouchstart مع قناع شامل
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-popover__popper` | حاوية الطبقة المنبثقة |
+| `.lh-popover__popper--{top\|top-start\|…}` | 12 موضعاً (تشمل الموضع الفعلي بعد القلب) |
+| `.lh-popover__popper--arrow` | مع سهم |
+| `.lh-popover__title` | العنوان |
+| `.lh-popover__body` | منطقة المحتوى |
+
+لون الخلفية `--lh-bg-color`، والإطار `--lh-border-color`، والظل `--lh-box-shadow-popover`، وزاوية الانحناء `--lh-border-radius-base`، وz-index هو `--lh-z-index-popover`.
+
+## ملاحظات
+
+- **يجب نقل الطبقة (teleport) إلى body**: بقاؤها في موضع DOM الأصلي سيقع في فخاخ `overflow: hidden` و`transform` وسياق التراص `z-index` للعنصر الأب. وبعد النقل تُحسَب إحداثيات التموضع بواسطة `computePosition` في `shared/popper` نسبةً إلى إطار العرض.
+- **اسم صنف الموضع بعد القلب**: ما يستهلكه `getPopoverClass` هو **الموضع الفعلي المُطبَّق** (القيمة بعد قلب popper)، لا القيمة الأصلية للخاصية—وإلا فسيكون اتجاه السهم مخالفاً للرؤية. على طبقة UI تمرير الموضع الحقيقي الذي يُعيده popper.
+- **`width` والتكيّف مع المحتوى**: عند ضبط عرض ثابت يُمَطّ المحتوى الضيق؛ وعند عدم الضبط قد يفيض المحتوى عن إطار العرض. للمحتوى المعقد يُستحسَن تمرير `min-width` بدلاً من `width` (عبر popperClass لتخصيص النمط).
+- **تفعيل hover على الأجهزة المحمولة**: شاشات اللمس بلا hover، فعلى الطبقات المنبثقة المُفعَّلة بـ hover أن تُنقر ضغطة واحدة لتدخل في حالة «توقف فوق» ثم تُنقر في مكان آخر لتُغلق—تجربة سيئة جداً. يُستحسَن للمكوّنات متعددة الأطر تبديل طريقة التفعيل حسب الطرف.
+- **الطبقات المتداخلة**: عند فتح B داخل طبقة A، يجب إغلاق B تسلسلياً عند إغلاق A، وإلا بقيت B معلَّقة. انتبه عند مشاركة حالة popper.
+- **تفعيل `manual`**: يتحكم به خارجياً بالكامل عبر `v-model:visible`—ويُقرَن عادةً بمنطق مثل «تحديد صف يُوسّعه»، وهنا يجب كتابة منطق الإغلاق بالنقر الخارج بنفسك (فالإغلاق بالنقر الخارج في core أيضاً من تنفيذ طبقة UI).
+- **إعادة استخدام الكود مع tooltip**: يشتركان في `shared/popper` و`shared/delay`، ولكن **لا يمكن خلط أدوار aria**—فلا تستبدل، من أجل إعادة الاستخدام، `role="tooltip"` الخاص بـ tooltip بطبقة قابلة للتفاعل، فهذا مخالف لـ ARIA وسلوك قارئ الشاشة لا يمكن التنبؤ به.
+
+<FnPlayground module="popover" fn="getDefaultDelay" params='{"showAfter": null, "hideAfter": null}' />

@@ -1,0 +1,144 @@
+---
+title: switch —— Interrupteur
+description: 'getSwitchLabel renvoie le texte actif / inactif, getSwitchAria émet un paquet d’attributs sémantiques role=switch'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+L'interrupteur est un « contrôle à deux états » : ouvert ou fermé, pas de troisième état. Il ressemble à une case à cocher (deux états), mais sa sémantique diffère — la case à cocher exprime « cette option est-elle sélectionnée », l'interrupteur exprime « cette fonction est-elle activée ». L'APG lui a dédié un `role="switch"`.
+
+## Quand l'utiliser
+
+- Chaque framework implémente `LhSwitch` : activation / désactivation des réglages, commutateurs de droits, état d'abonnement.
+- Les opérations à deux états portant la sémantique « effet immédiat » (cocher prend effet sans attendre de soumission).
+- **À ne pas utiliser pour** : la sélection multiple dans un formulaire (case à cocher) ; un choix à plusieurs positions (`segmented` ou bouton radio).
+
+## Import
+
+```ts
+import { getSwitchClassNames, getSwitchLabel, getSwitchAria } from '@lh-ui/share/core/switch'
+import type { LhSwitchState } from '@lh-ui/share/core/switch'
+```
+
+## Intentions de conception
+
+La fusion `disabled || loading` dans `getSwitchAria` est délibérée : un interrupteur en cours de chargement et un interrupteur désactivé ont, du point de vue de l'accessibilité, **le même comportement** — tous deux inopérants, et le lecteur d'écran doit annoncer « non disponible » plutôt que « disponible mais sans effet au clic ».
+
+`getSwitchLabel` renvoie `activeText` / `inactiveText` : les textes de l'interrupteur sont placés de part et d'autre du curseur, c'est l'avantage visuel de l'interrupteur par rapport à la case à cocher — l'état se lit au premier coup d'œil, sans s'appuyer sur la seule mémoire de la position.
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getSwitchClassNames` | `(state: LhSwitchState) => string[]` | tableau de classes | modificateurs checked / disabled / loading / size |
+| `getSwitchLabel` | `(state: LhSwitchState) => string` | texte | renvoie activeText si sélectionné, sinon inactiveText |
+| `getSwitchAria` | `(state: Pick<LhSwitchState, 'checked' \| 'disabled' \| 'loading'>) => LhAriaAttrs` | paquet d'attributs aria | sémantique `role="switch"` |
+
+Exemples de sortie :
+
+```ts
+getSwitchClassNames({ checked: true, disabled: false, loading: false, name: '', size: 'medium', activeText: '', inactiveText: '' })
+// ['lh-switch', 'lh-switch--checked']
+
+getSwitchLabel({ checked: true, activeText: 'Ouvert', inactiveText: 'Fermé' })  // 'Ouvert'
+
+getSwitchAria({ checked: true, disabled: false, loading: false })
+// { role: 'switch', 'aria-checked': true }
+
+getSwitchAria({ checked: false, disabled: false, loading: true })
+// { role: 'switch', 'aria-checked': false, 'aria-disabled': true }
+```
+
+## Définitions de types
+
+```ts
+export interface LhSwitchState {
+  checked: boolean
+  disabled: boolean
+  loading: boolean
+  name: string            // clé lors de la soumission du formulaire
+  size: LhComponentSize
+  activeText: string      // texte à l'état ouvert
+  inactiveText: string    // texte à l'état fermé
+}
+```
+
+## Accessibilité
+
+`getSwitchAria` est le paquet d'attributs du pattern switch de l'APG. **L'enjeu est de savoir si l'on utilise un input natif ou un contrôle personnalisé** :
+
+```ts
+// Option A (recommandée) : <input type="checkbox"> natif + role="switch" pour remplacer la sémantique
+// La sémantique checkbox native du navigateur est enrichie par role="switch",
+// aria-checked se synchronise automatiquement avec :checked,
+// la bascule par la touche Espace et la soumission du formulaire sont gratuites
+<input type="checkbox" role="switch" :aria-checked="checked" />
+
+// Option B : contrôle purement personnalisé (simulé par un div), il faut alors poser manuellement
+// l'ensemble de la sémantique. getSwitchAria est précisément conçu pour cela —
+// role + aria-checked + aria-disabled
+```
+
+Sur les cibles autres que h5 comme uniapp, on doit souvent se rabattre sur l'option B (l'apparence native d'une case à cocher est difficile à personnaliser), et `getSwitchAria` y est alors indispensable.
+
+## Exemples d'utilisation
+
+```ts
+import { getSwitchClassNames, getSwitchAria } from '@lh-ui/share/core/switch'
+
+getSwitchAria({ checked: true, disabled: false, loading: false })
+// { role: 'switch', 'aria-checked': true }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSwitchClassNames({ checked, disabled, loading, name, size, activeText, inactiveText })">
+  <span class="lh-switch__label lh-switch__label--left">{{ inactiveText }}</span>
+  <div class="lh-switch__core" v-bind="getSwitchAria({ checked, disabled, loading })" @click="toggle">
+    <LhSpinner v-if="loading" class="lh-switch__loading" :size="12" />
+  </div>
+  <span class="lh-switch__label lh-switch__label--right">{{ activeText }}</span>
+</div>
+```
+
+```tsx
+// React
+const aria = getSwitchAria({ checked, disabled, loading })
+return (
+  <div className="lh-switch">
+    <div className="lh-switch__core" {...aria} onClick={() => !disabled && !loading && onChange(!checked)} />
+  </div>
+)
+```
+
+```ts
+// uniapp : on simule le curseur avec un view ; sur les cibles autres que h5, la prise en charge
+// de role/aria est limitée, le produit de getSwitchAria peut dégénérer sans risque
+// (les propriétés de valeur undefined sont ignorées par le framework, aucun marqueur invalide)
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-switch` | classe de base |
+| `.lh-switch--checked` | état ouvert (le curseur se déplace à droite, la couleur de fond devient la couleur primaire) |
+| `.lh-switch--checked__core` | curseur à l'état ouvert (écriture imbriquée, afin d'éviter le conflit avec `--checked`) |
+| `.lh-switch--{small\|large}` | tailles |
+| `.lh-switch--disabled` / `--loading` | désactivé / chargement |
+| `.lh-switch__core` | rail |
+| `.lh-switch__label` | textes latéraux |
+| `.lh-switch__loading` | spinner de chargement |
+
+La couleur d'activation est `var(--lh-primary-color)`, la couleur de fermeture `--lh-fill-color` (gris neutre).
+
+Problème connu (consigné dans le « lot de jetons de hauteur ») : la valeur `translate(-50%,-50%)` du curseur de l'interrupteur est **codée en dur de manière redondante** dans la base et dans les keyframes, un changement de dimension exige la modification des deux.
+
+## Remarques
+
+- **La cohérence entre `aria-checked` et le rendu visuel** : l'état `checked` d'un contrôle personnalisé doit avoir la même source que la sortie de `getSwitchAria`, sinon on obtient « aria dit ouvert, mais cela paraît fermé ».
+- **L'état de chargement avale les clics** : un clic pendant le chargement ne doit pas basculer la valeur, le gestionnaire de clic de la couche UI doit tester `disabled || loading`.
+- **La direction des textes** : `activeText` est du côté de l'activation (en général à droite), `inactiveText` du côté de la fermeture ; lorsque les textes sont vides, le style réduit automatiquement l'espace des deux côtés.
+- Le critère de choix entre switch et case à cocher : **l'effet est-il immédiat ou non**. L'interrupteur prend effet immédiatement, la case à cocher suit en général la soumission du formulaire.
+
+<FnPlayground module="switch" fn="getSwitchAria" params='{"state": {"checked": true, "disabled": false, "loading": false}}' />

@@ -1,0 +1,122 @@
+---
+title: avatar —— 아바타
+description: 'getAvatarText가 codePointAt으로 첫 글자를 추출(emoji 안전), isImageSource가 이미지 폴백을 판정, getAvatarClassNames가 형태 수정자를 산출'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+아바타 컴포넌트는 세 가지 콘텐츠 형태를 다뤄야 합니다: 이미지, 텍스트, 아이콘. 그리고 이미지 로드 실패나 주소가 잘못되었을 때 우아하게 폴백해야 합니다. `core/avatar`는 '텍스트 추출'과 '이미지 출처 판정'을 순수 함수로 만듭니다. 이 두 판정은 각 단말에서 완전히 일치해야 하며, 그렇지 않으면 'Vue3는 텍스트를 표시, uniapp은 깨진 이미지를 표시'하는 불일치가 생깁니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhAvatar`를 구현할 때: 이미지를 사용할 수 있으면 `img`를 렌더링하고, 그렇지 않으면 `getAvatarText`가 추출한 첫 글자를 렌더링하며, 둘 다 없으면 아이콘 자리표시자를 렌더링합니다.
+- 사용자 시스템에서 '이름 첫 글자'를 기본 아바타로 쓰는 경우.
+- **사용하면 안 되는 곳**: 이미지 자르기, 업로드. 그것은 `LhUpload`와 비즈니스 로직의 일입니다.
+
+## 가져오기
+
+```ts
+import { getAvatarClassNames, getAvatarText, isImageSource } from '@lh-ui/share/core/avatar'
+import type { LhAvatarState, LhAvatarShape } from '@lh-ui/share/core/avatar'
+```
+
+## 설계 의도
+
+`getAvatarText`가 `str[0]` 대신 `codePointAt(0)` + `String.fromCodePoint`를 쓰는 것은 간과하기 쉬운 함정입니다: `'😀'[0]`는 서로게이트 쌍의 절반(`\uD83D`)이 되어, 렌더링하면 깨진 사각형이 됩니다. 코드 포인트로 추출하면 emoji와 보충 평면 문자(희귀 한자 많음)도 안전합니다.
+
+`isImageSource`의 정규식은 **느슨한 사용 가능성 판정**만 할 뿐 안전 검증은 하지 않습니다: `http(s)://`, `data:image/`, 절대 경로 `/`, 상대 경로 `./`, `../`로 시작하는 문자열을 이미지 주소로 봅니다. 그 목적은 'img 렌더링을 시도할지 말지'를 결정하는 것이고, 실제 로드 실패는 `img`의 `error` 이벤트가 폴백합니다(UI 계층이 텍스트 상태로 전환).
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getAvatarClassNames` | `(state: LhAvatarState) => string[]` | 클래스명 배열 | 형태와 크기 수정자 |
+| `getAvatarText` | `(source: string) => string` | 첫 글자 또는 `''` | 텍스트에서 표시 문자 추출 |
+| `isImageSource` | `(src: string \| undefined) => boolean` | 불리언 | 이미지 주소로 렌더링을 시도할 가치가 있는지 |
+
+경계 세부:
+
+- `getAvatarText('')` → `''`; `getAvatarText(' 水墨 ')` → `'水'`(먼저 trim); `getAvatarText('Alice')` → `'A'`.
+- `getAvatarText`는 `codePointAt(0)`가 undefined를 반환할 때(빈 문자열은 trim으로 제거되므로 이론상 발생하지 않음) `''`를 반환합니다.
+- `isImageSource(undefined)` → `false`; `isImageSource('')` → `false`.
+
+## 타입 정의
+
+```ts
+export type LhAvatarShape = 'circle' | 'square'
+
+export interface LhAvatarState {
+  size: LhComponentSize
+  shape: LhAvatarShape
+}
+```
+
+## 접근성
+
+`core/avatar`는 aria 속성 묶음을 출력하지 않습니다. 아바타의 처리 방식이 콘텐츠 형태에 따라 달라지기 때문입니다:
+
+- **이미지 아바타**: 네이티브 `<img>`를 사용하고 `alt`는 필수입니다(예: '김철수의 아바타'). alt를 비워두지 마세요. 빈 alt는 '장식용 이미지'를 의미하지만 아바타는 보통 신원 정보를 담습니다.
+- **텍스트 아바타**: 텍스트 자체가 읽을 수 있는 콘텐츠이므로 추가 처리가 필요 없습니다.
+- **아이콘 아바타**(익명 사용자 자리표시자): 아이콘은 `getIconAria({ decorative: false, label: '익명 사용자' })`를 따릅니다.
+
+## 사용 예
+
+```ts
+import { getAvatarText, isImageSource } from '@lh-ui/share/core/avatar'
+
+getAvatarText('김철수')       // '김'
+getAvatarText('Alice Smith')  // 'A'
+getAvatarText('😀하하')       // '😀'
+isImageSource('https://a.com/1.png')  // true
+isImageSource('data:image/png;base64,...')  // true
+isImageSource(undefined)               // false
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getAvatarClassNames({ size, shape })">
+  <img v-if="isImage && !error" :src="src" :alt="alt" @error="error = true" />
+  <span v-else-if="text" class="lh-avatar__text">{{ text }}</span>
+  <LhIcon v-else name="user" :decorative="false" label="익명 사용자" />
+</div>
+```
+
+```tsx
+// React
+const text = getAvatarText(name)
+const showImg = isImageSource(src) && !imgError
+return (
+  <div className={getAvatarClassNames({ size, shape }).join(' ')}>
+    {showImg ? <img src={src} alt={alt} onError={() => setImgError(true)} />
+      : text ? <span className="lh-avatar__text">{text}</span>
+      : <LhIcon name="user" decorative={false} label="익명 사용자" />}
+  </div>
+)
+```
+
+```ts
+// uniapp: <image> 컴포넌트에는 @error 이벤트가 있으며 로직은 위와 같습니다;
+// h5가 아닌 단말에서 텍스트 아바타는 폰트 폴백에 주의하세요(희귀 한자는 글꼴이 누락될 수 있음)
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-avatar` | 기본 클래스: 고정 너비/높이, 오버플로 숨김, 가운데 정렬 |
+| `.lh-avatar--{mini\|small\|medium\|large\|x-large}` | 크기 단계 |
+| `.lh-avatar--circle` / `.lh-avatar--square` | 형태(둥근 정도) |
+| `.lh-avatar__img` | 이미지: 꽉 채움 + object-fit |
+| `.lh-avatar__text` | 텍스트: 가운데 정렬, 흰색, 크기에 맞춰 축소 |
+| `.lh-avatar__icon` | 아이콘 자리표시자 |
+
+아바타 배경색은 기본적으로 주색 토큰입니다. 여러 아바타가 있는 장면(아바타 그룹 등)에서는 각 단말의 UI 계층이 이름 해시로 색을 할당할 수 있지만, core는 관여하지 않습니다.
+
+## 주의사항
+
+- **`str[0]`나 `str.charAt(0)`로 UI 계층에서 직접 첫 글자를 추출하지 마세요**. emoji와 희귀 한자가 중간에 잘려 깨집니다. 반드시 `getAvatarText`를 사용하세요.
+- `isImageSource`가 true를 반환해도 이미지가 존재한다는 뜻이 아니라 '시도해볼 가치가 있다'는 뜻입니다. `onError` 폴백은 필수입니다.
+- `square`는 직각이 아니라 작은 둥근 모서리입니다(시각적 조화). 직각 아바타는 디자인상 너무 날카로워 보입니다.
+- 이미지 아바타의 `object-fit`은 기본이 `cover`이며, 얼굴 가장자리가 잘릴 수 있습니다. 비즈니스상 종종 `object-position` 미세 조정이 필요하며, 이것은 각 단말의 UI 계층에서 처리합니다.
+
+<FnPlayground module="avatar" fn="getAvatarText" params='{"source": "青花瓷"}' />

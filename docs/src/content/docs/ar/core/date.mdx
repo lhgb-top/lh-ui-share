@@ -1,0 +1,133 @@
+---
+title: date —— بدائيات التاريخ
+description: 'getDaysInMonth / isDateDisabled / formatDate / parseDate، النواة المشتركة لـ date-picker وعمليات الفترات في calendar'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+حساب التواريخ هو جسم الخوارزمية الرئيسي في date-picker، وهو أيضًا النواة المشتركة لاختيار الفترات في calendar. ولمبنى `Date` الأصلي عدة فخاخ كلاسيكية (سنتان، والتدحرج الزائد لـ `new Date(2023, 1, 30)`)، تتكفل هذه الوحدة بمعالجتها جميعًا.
+
+## الاتفاقيات
+
+**month يبدأ من 0 دائمًا**، أسوةً بالمبنى `Date` الأصلي (`0` = يناير، `11` = ديسمبر). وهذا أكثر مصادر سوء الاستعمال في هذه الوحدة—فالقيمة «مارس» المستلمة من واجهة المستخدم يجب أن تُمرَّر `2`.
+
+**مقارنة جزء التاريخ فقط**: `isSameDay` / `compareDate` لا تنظران إلى الساعات والدقائق والثواني، وهو ما يتلاءم مع دلالة «اختيار يوم بعينه».
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getDaysInMonth,
+  getFirstDayOfMonth,
+  isSameDay,
+  isSameMonth,
+  compareDate,
+  isDateDisabled,
+  formatDate,
+  parseDate,
+} from '@lh-ui/share/core/shared/date'
+```
+
+## جدول الدوال
+
+| الدالة | التوقيع | الدور |
+| --- | --- | --- |
+| `getDaysInMonth` | `(year: number, month: number) => number` | عدد أيام الشهر (`month` يبدأ من 0) |
+| `getFirstDayOfMonth` | `(year: number, month: number) => number` | يوم أسبوع أول الشهر (`0` = الأحد) |
+| `isSameDay` | `(a: Date, b: Date) => boolean` | هل هو اليوم نفسه |
+| `isSameMonth` | `(a: Date, b: Date) => boolean` | هل هو الشهر نفسه من السنة نفسها |
+| `compareDate` | `(a: Date, b: Date) => number` | مقارنة جزء التاريخ، ويُعيد فرق الميلي ثانية |
+| `isDateDisabled` | `(date, minDate, maxDate, disabledDate) => boolean` | هل هو معطّل |
+| `formatDate` | `(date: Date, format: string) => string` | تنسيق تاريخ |
+| `parseDate` | `(str: string, format: string) => Date \| null` | تحليل سلسلة تاريخ |
+
+## تطبيع السنتين
+
+تقوم `getDaysInMonth` و `getFirstDayOfMonth` داخليًا بتطبيع `year ∈ [0, 99]` (بإضافة `+1900`). **لماذا**: يُعامل `new Date(99, 0, 1)` في JS على أنه **1999-01-01** (السلوك الخاص بالبناء `Date` مع السنوات 0-99)، فبدون تطبيع يُحسب يوم أسبوع أول الشهر بشكل خاطئ. أما السنوات الأربع المعتادة فلا تتأثر.
+
+## ترتيب الاحتكام في isDateDisabled
+
+```
+disabledDate?.(date) يُعيد قيمة صادقة  →  true
+التاريخ أقدم من minDate (minDate غير null)  →  true
+التاريخ أحدث من maxDate (maxDate غير null)  →  true
+ما عدا ذلك                                →  false
+```
+
+عندما يكون `minDate` / `maxDate` / `disabledDate` بقيمة `null` يُتجاوز ذلك الشرط—فتعمل سيناريوهات «الحد الأعلى فقط» و«الاحتكام المخصص فقط» على أكمل وجه. والترتيب مقصود: **الاحتكام المخصص مقدَّم**، لتكون دلالة `disabledDate` هي «بصرف النظر عن الفترة، هذه التواريخ غير قابلة للاختيار» (العطل، والتواريخ التي مخزونها صفر).
+
+## رموز formatDate / parseDate
+
+الرموز ثابتة العرض المدعومة: `yyyy` / `MM` / `dd` / `HH` / `mm` / `ss`.
+
+- **أي ترتيب**: يصح استخدام `'MM/dd/yyyy'` أو `'yyyy-MM-dd HH:mm'`.
+- **التكرار يُستبدل كله**: يُستبدل `dd` في `'yyyy-MM-dd'` بالقيمة نفسها مرتين.
+- **حشو السنة بالأصفار حتى 4 خانات**: `formatDate(new Date(23, 0, 1), 'yyyy')` ← `'0023'`.
+- **الدالتان متماثلتان**: يجب أن يُعيد `parseDate(formatDate(d, fmt), fmt)` اليوم نفسه (اليوم والشهر والسنة نفسها، والساعات والدقائق والثواني بحسب الرموز).
+
+```ts
+formatDate(new Date(2026, 9, 12), 'yyyy-MM-dd')   // '2026-10-12'
+formatDate(new Date(2026, 9, 12, 14, 5), 'yyyy-MM-dd HH:mm')  // '2026-10-12 14:05'
+parseDate('2026-10-12', 'yyyy-MM-dd')             // Date(2026, 9, 12)
+parseDate('غير صحيح', 'yyyy-MM-dd')                  // null
+```
+
+### الحالتان اللتان يُعيد فيهما parseDate القيمة null
+
+1. **عدم تطابق السلسلة مع التنسيق**: يُنتج `parseInt` قيمة `NaN`.
+2. **قيمة غير صحيحة**: يُدحرَج `2023-02-30` بصمت إلى 2 مارس عبر المبنى `Date`—فتقوم الدالة بعد البناء بـ **تحقق بإعادة القراءة**، فإذا اكتشفت التدحرج حكمت عليه بعدم الصحة وأعادت `null`. وهذا هو مفتاح التحقق من حقل إدخال date-picker: فالمستخدم يكتب تاريخًا غير موجود، فيتمكن المكوّن من التعرّف عليه.
+
+القيم الافتراضية للرموز المفقودة: السنة = السنة الحالية، والشهر = `0`، واليوم = `1`، والساعة / الدقيقة / الثانية = `0`. ولذلك فإن `parseDate('10-12', 'MM-dd')` يُعيد «12 أكتوبر من السنة الحالية عند 00:00:00».
+
+## أمثلة الاستخدام
+
+### عرض لوحة التقويم
+
+```ts
+// السنة والشهر المعروضان حاليًا
+const year = 2026
+const month = 9   // يبدأ من 0 = أكتوبر
+
+const days = getDaysInMonth(year, month)          // 31
+const firstDay = getFirstDayOfMonth(year, month)  // 4 = الخميس ← يُحشى قبله بـ 4 خلايا فارغة
+```
+
+### تعطيل الفترة
+
+```ts
+const min = new Date(2026, 0, 1)
+const max = new Date(2026, 11, 31)
+
+isDateDisabled(new Date(2026, 5, 1), min, max, null)          // false
+isDateDisabled(new Date(2025, 5, 1), min, max, null)          // true (أقدم من min)
+isDateDisabled(new Date(2026, 5, 1), null, null, (d) =>       // true (احتكام مخصص)
+  d.getDay() === 0)                                           // الأحد غير قابل للاختيار
+```
+
+### الربط مع المكوّن
+
+```ts
+// داخل مكوّن date-picker
+function isDisabled(date: Date) {
+  return isDateDisabled(date, props.minDate, props.maxDate, props.disabledDate)
+}
+
+function onInput(value: string) {
+  const parsed = parseDate(value, props.format)
+  if (parsed === null) {
+    errorMessage.value = 'تنسيق التاريخ غير صحيح'
+    return
+  }
+  modelValue.value = parsed
+}
+```
+
+## ملاحظات
+
+- **month يبدأ من 0**: عند عرض «أكتوبر» في طبقة واجهة المستخدم يُمرَّر `9`. وتستخدم حالة لوحة date-picker داخليًا البدء من 0، ولا تُضاف `+1` إلا عند العرض.
+- **`year >= 10000` غير مدعوم**: يتجاوز قدرة الرموز ثابتة العرض على التعبير، فيُخرج `formatDate` نتائج غير متوقعة. وليس هذا قيدًا عمليًا (فـ `input[type=date]` يدعم حتى 9999 فقط).
+- **`compareDate` يُعيد فرق الميلي ثانية**: فرق `Date.UTC(...)`، وتعني القيمة الموجبة أن `a` أحدث. وتُقارن جزء التاريخ فقط دون الوقت من اليوم.
+- **يُستدعى `disabledDate` الخاص بـ `isDateDisabled` لكل خلية في كل عملية عرض**: 42 خلية × كل تغيير في العرض، فلا تُجرِ فيه حسابات ثقيلة، فالتخزين المؤقت مسؤولية طبقة واجهة المستخدم.
+- **المنطقة الزمنية**: كله مبني على `Date` بالمنطقة الزمنية المحلية، بلا تحويل إلى UTC. وتوحيد التطبيقات عابرة المناطق الزمنية مسؤولية طبقة واجهة المستخدم قبل التمرير.
+
+<FnPlayground module="date" fn="getDaysInMonth" params='{"year": 2026, "month": 9}' />

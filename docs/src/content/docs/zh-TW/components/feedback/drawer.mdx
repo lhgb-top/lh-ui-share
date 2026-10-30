@@ -1,0 +1,177 @@
+---
+title: drawer —— 抽屜
+description: 'normalizeDrawerSize 尺寸歸一、四方向面板樣式、canDrawerClose 逃逸閘門、與 dialog 的語義差別'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+抽屜是從螢幕邊緣滑出的面板。它與對話框的差別不在程式碼，在**使用語義**：對話框是「打斷、必須處理」，抽屜是「側滑展示、可隨時離開」。所以抽屜預設不圈焦點、不鎖捲動（可配），遮罩也可點選關閉或乾脆不顯示。
+
+## 何時使用
+
+- 各端實作 `LhDrawer`：詳情側滑、篩選面板、多步表單分步、行動端全螢幕面板。
+- 需要側邊滑出、內容比對話框更長的場景。
+- **不該用它**：需要強制處理的確認（用 `dialog`）；瞬時提示（用 `message`）；純文字提示（用 `tooltip`）。
+
+## 匯入方式
+
+```ts
+import {
+  LH_DRAWER_DIRECTION_DEFAULT,
+  LH_DRAWER_SIZE_DEFAULT,
+  normalizeDrawerSize,
+  getDrawerPanelStyle,
+  getDrawerClass,
+  canDrawerClose,
+  shouldDrawerTrapFocus,
+  getDrawerAria,
+} from '@lh-ui/share/core/drawer'
+import type { LhDrawerDirection, LhDrawerState } from '@lh-ui/share/core/drawer'
+```
+
+## 設計意圖
+
+**`canDrawerClose` 的預設值與 dialog 對稱但不同**：
+
+- `maskClosable` 預設 **false**——抽屜常承載篩選或多步表單，誤觸遮罩丟失狀態。
+- `closeOnEsc` 預設 **true**——同 dialog，留鍵盤逃生口。
+
+註解記錄了一段歷史：`closeOnEsc` 此前只在 state 中宣告、logic 從不讀取，**逃逸閘門形同虛設**；補齊為可計算函式後 Esc 才真正受該開關控制。這類「props 宣告了但 logic 沒消費」的缺口是狀態模型最常見的隱性 bug。
+
+**`shouldDrawerTrapFocus` 的命名帶元件前綴**：它與 dialog 的 `shouldTrapFocus` 同簽名不同語義（state 欄位名不同：`modelValue` vs `visible`）。star 聚合匯出時同名二義會被 TS 靜默丟棄，故按本倉約定顯式區分（對齊 `getDefaultDelay → getPopconfirmDefaultDelay` 的處理）。
+
+**尺寸的方向感知**：`getDrawerPanelStyle` 按方向把 size 作用於 width（left/right）或 height（top/bottom）——這是「size 一個 prop 表達兩種維度」的取捨，比 `width` / `height` 兩個 prop 更簡潔。
+
+**預設值常數**：`LH_DRAWER_DIRECTION_DEFAULT = 'right'`、`LH_DRAWER_SIZE_DEFAULT = '30%'`，供 UI 層的 `withDefaults` / defaultProps 引用，保證三端一致。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `normalizeDrawerSize` | `(size: string \| number \| undefined) => string` | 尺寸字串 | 數字 → px，空值 → 預設 |
+| `getDrawerPanelStyle` | `(direction, size?) => Record<string, string>` | 樣式 | 方向決定 width/height |
+| `getDrawerClass` | `(state: { direction }) => string[]` | 類別名 | 方向修飾 |
+| `canDrawerClose` | `(state, reason: 'maskClick' \| 'escape') => boolean` | 是否允許關 | 逃逸閘門 |
+| `shouldDrawerTrapFocus` | `(state: { modelValue, lockScroll }) => boolean` | 是否圈焦 | 決策（不碰 DOM） |
+| `getDrawerAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | aria 屬性包 | dialog 語義 |
+
+## 類型定義
+
+```ts
+export type LhDrawerDirection = 'right' | 'left' | 'top' | 'bottom'
+
+export interface LhDrawerState {
+  direction?: LhDrawerDirection
+  size?: string | number
+  modelValue?: boolean
+  title?: string
+  maskClosable?: boolean
+  showClose?: boolean
+  lockScroll?: boolean
+  closeOnEsc?: boolean
+}
+
+export const LH_DRAWER_DIRECTION_DEFAULT: LhDrawerDirection = 'right'
+export const LH_DRAWER_SIZE_DEFAULT = '30%'
+```
+
+## 無障礙
+
+抽屜在無障礙層面**仍是 dialog**（APG 沒有專門的 drawer 模式）：
+
+```ts
+getDrawerAria({ id: 'lh-drawer-1', titleId: 'lh-drawer-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-drawer-1', 'aria-labelledby': 'lh-drawer-title' }
+```
+
+- 注意 `aria-modal: true` 是**無條件輸出**的——即使 UI 層沒顯示遮罩、沒圈焦點。若你的抽屜是非模態的（不擋背景），UI 層應改用 `aria-modal: false` 或別的角色，別讓螢幕閱讀器誤以為背景不可達。
+- 焦點管理的取捨：模態抽屜（`lockScroll` 且有遮罩）應該圈焦點；非模態抽屜（無遮罩、可同時操作背景）**不應該圈**——`shouldDrawerTrapFocus` 傳回 false，UI 層不啟用 focus-trap。
+- **滑動手勢與鍵盤**：行動端從邊緣右滑關閉是手勢互動，鍵盤等價物是 Esc（`canDrawerClose` 的 `escape` 分支）。兩者必須同時可用，否則鍵盤使用者無法關閉。
+- top/bottom 方向的抽屜在行動端應鋪滿寬度，`aria-modal` 與焦點圈照常。
+
+## 使用範例
+
+```ts
+import { normalizeDrawerSize, getDrawerPanelStyle, canDrawerClose } from '@lh-ui/share/core/drawer'
+
+normalizeDrawerSize(300)      // '300px'
+normalizeDrawerSize('50%')    // '50%'
+normalizeDrawerSize(undefined) // '30%'（預設）
+normalizeDrawerSize('')       // '30%'
+
+getDrawerPanelStyle('right', 300)   // { width: '300px' }
+getDrawerPanelStyle('bottom', '40%') // { height: '40%' }
+getDrawerPanelStyle('left')          // { width: '30%' }
+
+canDrawerClose({ maskClosable: false, closeOnEsc: true }, 'maskClick')  // false
+canDrawerClose({ maskClosable: false, closeOnEsc: true }, 'escape')     // true
+canDrawerClose({}, 'escape')   // true（預設可 Esc 關）
+canDrawerClose({}, 'maskClick') // false（預設不可點遮罩關）
+
+getDrawerClass({ direction: 'right' })  // ['lh-drawer', 'lh-drawer--right']
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-drawer-fade">
+    <div v-if="visible" :class="getDrawerClass({ direction })">
+      <div v-if="showMask" class="lh-drawer__mask" @click="onMaskClick" />
+      <transition :name="`lh-drawer-slide-${direction}`">
+        <div
+          v-if="visible"
+          class="lh-drawer__panel"
+          :class="`lh-drawer__panel--${direction}`"
+          :style="getDrawerPanelStyle(direction, size)"
+          v-bind="getDrawerAria({ id: drawerId, titleId })"
+        >
+          <header class="lh-drawer__header">
+            <h3 class="lh-drawer__title" :id="titleId">{{ title }}</h3>
+            <button v-if="showClose" type="button" class="lh-drawer__close" aria-label="关闭" @click="close">✕</button>
+          </header>
+          <div class="lh-drawer__body"><slot /></div>
+          <footer v-if="$slots.footer" class="lh-drawer__footer"><slot name="footer" /></footer>
+        </div>
+      </transition>
+    </div>
+  </transition>
+</teleport>
+```
+
+```tsx
+// React：四個方向各一個 slide transition；方向類別名驅動 transform 的起點
+// right: translateX(100%) → 0；bottom: translateY(100%) → 0
+```
+
+```ts
+// uniapp：fixed + transform 動畫；邊緣滑動關閉用 @touchstart/@touchmove/@touchend 自行判定
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-drawer` | 基礎類 |
+| `.lh-drawer--{right\|left\|top\|bottom}` | 方向（決定遮罩動畫與面板定位） |
+| `.lh-drawer__mask` | 遮罩 |
+| `.lh-drawer__panel` | 面板本體 |
+| `.lh-drawer__panel--{方向}` | 面板定位（fixed + 對應邊貼合） |
+| `.lh-drawer__header` / `__title` / `__close` | 頭部 |
+| `.lh-drawer__body` | 內容區（可捲動） |
+| `.lh-drawer__footer` | 底部 |
+
+面板 `--lh-bg-color`，遮罩 `rgba(0, 0, 0, 0.45)`（比 dialog 略淺，語義上抽屜更弱模態）。
+
+過渡類別名由 `styles/theme/common/transition.scss` 的 `lh-transition-ends` mixin 收編（跨端 `-leave-to` 差異），元件樣式不再手寫雙份類別名（紅線 2）。
+
+## 注意事項
+
+- **`size` 的單位**：數字是 px，字串原樣（支援 `'30%'` / `'50vh'`）。`'50%'` 是相對**視區**的，不是相對觸發元素。
+- **top/bottom 抽屜的預設尺寸**：`LH_DRAWER_SIZE_DEFAULT` 是 `'30%'`，對 top/bottom 方向意味著 30% 視區高度——行動端全螢幕抽屜應顯式傳 `'100%'`。
+- **方向與過渡動畫**：四個方向各需一個 slide 動畫（transform 起點不同）。UI 層按方向選 transition name，core 不管動畫。
+- **巢狀抽屜**：右側抽屜裡再開一個右側抽屜，後者會覆蓋前者；用不同方向或 zIndex 區分。焦點歸還同理於 dialog（內層關閉歸還內層觸發元素）。
+- **內容捲動**：抽屜內容超長時，`__body` 設 `overflow: auto`；底部 footer 固定在視區內（flex 版面配置），不要讓 footer 被內容頂出去。
+- **`closeOnEsc` 歷史缺口**：老版本該 props 宣告了但 logic 不讀，升級後行為才真正生效——下游若依賴「Esc 永遠可關」的老行為，注意顯式傳 `closeOnEsc`。
+- **與 dialog 的選型**：打斷式互動用 dialog（確認刪除），並列式查看用 drawer（訂單詳情）。使用者不需要停下來處理的事，就不該用模態層。
+
+<FnPlayground module="drawer" fn="getDrawerPanelStyle" params='{"direction": "bottom", "size": "40%"}' />

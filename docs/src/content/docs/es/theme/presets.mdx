@@ -1,0 +1,186 @@
+---
+title: Presets de tema
+description: 'Los cinco presets integrados 青花瓷 (porcelana azul) / 松花绿 (verde pino) / 朱砂 (cinabrio) / 水墨 (tinta china) / 藤黄 (amarillo herbáceo) y el registro personalizado con registerTheme'
+---
+
+import PresetPreview from '../../../../components/PresetPreview.astro'
+
+Los cinco presets integrados son la propuesta estética por defecto de lh-ui: cada uno toma de la paleta
+tradicional china un color principal y lo acompaña de una paleta completa, clara y oscura.
+
+## Resumen de los presets
+
+| Preset | `name` | Identificador | labelEn | Descripción | Color principal claro |
+| --- | --- | --- | --- | --- | --- |
+| 青花瓷 (porcelana azul) | `'cerblue'` | `LhCerblue` | Ceramic Blue | Esmalte sub vidrio de la porcelana azul, limpia y sobria | No |
+| 松花绿 (verde pino) | `'songhua'` | `LhSonghua` | Pine Green | Un bosque de bambúes crecidos, rebosante de vitalidad | **Sí** |
+| 朱砂 (cinabrio) | `'zhusha'` | `LhZhusha` | Vermilion | El rojo cinabrio de los sellos tradicionales, festivo y solemne | No |
+| 水墨 (tinta china) | `'shuimo'` | `LhShuimo` | Ink Wash | Pintura a tinta, sobria y minimalista | No |
+| 藤黄 (amarillo herbáceo) | `'golden'` | `LhGolden` | Golden Autumn | El amarillo otoñal de los arces, un dorado cálido | **Sí** |
+
+<PresetPreview />
+
+## Las vars de cada preset
+
+### Las cinco claves base (todos los presets las tienen)
+
+```ts
+{
+  '--lh-primary-color': '...',
+  '--lh-primary-color-hover': '...',
+  '--lh-primary-color-active': '...',
+  '--lh-primary-color-bg': '...',
+  '--lh-primary-color-border': '...',
+}
+```
+
+### Las dos claves extra de los presets de color principal claro
+
+`songhua` (松花绿 (verde pino)) y `golden` (藤黄 (amarillo herbáceo)) son de **color principal claro**: el contraste
+del texto blanco no alcanza AA y es obligatorio dar dos claves más:
+
+| Clave | Cometido |
+| --- | --- |
+| `--lh-color-on-primary` | El color del texto sobre el botón del color principal (los de color principal claro cambian a texto color tinta) |
+| `--lh-selected-color` | El color del texto del estado seleccionado (el color active como texto seleccionado no contrasta lo suficiente sobre el fondo del hover, así que se oscurece por separado) |
+
+**Por qué son obligatorias**: un botón de color principal claro con texto blanco llega solo a 3.x:1 de contraste,
+por debajo del 4.5:1 de AA. El gate de `verify:theme` lo bloquea.
+
+Tomando 松花绿 (verde pino) como ejemplo, los comentarios del código fuente registran el motivo de las
+correcciones:
+
+- `--lh-color-on-primary`: 松花绿 (verde pino) es un color principal claro; el texto blanco alcanza solo 3.93:1, se cambia a
+  texto color tinta con 4.73:1
+- `--lh-selected-color`: el color active como texto seleccionado sobre el fondo del hover llega solo a 3.48:1; el
+  estado seleccionado se oscurece por separado (el color de fondo active del botón no se ve afectado)
+- `--lh-primary-color-active`: el `#4B7A4A` original llegaba solo a 3.70:1 → `#4F8F4C` con 4.75:1
+
+藤黄 (amarillo herbáceo) análogamente: texto blanco 3.25:1 → texto color tinta 5.31:1; texto seleccionado
+3.41:1 → oscurecido a `#82600A`; active `#9A7208` 3.94:1 → `#A87F0A` 4.70:1.
+
+**Requisito estricto para añadir un preset nuevo de color principal claro**: es obligatorio dar
+`--lh-color-on-primary` y `--lh-selected-color`, si no el gate AA 4.5:1 de `verify:theme` falla.
+
+## Uso de los presets
+
+### Obtener un preset
+
+```ts
+import { LH_THEME_PRESETS, getThemePreset, getThemeVars } from '@lh-ui/share/theme'
+
+LH_THEME_PRESETS                       // los cinco
+getThemePreset('cerblue')              // el objeto LhCerblue
+getThemePreset('not-exists')           // undefined
+getThemeVars('cerblue')?.['--lh-primary-color']
+```
+
+### Inyectar un preset (capa UI)
+
+```ts
+import { buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyPreset(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+
+  const text = buildPresetStyleText(vars)
+  let style = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!style) {
+    style = document.createElement('style')
+    style.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(style)
+  }
+  style.textContent = text     // se reemplaza, no se añade; al cambiar de tema no queda residuo del estilo personalizado anterior
+}
+```
+
+**Punto clave** (véase [la restricción de inyección del resumen de temas](/es/theme/overview#restricción-de-inyección-solo-se-puede-escribir-style-nunca-inline-style)): solo se puede escribir un elemento `<style>`, no un inline
+style del `documentElement`, si no la paleta del modo oscuro se distorsiona.
+
+### El ConfigProvider de cada biblioteca UI
+
+```vue
+<!-- lh-ui-plus / lh-ui-vue2 -->
+<lh-config-provider theme="cerblue">
+  <App />
+</lh-config-provider>
+```
+
+La prop `theme` recibe un `LhThemePresetName` y el componente sigue internamente la lógica de inyección de más
+arriba. La página de personalización de tema del sitio docs y ThemeStudio recorren `LH_THEME_PRESETS` y listan
+automáticamente todos los presets — **al añadir un preset nuevo, las páginas de documentación de cada biblioteca
+no necesitan editarse a mano**.
+
+## Presets personalizados
+
+```ts
+import { registerTheme, getThemePreset } from '@lh-ui/share/theme'
+
+registerTheme({
+  name: 'my-brand',
+  label: 'Color de marca',
+  labelEn: 'Brand',
+  description: 'Color principal de la marca de la empresa',
+  vars: {
+    '--lh-primary-color': '#722ED1',
+    '--lh-primary-color-hover': '#9254DE',
+    '--lh-primary-color-active': '#531DAB',
+    '--lh-primary-color-bg': '#F9F0FF',
+    '--lh-primary-color-border': '#D3ADF7',
+    // un color principal claro además necesita estas dos:
+    // '--lh-color-on-primary': '#101410',
+    // '--lh-selected-color': '#...,
+  },
+})
+
+getThemePreset('my-brand')   // disponible en cuanto se registra
+```
+
+La semántica de `registerTheme`:
+
+- **Mismo nombre, se sobrescribe**: `registerTheme({ name: 'cerblue', ... })` **sobrescribe el
+  青花瓷 (porcelana azul) integrado** — es deliberado, para que la parte de la aplicación pueda ajustar
+  el tema por defecto sin tener que tocar los componentes.
+- **Un nombre nuevo se añade al final del array**: el orden de `LH_THEME_PRESETS` es «los cinco integrados + los
+  registrados».
+- **El registro es estado a nivel de módulo**: al importar se comparte; una sola copia para toda la aplicación.
+
+## Flujo para añadir un preset integrado nuevo
+
+1. Añade un `LhThemePreset` en `src/theme/themes/index.ts` (como mínimo los cinco `--lh-primary-*`; los presets
+   de color principal claro deben dar además `--lh-color-on-primary` y `--lh-selected-color`).
+2. Añádelo al array `LH_THEME_PRESETS` y añade el nombre en la reexportación de `src/theme/index.ts`.
+3. `pnpm test` (`theme.spec` lleva una regresión de consistencia de presets) + `pnpm verify:theme` (gate AA 4.5:1).
+4. Adjunta el changeset; las páginas de personalización de tema de la documentación de cada biblioteca listarán
+   automáticamente el preset nuevo.
+
+**Nota**: las vars solo sirven para el consumo del runtime JS; el color principal que usa el SCSS de los
+componentes sigue estando en `styles/theme/common/variables.scss` — **al sobrescribir el color principal de un
+tema integrado, hay que cambiarlo en los dos lados** (theme.spec lleva la regresión).
+
+## Convenciones de naming
+
+El **valor de string** del preset (`name: 'cerblue'`) es el valor de configuración que el usuario escribe en el
+`theme` del ConfigProvider; cambiarlo rompería toda la configuración de quien depende — es una entrada del
+[registro de exenciones de naming](/es/guide/naming#registro-de-exenciones). El **identificador TS**
+correspondiente sigue llevando el prefijo (`LhCerblue`).
+
+## Notas
+
+- **Los nombres no registrados devuelven `undefined`**: `getThemePreset` / `getThemeVars` no lanzan un error; la
+  capa UI debe acordarse de comprobar el valor nulo.
+- **`--lh-primary-color-active` y `--lh-selected-color` son dos cosas distintas**: el primero es el color de fondo
+  del botón al pulsarlo; el segundo, el color del **texto** de los elementos seleccionados en listas. En los
+  presets de color principal claro, el color active como texto seleccionado no contrasta lo suficiente, y por eso
+  hace falta el `--lh-selected-color` aparte.
+- **Los presets de color principal profundo se aclaran automáticamente en modo oscuro**: `buildPresetDarkVars`
+  considera el color principal profundo cuando su contraste frente al fondo de página oscura `#1A1A2E` baja de 3
+  y lo aclara (véase [Resumen del sistema de temas](/es/theme/overview#la-derivación-oscura-de-buildpresetdarkvars)).
+
+## Documentos relacionados
+
+- [Resumen del sistema de temas](/es/theme/overview)
+- [Tokens de diseño](/es/theme/tokens)
+- [Personalización en tiempo de ejecución](/es/theme/customization)
+- [Modo oscuro](/es/theme/dark-mode)

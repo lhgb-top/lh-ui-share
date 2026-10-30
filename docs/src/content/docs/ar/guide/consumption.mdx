@@ -1,0 +1,178 @@
+---
+title: كيفية الاستهلاك في كل طرف
+description: 'نماذج توصيل تربط دوال share النقية بآليات التفاعل الخاصة بكل من Vue3 / Vue2 / React / uniapp'
+---
+
+# كيفية الاستهلاك في كل طرف
+
+نواة share عبارة عن دوال نقية لا تحتوي على أي تفاعلية. كل ما تفعله مكتبات واجهة المستخدم
+في كل طرف هو أمر واحد: **ربط مخرجات الدوال النقية بالقوالب، وإعادة مدخلات المستخدم
+إلى الدوال النقية**. فيما يلي أشكال التوصيل في الأطراف الأربعة.
+
+## النمط المشترك
+
+توصيل كل مكوّن يتم في ثلاث خطوات:
+
+1. يحتفظ جانب إطار العمل بحالة واحدة (state) (`ref` / `useState` / data تفاعلية)
+2. تفاعل المستخدم → استدعاء دالة نقية في core لحساب الحالة الجديدة → كتابتها من جديد
+3. استدعاء دوال أسماء الأصناف / حزم سمات aria النقية داخل القالب للتصيير
+
+```ts
+// جانب core (مستقل عن إطار العمل، في هذا المستودع)
+export function getSwitchClasses(state: LhSwitchState): string
+export function getSwitchAria(state: LhSwitchState): Record<string, string>
+export function toggleSwitch(state: LhSwitchState, checked: boolean): LhSwitchState
+```
+
+## Vue3 (lh-ui-plus)
+
+```vue
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { getSwitchClasses, getSwitchAria, toggleSwitch } from '@lh-ui/share/core/switch'
+
+const checked = ref(false)
+const classes = computed(() => getSwitchClasses({ checked: checked.value, disabled: false }))
+const aria = computed(() => getSwitchAria({ checked: checked.value }))
+
+function onToggle() {
+  checked.value = toggleSwitch({ checked: checked.value }, !checked.value).checked
+}
+</script>
+
+<template>
+  <button :class="classes" v-bind="aria" @click="onToggle">
+    <span class="lh-switch__handle" />
+  </button>
+</template>
+
+<style lang="scss">
+@use '@lh-ui/share/styles/switch';
+</style>
+```
+
+تُحقن الأنماط بالكامل كأثر جانبي (side-effect) عند مدخل المكتبة، ولا يحتاج المكوّن عادةً
+إلى استيرادها بنفسه (انظر [استراتيجية الحقن](/ar/guide/injection)).
+
+## Vue2 (lh-ui-vue2)
+
+```vue
+<script lang="ts">
+import { getSwitchClasses, getSwitchAria, toggleSwitch } from '@lh-ui/share/core/switch'
+
+export default {
+  name: 'LhSwitch',
+  data() {
+    return { checked: false }
+  },
+  computed: {
+    classes() {
+      return getSwitchClasses({ checked: this.checked, disabled: false })
+    },
+    aria() {
+      return getSwitchAria({ checked: this.checked })
+    },
+  },
+  methods: {
+    onToggle() {
+      this.checked = toggleSwitch({ checked: this.checked }, !this.checked).checked
+    },
+  },
+}
+</script>
+```
+
+يستورد المستخدم الأنماط عند الحاجة:
+
+```ts
+import '@lh-ui/vue2/theme.css'
+import '@lh-ui/vue2/style/switch'
+```
+
+## React (lh-ui-react)
+
+يحل `useMemo` محل `computed`؛ وتغيّر الحالة يؤدي إلى إعادة التصيير وهذا تفاعل بطبيعته:
+
+```tsx
+import { memo, useMemo, useState } from 'react'
+import {
+  getSwitchClasses,
+  getSwitchAria,
+  toggleSwitch,
+} from '@lh-ui/share/core/switch'
+import '@lh-ui/react/style/switch'
+
+export const LhSwitch = memo(function LhSwitch() {
+  const [checked, setChecked] = useState(false)
+
+  const classes = useMemo(
+    () => getSwitchClasses({ checked, disabled: false }),
+    [checked],
+  )
+  const aria = useMemo(() => getSwitchAria({ checked }), [checked])
+
+  return (
+    <button
+      type="button"
+      className={classes}
+      {...aria}
+      onClick={() => setChecked((c) => !c)}
+    >
+      <span className="lh-switch__handle" />
+    </button>
+  )
+})
+```
+
+## uniapp (lh-ui-uniapp)
+
+لا يمكن ربط سمات aria بحرية على `<view>` / `<text>` في uniapp، وتُصفَّى مخرجات
+`getSwitchAria` على طرف التطبيق الصغير؛ بينما تظل متاحة على طرفَي app / h5. و يُربط اسم
+الصنف عبر سلسلة أو مصفوفة في `:class`:
+
+```vue
+<template>
+  <view :class="classes" @tap="onToggle">
+    <view class="lh-switch__handle" />
+  </view>
+</template>
+
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { getSwitchClasses, toggleSwitch } from '@lh-ui/share/core/switch'
+
+const checked = ref(false)
+const classes = computed(() => getSwitchClasses({ checked: checked.value }))
+function onToggle() {
+  checked.value = !checked.value
+}
+</script>
+```
+
+## التدويل: باعث واحد، أربعة اشتراكات
+
+LhLocale باعث أحداث خالص، ويتزايد `version` عند أي تغيير في اللغة. يحوّل كل طرف هذا
+التزايد إلى إشارة إعادة تصيير خاصة به:
+
+| الطرف | التوصيل |
+| --- | --- |
+| vue2 / vue3 / uniapp | `ref(lhlocale.version)` + `lhlocale.subscribe(v => version.value = v)` |
+| react | `useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)` |
+
+```ts
+import { lhlocale } from '@lh-ui/share/locales'
+
+lhlocale.setLocale('en-US')          // تبديل، يُزايد version ويبثّ التحديث
+const text = lhlocale.t('input.placeholder')
+```
+
+للاطلاع على عرض مباشر، انظر [مرجع التدويل](/ar/reference/locales).
+
+## الربط المحلي: تعديل مصدر share يسري فورًا
+
+في تخطيط العائلة، تُوجَّه إعدادات dev / test في كل مكتبة واجهة عبر alias إلى المستودع
+الشقيق `lh-ui-share/`، **وتعتمد مرحلة dev على مصادر TS / SCSS لا على مخرجات البناء**.
+أي ملف عميق جديد (مثل `core/foo/bar.ts`) يصبح متاحًا في dev فورًا، لكن دون تشغيل
+`sync-exports` لن يكون هناك مفتاح exports مقابل على جانب npm —— **لذا يجب تشغيل
+`pnpm build` كاملًا قبل الإصدار**، وإلا فسيواجه المستهلكون MODULE_NOT_FOUND بعد
+`pnpm up`.

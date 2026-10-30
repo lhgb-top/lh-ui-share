@@ -1,0 +1,145 @@
+---
+title: constants —— 定数
+description: 'LH_TYPES_CONST / LH_SIZE_CONST / LH_LANGUAGE_CONST と 2 つの DEFAULT 定数、すべて as const で凍結'
+---
+
+`src/constants/` はファミリー全体の**ランタイム定数の唯一ソース**です：コンポーネントタイプのセマンティック色、サイズ段階、言語コード。すべて `as const` で凍結され、`core/shared/types` のユニオン型導出に参照されます（[core/types](/ja/core/types) を参照）。
+
+## インポート方法
+
+```ts
+import {
+  LH_TYPES_CONST,
+  LH_SIZE_CONST,
+  LH_LANGUAGE_CONST,
+  LH_SIZE_DEFAULT,
+  LH_LANGUAGE_DEFAULT,
+} from '@lh-ui/share/constants'
+```
+
+## 定数テーブル
+
+| 定数 | 値 | 用途 |
+| --- | --- | --- |
+| `LH_TYPES_CONST` | `{ success, warning, error, info, danger }` | コンポーネントタイプ（5 つのセマンティック色） |
+| `LH_SIZE_CONST` | `{ small, medium, large, mini, old: 'x-large' }` | コンポーネントのサイズ段階 |
+| `LH_SIZE_DEFAULT` | `'medium'`（= `LH_SIZE_CONST.medium`） | デフォルトサイズ |
+| `LH_LANGUAGE_CONST` | `{ zhCN: 'zh-CN', enUS: 'en-US', jaJP: 'ja-JP', koKR: 'ko-KR', deDE: 'de-DE', frFR: 'fr-FR' }` | 言語コード |
+| `LH_LANGUAGE_DEFAULT` | `'zh-CN'`（= `LH_LANGUAGE_CONST.zhCN`） | デフォルト言語 |
+
+## LH_TYPES_CONST —— 5 つのセマンティック色
+
+```ts
+export const LH_TYPES_CONST = {
+  success: 'success',   // 成功
+  warning: 'warning',   // 警告
+  error: 'error',       // エラー
+  info: 'info',         // 情報
+  danger: 'danger',     // 危険
+} as const
+```
+
+各メンバーに `@alias` JSDoc があり（成功 / 警告 / エラー / 情報 / 危険）、ホバーでヒントが表示されます。`LhComponentType` はこれに**加えて `'default' | 'primary'` を補います**（基礎 appearance の色で、ステータスのセマンティクスではありません）。
+
+### error と danger の違い
+
+どちらも「エラーが起きた」を表す赤系ですが、セマンティクスが少し分担されており、各コンポーネントが自由に選べます：
+
+- `error` —— 検証失敗（フォームの input の赤い枠）、操作失敗（アップロード失敗）。
+- `danger` —— 破壊的操作（削除ボタンの赤い強調）。
+
+これは慣例であって強制ルールではありません；ほとんどのコンポーネントはどちらか一方しか使わず、各コンポーネントのドキュメントを優先してください。
+
+## LH_SIZE_CONST —— 5 段階のサイズ
+
+```ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',     // デフォルト
+  large: 'large',
+  mini: 'mini',         // インラインのコンパクトな場面（テーブル内の操作ボタン）
+  old: 'x-large',       // 高齢者向け
+} as const
+```
+
+### `old` キー名と `'x-large'` 値の不一致
+
+これは**意図的な命名のトレードオフ**です：
+
+- **キー名 `old`** は内部の「高齢者モード」を示すセマンティック識別子で、`LhBaseProps.old?: boolean` がそのスイッチとして使います。
+- **値 `'x-large'`** は外部に見えるサイズの列挙値で、`LhComponentSize` ユニオンに現れるのはこちらです。
+
+外部のユーザーが目にするのは `size="x-large"`（または `old` prop のスイッチ）で、内部の定数キー名はユーザーに露出しません。コードを書くときの注意：`Object.keys(LH_SIZE_CONST)` で取れるのはキー、`Object.values(...)` で取れるのはタイプの列挙値なので、混同しないでください。
+
+### 各段階の用途
+
+| 段階 | 場面 |
+| --- | --- |
+| `mini` | テーブル行内の操作ボタン、密集フォーム |
+| `small` | コンパクトなレイアウト、ツールバー |
+| `medium` | **デフォルト**、通常のフォームとコンテンツ領域 |
+| `large` | 単体の登録 / ログインページのメインボタン |
+| `x-large` | アクセシビリティの高齢者モード：大きな文字、大きなタッチ領域、`old` boolean スイッチと組み合わせる |
+
+**すべてのコンポーネントが 5 段階すべてをサポートしているわけではありません**：`mini` / `x-large` は一部のコンポーネントにのみ実装されており、各コンポーネントのドキュメントを優先してください。
+
+## LH_LANGUAGE_CONST —— 6 言語
+
+```ts
+export const LH_LANGUAGE_CONST = {
+  zhCN: 'zh-CN',
+  enUS: 'en-US',
+  jaJP: 'ja-JP',
+  koKR: 'ko-KR',
+  deDE: 'de-DE',
+  frFR: 'fr-FR',
+} as const
+```
+
+キー名は [zhCN / enUS のような慣用的な locale 命名](/ja/guide/naming#適用除外の登録)で、値は BCP 47 言語コードです。`LhLocaleType` と `LhComponentLanguage` はどちらもここから導出されます。
+
+**言語ファイルの有効状態に注意**：`ja-JP` / `ko-KR` / `de-DE` / `fr-FR` は現在**予約済みの言語スケルトンで、英語のフォールバック翻訳**です（[locales](/ja/reference/locales) を参照）。定数に登録されていても文案が完成しているとは限りません。
+
+## なぜ enum ではなく定数なのか
+
+`as const` オブジェクト + ユニオン型導出には、TS の `enum` より 3 つの利点があります：
+
+1. **ランタイムオーバーヘッドゼロ**：`enum` は追加のコードを生成します（逆方向マッピング）が、`as const` オブジェクトは 1 つしかありません。
+2. **走査可能**：`Object.values(LH_TYPES_CONST)` ですぐにすべての列挙値を取得してランタイム検証に使えます；`enum` の走査は `preserveConstEnums` がオフのときは当てになりません。
+3. **個別に JSDoc を付けられる**：各メンバーの `@alias` ヒントが IDE で見えます。
+
+## 使用例
+
+### コンポーネント props のデフォルト値
+
+```ts
+import { LH_SIZE_DEFAULT } from '@lh-ui/share/constants'
+
+props: {
+  size: { type: String, default: LH_SIZE_DEFAULT },   // 'medium'
+}
+```
+
+### ランタイムの値検証
+
+```ts
+const TYPE_VALUES = Object.values(LH_TYPES_CONST)
+
+const isValidType = (v: string): v is LhComponentType =>
+  TYPE_VALUES.includes(v as never) || v === 'default' || v === 'primary'
+```
+
+### 走査してユーティリティ関数を生成
+
+```ts
+// theme / docs ページですべての言語を走査して切り替えリストを生成
+Object.entries(LH_LANGUAGE_CONST).forEach(([key, code]) => {
+  // key: 'zhCN'  code: 'zh-CN'
+})
+```
+
+## 注意事項
+
+- **定数は凍結されています**：`as const` は型をリテラルユニオンにしますが、ランタイムでは通常のオブジェクトのままです（`Object.freeze` されていません）——ランタイムで書き換えないでください、下流の型導出は追従しません。
+- **`LH_SIZE_DEFAULT` / `LH_LANGUAGE_DEFAULT` は定数のメンバーを参照しています**、独立したリテラルではありません——定数を変更すればデフォルト値も自動的に変わります。
+- **`old` キーをそのままユーザーに暴露しないでください**：外部には `size="x-large"` または `old` boolean スイッチとして見えます。

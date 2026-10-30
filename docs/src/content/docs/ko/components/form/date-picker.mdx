@@ -1,0 +1,250 @@
+---
+title: date-picker —— 날짜 선택
+description: 'generateCalendarDays 육주 격자, LhDateAdapter 날짜 어댑터 봉합선, 다섯 가지 모드, dialog 의미'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+날짜 선택은 UI 라이브러리에서 가장 복잡한 컨트롤 중 하나입니다: 6x7 격자 하나에 "이 달의 날짜 / 이전·다음 달 채우기 / 오늘 / 선택됨 / 구간 하이라이트 / 비활성화" 여섯 가지 상태를 동시에 표현해야 합니다. `core/date-picker`는 캘린더 격자 생성, 월/년 패널, 그리고 **날짜 어댑터 봉합선**을 순수 함수로 수렴하고, UI 계층은 렌더링과 배선만 담당합니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhDatePicker`: 생일, 일정, 주문 날짜, 시작/종료 날짜 구간.
+- 값이 "날짜" 또는 "날짜 구간"인 상황.
+- **사용하면 안 되는 경우**: 시간만 필요하면 `time-picker`; 사용자가 임의의 텍스트 날짜를 자유롭게 입력하게 하려면 `input` + 자체 검증이 더 유연합니다.
+
+## 임포트 방법
+
+```ts
+import {
+  generateCalendarDays,
+  generateMonths,
+  generateYears,
+  getDatePickerClassNames,
+  getDatePickerTriggerAria,
+  getDatePickerPanelAria,
+  // 범용 날짜 원시 (shared/date에서 재내보내기, 기존 참조 경로 유지)
+  parseDate,
+  formatDate,
+  compareDate,
+  isSameDay,
+  isSameMonth,
+  isDateDisabled,
+  getDaysInMonth,
+  getFirstDayOfMonth,
+} from '@lh-ui/share/core/date-picker'
+import type {
+  LhDatePickerMode,
+  LhDatePickerDayData,
+  LhDatePickerMonthData,
+  LhDatePickerYearData,
+  LhDatePickerState,
+  LhFirstDayOfWeek,
+  LhDateAdapter,
+} from '@lh-ui/share/core/date-picker'
+```
+
+## 설계 의도
+
+**어댑터가 이 모듈의 핵심 설계입니다**. `LhDateAdapter`는 의도적으로 최소로 유지된 봉합선입니다 (parse / format / getDaysInMonth / getFirstDayOfMonth / compare / isSameDay / addDays 일곱 메서드): 기본 구현은 공유 코어 `core/shared/date`의 직접 작성 알고리즘을 감싸며, dayjs / date-fns / `Intl`을 연결하려면 인터페이스를 구현하기만 하면 됩니다, **core 계층은 어떤 날짜 라이브러리에도 의존하지 않습니다**.
+
+주입에는 두 경로가 있습니다:
+
+- 명시적 매개변수 (권장): `generateCalendarDays(year, month, …, firstDayOfWeek, myAdapter)`——전역 상태를 오염시키지 않고 여러 인스턴스가 서로 간섭하지 않습니다.
+- `setDateAdapter(adapter)` (**@deprecated**): 모듈 수준 싱글톤. 폐기 표시된 이유는 **인스턴스 간 누출**입니다——한 페이지에 날짜 선택기 두 개가 있을 때 주입이 서로 오염시킵니다. 기존 다운스트림 호출 호환을 위해 남겨둔 것이며 새로운 소비자는 없습니다.
+
+**순환 의존의 해체**: 초기에는 `logic.ts`와 `adapter.ts`가 서로 import했으나, 지금은 범용 원시를 `core/shared/date`로 내리고 adapter는 코어만 의존하여 logic을 역으로 import하지 않게 되어 환형 참조를 없앴습니다 (커밋 9e21865 참고).
+
+**격자 채우기의 정렬**: `totalCells = Math.ceil(days.length / 7) * 7`로 격자 총수가 7의 배수(5 또는 6줄)임을 보장하고, `firstDayOfWeek`는 `(firstDay - firstDayOfWeek + 7) % 7`로 앞쪽 빈칸을 계산합니다——`+7`은 음수 모듈러를 피하기 위함입니다.
+
+**구간의 일 단위 비교**: 셀의 날짜는 현지 시간 00:00이지만 `rangeStart` / `rangeEnd`는 시각을 포함할 수 있어, 그냥 비교하면 "끝나는 날"이 동시에 `isInRange`로 판정됩니다. `adapter.compare`로 일 단위 비교를 통일합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `generateCalendarDays` | `(year, month, selected, rangeStart, rangeEnd, today, firstDayOfWeek?, adapter?) => LhDatePickerDayData[]` | 42 또는 35칸 | 육상태 격자 |
+| `generateMonths` | `(year, selected) => LhDatePickerMonthData[]` | 12항목 | 월 패널 |
+| `generateYears` | `(startYear, selected) => LhDatePickerYearData[]` | 년 패널 | 년 선택 |
+| `getDatePickerClassNames` | `(state: { size, disabled, visible }) => string[]` | 클래스명 | 크기/비활성화/펼침 |
+| `getDatePickerTriggerAria` | `(visible, panelId?) => LhAriaAttrs` | aria 속성 팩 | haspopup dialog |
+| `getDatePickerPanelAria` | `(id?) => LhAriaAttrs` | aria 속성 팩 | role=dialog |
+| `parseDate` / `formatDate` | `(value, format) => Date \| null` / `(date, format) => string` | 역관계 | 고정폭 토큰 |
+| `compareDate` | `(a, b) => number` | 일 단위 비교 | 시각 제거 |
+| `isSameDay` / `isSameMonth` | `(a, b) => boolean` | 같은 날/같은 달 여부 | 선택 판정 |
+| `isDateDisabled` | `(date, min, max, disabledDate?) => boolean` | 비활성화 여부 | 세 출처 병합 |
+| `getDaysInMonth` / `getFirstDayOfMonth` | `(year, month) => number` | 일수/첫날 요일 | 격자 계산 |
+
+## 타입 정의
+
+```ts
+export type LhDatePickerMode = 'date' | 'month' | 'year' | 'datetime' | 'range'
+export type LhFirstDayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6  // 0=일요일 (기본값)
+
+export interface LhDatePickerDayData {
+  date: Date
+  day: number
+  month: number        // 0부터
+  year: number
+  isCurrentMonth: boolean  // 이 달 vs 이전·다음 달 채우기
+  isToday: boolean
+  isSelected: boolean
+  isInRange: boolean   // range 모드 전용, 열린 구간
+  isStart: boolean
+  isEnd: boolean
+}
+
+export interface LhDatePickerMonthData { month: number; year: number; isSelected: boolean }
+export interface LhDatePickerYearData  { year: number; isSelected: boolean }
+
+export interface LhDateAdapter {
+  parse(value: string, format: string): Date | null
+  format(date: Date, format: string): string
+  getDaysInMonth(year: number, month: number): number
+  getFirstDayOfMonth(year: number, month: number): number
+  compare(a: Date, b: Date): number
+  isSameDay(a: Date, b: Date): boolean
+  addDays(date: Date, amount: number): Date
+}
+```
+
+## 접근성
+
+날짜 패널은 **dialog**로 팝업되며, 의미는 time-picker와 같은 출처입니다 (둘 다 `getPopupTriggerAria`를 거치고, `haspopup: 'dialog'`):
+
+```ts
+getDatePickerTriggerAria(true, 'lh-date-panel')
+// { 'aria-expanded': true, 'aria-haspopup': 'dialog', 'aria-controls': 'lh-date-panel' }
+
+getDatePickerPanelAria('lh-date-panel')
+// { role: 'dialog', id: 'lh-date-panel' }
+```
+
+격자 자체는 `role="grid"`를 달아야 하고, 각 줄은 `role="row"`, 각 칸은 `role="gridcell"`; 월/년 패널은 `role="listbox"`를 씁니다. 키보드 조작 (UI 계층 구현):
+
+- 패널 안에서 ↑/↓/←/→로 칸 사이를 이동 (`adapter.addDays(date, ±1|±7)`), Enter로 선택;
+- 이전·다음 달 채우기 칸 (`isCurrentMonth: false`)으로 이동하면 **자동으로 달을 넘김**;
+- Esc로 패널을 닫고 포커스는 트리거로 되돌아감;
+- `disabledDate`가 true를 반환하는 칸은 `aria-disabled="true"`를 달고 선택할 수 없어야 함.
+
+## 사용 예시
+
+```ts
+import { generateCalendarDays, parseDate, formatDate, isDateDisabled } from '@lh-ui/share/core/date-picker'
+
+// 2026년 10월 (month는 0부터), 일요일 시작
+const days = generateCalendarDays(2026, 9, parseDate('2026-10-12', 'yyyy-MM-dd'), null, null, new Date(), 0)
+days.length        // 35 또는 42
+days.filter((d) => d.isCurrentMonth).length  // 31
+days[0]            // 앞쪽 채우기인 2026-09-27 (일요일)
+days.find((d) => d.isToday)?.day   // 12 (오늘이 2026-10월이면)
+
+parseDate('2026-10-12', 'yyyy-MM-dd')  // Date(2026, 9, 12)
+formatDate(new Date(2026, 9, 12), 'yyyy-MM-dd')  // '2026-10-12'
+parseDate('not a date', 'yyyy-MM-dd')  // null
+isSameDay(new Date(2026, 9, 12, 5), new Date(2026, 9, 12, 23))  // true
+```
+
+```ts
+// dayjs 어댑터 연동 (명시적 매개변수, 전역 오염 없음)
+import type { LhDateAdapter } from '@lh-ui/share/core/date-picker'
+import dayjs from 'dayjs'
+import customParseFormat from 'dayjs/plugin/customParseFormat'
+dayjs.extend(customParseFormat)
+
+const dayjsAdapter: LhDateAdapter = {
+  parse: (v, f) => { const d = dayjs(v, f, true); return d.isValid() ? d.toDate() : null },
+  format: (d, f) => dayjs(d).format(f),
+  getDaysInMonth: (y, m) => dayjs(new Date(y, m, 1)).daysInMonth(),
+  getFirstDayOfMonth: (y, m) => dayjs(new Date(y, m, 1)).day(),
+  compare: (a, b) => dayjs(a).startOf('day').valueOf() - dayjs(b).startOf('day').valueOf(),
+  isSameDay: (a, b) => dayjs(a).isSame(dayjs(b), 'day'),
+  addDays: (d, n) => dayjs(d).add(n, 'day').toDate(),
+}
+
+const days = generateCalendarDays(2026, 9, null, null, null, new Date(), 1, dayjsAdapter)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getDatePickerClassNames({ size, disabled, visible })">
+  <input
+    class="lh-date-picker__input"
+    :value="value ? formatDate(value, format) : ''"
+    v-bind="getDatePickerTriggerAria(visible, panelId)"
+    @click="open"
+  />
+  <div v-if="visible" class="lh-date-picker__panel" v-bind="getDatePickerPanelAria(panelId)">
+    <div class="lh-date-picker__header">
+      <button type="button" class="lh-date-picker__prev" @click="prevMonth">‹</button>
+      <span class="lh-date-picker__title">{{ year }}년 {{ month + 1 }}월</span>
+      <button type="button" class="lh-date-picker__next" @click="nextMonth">›</button>
+    </div>
+    <div class="lh-date-picker__body" role="grid">
+      <div v-for="row in weekRows" :key="row[0].date.getTime()" class="lh-date-picker__row" role="row">
+        <button
+          v-for="cell in row"
+          :key="cell.date.getTime()"
+          type="button"
+          class="lh-date-picker__cell"
+          :class="{
+            'is-other-month': !cell.isCurrentMonth,
+            'is-today': cell.isToday,
+            'is-selected': cell.isSelected,
+            'is-in-range': cell.isInRange,
+            'is-start': cell.isStart,
+            'is-end': cell.isEnd,
+          }"
+          role="gridcell"
+          :aria-disabled="isDateDisabled(cell.date, minDate, maxDate, disabledDate)"
+          @click="onPick(cell)"
+        >
+          {{ cell.day }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+```tsx
+// React: range 모드의 두 단계 선택
+// 첫 번째 클릭으로 rangeStart 설정 (rangeEnd 비움), 두 번째 클릭으로 rangeEnd 설정 (start보다 빠르면 교환)
+// generateCalendarDays는 매 렌더링마다 재계산, isInRange가 중간 단락을 자동으로 하이라이트
+```
+
+```ts
+// uniapp: <picker mode="date">는 내장 컴포넌트 (start/end로 범위 제한);
+// 커스텀 패널은 <scroll-view> + 격자, core의 generateCalendarDays는 그대로 사용
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-date-picker` | 기본 클래스 |
+| `.lh-date-picker--{small\|large}` | 크기 단계 |
+| `.lh-date-picker--disabled` | 비활성화 |
+| `.lh-date-picker__input` | 트리거 입력상자 |
+| `.lh-date-picker__panel` | 팝업 패널 |
+| `.lh-date-picker__header` / `__prev` / `__next` / `__title` | 헤더 내비게이션 |
+| `.lh-date-picker__body` | 격자 영역 |
+| `.lh-date-picker__row` | 일주일 |
+| `.lh-date-picker__cell` | 날짜 칸 (is- 접두사 상태 수식어) |
+| `.lh-date-picker__cell.is-other-month` / `.is-today` / `.is-selected` / `.is-in-range` / `.is-start` / `.is-end` | 여섯 상태 |
+| `.lh-date-picker__footer` | 바로가기 영역 (오늘/비우기) |
+
+선택 `--lh-primary-color`, 구간은 `--lh-primary-color`의 낮은 불투명도, 오늘 테두리 `--lh-primary-color`, 이전·다음 달 채우기 글자 `--lh-text-disabled`.
+
+## 주의사항
+
+- **month는 항상 0부터** (브라우저 고유 `Date`와 동일), UI 계층 표시는 `+1`이어야 합니다. 이것이 가장 흔한 하나 차이(off-by-one)의 원인입니다.
+- **`firstDayOfWeek`와 언어팩 연동**: `zh-CN`은 보통 1 (월요일), `en-US`은 보통 0 (일요일); ConfigProvider나 locale에 작성하고 하드코딩하지 마세요.
+- **`setDateAdapter`의 인스턴스 간 누출**: 날짜 선택기 여러 개가 공존하는 페이지에서는 전역 주입을 쓰지 말고 명시적 매개변수로 바꾸세요.
+- **`parseDate` / `formatDate`의 고정폭 토큰**: `yyyy` / `MM` / `dd` / `HH` / `mm` / `ss`, **대소문자를 구분** (`mm`은 분, `MM`은 월). parse와 format은 반드시 같은 format 문자열을 써야 하며, 그렇지 않으면 왕복이 끊어집니다.
+- **`datetime` 모드**: 패널 안에 time-picker의 열을 끼워 넣으며, 시간 부분은 `core/time-picker`의 함수를 사용; 값을 합칠 때 `compareDate`가 **시각을 버린다**는 점에 주의하고, 선택 상태 비교에는 `isSameDay`를 쓰세요.
+- **`range` 모드의 교환**: "두 번째 클릭이 첫 번째보다 빠르면 교환"이라는 조작 규칙은 core가 책임지지 않으며 UI 계층이 직접 판정합니다.
+- **`disabledDate`와 min/max는 병합 관계**: `isDateDisabled(date, min, max, disabledDate)`의 세 출처 중 하나라도 hit하면 비활성화됩니다.
+- **6줄 vs 5줄**: `totalCells`는 7의 배수로 올림하므로 어떤 달은 35칸(5줄), 어떤 달은 42칸(6줄)이며, 패널 높이는 6줄을 담을 수 있어야 달을 넘길 때 패널이 흔들리지 않습니다.
+
+<FnPlayground module="date-picker" fn="parseDate" params='{"value": "2026-10-12", "format": "yyyy-MM-dd"}' />

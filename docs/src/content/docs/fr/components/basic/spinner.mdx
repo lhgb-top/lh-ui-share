@@ -1,0 +1,114 @@
+---
+title: spinner —— Graphique de chargement rotatif
+description: 'LH_SPINNER_SIZE_PX, table de correspondance taille → diamètre, getSpinnerClassNames émet les classes modificatrices de taille'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`spinner` est un pur « graphique rotatif » — ce n'est pas un masque de chargement (c'est `LhLoading`), ni un squelette (c'est `LhSkeleton`), mais un **élément rotatif** réutilisable : l'icône de chargement d'un bouton, l'icône loading d'un message, le cercle qui tourne dans l'angle d'une carte en chargement, c'est toujours lui.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhSpinner`, ainsi que partout où un composant a besoin d'un graphique rotatif en interne (button loading, message loading, etc.).
+- **À ne pas utiliser pour** : le chargement plein écran ou le chargement d'une zone. C'est la responsabilité de `LhLoading` (`spinner` n'en est qu'une partie).
+
+## Importation
+
+```ts
+import { getSpinnerClassNames } from '@lh-ui/share/core/spinner'
+import { LH_SPINNER_SIZE_PX, LH_SPINNER_SIZE_CONST } from '@lh-ui/share/core/spinner'
+import type { LhSpinnerSize } from '@lh-ui/share/core/spinner'
+```
+
+## Intentions de conception
+
+Le système de tailles de spinner est aligné sur les paliers de taille globaux (`LH_SPINNER_SIZE_CONST` déploie directement `LH_SIZE_CONST`), mais **le mapping en pixels est indépendant** — le « medium » du composant vaut 24 px, alors que la hauteur medium d'un bouton est de 37 px : le graphique et son conteneur n'ont pas besoin de partager la même taille. Cette indépendance est inscrite dans les constantes plutôt que dispersée en nombres magiques.
+
+`LH_SPINNER_SIZE_PX` est la seule source de vérité : la couche UI y lit la largeur/hauteur du SVG ou de l'élément, au lieu d'écrire elle-même `size === 'small' ? 16 : 24`.
+
+## Table des fonctions et constantes
+
+| Export | Signature / valeur | Rôle |
+| --- | --- | --- |
+| `getSpinnerClassNames` | `(state: { size: LhSpinnerSize }) => string[]` | tableau de classes |
+| `LH_SPINNER_SIZE_CONST` | `{ small: 'small', medium: 'medium', large: 'large', mini: 'mini', 'x-large': 'x-large' }` | Énumération des tailles (alignée sur `LH_SIZE_CONST`) |
+| `LH_SPINNER_SIZE_PX` | `{ mini: 12, small: 16, medium: 24, large: 32, 'x-large': 40 }` | Taille → diamètre en px |
+
+```ts
+getSpinnerClassNames({ size: 'small' })  // ['lh-spinner', 'lh-spinner--small']
+LH_SPINNER_SIZE_PX['large']              // 32
+```
+
+## Définitions de types
+
+```ts
+export type LhSpinnerSize =
+  (typeof LH_SPINNER_SIZE_CONST)[keyof typeof LH_SPINNER_SIZE_CONST]
+// 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+```
+
+## Accessibilité
+
+`core/spinner` ne fournit pas de paquet d'attributs aria. Le traitement accessibilité du graphique rotatif dépend de **l'endroit où il apparaît** :
+
+- **Spinner dans un bouton** : le bouton reçoit `aria-busy="true"`, le spinner lui-même est `aria-hidden`.
+- **Spinner dans un message** : le rôle live-region du message indique déjà qu'« un traitement est en cours », le spinner est traité comme décoratif.
+- **Affichage autonome « chargement en cours »** : il doit être accompagné d'un texte lisible (par exemple « Chargement… ») : un graphique seul équivaut à aucune information pour l'utilisateur du lecteur d'écran.
+
+Principe général : **le graphique rotatif lui-même devrait toujours être `aria-hidden`**, l'information étant portée par la sémantique qui l'entoure (aria-busy, role, texte).
+
+## Exemples d'utilisation
+
+```ts
+import { getSpinnerClassNames, LH_SPINNER_SIZE_PX } from '@lh-ui/share/core/spinner'
+
+getSpinnerClassNames({ size: 'medium' })  // ['lh-spinner', 'lh-spinner--medium']
+LH_SPINNER_SIZE_PX['medium']              // 24
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="getSpinnerClassNames({ size })"
+  :width="px" :height="px"
+  viewBox="0 0 50 50"
+  aria-hidden="true"
+>
+  <circle class="lh-spinner__circle" cx="25" cy="25" r="20" fill="none" />
+</svg>
+```
+
+```tsx
+// React
+const px = LH_SPINNER_SIZE_PX[size]
+return (
+  <svg className={getSpinnerClassNames({ size }).join(' ')} width={px} height={px} viewBox="0 0 50 50" aria-hidden="true">
+    <circle className="lh-spinner__circle" cx="25" cy="25" r="20" fill="none" />
+  </svg>
+)
+```
+
+```ts
+// uniapp : les animations svg sont mal gérées sur les cibles non h5, on les remplace
+// généralement par une rotation CSS border ou un GIF ;
+// la valeur de diamètre de LH_SPINNER_SIZE_PX reste valable (largeur/hauteur de la solution border)
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-spinner` | Classe de base : animation de rotation (`animation: lh-spinner-rotate`) |
+| `.lh-spinner--{mini\|small\|medium\|large\|x-large}` | Paliers de taille (fixent largeur et hauteur) |
+| `.lh-spinner__circle` | Cercle SVG : arc partiel + `stroke-linecap: round` |
+
+La couleur du trait est par défaut `currentColor` (hérite de la couleur de texte du parent) ; la vitesse de rotation est définie dans la couche styles, et marquée en pause par une media query `prefers-reduced-motion`.
+
+## Remarques
+
+- **Cohérence des tailles** : le small de `LH_SPINNER_SIZE_PX` est de 16 px, alors que le small des icônes est de 14 px (voir [Icônes](/fr/components/basic/icon)) — il s'agit d'une incohérence de paliers connue, consignée dans le dossier « jetons de hauteur » en attendant une unification par changeset ; en attendant, utilisez directement la table des constantes plutôt que de faire vos propres conversions.
+- `getSpinnerClassNames` ne valide pas la légalité de `size` (c'est l'affaire du typage) : une valeur hors plage produit une classe parasite sans style.
+- L'arc de trait du cercle SVG (`stroke-dasharray`) est codé en dur à environ 75 % de l'arc dans la couche styles ; pour modifier l'arc, changez les styles, pas core.
+- L'animation de rotation est constituée de keyframes CSS ; le respect de `prefers-reduced-motion` relève de la couche styles.
+
+<FnPlayground module="spinner" fn="getSpinnerClassNames" params='{"state": {"size": "medium"}}' />

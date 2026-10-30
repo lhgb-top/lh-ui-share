@@ -1,0 +1,205 @@
+---
+title: message —— 전역 메시지
+description: 'resolveMessageDuration 의미 기반 지속 시간, clampMessageQueue 큐 잘라내기, live region 역할 매핑 (alert/status)'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+전역 메시지는 "작업 완료 후의 가벼운 피드백"입니다: 저장 성공, 네트워크 오류, 복사 성공. 화면 상단에서 미끄러져 들어와 몇 초간 머물렀다가 자동으로 사라지며, 사용자 조작을 중단하지 않습니다. `core/message`가 관리하는 것은 **메시지 큐의 기록**입니다——지속 시간을 의미에 따라 도출, 한도 초과 잘라내기, 레코드 생성, 그리고 live region 역할.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhMessage` (서비스형 API: `LhMessage.success('저장됨')`): 작업 피드백, 가벼운 오류 알림, 로딩 중 알림.
+- 짧은 텍스트, 사용자 처리가 필요 없는 순간적인 알림.
+- **사용하면 안 되는 경우**: 사용자 조작이 필요한 확인 (`dialog` / `popconfirm` 사용); 콘텐츠가 많거나 제목이 필요한 경우 (`notification` 사용); 페이지 안의 고정 알림 바 (`alert` 사용).
+
+## 임포트 방법
+
+```ts
+import {
+  LH_MESSAGE_DURATION_DEFAULT,
+  LH_MESSAGE_MAX_DEFAULT,
+  LH_MESSAGE_OFFSET_DEFAULT,
+  getMessageRole,
+  getMessageIconName,
+  getMessageClassNames,
+  resolveMessageDuration,
+  clampMessageQueue,
+  createMessageRecord,
+} from '@lh-ui/share/core/message'
+import type { LhMessageType, LhMessageRecord, LhMessageState } from '@lh-ui/share/core/message'
+```
+
+## 설계 의도
+
+**`resolveMessageDuration`의 의미 기반 지속 시간**: `loading` 유형은 기본 **0 (자동으로 닫지 않음)**을 반환합니다——로딩 중인 메시지가 자동으로 사라지는 것은 말이 안 되며, 반드시 비즈니스 코드가 명시적으로 닫아야 합니다. 하지만 **명시적으로 duration을 전달하면 명시적 값을 존중**합니다——`resolveMessageDuration(0, 'loading')`은 0을 반환하고 (명시적), `resolveMessageDuration(undefined, 'loading')`도 0을 반환하지만 (의미 기반 기본값), 경로가 다릅니다; `resolveMessageDuration(5000, 'loading')`은 5000을 반환합니다 (명시적 덮어쓰기).
+
+**`clampMessageQueue`는 제거된 레코드도 반환합니다**: 남겨진 것뿐 아니라 `removed`도 반환합니다——호출자가 해당 `onClose`를 트리거할 책임을 집니다. 이 설계가 중요한 이유: 큐를 잘라낼 때 메시지가 강제로 제거되는데 onClose를 트리거하지 않으면 비즈니스의 정리 콜백 (로깅, 상태 리셋 등)이 영영 실행되지 않습니다.
+
+**live region 역할 매핑** (`alert` / `notification`과 같은 패러다임): `warning` / `danger` / `error` → `role="alert"` (**즉시 중단하고 읽어줌**), 나머지 → `role="status"` (**대기열에 넣고 부드럽게 읽어줌**). 이 구분은 실제 의미가 있습니다: 오류 정보는 보통 사용자가 즉시 알아야 하고, 성공 정보는 사용자의 현재 작업이 한 단락될 때까지 기다렸다 들어도 됩니다.
+
+**`getMessageIconName`은 loading에 null을 반환합니다**: loading의 회전 아이콘은 `LhSpinner` 컴포넌트로 표현되며 (애니메이션 필요) 정적 아이콘이 아닙니다——UI 계층은 이에 따라 다른 컴포넌트를 렌더링합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getMessageRole` | `(type: LhMessageType) => LhAlertRole` | 'alert' \| 'status' | live region 역할 |
+| `getMessageIconName` | `(type) => string \| null` | 아이콘명 | loading은 null 반환 |
+| `getMessageClassNames` | `(state: LhMessageState) => string[]` | 클래스명 | 유형 + 닫기 가능 |
+| `resolveMessageDuration` | `(duration: number \| undefined, type) => number` | 밀리초 | loading 기본값 0 |
+| `clampMessageQueue` | `(items, max) => { kept, removed }` | 잘라내기 결과 | 최신 max개 유지 |
+| `createMessageRecord` | `(partial, seq) => LhMessageRecord` | 레코드 | 기본 지속 시간과 오프셋 보완 |
+
+상수: `LH_MESSAGE_DURATION_DEFAULT = 3000`, `LH_MESSAGE_MAX_DEFAULT = 5`, `LH_MESSAGE_OFFSET_DEFAULT = 20`.
+
+## 타입 정의
+
+```ts
+export type LhMessageType = 'info' | 'success' | 'warning' | 'danger' | 'error' | 'loading'
+
+export interface LhMessageRecord {
+  id: number
+  type: LhMessageType
+  content: string
+  duration: number     // 0은 자동으로 닫지 않음을 의미
+  showClose: boolean
+  offset: number       // 뷰포트 상단으로부터의 오프셋 px
+  sx?: LhSxProps
+  onClose?: () => void
+}
+
+export interface LhMessageState {
+  type: LhMessageType
+  showClose: boolean
+}
+```
+
+`LhMessageType`는 범용 의미 상수 (`LH_TYPES_CONST`: info/success/warning/danger/error)에 `loading`을 보탠 것입니다.
+
+## 접근성
+
+```ts
+getMessageRole('danger')   // 'alert'
+getMessageRole('warning')  // 'alert'
+getMessageRole('info')     // 'status'
+getMessageRole('success')  // 'status'
+getMessageRole('loading')  // 'status'
+```
+
+- `role="alert"` 요소는 **DOM에 나타나자마자 즉시 읽어주며** 오류에 적합합니다; `role="status"`는 대기열에 넣어 읽어주며 성공/정보에 적합합니다.
+- **aria-live 보충**: UI 계층은 렌더링 시 보통 `aria-live="polite"`(status) 또는 `aria-live="assertive"`(alert)도 함께 지정합니다——`role`에 내장되어 있어 중복 선언은 일반적으로 해롭지 않지만, 일부 스크린 리더는 role 지원이 더 안정적이므로 둘 다 쓰는 것이 가장 안전합니다.
+- **중복 메시지의 읽기**: 연속 세 건의 "저장됨"은 세 번 읽힙니다, 이는 올바른 동작입니다 (각각이 새 이벤트). 억제하려면 비즈니스 계층이 중복 판정을 해야 합니다.
+- **닫기 버튼**: `aria-label="닫기"` (아이콘 버튼에 텍스트 없음).
+
+## 사용 예시
+
+```ts
+import { resolveMessageDuration, clampMessageQueue, createMessageRecord } from '@lh-ui/share/core/message'
+
+resolveMessageDuration(undefined, 'success')  // 3000
+resolveMessageDuration(undefined, 'loading')  // 0 (로딩은 자동으로 닫지 않음)
+resolveMessageDuration(5000, 'loading')       // 5000 (명시적 덮어쓰기)
+
+clampMessageQueue([{ id: 1 }, { id: 2 }, { id: 3 }], 2)
+// { kept: [{ id: 2 }, { id: 3 }], removed: [{ id: 1 }] }  ← 가장 오래된 것 제거
+
+clampMessageQueue([{ id: 1 }, { id: 2 }], 0)  // { kept: [...], removed: [] } (max <= 0이면 잘라내지 않음)
+
+createMessageRecord({ type: 'success', content: '저장됨', showClose: true }, 7)
+// { id: 7, type: 'success', content: '저장됨', showClose: true,
+//   duration: 3000, offset: 20 }
+```
+
+```ts
+// 서비스 레이어 구현 (UI 계층): 싱글톤 큐 + 자증 일련번호
+let seq = 0
+const queue = ref<LhMessageRecord[]>([])
+
+function open(type: LhMessageType, content: string, options?: Partial<LhMessageRecord>) {
+  const record = createMessageRecord(
+    { type, content, showClose: false, ...options },
+    ++seq,
+  )
+  queue.value = [...queue.value, record]
+  // 큐 한도 초과: 가장 오래된 것을 제거하고 onClose 트리거
+  const { kept, removed } = clampMessageQueue(queue.value, LH_MESSAGE_MAX_DEFAULT)
+  removed.forEach((r) => r.onClose?.())
+  queue.value = kept
+  // 자동 닫기
+  if (record.duration > 0) {
+    setTimeout(() => close(record.id), record.duration)
+  }
+  return record.id
+}
+
+const api = {
+  info: (c: string, o?) => open('info', c, o),
+  success: (c: string, o?) => open('success', c, o),
+  warning: (c: string, o?) => open('warning', c, o),
+  error: (c: string, o?) => open('error', c, o),
+  loading: (c: string, o?) => open('loading', c, o),
+}
+```
+
+```vue
+<!-- Vue3: 렌더링 계층 -->
+<teleport to="body">
+  <div class="lh-message" :style="{ top: offset + 'px' }">
+    <transition-group name="lh-message-fade" tag="div" class="lh-message__list">
+      <div
+        v-for="record in queue"
+        :key="record.id"
+        :class="getMessageClassNames({ type: record.type, showClose: record.showClose })"
+        :role="getMessageRole(record.type)"
+      >
+        <LhSpinner v-if="record.type === 'loading'" :size="14" />
+        <LhIcon v-else :name="getMessageIconName(record.type)!" />
+        <span class="lh-message__content">{{ record.content }}</span>
+        <button v-if="record.showClose" type="button" aria-label="닫기" @click="close(record.id)">✕</button>
+      </div>
+    </transition-group>
+  </div>
+</teleport>
+```
+
+```ts
+// loading의 전형적인 사용법: 저장할 때 열고, 완료하면 닫기
+const id = LhMessage.loading('저장 중…')
+await save()
+LhMessage.close(id)
+LhMessage.success('저장됨')
+```
+
+```tsx
+// React: createPortal로 큐 렌더링; 닫기는 clearTimeout으로 각 메시지의 타이머 관리
+```
+
+```ts
+// uniapp: fixed 위치 지정 + 애니메이션; 큐는 같은 모델, LhSpinner는 h5가 아닌 말단에서 view 회전으로 구현
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-message` | 컨테이너 (fixed 상단 가운데) |
+| `.lh-message__list` | 큐 (transition-group) |
+| `.lh-message__item` | 개별 메시지 |
+| `.lh-message__item--{info\|success\|warning\|danger\|error\|loading}` | 의미 유형 (아이콘 색 + 테두리/바탕색) |
+| `.lh-message__item--closable` | 닫기 가능 (닫기 버튼 자리 확보) |
+| `.lh-message__content` | 텍스트 |
+
+네 가지 의미 색: `--lh-info-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`; 바탕색 `--lh-bg-color` + 얇은 테두리 + 그림자.
+
+## 주의사항
+
+- **`loading` 메시지는 수동으로 닫아야 합니다**: `resolveMessageDuration(undefined, 'loading')`이 0을 반환하면 자동으로 사라지지 않습니다. 닫기를 잊으면 "로딩 중" 메시지가 영구히 남습니다——이것이 가장 흔한 오용입니다.
+- **`error`와 `danger`의 관계**: 둘 다 `alert` 역할과 `error` 아이콘으로 매핑됩니다——`danger`는 범용 의미 상수의 이름이고, `error`는 message에서 흔한 `LhMessage.error()` API에 맞추기 위한 별칭입니다. 비즈니스 계층은 어느 쪽을 써도 됩니다.
+- **큐 상한 `LH_MESSAGE_MAX_DEFAULT = 5`**: 고빈도 상황 (예: 업로드 진행률)에서는 5개를 쉽게 넘어 잘리게 됩니다——잘려나간 레코드의 `onClose`는 호출자가 트리거하며, 비즈니스의 타이머도 함께 정리해야 합니다.
+- **`offset`의 의미**: 뷰포트 상단으로부터의 **초기** 오프셋이며, 여러 메시지의 겹침 간격은 UI 계층이 높이에 따라 누적합니다 (`notification`의 `computeStackOffsets` 참고).
+- **`id`의 유일성**: 서비스 레이어의 `seq`는 모듈 수준에서 자증하면 됩니다; 다중 인스턴스가 공존하는 경우 (마이크로 프론트엔드) id 접두어를 외부에서 전달해 충돌을 피해야 합니다.
+- **SSR 안전**: 메시지 서비스는 DOM에 의존하며 (teleport, setTimeout) SSR에서는 자동 생성을 건너뛰고 클라이언트 활성화 후에만 사용 가능해야 합니다.
+- **`duration: 0`과 `showClose: false`의 교착 상태**: 자동으로 닫히지도, 수동으로 닫을 수도 없는 메시지는 영원히 남습니다——비즈니스가 id를 보관해 `close(id)`를 호출하지 않는 한. 사용자에게 최소한의 닫기 수단 하나는 남겨두세요.
+
+<FnPlayground module="message" fn="resolveMessageDuration" params='{"duration": null, "type": "loading"}' />

@@ -1,0 +1,232 @@
+---
+title: upload —— الرفع
+description: 'createUploadUid معرّف وحيد، و isFileRejected للتحقق من ثلاث قواعد accept، و LhUploadRequest دالة طلب خارجية، وآلة الحالة رباعية الحالات'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الرفع هو العنصر **الوحيد في مكتبة UI الذي يجب أن تُوكَل آثاره الجانبية إلى المستدعي**: فنقل الملفات يعتمد على عميل HTTP، ولا يمكن لطبقة core أن تعتمد على تغليف محدَّد من axios أو fetch. ولذلك يكون تصميم `core/upload` نقيّاً — فهو يتولّى التحقق، وآلة الحالة، والتحديث غير القابل للتغيير لقائمة الملفات، **ويترك «كيفية النقل» واجهةً** (`LhUploadRequest`)، لتُنجزه كل الأطراف أو كل المشاريع بنفسها.
+
+## متى يُستخدم
+
+- تُنجزه الأطراف على هيئة `LhUpload`: رفع صورة الملف الشخصي، رفع المرفقات، الرفع المتعدد للصور، الرفع بالسحب والإفلات.
+- سيناريوهات الحاجة لعرض التقدّم، وحالة النجاح/الفشل، وإمكان إعادة المحاولة.
+- **لا ينبغي استخدامه**: عند مجرد اختيار المستخدم لمسار ملف (بـ input الأصلي)؛ وعند الحاجة لمنطق معقَّد مثل الرفع المجزَّأ/استئناف نقطة الانقطاع، تظل آلة الحالة في core قابلة للاستخدام، لكن دالة الطلب تكتب يدوياً.
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_UPLOAD_MAX_SIZE,
+  createUploadUid,
+  formatFileSize,
+  createUploadFile,
+  exceedsMaxSize,
+  exceedsMaxCount,
+  normalizeUploadAccept,
+  isFileRejected,
+  patchUploadFile,
+  removeUploadFile,
+  getUploadClassNames,
+  getUploadFileClassNames,
+  getUploadFileAria,
+  getUploadDropzoneAria,
+} from '@lh-ui/share/core/upload'
+import type {
+  LhUploadFile,
+  LhUploadFileStatus,
+  LhUploadRequest,
+} from '@lh-ui/share/core/upload'
+```
+
+## القصد التصميمي
+
+**لماذا لا يستخدم `createUploadUid` بذرة تزايدية**: استخدمت التطبيقات المبكرة عدّاداً تزايدياً على مستوى الوحدة + `Date.now()`، لكن يُحزَّم share بشكل مستقل لكل مكتبة UI من الثلاث، **فتُنتج نسخ مختلفة من المكتبات في نفس الملِّي ثانية uid متماثلاً** (الطابع الزمني ذاته + البذور تبدأ من 0 عند كل واحدة). واستُبدل ذلك بـ `crypto.randomUUID()`، ومع غياب هذه الواجهة (بعض أوقات تشغيل uniapp) يُتراجَع إلى طابع زمني + عدد عشوائي. وهذا إصلاح لعلة تعارض حقيقي في التزامن.
+
+**قواعد accept الثلاث في `isFileRejected`**: الامتداد `.png` يُقارَن باسم **الملف**، والشبد `image/*` يُقارَن بـ **نوع MIME الحقيقي** (`file.type`)، والنوع المحدَّد `image/png` يُقارَن بـ `file.type`. وتذكر التعليقات قيداً أساسياً: **إن `<input accept>` الأصلي مجرد ترشيح استشاري** (فيمكن للمستخدم التبديل إلى «جميع الملفات» داخل نافذة اختيار الملفات)، ولذلك فإن التحقق في طبقة core هو خط الدفاع الأخير، فلا يجوز تمرير القاعدة الشبدية دائماً — وإلّا عُومل ملف `.exe` يُدخله المستخدم متجاوزاً نافذة الاختيار على أنه صورة.
+
+**حارس `Number.isFinite` في `exceedsMaxSize`**: عندما لا يكون `maxSize` عدداً منتهياً يُعتبَر غير محدود، فتُعاد القيمة الكاذبة. ويتيح هذا التعبير عن «عدم تحديد حد للحجم» بـ `Infinity`، دون اللجوء إلى قيم حرَس مثل 0 أو -1 التي يسهل خلطها بـ «قيم صالحة».
+
+**تحديث غير قابل للتغيير**: تُعيد `patchUploadFile` / `removeUploadFile` مصفوفة جديدة تُلقَّم مباشرة إلى الحالة التفاعلية، تجنُّباً لمشكلات قابلية التغيير التي يجلبها splice اليدوي.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `createUploadUid` | `(prefix?) => string` | uid | يُفضِّل crypto.randomUUID |
+| `formatFileSize` | `(bytes: number) => string` | `'1.5 MB'` | حجم يقرؤه الإنسان |
+| `createUploadFile` | `(file: File, uid?) => LhUploadFile` | عنصر الرفع | status ready / percent 0 |
+| `exceedsMaxSize` | `(file: File, maxSize: number) => boolean` | هل تجاوز الحد | تُعتبَر القيمة غير المنتهية غير محدودة |
+| `exceedsMaxCount` | `(current: number, limit: number) => boolean` | هل تجاوز العدد | الحد ≤ 0 يعني غير محدود |
+| `normalizeUploadAccept` | `(accept?: string \| string[] \| null) => string[]` | مصفوفة قواعد | تُقطَع السلسلة عند الفواصل |
+| `isFileRejected` | `(file: { name, type }, accept: string[]) => boolean` | هل رُفض | ثلاث قواعد |
+| `patchUploadFile` | `(files, uid, patch) => LhUploadFile[]` | مصفوفة جديدة | تحديث غير قابل للتغيير |
+| `removeUploadFile` | `(files, uid) => LhUploadFile[]` | مصفوفة جديدة | إزالة غير قابلة للتغيير |
+| `getUploadClassNames` | `(state: { dragOver, disabled }) => string[]` | أسماء أصناف | سحب معلَّق/تعطيل |
+| `getUploadFileClassNames` | `(status) => string[]` | أسماء أصناف | مُعدِّلات أربع حالات |
+| `getUploadFileAria` | `(statusId?) => LhAriaAttrs` | حزمة سمات aria | aria-describedby |
+| `getUploadDropzoneAria` | `(disabled?) => LhAriaAttrs` | حزمة سمات aria | role=button |
+
+## تعريفات الأنواع
+
+```ts
+export type LhUploadFileStatus = 'ready' | 'uploading' | 'success' | 'fail'
+
+export interface LhUploadFile {
+  uid: string
+  name: string
+  size: number
+  status: LhUploadFileStatus
+  percent: number        // 0-100
+  url?: string           // يعيده الخادم عند النجاح
+  error?: string         // سبب الفشل
+  raw?: File             // كائن File الأصلي
+}
+
+export const LH_UPLOAD_MAX_SIZE = 5 * 1024 * 1024  // الافتراضي 5MB
+
+/** توقيع دالة طلب الرفع (يوفّرها المستخدم، ولا تُدمَج مكتبة HTTP في المكتبة) */
+export type LhUploadRequest = (options: {
+  file: File
+  onProgress: (percent: number) => void
+}) => Promise<{ url?: string }>
+```
+
+## إمكانية الوصول
+
+```ts
+getUploadFileAria('lh-upload-status-1')
+// { 'aria-describedby': 'lh-upload-status-1' }
+
+getUploadDropzoneAria(false)
+// { role: 'button' }
+
+getUploadDropzoneAria(true)
+// { role: 'button', 'aria-disabled': true }
+```
+
+- يربط عنصر الملف عنصر وصف الحالة عبر `aria-describedby` («رفع 45%»، «فشل الرفع: انتهت مهلة الشبكة»)، ليُعلن قارئ الشاشة الحالة غير المتزامنة — وهو الأسلوب الجوهري لإمكانية وصول عناصر التحكم غير المتزامنة.
+- منطقة السحب ذات `role="button"` (قابلة للنقر لفتح نافذة اختيار الملفات، ولإفلات الملفات أيضاً)، وتُطلق بلوحة المفاتيح Enter/Space.
+- **إعلان التقدّم**: شريط التقدّم البحت البصري غير مرئي لقارئ الشاشة، فيجب أن يُحدَّث نص العنصر الذي يشير إليه `aria-describedby` عند تغيُّر percent (مع كبحه في طبقة UI، لكي لا يُعلن عند كل 1%).
+
+- يجب أن تحمل أزرار إعادة المحاولة/الحذف للعنصر الفاشل `aria-label` (فالأزرار ذات الأيقونات بلا نص).
+
+## أمثلة الاستخدام
+
+```ts
+import {
+  createUploadFile, exceedsMaxSize, isFileRejected, normalizeUploadAccept, patchUploadFile,
+} from '@lh-ui/share/core/upload'
+
+normalizeUploadAccept('image/png, .jpg , image/gif')
+// ['image/png', '.jpg', 'image/gif']
+normalizeUploadAccept(['.pdf'])      // ['.pdf']
+normalizeUploadAccept(null)          // []
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['.png'])          // false
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['image/*'])       // false
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['image/gif'])     // true
+isFileRejected({ name: 'a.exe', type: '' }, ['image/*'])                // true (MIME فارغ لا يُمرَّر)
+isFileRejected({ name: 'a.png', type: 'image/png' }, [])                // false (قواعد فارغة بلا تقييد)
+exceedsMaxSize(new File([], 'a.png'), 1024)       // true (حجم الملف الفارغ 0 لا يتجاوز 1024، ينظر هذا المثال إلى size تحديداً)
+exceedsMaxSize(file, Infinity)                    // false
+formatFileSize(512)       // '512 B'
+formatFileSize(1536)      // '1.5 KB'
+formatFileSize(5 * 1024 * 1024)  // '5.0 MB'
+```
+
+```ts
+// سلسلة التحقق (تُنفَّذ في طبقة UI داخل onBeforeUpload بالترتيب)
+function validate(file: File, accept: string, maxSize: number): string | undefined {
+  const rules = normalizeUploadAccept(accept)
+  if (isFileRejected(file, rules)) return 'نوع الملف غير مسموح'
+  if (exceedsMaxSize(file, maxSize)) return `يجب ألّا يتجاوز الملف ${formatFileSize(maxSize)}`
+}
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getUploadClassNames({ dragOver, disabled })">
+  <div
+    class="lh-upload__dropzone"
+    v-bind="getUploadDropzoneAria(disabled)"
+    tabindex="0"
+    @click="openPicker"
+    @dragover.prevent="dragOver = true"
+    @dragleave.prevent="dragOver = false"
+    @drop.prevent="onDrop"
+  >
+    <input ref="inputRef" type="file" :accept="accept" multiple hidden @change="onChange" />
+    <span class="lh-upload__hint">انقر أو أفلت الملفات هنا لرفعها</span>
+  </div>
+  <ul class="lh-upload__file-list">
+    <li
+      v-for="f in files"
+      :key="f.uid"
+      :class="getUploadFileClassNames(f.status)"
+      v-bind="getUploadFileAria(`lh-upload-status-${f.uid}`)"
+    >
+      <span class="lh-upload__file-name">{{ f.name }}</span>
+      <span class="lh-upload__file-size">{{ formatFileSize(f.size) }}</span>
+      <div class="lh-upload__progress"><div :style="{ width: f.percent + '%' }" /></div>
+      <span :id="`lh-upload-status-${f.uid}`" class="lh-upload__status">
+        {{ statusText(f) }}
+      </span>
+      <button v-if="f.status === 'fail'" type="button" aria-label="إعادة المحاولة" @click="retry(f)">↻</button>
+      <button type="button" aria-label="حذف" @click="files = removeUploadFile(files, f.uid)">✕</button>
+    </li>
+  </ul>
+</div>
+```
+
+```ts
+// تنفيذ الرفع (دالة الطلب يوفّرها المشروع)
+async function run(file: LhUploadFile) {
+  files = patchUploadFile(files, file.uid, { status: 'uploading', percent: 0 })
+  try {
+    const { url } = await httpRequest({
+      file: file.raw!,
+      onProgress: (percent) => { files = patchUploadFile(files, file.uid, { percent }) },
+    })
+    files = patchUploadFile(files, file.uid, { status: 'success', percent: 100, url })
+  } catch (error) {
+    files = patchUploadFile(files, file.uid, { status: 'fail', error: String(error) })
+  }
+}
+```
+
+```tsx
+// React: تُدار files بـ useState، وقيمة patchUploadFile تُمرَّر مباشرة إلى setFiles
+```
+
+```ts
+// uniapp: <button open-type="chooseFile"> أو uni.chooseImage؛
+// ويُستخدم التحقق وآلة الحالة في core كما هما، وHTTP عبر uni.uploadFile (مع onProgressUpdate)
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-upload` | الصنف الأساسي |
+| `.lh-upload--dragover` | سحب معلَّق (إطار بارز) |
+| `.lh-upload--disabled` | تعطيل |
+| `.lh-upload__dropzone` | منطقة السحب/النقر |
+| `.lh-upload__hint` | نص الإرشاد |
+| `.lh-upload__file-list` / `__file` | قائمة الملفات / عنصر ملف |
+| `.lh-upload__file--{ready\|uploading\|success\|fail}` | مُعدِّلات أربع حالات |
+| `.lh-upload__file-name` / `__file-size` / `__status` | معلومات الملف |
+| `.lh-upload__progress` | مسار شريط التقدّم (العنصر الداخلي هو التعبئة) |
+
+لون النجاح `--lh-success-color`، والفشل `--lh-danger-color`، وتعبئة التقدّم `--lh-primary-color`.
+
+## ملاحظات
+
+- **تعتمد قاعدة accept الشبدية على نوع MIME الحقيقي**: يستنتج المتصفح `file.type` من الامتداد، **وقد يكون سلسلة فارغة في بعض البيئات** (الامتدادات غير القياسية). ويرفض `isFileRejected` الملفات ذات MIME الفارغة تحت القاعدة الشبدية **بالفعل** (لا تُمرَّر)، وهو اختيار أمني مقصود — يُفضَّل الرفع الخاطئ على التمرير الخاطئ. وإذا كان عملك يعتمد الامتداد فقط، فاستبدل بنوع القواعد `.png` بنفسك.
+- **حدود `exceedsMaxCount`**: القضاء `current >= limit`، والحد ≤ 0 يعني غير محدود — انتبه أن ما يُمرَّر هو «العدد الحالي الموجود»، لا «كم يتبقى للرفع».
+- **uid للرفع المتزامن**: لا يجوز بدء رفعين في آن واحد للملف نفسه، فزِز زر إعادة المحاولة بـ `status === 'uploading'`، ويضمن uid عبر `createUploadUid()` الوحدانية عبر المكتبات.
+- **الاحتفاظ بـ raw لإعادة الإرسال**: يخزِّن `createUploadFile` القيمة `raw`، فعند فشل المحاولة تُستخدم `raw` مباشرة لاستدعاء دالة الطلب مرة أخرى؛ وإذا لم يحتج العمل الاحتفاظ بكائن File (حساسية للذاكرة)، فلا تخزِّنه.
+- **قيمة إرجاع `LhUploadRequest`**: لا يُتفق إلا على `{ url? }`، فإذا أعاد الخادم بنية أخرى (مثل `{ data: { url } }`)، حَوِّلها داخل دالة الطلب قبل resolve، ولا تجعل core يتكيَّف مع صيغ خلفيات مختلفة.
+- **كبح نص التقدّم**: قد يكون تكرار إطلاق `onProgress` عالياً جداً (الملفات الكبيرة مرة لكل قطعة)، فينبغي كبح تحديث النص الذي يشير إليه `aria-describedby` (مثل مرة كل 10%)، وإلّا غرق قارئ الشاشة بإعلاناته.
+- **تنظيف قيمة input**: عند اختيار الملف نفسه مرتين متتاليتين لا يُطلَق حدث `change` في المرة الثانية — فأعد التعيين `input.value = ''` بعد الاختيار.
+
+<FnPlayground module="upload" fn="isFileRejected" params='{"file": {"name": "photo.png", "type": "image/png"}, "accept": ["image/*", ".pdf"]}' />

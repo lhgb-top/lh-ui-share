@@ -1,0 +1,114 @@
+---
+title: 패키지 진입점과 하위 경로
+description: '@lh-ui/share의 77개 exports 키 전체 목록과 필요에 따른 import 실천'
+---
+
+# 패키지 진입점과 하위 경로
+
+`package.json`의 `exports` 필드는 **유효한 유일한 import 경로**를 정의합니다 —— 여기에 나열되지 않은 경로(예: 직접 `@lh-ui/share/es/core/button/logic.js`)는 Node / 번들러가 거부합니다. 이 패키지는 총 **77개의 키**입니다.
+
+## 최상위 키 목록
+
+| 키 | 가리키는 곳 | 용도 |
+| --- | --- | --- |
+| `.` | `es/index.js` / `lib/index.js` | 전체 bare import |
+| `./package.json` | `./package.json` | 도구가 버전 번호를 읽음 |
+| `./core` | `es/core/index.js` | 모든 core 순수 함수 집계 |
+| `./core/<컴포넌트>/*` | `es/core/<컴포넌트>/*` | **56개 컴포넌트**를 개별적으로 필요에 따라 |
+| `./core/shared/*` | `es/core/shared/*` | 12개 공유 코어 모듈 |
+| `./constants` | `es/constants/index.js` | `LH_*` 상수 |
+| `./locales` | `es/locales/index.js` | lhlocale + zhCN / enUS |
+| `./locales/lang/*` | `es/locales/lang/*` | 6개 언어 팩을 개별적으로 import |
+| `./theme` | `es/theme/index.js` | 테마 런타임 원시 + 프리셋 |
+| `./types` | `es/types/index.d.ts` | **타입 전용**, 구현 없음 |
+| `./types/components/*` | `es/types/components/*.d.ts` | 컴포넌트 Props 타입(타입 전용) |
+| `./utils` | `es/utils/index.js` | createNamespace / deepMerge 등 순수 유틸리티 |
+| `./utils/*` | `es/utils/*` | 유틸리티를 파일 단위로 import |
+| `./theme.css` | `dist/theme/index.css` | 밝은색 토큰 |
+| `./theme-dark.css` | `dist/theme/index-dark.css` | 어두운색 덮어쓰기 |
+| `./styles.css` | `dist/styles/index.css` | 토큰 + 전체 컴포넌트 스타일 |
+| `./dist/*` | `dist/*` | dist 산출물 직통 |
+| `./styles/*` | `styles/<name>/index.scss` | **단일 컴포넌트 SCSS 소스** |
+| `./styles/index.scss` | `styles/index.scss` | 전체 SCSS 집계 |
+| `./styles/theme/index.scss` | `styles/theme/index.scss` | 테마 SCSS 집계 |
+| `./styles/theme/common/*` | `styles/theme/common/*.scss` | 토큰 / 문양 / 전환 mixin |
+
+## 3개 조건부 내보내기
+
+순수 CSS / SCSS와 `types` 키를 제외하고, 모든 JS 키는 동시에 3개의 조건을 제공합니다:
+
+```json
+"./core/button/*": {
+  "types": "./es/core/button/*.d.ts",
+  "import": "./es/core/button/*.js",
+  "require": "./lib/core/button/*.js"
+}
+```
+
+- `import` —— ESM 산출물(`es/`), preserveModules가 소스 구조를 미러링하여, 필요에 따른 import에서는 그 파일 하나만 번들에 포함됩니다.
+- `require` —— CJS 산출물(`lib/`), Node 직접 실행 / jest 등의 시나리오용.
+- `types` —— `.d.ts`, `import type`이 이것을 사용하며 런타임 비용이 없습니다.
+
+## 56개 core 하위 경로
+
+```
+affix · alert · anchor · avatar · backtop · badge · breadcrumb · button ·
+calendar · card · cascader · checkbox · collapse · config · date-picker ·
+descriptions · dialog · divider · drawer · dropdown · empty · form · grid ·
+icon · image · input · input-number · loading · menu · message ·
+notification · pagination · popconfirm · popover · progress · radio · rate ·
+segmented · select · skeleton · slider · space · spinner · statistic ·
+steps · switch · table · tabs · tag · time-picker · timeline · tooltip ·
+transfer · tree · upload · virtual-list
+```
+
+각 하위 경로의 내보내기 표면은 컴포넌트 페이지의 "함수 표"를 기준으로 하며, 페이지마다 확인할 수 있습니다(왼쪽 내비게이션 "컴포넌트 API" 참고).
+
+## 12개 공유 코어 하위 경로
+
+```
+core/shared/a11y · date · delay · focus-trap · format · keyboard ·
+popper · pt · sanitize · sx · types · virtual
+```
+
+각 단말 UI 라이브러리가 가장 자주 참조하는 레이어입니다. 각 모듈의 문서는 왼쪽 "공유 코어"를 보세요.
+
+## tree-shaking과 sideEffects
+
+```json
+"sideEffects": ["**/*.css", "**/*.scss"]
+```
+
+스타일 파일에만 부작용이 있습니다. 순수 JS 하위 경로는 안전하게 tree-shaking할 수 있습니다:
+
+- ✅ `import { getButtonClasses } from '@lh-ui/share/core/button'`는 button만 번들에 포함합니다.
+- ✅ `import type { LhSxProps } from '@lh-ui/share/core/shared/sx`는 컴파일 시점에 제거됩니다.
+- ⚠️ `import '@lh-ui/share/styles.css'`는 **전체**이며 tree-shake할 수 없습니다 ——
+  스타일은 필요에 따라 `./styles/<name>` SCSS 소스를 직접 컴파일하거나, 각 UI 라이브러리의 필요에 따른 산출물을 사용하세요.
+
+## styles 하위 경로의 두 가지 형태
+
+`./styles/*`가 가리키는 것은 **SCSS 소스**(`styles/<name>/index.scss`)이지 컴파일 산출물이 아닙니다:
+
+```scss
+@use '@lh-ui/share/styles/button';   // ✅ 번들러가 SCSS를 컴파일
+```
+
+```ts
+import '@lh-ui/share/styles/button'   // ❌ .scss 확장자가 필요하고 번들러가 인식하지 못함
+```
+
+프로젝트에서 SCSS를 컴파일하고 싶지 않다면, `./styles.css`(전체)를 import하거나 각 UI 라이브러리가 미리 빌드한 `es/<name>/style/index.css`(lh-ui-plus) / `es/components/<name>/style/index.css`(lh-ui-vue2)를 사용하세요.
+
+## 로컬 연동(패밀리 내 개발)
+
+패밀리 내의 각 UI 라이브러리는 npm에 의존하지 않습니다: dev / test 설정이 **존재성 가드를 포함하여** `@lh-ui/share/**`를 같은 등급의 `lh-ui-share/` 소스로 alias 합니다:
+
+| import | 패밀리 구성에서 가리키는 곳 |
+| --- | --- |
+| `@lh-ui/share/styles/**` | `lh-ui-share/styles/**`(SCSS 소스, vite가 실시간 컴파일) |
+| `@lh-ui/share/core/**` | `lh-ui-share/src/core/**` |
+| `@lh-ui/share/{utils,constants,theme,locales,types}/**` | `lh-ui-share/src/$1/**` |
+| `@lh-ui/share`(bare) | `lh-ui-share/src/index.ts` |
+
+같은 등급의 share 저장소가 없을 때 가드는 빈 배열을 반환하여, 설치된 npm 패키지로 자동 폴백합니다 —— **단일 저장소 clone과 패밀리 구성 모두에서 실행 가능합니다**. 이 규칙은 릴리스에도 동일하게 적용됩니다: share에 새로운 깊은 파일을 추가한 뒤 `pnpm build`(sync-exports 포함)를 실행하지 않으면, npm 측에 대응하는 exports 키가 없어 하위 저장소의 `pnpm up`에서 MODULE_NOT_FOUND가 발생합니다.

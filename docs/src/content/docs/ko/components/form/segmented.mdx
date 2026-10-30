@@ -1,0 +1,171 @@
+---
+title: segmented —— 세그먼트 컨트롤
+description: 'normalizeSegmentedOptions 옵션 정규화, moveSegmentedIndex 키보드 탐색, radiogroup 의미 속성 팩'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+세그먼트 컨트롤은 **간결한 단일 선택**입니다: 옵션들을 한 줄의 버튼 그룹으로 펼쳐 놓고, 선택 항목을 미끄럼 블록으로 표시합니다. radio 그룹에 비해 세로 공간을 아끼고 시각적으로 더 현대적이며; select에 비해 모든 옵션을 드러내 놓아 클릭 한 번을 줄입니다. `core/segmented`가 관리하는 것은 옵션의 두 가지 작성법 통일, 그룹 전체 비활성화 판정, 키보드 탐색, 그리고 APG radiogroup 의미입니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhSegmented`: 뷰 전환 (목록/그리드/카드), 시간 범위 (일/주/월), 간결한 열거형 설정.
+- 옵션 수가 적고 (2~5) **배타적**인 상황.
+- **사용하면 안 되는 경우**: 옵션이 6개를 넘을 때 (select 또는 radio 그룹으로 전환); 다중 선택 (checkbox 그룹 사용); 옵션 문구가 길 때 (줄바꿈되어 보기 흉해집니다).
+
+## 임포트 방법
+
+```ts
+import {
+  normalizeSegmentedOptions,
+  isSegmentedDisabled,
+  getSegmentedClassNames,
+  moveSegmentedIndex,
+  getSegmentedAria,
+  getSegmentedItemAria,
+} from '@lh-ui/share/core/segmented'
+import type {
+  LhSegmentedInput,
+  LhSegmentedNormalized,
+  LhSegmentedState,
+} from '@lh-ui/share/core/segmented'
+```
+
+## 설계 의도
+
+`normalizeSegmentedOptions`은 두 가지 작성법을 받습니다——`['일', '주', '월']` 또는 `[{ label: '일', value: 'day' }]`——을 통일된 형태로 정규화합니다. 이것은 "입력은 관대하게, 내부는 엄격하게"라는 트레이드오프입니다: UI 라이브러리의 props가 관대할수록 사용자의 인지 부담은 줄어들며; 내부를 `LhSegmentedNormalized`로 통일한 뒤에는 이후의 비활성화 판정, 탐색, 렌더링이 모두 하나의 구조만 다루면 됩니다.
+
+`isSegmentedDisabled(options, disabled)`가 하는 것은 **2단계 비활성화의 병합**입니다: 그룹 수준의 `disabled` 또는 개별 옵션 자체의 `disabled`가 있으면 그룹 전체가 사용 불가가 됩니다——세그먼트 컨트롤의 선택 블록은 미끄러지면서 연동하기 때문에, "반쯤 비활성화된" 그룹을 두면 블록이 걸려 버립니다.
+
+`moveSegmentedIndex`는 공유 커널의 `getNextListIndex` (`core/shared/keyboard`)에 위임하여, 비활성화 항목을 건너뛰며 순환 탐색을 하고 빈 배열에서는 current를 반환합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `normalizeSegmentedOptions` | `(options: LhSegmentedInput[]) => LhSegmentedNormalized[]` | 정규화 옵션 | 문자열 간편 작성법 통일 |
+| `isSegmentedDisabled` | `(options: LhSegmentedNormalized[], disabled?: boolean) => boolean` | 비활성화 여부 | 그룹 수준 + 옵션 수준 병합 |
+| `getSegmentedClassNames` | `(state: LhSegmentedState) => string[]` | 클래스명 | disabled/block |
+| `moveSegmentedIndex` | `(options, current: number, direction: 1 \| -1) => number` | 목표 인덱스 | 비활성화 항목 건너뛰며 순환 |
+| `getSegmentedAria` | `(options?: { disabled?; label? }) => LhAriaAttrs` | aria 속성 팩 | radiogroup 의미 |
+| `getSegmentedItemAria` | `(options: { selected; disabled? }) => LhAriaAttrs` | aria 속성 팩 | radio 의미 |
+
+## 타입 정의
+
+```ts
+export type LhSegmentedValue = string | number
+
+export interface LhSegmentedOption {
+  label: string
+  value: LhSegmentedValue
+  disabled?: boolean
+}
+
+/** 입력 옵션 (문자열 간편 작성법 또는 객체) */
+export type LhSegmentedInput = LhSegmentedValue | LhSegmentedOption
+
+export interface LhSegmentedNormalized {
+  label: string
+  value: LhSegmentedValue
+  disabled: boolean
+}
+
+export interface LhSegmentedState {
+  disabled: boolean
+  block: boolean   // 부모 너비 채우기 (등폭 세그먼트)
+}
+```
+
+## 접근성
+
+세그먼트 컨트롤은 접근성 측면에서 **단일 선택 그룹**입니다: 컨테이너는 `role="radiogroup"`, 각 세그먼트 항목은 `role="radio"` + `aria-checked`입니다. 이 의미 체계는 두 속성 팩 함수가 제공합니다:
+
+```ts
+getSegmentedAria({ disabled: false, label: '보기' })
+// { role: 'radiogroup', 'aria-label': '보기' }
+
+getSegmentedItemAria({ selected: true })
+// { role: 'radio', 'aria-checked': true }
+
+getSegmentedItemAria({ selected: false, disabled: true })
+// { role: 'radio', 'aria-checked': false, 'aria-disabled': true }
+```
+
+- 컨테이너에 보이는 label이 없다면 `label` 매개변수로 `aria-label`을 제공합니다 (접근 가능한 이름).
+- 키보드 상호작용 (UI 계층): ←/↑와 →/↓로 `moveSegmentedIndex`를 통해 이동하며 바로 선택합니다 (radio 모드는 "이동 곧 선택"이지, 버튼 모드의 "이동 + Enter"가 아닙니다).
+- `roving tabindex`: 선택 항목 (또는 첫 항목)만 `tabindex="0"`, 나머지는 `-1`로, Tab이 그룹 내 항목마다 멈추지 않게 합니다.
+
+## 사용 예시
+
+```ts
+import { normalizeSegmentedOptions, moveSegmentedIndex, isSegmentedDisabled } from '@lh-ui/share/core/segmented'
+
+normalizeSegmentedOptions(['일', '주', '월'])
+// [{ label: '일', value: '일', disabled: false }, ...]
+
+normalizeSegmentedOptions([{ label: '일', value: 'day' }, '주'])
+// [{ label: '일', value: 'day', disabled: false }, { label: '주', value: '주', disabled: false }]
+
+const opts = normalizeSegmentedOptions([
+  { label: '일', value: 'day' },
+  { label: '주', value: 'week', disabled: true },
+  { label: '월', value: 'month' },
+])
+moveSegmentedIndex(opts, 0, 1)   // 2 (비활성화된 week 건너뜀)
+moveSegmentedIndex(opts, 2, 1)   // 0 (순환)
+moveSegmentedIndex([], 0, 1)     // 0 (빈 배열)
+isSegmentedDisabled(opts, false) // true (week가 비활성화 → 그룹 전체 비활성화)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSegmentedClassNames({ disabled, block })" v-bind="getSegmentedAria({ disabled, label })">
+  <div class="lh-segmented__indicator" :style="{ transform: `translateX(${index * 100}%)`, width: `${100 / normalized.length}%` }" />
+  <button
+    v-for="(opt, i) in normalized"
+    :key="String(opt.value)"
+    type="button"
+    class="lh-segmented__item"
+    :class="{ 'lh-segmented__item--active': i === index, 'lh-segmented__item--disabled': opt.disabled }"
+    :tabindex="i === index ? 0 : -1"
+    v-bind="getSegmentedItemAria({ selected: i === index, disabled: opt.disabled })"
+    @click="onSelect(i)"
+    @keydown.left.prevent="onMove(-1)"
+    @keydown.right.prevent="onMove(1)"
+  >
+    {{ opt.label }}
+  </button>
+</div>
+```
+
+```tsx
+// React: indicator는 CSS transition으로 미끄러짐; onMove 안에서 onChange(normalized[moveSegmentedIndex(normalized, index, dir)].value)
+```
+
+```ts
+// uniapp: <view> + <view> 순회; h5가 아닌 말단에서는 키보드 이벤트를 사용할 수 없고 터치로 직접 선택
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-segmented` | 기본 클래스 (둥근 모서리 컨테이너 + 안쪽 여백) |
+| `.lh-segmented--disabled` | 비활성 |
+| `.lh-segmented--block` | 부모 너비 채우기, 세그먼트 등폭 |
+| `.lh-segmented__indicator` | 미끄럼 하이라이트 블록 (절대 위치 + transform) |
+| `.lh-segmented__item` | 단일 세그먼트 항목 |
+| `.lh-segmented__item--active` | 선택 항목 (글자 색 주색) |
+| `.lh-segmented__item--disabled` | 비활성 항목 |
+
+컨테이너 바탕색은 `--lh-fill-color` (옅은 회색 오목함), indicator는 `--lh-bg-color` (흰색) + 그림자, 선택된 글자는 `--lh-primary-color`입니다.
+
+## 주의사항
+
+- **indicator의 위치**: UI 계층은 `transform: translateX(index * 100%)` + `width: 100/count%`를 사용; count는 반드시 **정규화 후**의 길이 (`normalizeSegmentedOptions`의 결과)여야 하며, 그렇지 않으면 옵션 증감 시 블록이 어긋납니다.
+- **문자열 작성법과 객체 작성법의 value**: 문자열 작성법에서는 `value === label`입니다; UI 계층의 `v-model`이 바인딩하는 것은 label이 아니라 value이며, 두 작성법을 혼용할 때 값의 출처에 주의하세요.
+- **그룹 전체 비활성화 판정 시점**: `isSegmentedDisabled`는 options에 의존하므로, 옵션이 동적으로 변할 때 다시 계산해야 하며 그렇지 않으면 비활성화 상태가 갱신되지 않습니다.
+- **radio와의 트레이드오프**: 세그먼트 컨트롤의 선택 블록은 **시각적으로 미끄러지며**, 애니메이션이 JS로 indicator를 위치시키는 것에 의존합니다; 대상 말단이 transform 애니메이션을 지원하지 않는다면 (일부 미니프로그램) radio 그룹으로 되돌리는 것이 더 안정적입니다.
+- **빈 options**: `normalizeSegmentedOptions([])`는 `[]`를 반환하고, `moveSegmentedIndex`는 current를 반환합니다——UI 계층은 빈 상태를 처리해야 하며, 빈 오목함을 렌더링하지 마세요.
+
+<FnPlayground module="segmented" fn="moveSegmentedIndex" params='{"options": [{"label": "일", "value": "day", "disabled": false}, {"label": "주", "value": "week", "disabled": true}, {"label": "월", "value": "month", "disabled": false}], "current": 0, "direction": 1}' />

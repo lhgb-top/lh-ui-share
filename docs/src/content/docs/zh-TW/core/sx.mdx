@@ -1,0 +1,138 @@
+---
+title: sx —— 樣式速寫
+description: 'sxToStyle 把 Tailwind 風格的 sx 屬性轉成內聯樣式，固定優先級：單邊 > 軸組 > 簡寫'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`sx` 是 lh-ui 的**內聯樣式速寫**：用 `mt: 4` 代替 `style="margin-top: 32px"`，用 `p: 2` 代替一次性寫四邊 padding。它不是 Tailwind（不生成類別名、不引 CSS），而是執行時把屬性包直接求值為 `Record<string, string>`，交給 UI 層綁到 `:style`。
+
+## 何時使用
+
+- 元件庫內部：`sx` 讓元件在「版面配置微調」這一層不必新增 prop——`<LhButton sx={{ mt: 2 }} />` 就能頂開上方間距。
+- 需要隨資料動態變化的間距：數值到 px 的換算（`×8`）讓「離我近一點」這類語義有了穩定刻度。
+- **不該用它**：成體系的視覺設計。sx 是「呼叫點的臨時微調」，主題色、控制項高度這類設計令牌仍然走 CSS 變數（見 [主題系統](/theme/overview)）；sx 裡寫 `color: 'var(--lh-primary-color)'` 能工作，但更推薦讓元件直接消費令牌。
+
+## 匯入方式
+
+```ts
+// 精確匯入（推薦，tree-shaking 友善）
+import { sxToStyle, mergeSx } from '@lh-ui/share/core/shared/sx'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+
+// 或從聚合入口
+import { sxToStyle } from '@lh-ui/share/core/shared'
+```
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `sxToStyle` | `(sx: LhSxProps) => Record<string, string>` | 內聯樣式物件 | 把 sx 屬性包求值為 CSS 樣式 |
+| `mergeSx` | `(...list: (LhSxProps \| undefined \| null)[]) => LhSxProps` | 合併後的 sx | 後者覆蓋前者，供 UI 層組合「預設 sx + 呼叫方 sx」 |
+
+### `sxToStyle` 的優先級規則
+
+**「單邊 > 軸組 > 簡寫」，且與鍵的書寫順序無關**。實作上按 `簡寫 → 軸組 → 單邊` 的固定順序寫入樣式物件，後寫覆蓋先寫，所以無論你怎麼排鍵序：
+
+```ts
+sxToStyle({ m: 2, mt: 4 })   // { marginTop: '32px', marginRight: '16px', marginBottom: '16px', marginLeft: '16px' }
+sxToStyle({ mt: 4, m: 2 })   // 完全相同
+sxToStyle({ my: 2, mt: 4 })  // marginTop 單邊勝出：32px；mb 仍是 16px
+```
+
+這條規則讓元件庫可以安全地寫「預設包 + 使用者覆蓋」：使用者傳的 `mt` 一定會壓過元件內部的 `m`。
+
+### 數值與字串
+
+- **數值按 `×8px` 換算**：`mt: 4` → `32px`。8 是 lh-ui 的間距基準（與 `--lh-spacing-*` 令牌同刻度）。
+- **字串原樣透傳**：`w: '50%'` → `50%`，`p: '1rem'` → `1rem`。
+- **版面配置類鍵不換算**：`display` / `flex` / `flexDirection` / `alignItems` / `justifyContent` 的值按字串直接寫入（`flexDirection: 'column'` 不會變成 `columnpx`）。
+- 所有鍵統一按 `!== undefined` 判定：傳空串 `''` 視為**顯式清空**，會被寫入。
+
+## 類型定義
+
+```ts
+export interface LhSxProps {
+  // 尺寸
+  w?: string | number
+  h?: string | number
+  // 外邊距：單邊 / 軸組 / 簡寫
+  mt?: string | number
+  mr?: string | number
+  mb?: string | number
+  ml?: string | number
+  my?: string | number
+  mx?: string | number
+  m?: string | number
+  // 內邊距：同構
+  pt?: string | number
+  pr?: string | number
+  pb?: string | number
+  pl?: string | number
+  py?: string | number
+  px?: string | number
+  p?: string | number
+  // 版面配置
+  display?: string
+  flex?: string
+  flexDirection?: 'row' | 'column'
+  alignItems?: string
+  justifyContent?: string
+  // 相容下游自訂鍵；未知鍵會被靜默丟棄
+  [key: string]: any
+}
+```
+
+索引簽名 `[key: string]: any` 是刻意的：各 UI 庫會在自己的 `LhXxxProps` 裡把 `sx?: LhSxProps` 與元件特有屬性放在一起，索引簽名讓類型不互相衝突；未知鍵在求值時被丟棄，不會洩漏進樣式。
+
+## 使用範例
+
+### 純函式
+
+```ts
+sxToStyle({ mt: 2, px: 3, display: 'flex', alignItems: 'center' })
+// {
+//   marginTop: '16px',
+//   paddingLeft: '24px',
+//   paddingRight: '24px',
+//   display: 'flex',
+//   alignItems: 'center',
+// }
+```
+
+### 各端接線
+
+```vue
+<!-- Vue3 / Vue2：直接綁 :style -->
+<template>
+  <lh-button :style="sxToStyle($props.sx)">按鈕</lh-button>
+</template>
+```
+
+```tsx
+// React
+<div style={sxToStyle({ my: 4, w: '100%' })} />
+```
+
+```ts
+// uniapp：sxToStyle 輸出的是普通物件，直接進 style 綁定
+// （數值 ×8px 在非 h5 端需要視平台換算，UI 層自行處理）
+```
+
+`mergeSx` 的典型用法是元件內部組合預設值：
+
+```ts
+// 元件內部
+const merged = mergeSx({ py: 2, px: 4 }, props.sx) // 使用者的 sx 覆蓋預設
+const style = sxToStyle(merged)                    // 只求值一次，優先級規則只結算一遍
+```
+
+## 注意事項
+
+- **`mergeSx` 是淺合併**（`Object.assign`），不遞迴；sx 的值都是標量，淺合併夠用。
+- **`sxToStyle` 假值傳回 `{}`**：`sxToStyle(undefined)` 是空物件，UI 層可以無腦呼叫。
+- 數值換算的 8px 基準與令牌體系對齊，但 sx 本身**不引用 CSS 變數**——它產出的是計算好的字面值，適合「這一次呼叫要偏一點」的場景，不適合「隨主題變」的場景。
+- 跨端：uniapp 非 h5 端的 rpx 需在 UI 層換算，sx 內核只出 px。
+
+<FnPlayground module="sx" fn="sxToStyle" params='{"sx": {"mt": 4, "px": 3, "display": "flex"}}' />

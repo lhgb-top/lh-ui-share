@@ -1,0 +1,268 @@
+---
+title: table —— جدول
+description: 'sortTableRows يضع القيم الفارغة في النهاية، وbuildHeaderCells يبسط القوائم متعددة المستويات، وgetStickyOffsets يحسب إزاحة الأعمدة الثابتة، وcomputeVisibleRange للتمرير الافتراضي'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الجدول هو «السلاح الثقيل» لعرض البيانات: الفرز، والتصفية، والقوائم متعددة المستويات، والأعمدة الثابتة، والتمرير الافتراضي، وسحب حدود الأعمدة — لكلٍّ منها معضلة خوارزمية مستقلة. واستخرج `core/table` كل ذلك في دوال صرفة — لا يفعل طرف العرض سوى ربط النتائج بـ DOM. وهو من أكثر وحدات المكونات عددًا للدوال في هذه الحزمة.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhTable`: القوائم الخلفية، وتقارير البيانات، وجداول العمليات الدفعية.
+- المشاهد التي تحتاج فيها البيانات المنظَّمة إلى فرز / تصفية / أعمدة ثابتة / قائمة متعددة المستويات.
+- **لا يجب استخدامه**: البيانات القليلة جدًا وغير التفاعلية (جدول `descriptions` البسيط أو جدول مكتوب بخط اليد أخف)؛ وتدفقات المعلومات على شكل بطاقات (استخدم تخطيط `card`).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_TABLE_ROW_HEIGHT,
+  LH_TABLE_OVERSCAN,
+  LH_TABLE_MIN_COL_WIDTH,
+  computeVisibleRange,
+  cycleSortOrder,
+  sortTableRows,
+  getCellValue,
+  getColumnWidth,
+  getGridTemplate,
+  getStickyOffsets,
+  getTableClassNames,
+  getTableCellClassNames,
+  flattenLeafColumns,
+  buildHeaderCells,
+  getHeaderStickyOffsets,
+  filterTableRows,
+  clampColumnWidth,
+  getTableSortAria,
+} from '@lh-ui/share/core/table'
+import type {
+  LhTableAlign,
+  LhTableColumn,
+  LhTableFilterOption,
+  LhTableHeaderCell,
+  LhTableRow,
+  LhTableSortOrder,
+  LhTableVisibleRange,
+  LhTableCellSticky,
+} from '@lh-ui/share/core/table'
+```
+
+## نية التصميم
+
+**القيم الفارغة في النهاية**: يعالج `sortTableRows` قيم `null` / `undefined` / `NaN` بشكل موحَّد — فهي لا تشارك في المقارنة العادية وتُوضع دائمًا في النهاية، **وتبقى في النهاية حتى عند الفرز التنازلي**. وهو قرار منتج صريح: فلا ينبغي لصفوف البيانات الفارغة أن تقفز إلى الصف الأول وتحجب البيانات الصالحة لمجرد عكس الترتيب.
+
+**أمان DAG في القوائم متعددة المستويات**: تستخدم `flattenLeafColumns` و`buildHeaderCells` **seen عامًّا** لا seen بسلسلة الأجداد — لأن كائن column الواحد قد يُشار إليه مرجعيًّا على هيئة DAG (نفس العمود تحت مجموعتين)، ويضمن الحكم العام إبثاثه مرة واحدة فقط، فلا يحدث تباين بين عدد أعمدة الجسم وعدد خلايا القائمة الورقية. كذلك يعتمد `leafSpan` في `buildHeaderCells` على «عدد الأوراق المُنبثقة فعليًّا عوديًّا» لا على عدٍّ مُسبق، وذلك تحديدًا لكي لا يُحسَب مخطط فرعي مشترك مرتين فيختل عدد الأعمدة.
+
+**وراثة الثبات (sticky) لقائمة مجموعة**: لا يُورِث `getHeaderStickyOffsets` إزاحة أول/آخر ورقة إلا عندما تكون **جميع الأوراق داخل المجال fixed على الجانب نفسه** — فالقائمة التي تمتد عبر منطقة ثابتة وأخرى متدفقة لا يمكن وضعها بإزاحة واحدة، فلا تُثبَّت أصلاً.
+
+**التحميلات الزائدة المتماثلة في `clampColumnWidth`**: «رقم يدخل ورقم يخرج، ونص يدخل ونص يخرج»، فلا يحتاج المستدعي إلى تأكيد نوع من أجل تحويل متماثل؛ ويعود NaN بالحد الأدنى مباشرة (قد تظهر إحداثيات NaN أثناء السحب).
+
+**`computeVisibleRange` مهمل @deprecated**: التقت خوارزمية التمرير الافتراضي في النواة المشتركة `core/shared/virtual` ضمن `computeRange` (من أصل واحد مع VirtualList)، وتُترَك هذه الدالة كاسم مستعار للتوافق مع المراجع القائمة لدى vue2 وغيره من المستهلكين.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `computeVisibleRange` | `(scrollTop, viewportHeight, rowHeight, total, overscan?) => LhTableVisibleRange` | المجال المرئي | **@deprecated**، يُفوِّض إلى `computeRange` |
+| `cycleSortOrder` | `(current?) => LhTableSortOrder \| undefined` | حالة الفرز التالية | لا شيء ← asc ← desc ← لا شيء |
+| `sortTableRows` | `(rows, prop, order, sorter?) => LhTableRow[]` | مصفوفة جديدة | القيم الفارغة في النهاية |
+| `getCellValue` | `(row, column) => string` | قيمة العرض | الأولوية لـ formatter |
+| `getColumnWidth` | `(column) => string` | `'120px'` / `'1fr'` | توزيع متساوٍ عند غياب العرض |
+| `getGridTemplate` | `(columns) => string` | قالب grid | لتخطيط CSS grid |
+| `getStickyOffsets` | `(columns) => LhTableCellSticky[]` | إزاحات الجانبين | تراكم الأعمدة الثابتة |
+| `getTableClassNames` | `(state: { stripe, border, size, virtual }) => string[]` | أسماء الأصناف | أربعة مُعدِّلات |
+| `getTableCellClassNames` | `(state) => string[]` | أسماء الأصناف | المحاذاة / العمود الثابت / السحب |
+| `flattenLeafColumns` | `(columns) => LhTableColumn[]` | أعمدة الورقة | لجسم الجدول متعدد المستويات |
+| `buildHeaderCells` | `(columns) => LhTableHeaderCell[]` | خلايا قائمة مسطَّحة | تتضمن rowspan/colspan |
+| `getHeaderStickyOffsets` | `(leafColumns, headerCells) => LhTableCellSticky[]` | إزاحة القائمة | وراثة مشروطة لقائمة مجموعة |
+| `filterTableRows` | `(rows, filters) => LhTableRow[]` | مصفوفة جديدة | AND بين الأعمدة وOR داخل العمود |
+| `clampColumnWidth` | `(width: number \| string) => number \| string` | العرض بعد الاقتصار | الحد الأدنى 40px |
+| `getTableSortAria` | `(options: { sortOrder?, sortable? }) => LhAriaAttrs` | حِزَمة سمات aria | aria-sort |
+
+الثوابت: `LH_TABLE_ROW_HEIGHT = 48` (الارتفاع الافتراضي للصف)، `LH_TABLE_OVERSCAN = 3` (صفوف الاحتياط عند التمرير)، `LH_TABLE_MIN_COL_WIDTH = 40` (الحد الأدنى للسحب).
+
+## تعريف الأنواع
+
+```ts
+export type LhTableAlign = 'left' | 'center' | 'right'
+export type LhTableSortOrder = 'asc' | 'desc'
+export type LhTableRow = Record<string, any>
+
+export interface LhTableColumn {
+  prop: string
+  label: string
+  width?: number | string          // الرقم يعني px
+  align?: LhTableAlign
+  fixed?: 'left' | 'right'         // يتطلب width
+  sortable?: boolean
+  slot?: string                    // اسم فتحة الخلية المخصصة
+  formatter?: (row: LhTableRow, value: any) => string
+  children?: LhTableColumn[]       // config كافٍ للحصول على قائمة متعددة المستويات
+  filters?: LhTableFilterOption[]  // تنطبق على أعمدة الورقة فقط
+  filterMethod?: (value: string | number, row: LhTableRow) => boolean
+  filterMultiple?: boolean         // افتراضيًا true
+  resizable?: boolean              // يتطلب width رقميًّا في عمود ورقة
+}
+
+export interface LhTableHeaderCell {
+  column: LhTableColumn
+  level: number          // مستوى القائمة بدءًا من 0
+  leafStart: number      // بداية ترتيب أعمدة الورقة
+  leafSpan: number       // عدد أعمدة الورقة الممتدة
+  rowspan: number        // تُكمل حتى أقصى عمق
+  colspan: number        // = leafSpan
+  isLeaf: boolean
+}
+
+export interface LhTableVisibleRange { start: number; end: number; offsetY: number; totalHeight: number }
+export interface LhTableCellSticky { left?: number; right?: number }
+```
+
+## إمكانية الوصول
+
+يُخرِج `getTableSortAria` سمة `aria-sort` متوافقة توافقًا صارمًا مع آلة الحالات في `cycleSortOrder`:
+
+```ts
+getTableSortAria({ sortable: true, sortOrder: 'asc' })    // { 'aria-sort': 'ascending' }
+getTableSortAria({ sortable: true, sortOrder: 'desc' })   // { 'aria-sort': 'descending' }
+getTableSortAria({ sortable: true })                      // { 'aria-sort': 'none' }
+getTableSortAria({ sortable: false })                     // {} (العمود غير القابل للفرز لا يُخرج شيئًا)
+```
+
+لاحظ الحالة الثالثة: عند عدم الفرز تُخرَج `aria-sort="none"` بدلًا من الحذف — وهو ما تنص عليه APG صراحةً، **«إعلان صريح أن هذا العمود قابل للفرز ولكنه غير مفروز حاليًا»**، وعلى أساسه يُلمِّح قارئ الشاشة للمستخدم بإمكانية الفرز في هذا العمود.
+
+بقية الاتفاقيات (ينفذها طرف العرض): تُستخدم `<th scope="col">`؛ ولا تُصنع تركيز إضافي بالـ `tabindex` في الأعمدة الثابتة؛ ومنطقة الترقيم هي `nav` مستقل؛ وتحتاج خانة اختيار صف إلى `aria-label` (مثل «اختر الصف الثالث»).
+
+## أمثلة الاستخدام
+
+```ts
+import { cycleSortOrder, sortTableRows, filterTableRows, buildHeaderCells } from '@lh-ui/share/core/table'
+
+cycleSortOrder(undefined)  // 'asc'
+cycleSortOrder('asc')      // 'desc'
+cycleSortOrder('desc')     // undefined (إلغاء الفرز)
+
+const rows = [
+  { name: 'وانغ وو', age: 30 },
+  { name: 'لي سي', age: null },
+  { name: 'تشانغ سان', age: 20 },
+]
+sortTableRows(rows, 'age', 'asc')
+// تشانغ سان 20 ← وانغ وو 30 ← لي سي null (القيمة الفارغة دائمًا في النهاية)
+sortTableRows(rows, 'age', 'desc')
+// وانغ وو 30 ← تشانغ سان 20 ← لي سي null (القيمة الفارغة تبقى في النهاية عند الفرز التنازلي)
+sortTableRows(rows, 'age', undefined)  // نسخة بالترتيب الأصلي
+
+filterTableRows(rows, [{ column: { prop: 'name' }, values: ['تشانغ سان'] }])
+// [{ name: 'تشانغ سان', age: 20 }]
+filterTableRows(rows, [])  // نسخة كاملة (بلا تصفية مُفعَّلة)
+
+// قائمة متعددة المستويات
+const columns = [
+  { label: 'المعلومات الأساسية', children: [{ prop: 'name', label: 'الاسم' }, { prop: 'age', label: 'العمر' }] },
+  { prop: 'city', label: 'المدينة' },
+]
+flattenLeafColumns(columns)  // [الاسم، العمر، المدينة] (يُرسم الجسم وفق هذا الترتيب)
+buildHeaderCells(columns)
+// المعلومات الأساسية (level 0, leafStart 0, colspan 2)، الاسم (rowspan 2 مُكتمل)،
+// العمر (rowspan 2)، المدينة (level 0, rowspan 2)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTableClassNames({ stripe, border, size, virtual })">
+  <div class="lh-table__wrapper">
+    <div class="lh-table__header" :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }">
+      <div
+        v-for="cell in headerCells"
+        :key="`${cell.level}-${cell.leafStart}`"
+        class="lh-table__header-cell"
+        :style="cellStyle(cell)"
+        v-bind="getTableSortAria({ sortOrder: sortState[cell.column.prop], sortable: cell.column.sortable })"
+        @click="onSort(cell.column)"
+      >
+        {{ cell.column.label }}
+        <span v-if="cell.column.sortable" class="lh-table__sort-indicator">
+          {{ sortState[cell.column.prop] === 'asc' ? '↑' : sortState[cell.column.prop] === 'desc' ? '↓' : '↕' }}
+        </span>
+      </div>
+    </div>
+    <div class="lh-table__body">
+      <div
+        v-for="row in displayRows"
+        :key="row.id"
+        class="lh-table__row"
+        :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }"
+      >
+        <div
+          v-for="column in leafColumns"
+          :key="column.prop"
+          :class="getTableCellClassNames({ align: column.align ?? 'left', fixed: column.fixed })"
+        >
+          {{ getCellValue(row, column) }}
+        </div>
+      </div>
+    </div>
+  </div>
+  <LhPagination :total="total" v-model:current="current" v-model:page-size="pageSize" />
+</div>
+```
+
+```ts
+// توصيل الفرز (مُتحكَّم به)
+function onSort(column: LhTableColumn) {
+  if (!column.sortable) return
+  const next = cycleSortOrder(sortState.value[column.prop])
+  if (next) sortState.value = { ...sortState.value, [column.prop]: next }
+  else delete sortState.value[column.prop]
+}
+
+const displayRows = computed(() =>
+  filterTableRows(
+    sortTableRows(props.data, sortProp.value, sortOrder.value),
+    activeFilters.value,
+  ),
+)
+```
+
+```tsx
+// React: التمرير الافتراضي
+// const range = computeRange(scrollTop, viewportHeight, rowHeight, rows.length, 3)
+// يُرسم range.start..range.end، ويُملأ الارتفاع الكلي بالخارج ويُستخدم translateY(range.offsetY) في الداخل
+```
+
+```ts
+// uniapp: <scroll-view scroll-y> + حساب المجال المرئي؛ ودعم CSS grid محدود في بعض الأطراف،
+// فيُمكن الرجوع إلى أعمدة flex؛ ودوال الفرز/التصفية/تسطيح القائمة في core محايدة للطرف، تُستخدم كما هي
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-table` / `--{small\|medium\|large}` | الصنف الأساسي / أحجام المقاسات (ارتفاع الصف والحشو الداخلي) |
+| `.lh-table--stripe` / `--border` / `--virtual` | تظليل متناوب للصفوف / الحدود / التمرير الافتراضي |
+| `.lh-table__header` / `__header-cell` | القائمة |
+| `.lh-table__body` / `__row` | الجسم |
+| `.lh-table__cell` / `--{left\|center\|right}` | الخلية / المحاذاة |
+| `.lh-table__cell--fixed-left` / `--fixed-right` | عمود ثابت (sticky) |
+| `.lh-table__cell--fixed-left-last` / `--fixed-right-first` | حدود الأعمدة الثابتة (فصل بظل) |
+| `.lh-table__cell--resizable` | عمود قابل للسحب |
+| `.lh-table__empty` | حالة الفراغ |
+
+ارتفاع الصف الافتراضي 48px (`LH_TABLE_ROW_HEIGHT`)، ويجب أن يتطابق مع المعامل `rowHeight` في خوارزمية التمرير الافتراضي وإلا انزلق المجال. وخلفية القائمة `--lh-fill-color`، والحدود `--lh-border-color`، وصف التحويم `--lh-fill-color-light`.
+
+## ملاحظات
+
+- **اتساق ارتفاع الصف شرط مسبق للتمرير الافتراضي**: تفترض `computeRange` تساوي ارتفاع جميع الصفوف؛ فإن دفع المحتوى داخل الصف إلى ازدياد طوله (التفاف نص طويل) اختلَّ التمرير الافتراضي — فلا تُفعِّل `virtual` في الجداول ذات الارتفاعات غير المنتظمة.
+- **العمود الثابت يجب أن يُصرَّح له بـ `width`**: لا يحسب `getStickyOffsets` الإزاحة إلا لأرقام px أو سلاسل `'Npx'`؛ فالوحدات مثل `'20%'` لا تُحوَّل وتُجمَّع على أنها 0، فتتراكم الأعمدة الثابتة فوق بعضها.
+- **تمهيد `resizable`**: يجب أن يكون **عمود ورقة بـ width رقمي**، ويُقيَّد العرض بعد السحب بالحد الأدنى عبر `clampColumnWidth` قبل إعادته إلى إعدادات الأعمدة.
+- **`prop` للفرز ومفاتيح البيانات**: يأخذ `sortTableRows` القيمة من `row[prop]`، فالحقول المتداخلة (`user.name`) لا تُدعم تلقائيًا، استخدم `sorter` مخصصًا.
+- **OR داخل عمود التصفية**: القيم المنتقاة المتعددة في العمود الواحد بينها علاقة «أو»، وبين الأعمدة المختلفة علاقة «و» — وهو المعنى المتعارف عليه والموافق لـ Element.
+- **ترتيب أعمدة جسم الجدول متعدد المستويات**: يجب أن يستخدم الجسم `flattenLeafColumns(columns)` لا `columns`، وإلا لن تتطابق عدد الأعمدة مع عدد خلايا القائمة.
+- **الأعمدة المشتركة على هيئة DAG**: حين يُشار إلى كائن column نفسه تحت مجموعتين، يضمن seen العام إبثاثه مرة واحدة فقط — ولكن **أثر الإشارة إلى الكائن نفسه هو أن التعديل في موضع يمتد إلى الآخر**، فإذا لزم «نفس الاسم بإعدادات مختلفة» فانسخه نسخًا عميقًا.
+- **فرز البيانات الضخمة هو O(n log n)**: سيتعثَّر فرز عشرات الآلاف من الصفوف في كل إطار، ففكِّر في الفرز من جهة الخادم (`sortable: 'custom'` يُتفق عليه في طرف العرض).
+- **سمة `aria-sort` لـ `getTableSortAria` تُوضع على `<th>`**، لا على كل خلية في العمود.
+
+<FnPlayground module="table" fn="cycleSortOrder" params='{"current": "asc"}' />

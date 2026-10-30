@@ -1,0 +1,154 @@
+---
+title: popper —— движок позиционирования плавающих слоёв
+description: 'computePosition реализует 12 размещений, переворот по главной оси и кламп по поперечной оси; на входе чистые rect, можно unit-тестировать напрямую'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+tooltip, popover, popconfirm, dropdown, выпадающий список select, панель cascader, календарь date-picker — всё в lh-ui, что «парит рядом с триггером», получает свою позицию из этой единственной функции.
+
+## Почему не floating-ui / popper.js
+
+Все четыре порта семьи (Vue3 / Vue2 / React / uniapp) подключают этот пакет, и объём сторонней библиотеки позиционирования вместе с темпом её обновлений превратился бы в четырёхкратное бремя. Движок позиционирования share покрывает только то подмножество, которое семья реально использует: 12 размещений, переворот по главной оси, кламп по поперечной оси, смещение стрелки — около 300 строк, без зависимостей, чистые функция на входе и выходе: **не создаёт DOM, не слушает события, не запускает requestAnimationFrame**. Планирование и рендеринг каждый UI-слой решает сам (Vue3 — `watchEffect`, React — `useLayoutEffect`, uniapp — события прокрутки страницы).
+
+## Импорт
+
+```ts
+import {
+  computePosition,
+  parsePlacement,
+  getWindowViewport,
+  type LhPlacement,
+  type LhComputePositionOptions,
+} from '@lh-ui/share/core/shared/popper'
+```
+
+## Типы и константы
+
+```ts
+// 12 размещений = 4 направления × 3 выравнивания (суффикс center можно опустить)
+export type LhPlacement =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhPlacementDir = 'top' | 'bottom' | 'left' | 'right'
+export type LhPlacementAlign = 'start' | 'center' | 'end'
+
+// Минимальная структура, изоморфная DOMRect — в тестах создаётся обычным литералом
+export interface LhDOMRectLike {
+  top: number
+  left: number
+  width: number
+  height: number
+  right: number
+  bottom: number
+}
+
+export interface LhComputePositionOptions {
+  placement?: LhPlacement       // по умолчанию 'bottom'
+  gap?: number                  // расстояние до триггера, по умолчанию 8
+  padding?: number              // безопасный отступ от вьюпорта, по умолчанию 8
+  flip?: boolean                // переворот при переполнении по главной оси, по умолчанию true
+  shift?: boolean               // кламп по поперечной оси, по умолчанию true
+}
+
+export interface LhPopperPosition {
+  top: number
+  left: number
+  placement: LhPlacement        // фактически сработавшее размещение после переворота
+  arrowOffset: number           // смещение стрелки на поперечной оси (px, от начала поперечной оси плавающего слоя)
+}
+```
+
+## Таблица функций
+
+| Функция | Сигнатура | Назначение |
+| --- | --- | --- |
+| `parsePlacement` | `(placement: LhPlacement) => { dir, align }` | расщепляет размещение на «направление + выравнивание»; при некорректном направлении откат к `bottom`, при некорректном выравнивании — к `center` |
+| `buildPlacement` | `(dir: LhPlacementDir, align: LhPlacementAlign) => LhPlacement` | восстанавливает размещение из направления и выравнивания (суффикс опускается при `center`) |
+| `flipDir` | `(dir: LhPlacementDir) => LhPlacementDir` | переворот по главной оси: top↔bottom, left↔right |
+| `basePosition` | `(dir, align, trigger, popper, gap) => { top, left }` | базовая расстановка по размещению (**без учёта ограничений вьюпорта**) |
+| `fitsInViewport` | `(dir, trigger, popper, viewport, gap, padding) => boolean` | помещается ли плавающий слой в вьюпорт целиком в указанном направлении (проверка по главной оси) |
+| `computePosition` | `(trigger, popper, viewport, options?) => LhPopperPosition` | **главный вход**: полное вычисление позиции |
+| `getWindowViewport` | `() => LhDOMRectLike` | строит rect вьюпорта из окна браузера; с SSR-предохранителем (при отсутствии `window` — rect нулевого размера) |
+| `isOutsideViewport` | `(rect, viewport) => boolean` | полностью ли rect покинул вьюпорт (при прокрутке, когда триггер стал невидим, плавающий слой следует закрыть) |
+
+## Порядок вычислений в computePosition
+
+```
+flip (переворот по главной оси)
+  → перевернуть, только если в новом направлении хватает места (избежать ещё худшего варианта)
+  → расстановка по размещению (basePosition)
+  → shift: кламп по поперечной оси (вдоль безопасного отступа padding)
+  → кламп по главной оси (только когда flip включён и не помещает ни с одной стороны — прижать к той стороне, к которой можно)
+  → нижний кламп как защитная сетка (подстраховка: отрицательных координат не бывает)
+```
+
+Ключевые решения:
+
+- **Переворот условный**. Распространённая ошибочная реализация — «переполнение → переворот»: в результате, когда триггер находится в центре вьюпорта, а плавающий слой высок, после переворота он помещается ещё хуже. `computePosition` сначала через `fitsInViewport` спрашивает «поместится ли после переворота», и если нет — не переворачивает, а переходит к клампу по главной оси.
+- **Возвращается реально сработавший `placement`**. После переворота поле `placement` становится новым размещением, и UI-слой по нему переключает класс стрелки (`is-top` / `is-bottom`) — направление стрелки обязано совпадать с фактическим размещением, иначе визуально стрелка оторвётся от плавающего слоя.
+- **Стрелка всегда указывает на центр триггера**; `arrowOffset` — смещение на поперечной оси, ограниченное рамками плавающего слоя; верхним пределом `padding` служит половина плавающего слоя, чтобы верхняя и нижняя границы не поменялись местами (и стрелка не оказалась снаружи плавающего слоя).
+
+## Примеры использования
+
+### Чистая функция (можно unit-тестировать напрямую)
+
+```ts
+const trigger = { top: 100, left: 50, width: 80, height: 32, right: 130, bottom: 132 }
+const popper = { top: 0, left: 0, width: 200, height: 120, right: 200, bottom: 120 }
+const viewport = { top: 0, left: 0, width: 375, height: 667, right: 375, bottom: 667 }
+
+computePosition(trigger, popper, viewport, { placement: 'top' })
+// Над триггером хватает места:
+// { top: 132 - 8 - 120, left: ..., placement: 'top', arrowOffset: ... }
+```
+
+### Подключение во Vue3
+
+```ts
+// внутри компонента плавающего слоя
+function update() {
+  if (!triggerEl.value || !popperEl.value) return
+  const pos = computePosition(
+    triggerEl.value.getBoundingClientRect(),
+    popperEl.value.getBoundingClientRect(),
+    getWindowViewport(),
+    { placement: placementRef.value, gap: 8 },
+  )
+  popperEl.value.style.top = `${pos.top}px`
+  popperEl.value.style.left = `${pos.left}px`
+  actualPlacement.value = pos.placement
+}
+
+onMounted(() => {
+  watchEffect(update)          // пересчёт при изменении реактивных зависимостей
+  window.addEventListener('scroll', update, true)
+})
+```
+
+### Подключение в React
+
+```tsx
+useLayoutEffect(() => {
+  if (!triggerRef.current || !popperRef.current) return
+  const pos = computePosition(/* ... */)
+  setPos(pos)
+}, [open, placement])
+```
+
+### Подключение в uniapp
+
+Реализация `getBoundingClientRect` в uniapp различается по концам (в мини-программах нужен `uni.createSelectorQuery`); UI-слой измеряет rect и затем вызывает всё тот же `computePosition` — сам алгоритм полностью идентичен.
+
+## Замечания
+
+- **Параметры предварительно санитизируются на уровне полей**: нефинитные поля (NaN / Infinity) обнуляются, и плохой rect не попадает в геометрические вычисления.
+- **SSR-безопасность**: `getWindowViewport()` в среде без `window` возвращает rect нулевого размера; `computePosition` вообще не касается DOM и может один раз вычислить позицию на сервере.
+- **Семантика `flip: false`**: вызывающая сторона сама принимает переполнение по главной оси; при этом по главной оси остаётся только нижний кламп (он не затолкнёт плавающий слой в отрицательные координаты). Это используется в сценариях «с фиксированным направлением» вроде `select` / `cascader`.
+- **Не обрабатывает Resize / Scroll**: планирование — дело UI-слоя; share лишь гарантирует «при заданном входе выход определён».
+- `LhPosition` (`'top-left'` / `'bottom-right'` и т. п., см. [types](/ru/core/types)) — это **другая модель размещений**: `LhPosition` используется для семантики «прилипания к краю» в affix / backtop и не имеет выравнивающих суффиксов `-start` / `-end`; не смешивайте их.
+
+<FnPlayground module="popper" fn="computePosition" params='{"trigger": {"top": 100, "left": 50, "width": 80, "height": 32, "right": 130, "bottom": 132}, "popper": {"top": 0, "left": 0, "width": 200, "height": 120, "right": 200, "bottom": 120}, "viewport": {"top": 0, "left": 0, "width": 375, "height": 667, "right": 375, "bottom": 667}, "options": {"placement": "top"}}' />

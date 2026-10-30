@@ -1,0 +1,176 @@
+---
+title: descriptions —— 記述リスト
+description: 'buildDescriptionRows は span を正規化して行構成を組み立てる（不正値のフォールバック、超過幅のクランプ、最終行の埋め）'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+記述リストは「読み取り専用のテーブル」です：1 件のレコードの複数フィールド（ラベル + 値）を表示し、ソートもフィルタもページネーションも必要としません。難しさは一点に集中します——**項目が複数列を占有するときの折り返し計算**です：ある項目が `span: 2` なのにその行の残り幅が 1 列分しかない場合、どうする？ 最終行に 2 つの項目しかないが全体で 4 列ある場合、埋めをする？ `buildDescriptionRows` はこれらの問いに答えます。
+
+## いつ使うか
+
+- 各端末で `LhDescriptions` を実装するケース：詳細ページ（注文詳細、ユーザープロフィール）、設定サマリー、承認フローの情報表示。
+- 読み取り専用の「ラベルと値」をグループで表示し、1 行に複数フィールドを収めたいシーン。
+- **使うべきでないケース**：ソート / フィルタ / 行操作が必要なテーブル（`table` を使う）；単一フィールドの表示（label + テキストで直接表示）；編集が必要（`form` を使う）。
+
+## インポート方法
+
+```ts
+import {
+  getDescriptionsClassNames,
+  buildDescriptionRows,
+} from '@lh-ui/share/core/descriptions'
+import type { LhDescriptionsItem, LhDescriptionsState } from '@lh-ui/share/core/descriptions'
+```
+
+## 設計意図
+
+`buildDescriptionRows` の 4 つのルールはいずれも防御的で、それぞれが現実の入力パターンに対応しています：
+
+1. **不正な span は 1 にフォールバック**：`span <= 0`、NaN、非数値（`Number('宽')` = NaN）はすべて 1 として扱われます。設定はしばしばユーザーが渡す props から来ます。汚い値のせいでレイアウトが 0 列に崩れてはなりません。
+2. **その行の残り幅へのクランプ**：`used + span > column` のとき残り幅（最低 1 列）にクランプします。もし単に折り返したら、その行に穴が残り、見た目は バグ のようになります。
+3. **単一の span が行全体を超える場合は行全体にクランプ**：`column: 3` のとき `span: 5` の項目を渡すと、はみ出すのではなくその行全体を占有します。
+4. **最終行の埋め**：最後の行が `column` に満たないとき、`filler` フィールドがレンダリング層に埋めるべきプレースホルダーセルの数を伝えます——枠線付きスタイルでは埋めをしないと枠線が一本欠けます。
+
+戻り値は「行の配列」で、各行は `cells`（項目 + 実 span）と `filler`（埋めるプレースホルダー数）を持ちます。UI 層は 2 階層の `v-for` を書くだけです。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getDescriptionsClassNames` | `(state: LhDescriptionsState) => string[]` | クラス名 | border 修飾 |
+| `buildDescriptionRows` | `(items: LhDescriptionsItem[], column: number) => Row[]` | 行構成 | 折り返し + 埋め |
+
+```ts
+type Row = {
+  cells: { item: LhDescriptionsItem; span: number }[]
+  filler: number
+}
+```
+
+## 型定義
+
+```ts
+export interface LhDescriptionsItem {
+  label: string
+  value?: string | number    // スコープ付きスロットでも渡せる
+  span?: number              // 占有する列数。デフォルト 1、column を超えるとクランプされる
+}
+
+export interface LhDescriptionsState {
+  column: number    // 1 行に表示する列数
+  border: boolean   // 枠線を表示するか（テーブルレイアウト）
+}
+```
+
+## アクセシビリティ
+
+`descriptions` は**表示系のコンポーネント**で、APG のロール要件はありません。推奨される DOM 構造は定義リストのセマンティクスです：
+
+```html
+<dl>
+  <dt>ユーザー名</dt><dd>lhgb</dd>
+  <dt>メールアドレス</dt><dd>i@lhgb.top</dd>
+</dl>
+```
+
+これは「ラベルと値」のデータモデルと自然に対応し、スクリーンリーダーは「ユーザー名：lhgb」と正しく読み上げます。`<table>` で実装する場合（枠線付きスタイルではよくあります）、`role="presentation"` を付けるか表头のセマンティクスを保ってください——本物の `<th scope="row">` を使いながら summary を与えないのは避けてください。スクリーンリーダーがこれをインタラクティブなテーブルだと誤解します。
+
+枠線付きのとき `filler` が埋めるプレースホルダーセルには `aria-hidden="true"` を付け、スクリーンリーダーが空のセルを読み上げないようにします。
+
+## 使用例
+
+```ts
+import { buildDescriptionRows } from '@lh-ui/share/core/descriptions'
+
+// column 3：3 つ目の項目は span 2 だが、その行の残り幅は 1 列 → 1 にクランプ
+buildDescriptionRows([
+  { label: 'ユーザー名', value: 'lhgb' },
+  { label: 'メールアドレス', value: 'i@lhgb.top' },
+  { label: '署名', value: 'コーダー', span: 2 },
+], 3)
+// [{ cells: [ユーザー名(1), メールアドレス(1), 署名(1)], filler: 0 }]  ← クランプ後ちょうど満行
+
+// 注意：実装は**残り幅へのクランプ**であって折り返しではありません——span がその行に収まらない場合、次の行に追いやられることはありません
+buildDescriptionRows([
+  { label: 'ユーザー名', value: 'lhgb' },
+  { label: '署名', value: 'コーダー', span: 2 },
+  { label: 'メールアドレス', value: 'i@lhgb.top' },
+], 2)
+// [
+//   { cells: [ユーザー名(1), 署名(2→1 にクランプ)], filler: 0 },  ← 満行
+//   { cells: [メールアドレス(1)], filler: 1 },                     ← 最終行に 1 つ埋め
+// ]
+
+// 単一の span が行全体の列数を超える場合：同じく残り幅にクランプ（ここでは行全体）
+buildDescriptionRows([{ label: 'A', span: 1 }, { label: 'B', span: 5 }], 2)
+// [{ cells: [A(1), B(5→1 にクランプ)], filler: 0 }]  ← B は最初の行の残り 1 列に収まる
+
+// B 1 つだけで、かつ span が行全体を超える場合のみ行全体を占有する
+buildDescriptionRows([{ label: 'B', span: 5 }], 2)
+// [{ cells: [B(5→2 にクランプ)], filler: 0 }]
+
+// 不正な span のフォールバック
+buildDescriptionRows([{ label: 'A', span: 0 }, { label: 'B', span: NaN }, { label: 'C', span: -1 }], 3)
+// [{ cells: [A(span 1), B(span 1), C(span 1)], filler: 0 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getDescriptionsClassNames({ column, border })">
+  <div v-for="(row, ri) in rows" :key="ri" class="lh-descriptions__row">
+    <template v-for="(cell, ci) in row.cells" :key="ci">
+      <div class="lh-descriptions__label" :style="{ gridColumn: `span ${cell.span}` }">
+        {{ cell.item.label }}
+      </div>
+      <div class="lh-descriptions__value" :style="{ gridColumn: `span ${cell.span}` }">
+        <slot :name="cell.item.label" :item="cell.item">{{ cell.item.value }}</slot>
+      </div>
+    </template>
+    <div
+      v-for="f in row.filler"
+      :key="`filler-${f}`"
+      class="lh-descriptions__filler"
+      aria-hidden="true"
+    />
+  </div>
+</div>
+```
+
+```ts
+const rows = computed(() => buildDescriptionRows(props.items, props.column))
+```
+
+```tsx
+// React：CSS grid の gridColumn: `span ${cell.span}` を使用；
+// label と value がそれぞれ span 列を占めるため、「column 3」は実際には 6 グリッドユニットになる点に注意
+```
+
+```ts
+// uniapp：<view> + flex の比率（span / column * 100%）；
+// border 付きの場合、flex レイアウトの罫線は擬似要素か box-shadow でテーブル線を模擬する
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-descriptions` | 基本クラス |
+| `.lh-descriptions--border` | 枠線付き（ラベル背景色で区別） |
+| `.lh-descriptions__row` | 1 行 |
+| `.lh-descriptions__label` | ラベルセル |
+| `.lh-descriptions__value` | 値セル |
+| `.lh-descriptions__filler` | 最終行の埋め（`aria-hidden`） |
+
+ラベル幅の 2 つのモード：`border` 時はラベルと値が同列で等幅。枠線なしの場合はラベル幅はコンテンツで決まります（`--lh-descriptions-label-width` で上書き可能）。ラベル文字 `--lh-text-color-secondary`、値 `--lh-text-color-primary`。
+
+## 注意事項
+
+- **column とグリッドユニットの関係**：`span` は「項目数」の単位ですが、レンダリング時にはラベルと値がそれぞれ 1 つ分の幅を占めます。CSS grid で label/value をそれぞれ 1 グリッドユニットとすると、`column: 3` は実際には 6 列のグリッドが必要です——UI 層の列数の定義は core の `column` の口径と一致させてください（1 項目 = 1 span 単位）。
+- **レスポンシブな column**：狭い画面では `column` を小さく（例：3 → 1）します。`buildDescriptionRows` を再計算するだけです。core は画面幅を監視しません。UI 層がメディアクエリかコンテナクエリで切り替えます。
+- **スコープ付きスロットの key**：UI 層はしばしば `item.label` をスロット名に使います。ラベルに特殊文字（スペース、中国語）が含まれていてもフレームワークの互換性は問題ありませんが、`/` を含む場合や重複したラベルでは衝突します——UI 層が `slot` フィールドのエイリアスを提供することを推奨します（この型ではまだ提供していません。各端末で自由に拡張してください）。
+- **`filler` が必要なのは border モードのみ**：枠線なしなら埋めセルは見えませんが、残しておいても余分なレンダリングコストはかからず、統一してレンダリングする方がシンプルです。
+- **空の items**：`buildDescriptionRows([], 3)` は `[]` を返し、UI 層は空のコンテナをレンダリングします——空状態（`empty` コンポーネントかテキスト）を忘れないでください。
+- **値のデフォルト表示**：`value` が undefined のときに何を表示するかは UI 層が決めます（通常 `—`）。core はテキストに干渉しません。
+
+<FnPlayground module="descriptions" fn="buildDescriptionRows" params='{"items": [{"label": "ユーザー名", "value": "lhgb"}, {"label": "メールアドレス", "value": "i@lhgb.top"}, {"label": "署名", "value": "コーダー", "span": 2}], "column": 2}' />

@@ -1,0 +1,110 @@
+---
+title: 'types —— Types unions partagés'
+description: 'LhComponentSize / LhComponentLanguage / LhComponentType / LhPosition, dérivés des constantes du module constants'
+---
+
+Les quatre types unions communs aux composants de core. Leurs valeurs ne sont pas une union de littérales écrite à la main, mais **dérivée des constantes `as const` de `src/constants/`** — pour ajouter une taille ou une langue, on ne modifie que la constante, et les types suivent automatiquement.
+
+## Import
+
+```ts
+import type {
+  LhComponentSize,
+  LhComponentLanguage,
+  LhComponentType,
+  LhPosition,
+} from '@lh-ui/share/core/shared/types'
+```
+
+## Les quatre types
+
+| Type | Définition | Valeurs effectives |
+| --- | --- | --- |
+| `LhComponentSize` | `(typeof LH_SIZE_CONST)[keyof typeof LH_SIZE_CONST]` | `'small' \| 'medium' \| 'large' \| 'mini' \| 'x-large'` |
+| `LhComponentLanguage` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | `'zh-CN' \| 'en-US' \| 'ja-JP' \| 'ko-KR' \| 'de-DE' \| 'fr-FR'` |
+| `LhComponentType` | `(typeof LH_TYPES_CONST)[keyof typeof LH_TYPES_CONST] \| 'default' \| 'primary'` | `'success' \| 'warning' \| 'error' \| 'info' \| 'danger' \| 'default' \| 'primary'` |
+| `LhPosition` | union de littérales | `'top' \| 'top-left' \| 'top-right' \| 'bottom' \| 'bottom-left' \| 'bottom-right' \| 'left' \| 'right'` |
+
+### Le `'x-large'` de LhComponentSize
+
+C'est une taille **réservée aux seniors** (gros caractères, grandes zones tactiles). Notez la structure de la constante :
+
+```ts
+// src/constants/index.ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',
+  large: 'large',
+  mini: 'mini',
+  old: 'x-large',   // clé old, valeur 'x-large' ; réservée aux seniors
+} as const
+```
+
+**Le nom de la clé et la valeur diffèrent** (`old` ↔ `'x-large'`), et c'est la **valeur** `'x-large'` qui apparaît dans l'union de types. Par ailleurs, l'interrupteur du mode réservé aux seniors dans les props du composant est un autre champ booléen `old?: boolean` (voir [LhBaseProps](/fr/reference/types)) — la valeur d'énumération de taille et la prop interrupteur sont deux choses différentes, ne les confondez pas.
+
+### Les deux couleurs de base de LhComponentType
+
+`'default'` / `'primary'` ne figurent pas dans `LH_TYPES_CONST` (qui contient les cinq **couleurs sémantiques** : succès / avertissement / erreur / information / danger) : elles sont rajoutées au niveau du type via `| 'default' | 'primary'`. Elles ne sont pas une « sémantique d'état », mais les couleurs d'apparence de base des composants comme les boutons.
+
+### LhPosition et LhPlacement sont deux modèles
+
+| | `LhPosition` | `LhPlacement` ([popper](/fr/core/popper)) |
+| --- | --- | --- |
+| Usage | positionnement contre le bord (affix / backtop) | positionnement des couches flottantes (tooltip / popover) |
+| Valeurs | `'top'` / `'top-left'` / `'top-right'` / `'bottom'` / `'bottom-left'` / `'bottom-right'` / `'left'` / `'right'` | `'top'` / `'top-start'` / `'top-end'` / `'bottom'` / `'bottom-start'` / `'bottom-end'` / `'left'` / `'left-start'` / `'left-end'` / `'right'` / `'right-start'` / `'right-end'` |
+| Suffixe d'alignement | `-left` / `-right` (uniquement les deux extrémités) | `-start` / `-end` (alignement sémantique, avec retournement RTL pris en charge) |
+
+Les `-left` / `-right` de `LhPosition` sont des **directions physiques** ; les `-start` / `-end` de `LhPlacement` sont des **directions logiques** (retournement automatique en mise en page RTL). Ne convertissez pas de l'une vers l'autre.
+
+## Pourquoi la dérivation à partir des constantes
+
+```ts
+// Contre-exemple : une union écrite à la main, ajouter une langue oblige à modifier deux endroits
+type LhComponentLanguage = 'zh-CN' | 'en-US'  // ← risque de désynchronisation avec la constante
+
+// L'approche de ce dépôt : la constante est la source unique
+type LhComponentLanguage = (typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]
+```
+
+Ajouter une langue se borne à ajouter une ligne à `LH_LANGUAGE_CONST` ; le type, `LhLocaleType` et la validation des paramètres de `setLocale` sont tous mis à jour automatiquement. C'est une application concrète de la stratification « constantes `LH_XXX`, types `LhXxx` » décrite dans les [conventions de nommage](/fr/guide/naming).
+
+## Exemples d'utilisation
+
+### Les props de composants
+
+```ts
+import type { LhComponentSize, LhComponentType } from '@lh-ui/share/core/shared/types'
+
+interface LhButtonProps {
+  type?: LhComponentType   // autocomplétion 'primary' | 'success' | …
+  size?: LhComponentSize   // autocomplétion 'small' | 'medium' | …
+}
+```
+
+### Une version générique pour des extensions métier
+
+Le métier a souvent besoin de « types de composants + quelques-uns de nos propres types » ; `src/types/components/base.ts` fournit une version générique (voir la [référence types](/fr/reference/types)) :
+
+```ts
+import type { LhTypes } from '@lh-ui/share/types'
+
+type MyButtonType = LhTypes<'brand' | 'dangerous'>
+// → LhComponentType | 'brand' | 'dangerous'
+```
+
+### La validation à l'exécution
+
+Les types eux-mêmes ne font aucune validation à l'exécution. Au sein du composant, on effectue un contrôle de valeur à l'aide de la constante :
+
+```ts
+import { LH_SIZE_CONST } from '@lh-ui/share/constants'
+
+const isValidSize = (v: string): v is LhComponentSize =>
+  Object.values(LH_SIZE_CONST).includes(v as LhComponentSize)
+```
+
+## Points d'attention
+
+- **Des types uniquement exportés** : ce module importe la constante en `import type` et ne produit aucun code à l'exécution après compilation (la constante mise à part). Un import de type pur n'a aucun impact sur le volume du paquet.
+- **`'mini'` et `'x-large'` sont des paliers d'extension** : `small / medium / large` sont les trois paliers habituels ; `mini` sert aux scénarios compacts en ligne (les boutons d'action à l'intérieur d'un tableau) et `x-large` au palier d'accessibilité réservé aux seniors. Tous les composants ne prennent pas en charge les cinq paliers : reportez-vous à la documentation de chacun.
+- **`LhPosition` n'est pas repris par la surface d'export publique de `src/types`** : il se trouve dans `core/shared/types` et doit être importé depuis `@lh-ui/share/core/shared/types` ; il n'existe pas dans `@lh-ui/share/types`.

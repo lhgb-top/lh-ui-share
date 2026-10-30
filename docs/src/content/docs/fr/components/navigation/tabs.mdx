@@ -1,0 +1,180 @@
+---
+title: 'tabs onglets —— Navigation'
+description: "resolveActiveName et la signature de page à chaîne vide, getNameAfterRemove pour la stratégie d'activation après suppression d'un onglet, double liaison aria entre tab et tabpanel"
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Les onglets sont le « basculeur de contenu dans une même zone » : la page de paramètres « Base / Sécurité / Notifications », les onglets du navigateur. Ils empilent plusieurs panneaux dans un même espace et basculent leur visibilité avec les étiquettes — un gain de place verticale, au prix de ne pouvoir voir qu'un panneau à la fois. `core/tabs` gère la **résolution de l'état actif, la stratégie d'activation après suppression d'un onglet, et la navigation par roving tabindex**.
+
+## Quand l'utiliser
+
+- Chaque port implémente `<LhTabs>` / `<LhTabPane>` : page de paramètres, zonation des pages de détail, bascule des panneaux d'un tableau de bord.
+- Des zones de contenu **mutuellement exclusives** et **de même niveau**.
+- **À éviter** : des étapes de flux séquentielles (utilisez `steps` — tabs n'a pas de sémantique d'ordre) ; la navigation hiérarchique (utilisez `menu`) ; lorsque deux panneaux doivent être comparés côte à côte (utilisez `grid`) ; à manier avec précaution lorsque le bascule fait perdre un brouillon de formulaire (la couche UI peut utiliser keep-alive).
+
+## Import
+
+```ts
+import {
+  getTabsClassNames,
+  resolveActiveName,
+  getNextActiveName,
+  getNameAfterRemove,
+  getTablistAria,
+  getTabAria,
+  getTabpanelAria,
+} from '@lh-ui/share/core/tabs'
+import type {
+  LhTabsType, LhTabsPosition, LhTabRecord, LhTabNavDirection,
+} from '@lh-ui/share/core/tabs'
+```
+
+## Intentions de conception
+
+**`!= null` plutôt qu'un court-circuit sur valeur truthy** : `resolveActiveName` teste modelValue avec `modelValue != null` — car **le nom d'onglet est un identifiant métier, et la chaîne vide est une valeur légitime**. Lorsqu'un utilisateur lie explicitement un onglet avec `name: ''`, un court-circuit truthy (`if (modelValue && ...)`) traiterait la chaîne vide comme « valeur non transmise » et l'ignorerait, en activant le premier onglet disponible — produisant un décalage d'état difficile à diagnostiquer.
+
+**La validation de l'activation prend en compte disabled** : si `modelValue` existe mais que l'onglet correspondant est désactivé, **il n'est pas activé** et l'on replie sur le premier onglet disponible — un onglet désactivé ne peut être sélectionné, c'est une contrainte dure, qui vaut même pour une assignation externe forcée.
+
+**`getNameAfterRemove` : d'abord à droite, puis à gauche** : lorsque l'onglet supprimé est l'onglet actif, on privilégie **l'élément disponible le plus proche à droite** (pour conserver la position du regard) ; s'il n'y en a pas, on prend l'élément le plus proche à gauche. Cet ordre correspond à l'intuition « après une suppression, le focus se déplace naturellement vers la droite ». Lorsque l'élément supprimé n'est pas l'élément actif, l'activation est conservée.
+
+**`getNextActiveName` est une enveloppe @deprecated** : l'algorithme de navigation a été regroupé dans `getNextListIndex` de `shared/keyboard` ; cette fonction conserve l'ancienne signature (des noms directionnels sémantiques 'next'/'prev'/'first'/'last') et le comportement historique « repli sur le premier élément lorsque la valeur courante est inconnue ou désactivée ». **Le nouveau code doit utiliser le noyau directement**.
+
+**Roving tabindex** : le modèle standard de navigation clavier pour une barre d'onglets est le roving tabindex — tous les onglets ont `tabindex="-1"`, seul l'onglet actif a `tabindex="0"`. Les touches directionnelles déplacent le focus entre les onglets, et la touche Tab quitte la barre d'onglets pour entrer dans le contenu du panneau. `getNextActiveName` renvoie le nom de l'onglet cible ; la couche UI déplace le focus et fixe le tabindex en conséquence.
+
+**Double liaison aria** : l'onglet `aria-controls` → id du panneau ; le panneau `aria-labelledby` → id de l'onglet actif. Les deux extrémités doivent être écrites, afin que le lecteur d'écran puisse passer d'une extrémité à l'autre. `aria-selected` n'est émis que pour l'état actif (pas de false émis — l'état non actif est l'état par défaut).
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getTabsClassNames` | `(state: { type, position }) => string[]` | classes | apparence + position |
+| `resolveActiveName` | `(records, modelValue) => string \| null` | nom de l'onglet actif | validation de modelValue + repli |
+| `getNextActiveName` ⚠️ | `(records, currentName, direction) => string \| null` | nom de l'onglet cible | navigation clavier |
+| `getNameAfterRemove` | `(records, removedName, currentName) => string \| null` | suggestion d'activation | après suppression, d'abord à droite puis à gauche |
+| `getTablistAria` | `(id?) => LhAriaAttrs` | paquet aria | role=tablist |
+| `getTabAria` | `(options: { active, disabled?, panelId?, id? }) => LhAriaAttrs` | paquet aria | role=tab |
+| `getTabpanelAria` | `(options: { tabId?, id? }) => LhAriaAttrs` | paquet aria | role=tabpanel |
+
+⚠️ est une enveloppe de compatibilité `@deprecated` ; le nouveau code doit utiliser `getNextListIndex` de `shared/keyboard`.
+
+## Définitions de types
+
+```ts
+export type LhTabsType = 'line' | 'card'      // apparence soulignée / en carte
+export type LhTabsPosition = 'top' | 'bottom' // position des onglets
+export type LhTabNavDirection = 'next' | 'prev' | 'first' | 'last'
+
+export interface LhTabRecord {
+  name: string       // identifiant unique (clé stable, ne change pas au cours du cycle de vie)
+  label: string      // titre de l'onglet
+  disabled: boolean
+}
+```
+
+## Accessibilité
+
+```ts
+getTabAria({ active: true, panelId: 'panel-1', id: 'tab-1' })
+// { role: 'tab', id: 'tab-1', 'aria-controls': 'panel-1', 'aria-selected': true }
+getTabAria({ active: false, disabled: true })
+// { role: 'tab', 'aria-disabled': true } (pas d'aria-selected émis pour un onglet inactif)
+
+getTabpanelAria({ tabId: 'tab-1', id: 'panel-1' })
+// { role: 'tabpanel', id: 'panel-1', 'aria-labelledby': 'tab-1' }
+```
+
+- **Conventions clavier de role=tab** (APG) : ←/→ pour basculer d'onglet (et **l'activation suit le focus** — déplacer le focus bascule l'onglet, inutile d'appuyer ensuite sur Enter) ; Home/End pour atteindre le premier / le dernier onglet. La touche Tab quitte la barre d'onglets et entre dans le panneau courant.
+- **Les first/last de `getNextActiveName`** : direction accepte 'first' / 'last', correspondant aux touches Home/End — ne réécrivez pas vous-même les tests de bornes.
+- **Les panneaux ont besoin d'un tabindex** : le panneau lui-même devrait généralement recevoir `tabindex="0"`, afin que l'utilisateur clavier puisse entrer dans le contenu du panneau avec Tab (recommandation APG). Ce n'est pas du ressort de core : c'est à la couche UI de l'implémenter.
+- **La bonne façon de masquer les panneaux** : les panneaux inactifs sont retirés de l'arbre d'accessibilité par `v-if`/`hidden` ; **n'utilisez pas d'autre moyen que `visibility: hidden` qui laisserait les panneaux focusables**. Si une conservation est nécessaire (brouillon de formulaire), utilisez `display: none` avec un rendu mis en cache.
+- **La sémantique d'omission d'aria-selected** : à l'état inactif, l'attribut n'est pas émis (plutôt que d'émettre false) — APG spécifie que la valeur par défaut d'aria-selected d'un tab est false ; émettre explicitement false est légal mais redondant. `getTabAria` respecte la convention d'omission des valeurs fausses de `shared/a11y`.
+
+## Exemples d'utilisation
+
+```ts
+import { resolveActiveName, getNameAfterRemove, getNextActiveName } from '@lh-ui/share/core/tabs'
+
+const records = [
+  { name: 'a', label: 'Base', disabled: false },
+  { name: 'b', label: 'Sécurité', disabled: false },
+  { name: 'c', label: 'Notifications', disabled: true },
+]
+
+resolveActiveName(records, 'b')   // 'b'
+resolveActiveName(records, 'c')   // 'a' (c est désactivé, repli sur le premier disponible)
+resolveActiveName(records, '')    // 'a' ('' != null passe par la branche de validation, mais aucun onglet n'a pour name '' → repli)
+resolveActiveName(records, undefined)  // 'a'
+resolveActiveName([], undefined)       // null (aucun onglet disponible)
+
+getNextActiveName(records, 'a', 'next')  // 'b' (en partant de a vers next, on obtient b en sautant le c désactivé)
+getNextActiveName(records, 'b', 'next')  // 'a' (seuls a/b sont disponibles, en boucle)
+getNextActiveName(records, 'unknown', 'next')  // 'a' (valeur inconnue, repli sur le premier)
+
+getNameAfterRemove(records, 'b', 'b')  // 'a' (l'élément supprimé est l'actif b : rien de disponible à droite → le plus proche à gauche)
+getNameAfterRemove(records, 'a', 'b')  // 'b' (l'élément supprimé n'est pas l'élément actif, b est conservé)
+getNameAfterRemove([{ name: 'a', disabled: true }], 'a', 'a')  // null (rien de disponible)
+```
+
+```ts
+// Activation contrôlée (couche UI)
+const activeName = ref<string | null>(null)
+const records = ref<LhTabRecord[]>([])
+
+function onTabClick(name: string) {
+  activeName.value = name
+}
+function onRemove(name: string) {
+  const next = getNameAfterRemove(records.value, name, activeName.value ?? '')
+  records.value = records.value.filter((r) => r.name !== name)
+  activeName.value = next
+}
+watch(records, () => {
+  activeName.value = resolveActiveName(records.value, activeName.value)
+}, { immediate: true })
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTabs v-model="activeName" type="card">
+    <LhTabPane name="basic" label="Paramètres de base">…</LhTabPane>
+    <LhTabPane name="security" label="Paramètres de sécurité">…</LhTabPane>
+  </LhTabs>
+</template>
+```
+
+```tsx
+// React : records provenant de l'enregistrement des composants enfants TabPane (useEffect + context) ou transmis directement par props ;
+// navigation clavier via onKeyDown appelant getNextActiveName + focus()
+```
+
+```ts
+// uniapp : <view> pour les onglets + scroll-view à défilement horizontal ; le soulignement actif est positionné par transform
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-tabs` | conteneur racine |
+| `.lh-tabs--{line\|card}` | apparence |
+| `.lh-tabs--{top\|bottom}` | position des onglets (le soulignement / la bordure de la carte sont retournés en conséquence) |
+| `.lh-tabs__header` / `__nav` / `__nav-wrap` | barre d'onglets / navigation / conteneur de défilement (barre d'onglets défilante) |
+| `.lh-tabs__item` / `--active` / `--disabled` | onglet |
+| `.lh-tabs__active-bar` | soulignement actif (type line, positionné par transform) |
+| `.lh-tabs__content` / `__pane` | zone des panneaux |
+
+Couleur du texte actif `--lh-tabs-active-color`, le soulignement est de la même couleur ; le type carte utilise une bordure `--lh-border-color` et un fond d'état actif rehaussé par `--lh-bg-color`.
+
+## Points d'attention
+
+- **Le défilement de la barre d'onglets** : lorsque les onglets débordent, il faut des boutons de défilement gauche/droite ou un balayage gestuel — l'implémentation courante est `overflow: hidden` sur `__nav-wrap` + translation par transform de `__nav`, le montant du défilement étant calculé par la couche UI (core ne le gère pas).
+- **L'assemblage des bordures en `type: card`** : à l'état actif, un onglet en carte doit perdre la bordure commune avec la zone de contenu (en position top, la bordure inférieure ; en position bottom, la bordure supérieure), sinon une double bordure apparaît — c'est la raison d'être des classes de position.
+- **Ajout et suppression dynamiques d'onglets** : après un ajout ou une suppression, `resolveActiveName` doit être réexécuté (watch records). La suppression utilise `getNameAfterRemove` afin que l'état actif ne reste pas en suspens.
+- **Le bouton de fermeture dans l'onglet** : le bouton ✕ d'un onglet `closable` doit utiliser `@click.stop` (sinon il déclenche aussi le bascule d'onglet) et nécessite un `aria-label`.
+- **keep-alive et performances** : les panneaux lourds à bascule fréquente (graphiques, tableaux) devraient être conservés plutôt que détruits et recréés — Vue utilise `<keep-alive>`, React la dissimulation par CSS avec une stratégie de démontage. core n'en a pas conscience.
+- **L'ancienne signature de `getNextActiveName`** : direction utilise des noms sémantiques ('next'/'prev') et non les 1/-1 du noyau, et **lorsque la valeur courante est inconnue, le repli se fait sur le premier élément quelle que soit la direction** (et non selon la direction) — c'est la conservation de l'ancien comportement, à surveiller lors d'une migration.
+- **Le piège du nom d'onglet à chaîne vide** : `resolveActiveName(records, '')` cherche dans records un onglet dont `name === ''` — si le métier utilise la chaîne vide pour signifier « aucune sélection », il y aura un conflit avec un nom d'onglet vide légitime. Utilisez `null` plutôt que `''` pour signifier l'absence de sélection.
+
+<FnPlayground module="tabs" fn="getNameAfterRemove" params='{"records": [{"name": "a", "label": "Base", "disabled": false}, {"name": "b", "label": "Sécurité", "disabled": false}, {"name": "c", "label": "Notifications", "disabled": true}], "removedName": "b", "currentName": "b"}' />

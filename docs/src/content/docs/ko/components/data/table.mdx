@@ -1,0 +1,268 @@
+---
+title: table —— 표
+description: 'sortTableRows 빈 값은 끝으로, buildHeaderCells 다계층 머리글 전개, getStickyOffsets 고정 열 오프셋, computeVisibleRange 가상 스크롤'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+표는 데이터 표시의 '중장비'입니다: 정렬, 거르기, 다계층 머리글, 고정 열, 가상 스크롤, 열 너비 끌기 각각이 독립된 알고리즘 난제입니다. `core/table`은 이 모든 것을 순수 함수로 뽑아냅니다. UI 계층은 결과를 DOM에 묶기만 하면 됩니다. 이것은 이 패키지에서 함수가 가장 많은 컴포넌트 모듈 중 하나입니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhTable`을 구현할 때: 백오피스 목록, 데이터 보고서, 일괄 작업 표.
+- 구조화된 데이터에 정렬 / 거르기 / 고정 열 / 다계층 머리글이 필요한 장면.
+- **사용하면 안 되는 곳**: 데이터량이 매우 적고 상호작용이 없는 경우(단순한 `descriptions`나 직접 쓴 표가 더 가벼움); 카드형 정보 흐름(`card` 레이아웃 사용).
+
+## 가져오기
+
+```ts
+import {
+  LH_TABLE_ROW_HEIGHT,
+  LH_TABLE_OVERSCAN,
+  LH_TABLE_MIN_COL_WIDTH,
+  computeVisibleRange,
+  cycleSortOrder,
+  sortTableRows,
+  getCellValue,
+  getColumnWidth,
+  getGridTemplate,
+  getStickyOffsets,
+  getTableClassNames,
+  getTableCellClassNames,
+  flattenLeafColumns,
+  buildHeaderCells,
+  getHeaderStickyOffsets,
+  filterTableRows,
+  clampColumnWidth,
+  getTableSortAria,
+} from '@lh-ui/share/core/table'
+import type {
+  LhTableAlign,
+  LhTableColumn,
+  LhTableFilterOption,
+  LhTableHeaderCell,
+  LhTableRow,
+  LhTableSortOrder,
+  LhTableVisibleRange,
+  LhTableCellSticky,
+} from '@lh-ui/share/core/table'
+```
+
+## 설계 의도
+
+**빈 값은 끝으로**: `sortTableRows`는 `null` / `undefined` / `NaN`을 통일 처리합니다. 이것들은 정상 비교에 참여하지 않고 모두 끝으로 보내며, **desc일 때도 여전히 끝**입니다. 이것은 명확한 제품 결정입니다: 빈 데이터의 행이 역순이라고 해서 첫 행으로 올라가 유효한 데이터를 가리져서는 안 됩니다.
+
+**다계층 머리글의 DAG 안전**: `flattenLeafColumns`와 `buildHeaderCells`는 조상 체인의 seen이 아니라 **전역 seen**을 씁니다. 같은 column 객체가 DAG 식으로 공유 참조될 수 있기 때문입니다(같은 열이 두 그룹 아래에 나타남). 전역 중복 판정이 그것을 한 번만 내보내게 보장하여 표 본문의 열 수가 머리글 잎 칸 수와 일치합니다. `buildHeaderCells`의 `leafSpan`이 '미리 세는 수'가 아니라 '재귀가 실제로 내보낸 잎 수'를 쓰는 것도, 공유 서브트리가 두 번 계산되어 열 수가 어긋나는 것을 막기 위해서입니다.
+
+**그룹 머리글의 sticky 상속**: `getHeaderStickyOffsets`는 '구간 안의 잎 열이 모두 같은 쪽으로 fixed'일 때만 그룹 머리글이 첫/마지막 잎의 오프셋을 상속하게 합니다. 고정 영역과 흐름 영역에 걸치는 그룹 머리글은 단일 오프셋으로 위치를 정할 수 없어 아예 고정하지 않습니다.
+
+**`clampColumnWidth`의 동형 오버로드**: `숫자 들어가 숫자 나옴, 문자열 들어가 문자열 나옴`. 호출 쪽이 동형 변환을 위해 다시 타입 단언을 할 필요가 없습니다; NaN은 바로 하한을 반환합니다(끌기 과정에서 NaN 좌표가 나타날 수 있음).
+
+**`computeVisibleRange`는 이미 @deprecated**: 가상 스크롤 알고리즘은 공유 코어 `core/shared/virtual`의 `computeRange`로 수렴했고(VirtualList와 같은 출처), 이 함수는 vue2 등 하위의 기존 참조를 위한 호환 별칭으로 남겨둡니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `computeVisibleRange` | `(scrollTop, viewportHeight, rowHeight, total, overscan?) => LhTableVisibleRange` | 가시 구간 | **@deprecated**, `computeRange`에 위임 |
+| `cycleSortOrder` | `(current?) => LhTableSortOrder \| undefined` | 다음 정렬 상태 | 없음→asc→desc→없음 |
+| `sortTableRows` | `(rows, prop, order, sorter?) => LhTableRow[]` | 새 배열 | 빈 값은 끝으로 |
+| `getCellValue` | `(row, column) => string` | 표시 값 | formatter 우선 |
+| `getColumnWidth` | `(column) => string` | `'120px'` / `'1fr'` | 너비 없으면 균등 분할 |
+| `getGridTemplate` | `(columns) => string` | grid 템플릿 | CSS grid 레이아웃에 사용 |
+| `getStickyOffsets` | `(columns) => LhTableCellSticky[]` | 좌우 오프셋 | 고정 열 누적 |
+| `getTableClassNames` | `(state: { stripe, border, size, virtual }) => string[]` | 클래스명 | 네 가지 수정자 |
+| `getTableCellClassNames` | `(state) => string[]` | 클래스명 | 정렬/고정 열/너비 끌기 |
+| `flattenLeafColumns` | `(columns) => LhTableColumn[]` | 잎 열 | 다계층 머리글 표 본문에 사용 |
+| `buildHeaderCells` | `(columns) => LhTableHeaderCell[]` | 평면화 머리글 칸 | rowspan/colspan 포함 |
+| `getHeaderStickyOffsets` | `(leafColumns, headerCells) => LhTableCellSticky[]` | 머리글 오프셋 | 그룹 머리글 조건부 상속 |
+| `filterTableRows` | `(rows, filters) => LhTableRow[]` | 새 배열 | 열 간 AND, 열 안 OR |
+| `clampColumnWidth` | `(width: number \| string) => number \| string` | 클램프 후 너비 | 하한 40px |
+| `getTableSortAria` | `(options: { sortOrder?, sortable? }) => LhAriaAttrs` | aria 속성 묶음 | aria-sort |
+
+상수: `LH_TABLE_ROW_HEIGHT = 48`(기본 행 높이), `LH_TABLE_OVERSCAN = 3`(스크롤 버퍼 행 수), `LH_TABLE_MIN_COL_WIDTH = 40`(너비 끌기 하한).
+
+## 타입 정의
+
+```ts
+export type LhTableAlign = 'left' | 'center' | 'right'
+export type LhTableSortOrder = 'asc' | 'desc'
+export type LhTableRow = Record<string, any>
+
+export interface LhTableColumn {
+  prop: string
+  label: string
+  width?: number | string          // 숫자는 px
+  align?: LhTableAlign
+  fixed?: 'left' | 'right'         // width와 함께 써야 함
+  sortable?: boolean
+  slot?: string                    // 커스텀 셀 슬롯 이름
+  formatter?: (row: LhTableRow, value: any) => string
+  children?: LhTableColumn[]       // 설정으로 다계층 머리글
+  filters?: LhTableFilterOption[]  // 잎 열에만 유효
+  filterMethod?: (value: string | number, row: LhTableRow) => boolean
+  filterMultiple?: boolean         // 기본 true
+  resizable?: boolean              // 숫자 width의 잎 열이어야 함
+}
+
+export interface LhTableHeaderCell {
+  column: LhTableColumn
+  level: number          // 머리글 계층, 0부터
+  leafStart: number      // 잎 열 순서 시작점
+  leafSpan: number       // 걸치는 잎 열 수
+  rowspan: number        // 최대 깊이까지 보충
+  colspan: number        // = leafSpan
+  isLeaf: boolean
+}
+
+export interface LhTableVisibleRange { start: number; end: number; offsetY: number; totalHeight: number }
+export interface LhTableCellSticky { left?: number; right?: number }
+```
+
+## 접근성
+
+`getTableSortAria`는 `aria-sort`를 출력하고, `cycleSortOrder`의 상태 기기와 엄격히 정렬됩니다:
+
+```ts
+getTableSortAria({ sortable: true, sortOrder: 'asc' })    // { 'aria-sort': 'ascending' }
+getTableSortAria({ sortable: true, sortOrder: 'desc' })   // { 'aria-sort': 'descending' }
+getTableSortAria({ sortable: true })                      // { 'aria-sort': 'none' }
+getTableSortAria({ sortable: false })                     // {} (정렬 불가능한 열은 출력하지 않음)
+```
+
+세 번째를 주의하세요: 정렬되지 않았을 때 생략이 아니라 `aria-sort="none"`을 출력합니다. 이것은 APG의 명확한 요구이며, **'이 열은 정렬 가능하지만 현재 정렬되지 않았음'을 명시적으로 선언**하여 스크린 리더가 사용자에게 이 열에서 정렬 작업을 수행할 수 있다고 알려줍니다.
+
+나머지 규칙(UI 계층이 구현): 머리글은 `<th scope="col">`; 고정 열에 `tabindex`로 추가 포커스를 만들지 마세요; 페이지 매김 영역은 별도의 `nav`; 행 선택 열의 checkbox에는 `aria-label`이 필요합니다(예: '3행 선택').
+
+## 사용 예
+
+```ts
+import { cycleSortOrder, sortTableRows, filterTableRows, buildHeaderCells } from '@lh-ui/share/core/table'
+
+cycleSortOrder(undefined)  // 'asc'
+cycleSortOrder('asc')      // 'desc'
+cycleSortOrder('desc')     // undefined (정렬 취소)
+
+const rows = [
+  { name: '왕오', age: 30 },
+  { name: '리쓰', age: null },
+  { name: '장산', age: 20 },
+]
+sortTableRows(rows, 'age', 'asc')
+// 장산 20 → 왕오 30 → 리쓰 null (빈 값은 항상 끝)
+sortTableRows(rows, 'age', 'desc')
+// 왕오 30 → 장산 20 → 리쓰 null (역순이어도 빈 값은 여전히 끝)
+sortTableRows(rows, 'age', undefined)  // 원래 순서의 복사본
+
+filterTableRows(rows, [{ column: { prop: 'name' }, values: ['장산'] }])
+// [{ name: '장산', age: 20 }]
+filterTableRows(rows, [])  // 전체 복사본(활성 거르기 없음)
+
+// 다계층 머리글
+const columns = [
+  { label: '기본 정보', children: [{ prop: 'name', label: '이름' }, { prop: 'age', label: '나이' }] },
+  { prop: 'city', label: '도시' },
+]
+flattenLeafColumns(columns)  // [이름, 나이, 도시] (표 본문은 이것으로 렌더링)
+buildHeaderCells(columns)
+// 기본 정보(level 0, leafStart 0, colspan 2), 이름(rowspan 2로 보충),
+// 나이(rowspan 2), 도시(level 0, rowspan 2)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTableClassNames({ stripe, border, size, virtual })">
+  <div class="lh-table__wrapper">
+    <div class="lh-table__header" :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }">
+      <div
+        v-for="cell in headerCells"
+        :key="`${cell.level}-${cell.leafStart}`"
+        class="lh-table__header-cell"
+        :style="cellStyle(cell)"
+        v-bind="getTableSortAria({ sortOrder: sortState[cell.column.prop], sortable: cell.column.sortable })"
+        @click="onSort(cell.column)"
+      >
+        {{ cell.column.label }}
+        <span v-if="cell.column.sortable" class="lh-table__sort-indicator">
+          {{ sortState[cell.column.prop] === 'asc' ? '↑' : sortState[cell.column.prop] === 'desc' ? '↓' : '↕' }}
+        </span>
+      </div>
+    </div>
+    <div class="lh-table__body">
+      <div
+        v-for="row in displayRows"
+        :key="row.id"
+        class="lh-table__row"
+        :style="{ gridTemplateColumns: getGridTemplate(leafColumns) }"
+      >
+        <div
+          v-for="column in leafColumns"
+          :key="column.prop"
+          :class="getTableCellClassNames({ align: column.align ?? 'left', fixed: column.fixed })"
+        >
+          {{ getCellValue(row, column) }}
+        </div>
+      </div>
+    </div>
+  </div>
+  <LhPagination :total="total" v-model:current="current" v-model:page-size="pageSize" />
+</div>
+```
+
+```ts
+// 정렬 연결(제어형)
+function onSort(column: LhTableColumn) {
+  if (!column.sortable) return
+  const next = cycleSortOrder(sortState.value[column.prop])
+  if (next) sortState.value = { ...sortState.value, [column.prop]: next }
+  else delete sortState.value[column.prop]
+}
+
+const displayRows = computed(() =>
+  filterTableRows(
+    sortTableRows(props.data, sortProp.value, sortOrder.value),
+    activeFilters.value,
+  ),
+)
+```
+
+```tsx
+// React: 가상 스크롤
+// const range = computeRange(scrollTop, viewportHeight, rowHeight, rows.length, 3)
+// range.start..range.end를 렌더링, 바깥은 totalHeight로 높이를 만들고 안쪽은 translateY(range.offsetY)
+```
+
+```ts
+// uniapp: <scroll-view scroll-y> + 가시 구간 계산; CSS grid는 일부 단말에서 지원이 제한적이며
+// flex 열로 퇴화할 수 있음; core의 정렬/거르기/머리글 전개 함수는 단말 무관 그대로 사용
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-table` / `--{small\|medium\|large}` | 기본 클래스 / 크기 단계(행 높이와 안쪽 여백) |
+| `.lh-table--stripe` / `--border` / `--virtual` | 얼룩무늬 / 테두리 / 가상 스크롤 |
+| `.lh-table__header` / `__header-cell` | 머리글 |
+| `.lh-table__body` / `__row` | 표 본문 |
+| `.lh-table__cell` / `--{left\|center\|right}` | 셀 / 정렬 |
+| `.lh-table__cell--fixed-left` / `--fixed-right` | 고정 열(sticky) |
+| `.lh-table__cell--fixed-left-last` / `--fixed-right-first` | 고정 열 경계(그림자로 구분) |
+| `.lh-table__cell--resizable` | 너비 끌기 가능 열 |
+| `.lh-table__empty` | 빈 상태 |
+
+행 높이는 기본 48px(`LH_TABLE_ROW_HEIGHT`)이며, 가상 스크롤 알고리즘의 `rowHeight` 매개변수와 반드시 일치해야 합니다. 그렇지 않으면 창이 어긋납니다. 머리글 배경색 `--lh-fill-color`, 테두리 `--lh-border-color`, hover 행 `--lh-fill-color-light`.
+
+## 주의사항
+
+- **행 높이 일관성이 가상 스크롤의 전제**: `computeRange`는 모든 행이 같은 높이라고 가정합니다; 행 안의 콘텐츠가 높이를 늘리면(긴 텍스트 줄바꿈) 가상 스크롤이 어긋납니다. 높이가 고르지 않은 표에는 `virtual`을 켜지 마세요.
+- **고정 열은 반드시 `width`를 선언**: `getStickyOffsets`는 숫자 px 또는 `'Npx'` 문자열만 오프셋으로 환산합니다; `'20%'` 같은 단위는 환산할 수 없어 0으로 누적되고 고정 열이 서로 겹칩니다.
+- **`resizable`의 전제**: **숫자 width의 잎 열**이어야 하며, 너비를 끌어당긴 후 `clampColumnWidth`로 하한에 클램프하고 열 설정에 다시 씁니다.
+- **정렬의 `prop`와 데이터의 키**: `sortTableRows`는 `row[prop]`로 값을 가져오고, 중첩 필드(`user.name`)는 자동으로 지원하지 않으니 `sorter`로 직접 정의하세요.
+- **거르기의 열 안 OR**: 같은 열의 여러 선택 값은 '또는' 관계이고, 다른 열 사이는 '그리고'입니다. 이것은 Element와 일치하는 널리 쓰이는 의미입니다.
+- **다계층 머리글의 표 본문 열 순서**: 표 본문은 `columns`가 아니라 반드시 `flattenLeafColumns(columns)`를 써야 합니다. 그렇지 않으면 열 수가 머리글 잎 칸 수와 맞지 않습니다.
+- **DAG 공유 열**: 같은 column 객체를 두 그룹 아래에서 참조할 때, 전역 seen이 한 번만 내보내게 보장합니다. 하지만 **같은 객체를 참조하는 부작용은 한 곳을 바꾸면 두 곳이 바뀌는 것**이며, '같은 이름에 다른 설정'이 필요하다면 깊은 복사를 하세요.
+- **대규모 데이터의 정렬은 O(n log n)**: 매 프레임 수만 행을 정렬하면 멈춤이 생깁니다. 서버 쪽 정렬을 고려하세요(`sortable: 'custom'`은 UI 계층이 정의).
+- **`getTableSortAria`의 `aria-sort`는 `<th>`에 붙이며**, 열의 모든 셀에 붙이는 것이 아닙니다.
+
+<FnPlayground module="table" fn="cycleSortOrder" params='{"current": "asc"}' />

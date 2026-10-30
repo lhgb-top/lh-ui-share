@@ -1,0 +1,195 @@
+---
+title: notification —— 通知
+description: 'groupNotificationsByPosition 四角分組、computeStackOffsets 堆疊位移、比 message 更重的通知層'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+通知是訊息的「重量級版本」：帶標題、貼在螢幕四角、停留更久、可點選跳轉。它用於**系統級或非同步事件**——新訊息到達、任務完成、背景操作結果。`core/notification` 管的是四角分組與堆疊位移——這是他與 `message`（單列頂部置中）的核心差異。
+
+## 何時使用
+
+- 各端實作 `LhNotification`（服務式 API）：系統通知、非同步任務結果、需要稍後查看的事件。
+- 內容較多（標題 + 正文）、需要使用者點選跟進的場景。
+- **不該用它**：瞬時操作回饋（用 `message`，更輕）；需要立即處理的確認（用 `dialog`）；頁面內常駐提示（用 `alert`）。
+
+## 匯入方式
+
+```ts
+import {
+  LH_NOTIFICATION_DURATION_DEFAULT,
+  LH_NOTIFICATION_GAP_DEFAULT,
+  getNotificationIconName,
+  getNotificationClassNames,
+  isTopPosition,
+  isRightPosition,
+  groupNotificationsByPosition,
+  computeStackOffsets,
+  getNotificationRole,
+  getNotificationAria,
+} from '@lh-ui/share/core/notification'
+import type {
+  LhNotificationType,
+  LhNotificationPosition,
+  LhNotificationRecord,
+} from '@lh-ui/share/core/notification'
+```
+
+## 設計意圖
+
+**四角分組而非單列**：`groupNotificationsByPosition` 把佇列按位置切成四組，服務層按組渲染到四個角落容器。註解記錄了一個兜底：未知 position（JS 側髒資料）**回落進預設的 top-right**，不因單條髒資料崩掉整隊分組。
+
+**`computeStackOffsets` 的累加方向**：傳回每條相對**視區邊緣**的偏移——貼邊的第一條為 0，後續依次累加「前面條目的高度 + 間距」。**貼底容器由呼叫方自行取反方向**——core 不知道容器在哪一側，只算「離邊緣多遠」。
+
+**預設時長比 message 長**：`LH_NOTIFICATION_DURATION_DEFAULT = 4500` vs message 的 3000——通知性質上「可以稍後看」，停留更久合理。
+
+**`isTopPosition` / `isRightPosition` 的字串判定**：`position.startsWith('top')` / `endsWith('right')`——把 `'top-left'` 這樣的複合位置拆成語義標誌，供 UI 層決定容器的定位與入場動畫方向（貼頂的從上滑入、貼底的從下滑入）。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getNotificationIconName` | `(type) => LhIconName` | 圖示名 | 四語義 |
+| `getNotificationClassNames` | `(state: { type, showClose, clickable }) => string[]` | 類別名 | 類型/可關閉/可點選 |
+| `isTopPosition` | `(position) => boolean` | 是否貼頂 | 容器定位與入場方向 |
+| `isRightPosition` | `(position) => boolean` | 是否貼右 | 容器定位 |
+| `groupNotificationsByPosition` | `(items) => Record<Position, T[]>` | 四組 | 未知位置兜底 top-right |
+| `computeStackOffsets` | `(heights: number[], gap?) => number[]` | 位移陣列 | 累加高度 + 間距 |
+| `getNotificationRole` | `(type) => 'alert' \| 'status'` | live 角色 | 同 message 範式 |
+| `getNotificationAria` | `(type) => LhAriaAttrs` | aria 屬性包 | role |
+
+常數：`LH_NOTIFICATION_DURATION_DEFAULT = 4500`、`LH_NOTIFICATION_GAP_DEFAULT = 16`。
+
+## 類型定義
+
+```ts
+export type LhNotificationType = 'info' | 'success' | 'warning' | 'danger' | 'error'  // 無 loading
+export type LhNotificationPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left'
+
+export interface LhNotificationRecord {
+  id: number
+  type: LhNotificationType
+  title: string
+  content: string
+  duration: number       // 0 表示不自動關閉
+  position: LhNotificationPosition
+  showClose: boolean
+  sx?: LhSxProps
+  onClick?: () => void
+  onClose?: () => void
+}
+```
+
+## 無障礙
+
+```ts
+getNotificationAria('danger')   // { role: 'alert' }
+getNotificationAria('success')  // { role: 'status' }
+```
+
+- 角色映射與 `message` / `alert` 同範式：warning/danger/error 立即播報，info/success 排隊。
+- **標題的播報**：通知帶標題，推薦把標題渲染為 `<h4>`（或 `role="heading"`），螢幕閱讀器會按標題層級處理；只有 content 會被 live region 播報，標題靠 DOM 語義傳達。
+- **可點選通知**：`clickable` 狀態下整卡可點選跳轉，應用 `<button>` 或 `role="link"` 包裹——不要在 `<div>` 上只掛 onclick，鍵盤使用者無法觸發。
+- **關閉按鈕**：圖示按鈕需 `aria-label`。
+
+## 使用範例
+
+```ts
+import {
+  groupNotificationsByPosition, computeStackOffsets, isTopPosition,
+} from '@lh-ui/share/core/notification'
+
+isTopPosition('top-right')   // true
+isTopPosition('bottom-left') // false
+isRightPosition('top-right')  // true
+isRightPosition('top-left')   // false
+
+groupNotificationsByPosition([
+  { position: 'top-right' }, { position: 'bottom-left' }, { position: 'top-right' },
+])
+// { 'top-right': [2 條], 'top-left': [], 'bottom-right': [], 'bottom-left': [1 條] }
+
+groupNotificationsByPosition([{ position: 'middle' as never }])
+// 未知位置 → 兜底進 'top-right'
+
+computeStackOffsets([40, 60, 30])
+// [0, 76, 152]  ← 0, 40+16, 40+16+60+16
+computeStackOffsets([40])  // [0]
+```
+
+```ts
+// 服務層：四角容器各自維護佇列
+const groups = computed(() => {
+  const byPos = groupNotificationsByPosition(queue.value)
+  return Object.entries(byPos).map(([position, items]) => ({
+    position: position as LhNotificationPosition,
+    items,
+    // 堆疊位移：貼底容器要反向（第一條貼底，後續向上堆）
+    offsets: computeStackOffsets(items.map((i) => heights.value[i.id] ?? 60)),
+  }))
+})
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <div
+    v-for="group in groups"
+    :key="group.position"
+    class="lh-notification"
+    :class="[`lh-notification--${group.position}`]"
+  >
+    <transition-group :name="isTopPosition(group.position) ? 'lh-notification-slide-top' : 'lh-notification-slide-bottom'" tag="div">
+      <div
+        v-for="(record, i) in group.items"
+        :key="record.id"
+        :class="getNotificationClassNames({ type: record.type, showClose: record.showClose, clickable: !!record.onClick })"
+        :role="getNotificationRole(record.type)"
+        :style="{ transform: `translateY(${(isTopPosition(group.position) ? 1 : -1) * group.offsets[i]}px)` }"
+        @click="record.onClick?.()"
+      >
+        <LhIcon :name="getNotificationIconName(record.type)" />
+        <div class="lh-notification__main">
+          <h4 class="lh-notification__title">{{ record.title }}</h4>
+          <p class="lh-notification__content">{{ record.content }}</p>
+        </div>
+        <button v-if="record.showClose" type="button" aria-label="关闭" @click.stop="close(record.id)">✕</button>
+      </div>
+    </transition-group>
+  </div>
+</teleport>
+```
+
+```tsx
+// React：高度需要在渲染後量取（ref + useCallbackLayoutEffect）再算堆疊位移；
+// 首幀用預估高度，量準後更新
+```
+
+```ts
+// uniapp：<view> + fixed 四角；高度量取用 createSelectorQuery
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-notification` | 容器（四角 fixed） |
+| `.lh-notification--{top-right\|top-left\|bottom-right\|bottom-left}` | 位置 |
+| `.lh-notification__item` | 單條卡片 |
+| `.lh-notification__item--{info\|success\|warning\|danger\|error}` | 語義類型 |
+| `.lh-notification__item--closable` / `--clickable` | 可關閉 / 可點選（hover 高亮 + 指標） |
+| `.lh-notification__main` / `__title` / `__content` | 主區 / 標題 / 正文 |
+
+寬度固定（如 320~360px），`--lh-bg-color` 底 + 陰影；四語義色作用於圖示與左側色條。
+
+## 注意事項
+
+- **堆疊位移需要真實高度**：`computeStackOffsets` 吃 heights 陣列，UI 層要量取每條的實際渲染高度。首幀用預估高度會出現跳動——量準後用狀態更新一次。
+- **貼底容器的方向取反**：`computeStackOffsets` 傳回的是「離邊緣距離」，bottom 容器要乘 -1（向下為正）。這是呼叫方的責任，core 不感知容器方位。
+- **`duration: 0` 的通知**：不自動關閉，適合「未讀訊息」這類需要使用者主動消除的——配 `showClose: true` 或點選後關閉。
+- **`onClick` 與 `showClose` 的事件衝突**：關閉按鈕在可點選卡片上要 `@click.stop`，否則點關閉會同時觸發卡片跳轉。
+- **多位置混用的容器數量**：四個角落容器即使為空也常駐 DOM（transition-group 需要），`v-if` 會破壞動畫。
+- **與 message 的邊界**：通知更重（佔角、帶標題、停留更久），操作回饋用 message 就夠。兩者可以共存（操作成功彈 message、系統通知走 notification）。
+- **`position` 的類型嚴格性**：TS 下傳錯位置會被攔，但 JS 呼叫方可能傳 `'topCenter'` 之類——兜底進 top-right 保證不崩，但位置不符合預期，呼叫方要自查。
+
+<FnPlayground module="notification" fn="groupNotificationsByPosition" params='{"items": [{"position": "top-right"}, {"position": "bottom-left"}, {"position": "top-right"}]}' />

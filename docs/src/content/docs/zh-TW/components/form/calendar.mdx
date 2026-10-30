@@ -1,0 +1,174 @@
+---
+title: calendar —— 日曆
+description: 'shiftCalendarMonth 跨月歸一、normalizeCalendarSpan 區間歸一、toggleCalendarDate 多選切換、aria-current=date'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+日曆是**常駐的日期面板**：date-picker 把面板藏在彈層裡，calendar 把它攤開在頁面上。它支援三種選擇模式——單選、區間、多選——以及可選日期範圍的約束。`core/calendar` 複用 date-picker 的網格演算法（`generateCalendarDays`），在此之上疊加平移、範圍約束、選取態切換。
+
+## 何時使用
+
+- 各端實作 `LhCalendar`：日程檢視、簽到打卡、酒店/機票日期選擇頁。
+- 需要日期**常駐可見**而非彈出選擇的場景。
+- **不該用它**：空間受限的表單內（用 `date-picker`，彈層更省地方）；只選一個日期且頁面已很擁擠時。
+
+## 匯入方式
+
+```ts
+import {
+  getCalendarClassNames,
+  shiftCalendarDate,
+  shiftCalendarMonth,
+  isCalendarDateDisabled,
+  clampDateToRange,
+  isCalendarSelected,
+  normalizeCalendarSpan,
+  isCalendarInSpan,
+  toggleCalendarDate,
+  getCalendarCellAria,
+  generateCalendarDays,
+  isSameDay,
+} from '@lh-ui/share/core/calendar'
+import type { LhCalendarRange, LhCalendarSelection } from '@lh-ui/share/core/calendar'
+```
+
+## 設計意圖
+
+**依賴方向是語義性的**：calendar 從 `date-picker` 引入 `generateCalendarDays`，而不是從 `core/shared/date` 重新實作——日曆網格演算法是 date-picker 的職責，calendar 是它的日曆檢視。而通用原語（`compareDate` / `isDateDisabled` / `isSameDay`）則直接走共享核心，calendar 不反向依賴 date-picker 的 logic。這是「通用原語下沉、領域演算法歸位」的分層約定。
+
+**反序區間的容錯**：`isCalendarDateDisabled` 和 `clampDateToRange` 都先調 `normalizeCalendarSpan` 歸一區間——使用者傳 `[end, start]`（反序）不會導致全停用或鉗制錯誤。UI 層不強制呼叫方先排序。
+
+**`shiftCalendarMonth` 的歸一**：`year * 12 + month + delta` 再拆回年月，`((total % 12) + 12) % 12` 處理負數取模——delta 為負跨年時（如 1 月 -2）月份不會變成 -1。
+
+**多選的不可變切換**：`toggleCalendarDate` 命中則移除、否則加入並按時間排序——傳回新陣列，直接可用於響應式更新，且順序穩定（避免 UI 亂跳）。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getCalendarClassNames` | `() => string[]` | `['lh-calendar']` | 容器類別名 |
+| `shiftCalendarDate` | `(date, days) => Date` | 新 Date | 天平移（跨月安全） |
+| `shiftCalendarMonth` | `(year, month, delta) => { year, month }` | 年月 | 月平移 |
+| `isCalendarDateDisabled` | `(date, range?) => boolean` | 是否停用 | 無約束恆 false |
+| `clampDateToRange` | `(date, range?) => Date` | 鉗制後日期 | 越界拉回邊界 |
+| `isCalendarSelected` | `(date, selected) => boolean` | 是否選取 | 同日判定 |
+| `normalizeCalendarSpan` | `(a, b) => [Date, Date]` | 歸一區間 | 保證 start ≤ end |
+| `isCalendarInSpan` | `(date, start, end) => boolean` | 是否在閉區間 | 任一端 null 傳回 false |
+| `toggleCalendarDate` | `(dates, date) => Date[]` | 新陣列 | 命中移除/否則加入並排序 |
+| `getCalendarCellAria` | `(options: { date, selected, range? }) => LhAriaAttrs` | aria 屬性包 | aria-current / aria-disabled |
+
+## 類型定義
+
+```ts
+export type LhCalendarRange = [Date, Date]
+export type LhCalendarSelection = 'single' | 'range' | 'multiple'
+```
+
+網格資料結構複用 `LhDatePickerDayData`（見 date-picker）。
+
+## 無障礙
+
+`getCalendarCellAria` 的輸出很克制——**只在有狀態時輸出屬性**（`LhAriaAttrs` 的假值省略約定）：
+
+```ts
+getCalendarCellAria({ date: selectedDate, selected: selectedDate, range: undefined })
+// { 'aria-current': 'date' }
+
+getCalendarCellAria({ date: new Date(2026, 0, 1), selected: null, range: [new Date(2026, 2, 1), new Date(2026, 3, 1)] })
+// { 'aria-disabled': true }
+
+getCalendarCellAria({ date: someDate, selected: null })
+// {}（無狀態時空對象）
+```
+
+- 選取日用 `aria-current="date"`（而非 `aria-selected`）——日曆是導覽式控制項，APG 約定用 current 表達「目前位置」。
+- 停用日用 `aria-disabled`，UI 層的點選與鍵盤導覽都要跳過這些格子。
+- 鍵盤互動：聚焦格子後 ↑/↓/←/→ 用 `shiftCalendarDate(date, ±1|±7)` 移動，Enter/Space 觸發選擇。
+- 網格整體仍應掛 `role="grid"`，與 date-picker 面板同一套結構。
+
+## 使用範例
+
+```ts
+import {
+  shiftCalendarMonth, normalizeCalendarSpan, toggleCalendarDate, isCalendarInSpan,
+} from '@lh-ui/share/core/calendar'
+
+shiftCalendarMonth(2026, 0, -2)   // { year: 2025, month: 10 }（負數取模正確）
+shiftCalendarMonth(2026, 11, 1)   // { year: 2027, month: 0 }
+normalizeCalendarSpan(new Date(2026, 3, 1), new Date(2026, 2, 1))
+// [2026-03-01, 2026-04-01]（反序自動歸一）
+isCalendarInSpan(new Date(2026, 2, 15), new Date(2026, 2, 1), new Date(2026, 2, 28))  // true
+isCalendarInSpan(new Date(2026, 2, 15), null, null)  // false（任一端 null）
+toggleCalendarDate([new Date(2026, 2, 1)], new Date(2026, 2, 5))
+// [2026-03-01, 2026-03-05]（加入並排序）
+toggleCalendarDate([new Date(2026, 2, 1), new Date(2026, 2, 5)], new Date(2026, 2, 1))
+// [2026-03-05]（命中移除）
+```
+
+```vue
+<!-- Vue3：區間模式 -->
+<div :class="getCalendarClassNames()">
+  <div class="lh-calendar__header">
+    <button type="button" @click="shift(-1)">‹</button>
+    <span class="lh-calendar__title">{{ year }} 年 {{ month + 1 }} 月</span>
+    <button type="button" @click="shift(1)">›</button>
+  </div>
+  <div class="lh-calendar__body" role="grid">
+    <div v-for="row in weekRows(days)" :key="row[0].date.getTime()" class="lh-calendar__row" role="row">
+      <button
+        v-for="cell in row"
+        :key="cell.date.getTime()"
+        type="button"
+        class="lh-calendar__cell"
+        :class="cellClass(cell)"
+        role="gridcell"
+        v-bind="getCalendarCellAria({ date: cell.date, selected: selected, range: allowedRange })"
+        @click="onPick(cell.date)"
+      >
+        {{ cell.day }}
+      </button>
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// 區間模式的兩段式選擇（UI 層規則，core 不內置）
+// if (!rangeStart || (rangeStart && rangeEnd)) { rangeStart = date; rangeEnd = null }
+// else rangeEnd = date  （早於 rangeStart 時 normalizeCalendarSpan 會歸一）
+```
+
+```tsx
+// React：多選模式
+// const [dates, setDates] = useState<Date[]>([])
+// onClick: setDates(toggleCalendarDate(dates, cell.date))
+```
+
+```ts
+// uniapp：<view> 網格 + @touchstart；core 的 range 約束與選擇切換函數照用
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-calendar` | 基礎類 |
+| `.lh-calendar__header` / `__title` | 頭部導覽 |
+| `.lh-calendar__body` | 網格區 |
+| `.lh-calendar__row` | 一週 |
+| `.lh-calendar__cell` | 日期格 |
+| `.lh-calendar__cell.is-today` / `.is-selected` / `.is-in-range` / `.is-start` / `.is-end` / `.is-disabled` / `.is-other-month` | 狀態修飾 |
+
+選取 `--lh-primary-color`，區間段低透明度主色，今天描邊，停用 `--lh-text-disabled`。
+
+## 注意事項
+
+- **month 0 起**：與 date-picker、原生 `Date` 一致，UI 顯示 `+1`。
+- **三種選擇模式與 core 的關係**：`LhCalendarSelection` 只是類型宣告，core 的函式是模式無關的——`isCalendarSelected` 管 single，`isCalendarInSpan` 管 range，`toggleCalendarDate` 管 multiple。模式切換的接線在 UI 層。
+- **區間模式的半選態**：`rangeStart` 已定、`rangeEnd` 未定時，hover 的格子要即時高亮中間段（UI 層用臨時 end 渲染），core 的 `generateCalendarDays` 接受 null 的 rangeEnd，不會報錯。
+- **`clampDateToRange` 的用途**：外部設值（如 `v-model` 傳入範圍外日期）時收斂回合法律區間，UI 層 watch 值變化時調一次。
+- **常駐面板的效能**：calendar 不像 date-picker 只在開啟時算網格，翻月時重算即可；不要每幀重算 `generateCalendarDays`（它建立 35~42 個 Date 物件）。
+- **與 date-picker 的邊界**：兩者共用網格資料但**不共用狀態模型**——date-picker 的 `LhDatePickerState` 面向彈層互動，calendar 沒有可見態。
+
+<FnPlayground module="calendar" fn="shiftCalendarMonth" params='{"year": 2026, "month": 0, "delta": -2}' />

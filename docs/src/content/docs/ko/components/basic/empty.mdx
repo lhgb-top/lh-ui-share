@@ -1,0 +1,115 @@
+---
+title: empty —— 빈 상태
+description: 'getEmptyClassNames가 커스텀 이미지와 기본 수묵 자리표시자 이미지를 구분, 콘텐츠(제목/설명/작업)는 UI 계층이 조합'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+빈 상태는 목록/표/검색 결과의 '데이터 없음 상태'입니다. `core/empty`의 상태는 극도로 단순합니다. `hasImage` 불리언 하나뿐인데, 핵심 시각 결정이 '사용자가 이미지를 넘겼는가 vs 라이브러리의 기본 수묵 이미지를 쓰는가'이고 이 둘의 레이아웃이 다르기 때문입니다(커스텀 이미지는 원래 크기를 존중하고, 기본 이미지는 전용으로 제작한 전체 너비 수묵화입니다).
+
+## 언제 사용할까
+
+- 각 단말이 `LhEmpty`를 구현할 때: 표에 데이터 없음, 검색 결과 없음, 목록 비움, 권한 부족 알림.
+- 수묵 빈 상태 시각을 재사용해야 하는 커스텀 경우.
+- **사용하면 안 되는 곳**: 로딩 중 상태. 그것은 `LhSkeleton` 또는 `LhLoading`의 책임입니다; 빈 상태는 '데이터가 확실히 0'이지 '아직 오지 않음'이 아닙니다.
+
+## 가져오기
+
+```ts
+import { getEmptyClassNames } from '@lh-ui/share/core/empty'
+import type { LhEmptyState } from '@lh-ui/share/core/empty'
+```
+
+## 설계 의도
+
+`core/empty`에 `hasImage` 하나만 있는 이유는, 나머지 모든 것(제목, 설명, 작업 버튼)이 **상태**가 아니라 **콘텐츠**이기 때문입니다. 콘텐츠는 슬롯/props로 직접 렌더링되며 계산이 필요 없습니다. 콘텐츠까지 core를 거치게 하면 간접 계층만 늘고 이득이 없습니다.
+
+이 '상태만 계산하고 콘텐츠는 계산하지 않는다'는 경계는 lh-ui core 계층의 일반 원칙입니다: core 함수의 입력은 **출력을 바꿀 수 있는** 것이어야 합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getEmptyClassNames` | `(state: LhEmptyState) => string[]` | 클래스명 배열 | 커스텀 이미지와 기본 이미지 구분 |
+
+출력 예:
+
+```ts
+getEmptyClassNames({ hasImage: true })   // ['lh-empty', 'lh-empty--custom-image']
+getEmptyClassNames({ hasImage: false })  // ['lh-empty']
+```
+
+## 타입 정의
+
+```ts
+export interface LhEmptyState {
+  hasImage: boolean
+}
+```
+
+## 접근성
+
+`core/empty`는 aria 속성 묶음을 출력하지 않습니다. 빈 상태의 접근성 요점은 UI 계층에 있습니다:
+
+- 빈 상태가 나타날 때, 그 앞의 목록/표는 `aria-live="polite"`를 쓰거나 데이터 로드 완료 후 능동적으로 알려야 합니다. 그렇지 않으면 스크린 리더 사용자가 '목록에 0개 항목'이라는 옛 인식에 머무릅니다.
+- 기본 수묵 이미지는 **장식적**이므로 `aria-hidden="true"`를 주어야 합니다(UI 계층이 렌더링할 때 처리).
+- 설명 글자가 진짜 정보를 담습니다('데이터가 없습니다, 단추를 눌러 새로고침'), 반드시 읽을 수 있어야 합니다.
+- 빈 상태에 작업 버튼이 포함되어 있다면, 버튼 자체는 네이티브 의미를 쓰면 됩니다.
+
+## 사용 예
+
+```ts
+import { getEmptyClassNames } from '@lh-ui/share/core/empty'
+
+getEmptyClassNames({ hasImage: false })  // ['lh-empty']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getEmptyClassNames({ hasImage: !!image })">
+  <div class="lh-empty__image">
+    <slot name="image">
+      <InkWash />   <!-- 기본 수묵 자리표시자 이미지, aria-hidden -->
+    </slot>
+  </div>
+  <p class="lh-empty__description">{{ description }}</p>
+  <div class="lh-empty__actions"><slot name="actions" /></div>
+</div>
+```
+
+```tsx
+// React
+const hasImage = !!image
+return (
+  <div className={getEmptyClassNames({ hasImage }).join(' ')}>
+    <div className="lh-empty__image">{image ?? <DefaultInkWash aria-hidden="true" />}</div>
+    <p className="lh-empty__description">{description}</p>
+    <div className="lh-empty__actions">{actions}</div>
+  </div>
+)
+```
+
+```ts
+// uniapp: 기본 수묵 이미지는 svg이며, h5가 아닌 단말에서는 이미지 자원으로 교체해야 합니다(각 단말 UI 계층이 처리)
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-empty` | 기본 클래스: 가운데 정렬, 세로 간격 |
+| `.lh-empty--custom-image` | 커스텀 이미지: 기본 이미지의 고정 크기 제약 해제 |
+| `.lh-empty__image` | 이미지 영역 |
+| `.lh-empty__description` | 설명 글자(보조 글자색) |
+| `.lh-empty__actions` | 작업 버튼 영역 |
+| `.lh-empty__illustration` / `__ink-*` | 기본 수묵 삽화의 구성 요소(먼 산, 수묵 번짐, 도장, 화폭) |
+
+기본 수묵 삽화는 lh-ui의 중국풍 시그니처 요소 중 하나로, 순수 CSS/SVG로 그려지며 다크 모드에서 전용 색조가 있습니다.
+
+## 주의사항
+
+- `hasImage`의 판정 권한은 UI 계층에 있습니다: 사용자가 `image` prop이나 `image` 슬롯으로 어떤 콘텐츠를 넘기든 '커스텀 이미지가 있음'으로 간주합니다.
+- 빈 상태는 **원래 데이터가 있던 자리에 나타나야 합니다**(표 본문 안, 목록 컨테이너 안). 전역 알림으로 띄우지 마세요. 빈 상태는 피드백이 아니라 데이터의 한 상태입니다.
+- 404 / 권한 없음 같은 '데이터가 비어 있는 것이 아닌' 장면은 의미상 경고에 더 가까우므로, `LhEmpty`보다 `LhResult`(각 단말에 있는 경우)나 커스텀 레이아웃이 더 적합합니다.
+
+<FnPlayground module="empty" fn="getEmptyClassNames" params='{"state": {"hasImage": false}}' />

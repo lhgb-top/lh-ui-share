@@ -1,0 +1,145 @@
+---
+title: "constants —— les constantes"
+description: "LH_TYPES_CONST / LH_SIZE_CONST / LH_LANGUAGE_CONST et les deux constantes DEFAULT, toutes figées par as const"
+---
+
+`src/constants/` est l'**unique source des constantes d'exécution** de toute la famille : les couleurs sémantiques des types de composants, les paliers de taille, les codes de langue. Toutes figées par `as const`, et référencées dans la dérivation des types unions de `core/shared/types` (voir [core/types](/fr/core/types)).
+
+## Comment importer
+
+```ts
+import {
+  LH_TYPES_CONST,
+  LH_SIZE_CONST,
+  LH_LANGUAGE_CONST,
+  LH_SIZE_DEFAULT,
+  LH_LANGUAGE_DEFAULT,
+} from '@lh-ui/share/constants'
+```
+
+## La table des constantes
+
+| Constante | Valeur | Usage |
+| --- | --- | --- |
+| `LH_TYPES_CONST` | `{ success, warning, error, info, danger }` | Les types de composants (les cinq couleurs sémantiques) |
+| `LH_SIZE_CONST` | `{ small, medium, large, mini, old: 'x-large' }` | Les paliers de taille des composants |
+| `LH_SIZE_DEFAULT` | `'medium'` (= `LH_SIZE_CONST.medium`) | La taille par défaut |
+| `LH_LANGUAGE_CONST` | `{ zhCN: 'zh-CN', enUS: 'en-US', jaJP: 'ja-JP', koKR: 'ko-KR', deDE: 'de-DE', frFR: 'fr-FR' }` | Les codes de langue |
+| `LH_LANGUAGE_DEFAULT` | `'zh-CN'` (= `LH_LANGUAGE_CONST.zhCN`) | La langue par défaut |
+
+## LH_TYPES_CONST —— les cinq couleurs sémantiques
+
+```ts
+export const LH_TYPES_CONST = {
+  success: 'success',   // succès
+  warning: 'warning',   // avertissement
+  error: 'error',       // erreur
+  info: 'info',         // information
+  danger: 'danger',     // danger
+} as const
+```
+
+Chaque membre porte un JSDoc `@alias` (succès / avertissement / erreur / information / danger), affiché au survol. `LhComponentType` **ajoute en outre `'default' | 'primary'`** (les couleurs d'apparence de base, pas une sémantique d'état).
+
+### La différence entre error et danger
+
+Les deux sont des rouges du « ça a échoué », avec une légère répartition des rôles, chaque composant pouvant choisir :
+
+- `error` — échec de validation (le cadre rouge d'un input de formulaire), échec d'opération (un upload qui a échoué).
+- `danger` — une action destructrice (la rouge du bouton de suppression).
+
+C'est une convention, pas une règle impérative ; la plupart des composants n'en utilisent qu'un seul, la référence est la documentation de chaque composant.
+
+## LH_SIZE_CONST —— cinq paliers de taille
+
+```ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',     // par défaut
+  large: 'large',
+  mini: 'mini',         // contextes compacts en ligne (les boutons d'action dans un tableau)
+  old: 'x-large',       // mode senior
+} as const
+```
+
+### La clé `old` et la valeur `'x-large'` ne correspondent pas
+
+C'est un **choix de nommage délibéré** :
+
+- **La clé `old`** est l'identifiant sémantique interne du « mode senior », `LhBaseProps.old?: boolean` l'utilise comme interrupteur.
+- **La valeur `'x-large'`** est la valeur d'énumération de taille exposée à l'utilisateur ; c'est elle qui apparaît dans l'union `LhComponentSize`.
+
+Ce que perçoit l'utilisateur extérieur, c'est `size="x-large"` (ou l'interrupteur prop `old`) ; la clé de constante interne n'est pas exposée. En codant, notez que `Object.keys(LH_SIZE_CONST)` donne les clés, `Object.values(...)` donne les valeurs d'énumération de type ; ne pas les mélanger.
+
+### L'usage de chaque palier
+
+| Palier | Contexte |
+| --- | --- |
+| `mini` | Les boutons d'action dans les lignes d'un tableau, les formulaires denses |
+| `small` | Les mises en page compactes, les barres d'outils |
+| `medium` | **Par défaut**, les formulaires et zones de contenu courantes |
+| `large` | Les boutons principaux d'une page d'enregistrement / connexion dédiée |
+| `x-large` | Le mode senior d'accessibilité : grands caractères, grandes zones tactiles, avec l'interrupteur booléen `old` |
+
+**Tous les composants ne prennent pas en charge les cinq paliers** : `mini` / `x-large` ne sont implémentés que sur une partie des composants ; la référence est la documentation de chaque composant.
+
+## LH_LANGUAGE_CONST —— six langues
+
+```ts
+export const LH_LANGUAGE_CONST = {
+  zhCN: 'zh-CN',
+  enUS: 'en-US',
+  jaJP: 'ja-JP',
+  koKR: 'ko-KR',
+  deDE: 'de-DE',
+  frFR: 'fr-FR',
+} as const
+```
+
+Les clés sont des [noms de locale consacrés par l'usage, comme zhCN / enUS](/fr/guide/naming#registre-des-exemptions) ; les valeurs sont des codes de langue BCP 47. `LhLocaleType` et `LhComponentLanguage` en sont tous deux déduits.
+
+**Notez l'état d'activation des fichiers de langue** : `ja-JP` / `ko-KR` / `de-DE` / `fr-FR` sont actuellement des **squelettes de langues réservés, qui se replient sur une traduction anglaise** (voir [locales](/fr/reference/locales)). Être enregistré dans les constantes ne signifie pas que les libellés sont complets.
+
+## Pourquoi des constantes plutôt qu'une enum
+
+Un objet `as const` + une dérivation de type union a trois avantages sur une `enum` TS :
+
+1. **Zéro coût d'exécution** : une `enum` génère du code supplémentaire (correspondance inverse) ; un objet `as const` n'existe qu'en un seul exemplaire.
+2. **Parcourable** : `Object.values(LH_TYPES_CONST)` donne directement toutes les valeurs d'énumération pour une validation d'exécution ; le parcours d'une `enum` n'est pas fiable quand `preserveConstEnums` est désactivé.
+3. **Un JSDoc par membre** : l'infobulle `@alias` de chaque membre est visible dans l'IDE.
+
+## Exemples d'utilisation
+
+### La valeur par défaut des props d'un composant
+
+```ts
+import { LH_SIZE_DEFAULT } from '@lh-ui/share/constants'
+
+props: {
+  size: { type: String, default: LH_SIZE_DEFAULT },   // 'medium'
+}
+```
+
+### La validation de valeurs à l'exécution
+
+```ts
+const TYPE_VALUES = Object.values(LH_TYPES_CONST)
+
+const isValidType = (v: string): v is LhComponentType =>
+  TYPE_VALUES.includes(v as never) || v === 'default' || v === 'primary'
+```
+
+### Le parcours pour générer des utilitaires
+
+```ts
+// theme / pages de docs : parcourir toutes les langues pour générer la liste de bascule
+Object.entries(LH_LANGUAGE_CONST).forEach(([key, code]) => {
+  // key: 'zhCN'  code: 'zh-CN'
+})
+```
+
+## Points d'attention
+
+- **Les constantes sont figées** : `as const` rend les types unions de littéraux, mais l'objet reste un objet ordinaire à l'exécution (pas de `Object.freeze`) — ne le modifiez pas à l'exécution, la dérivation de types de l'aval ne suivrait pas.
+- **`LH_SIZE_DEFAULT` / `LH_LANGUAGE_DEFAULT` référencent des membres de la constante**, ce ne sont pas des littéraux indépendants — modifier la constante met automatiquement la valeur par défaut à jour.
+- **La clé `old` ne doit pas être exposée directement à l'utilisateur** : vers l'extérieur, c'est `size="x-large"` ou l'interrupteur booléen `old`.

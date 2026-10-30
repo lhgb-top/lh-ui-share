@@ -1,0 +1,229 @@
+---
+title: tabs علامات التبويب —— تنقل
+description: 'اسم الصفحة ذات السلسلة الفارغة في resolveActiveName، واستراتيجية التنشيط بعد الحذف في getNameAfterRemove، والربط الثنائي aria بين tab وtabpanel'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+علامات التبويب هي «مبدّل المحتوى في المنطقة نفسها»: «الأساسيات / الأمان / التنبيهات» في صفحة
+الإعدادات، وعلامات التطبيقات في المتصفح. فهي تضع عدة لوحات في المساحة نفسها وتبديل ظهورها
+بعلامات التبويب——موفّرةً المساحة العمودية، وثمنها أنه لا يمكن رؤية سوى لوحة واحدة في كل مرة.
+وما يديره `core/tabs` هو **حلّ الحالة النشطة، واستراتيجية التنشيط بعد الحذف، والتنقّل بـ
+roving tabindex**.
+
+## متى تُستخدم
+
+- لتطبيق `<LhTabs>` / `<LhTabPane>`: صفحات الإعدادات، وأقسام صفحات التفاصيل، وتبديل لوحات
+  المعلومات.
+- أقسام المحتوى **الحصرية المتبادلة** و**بنفس المستوى**.
+- **لا ينبغي استخدامها**: خطوات بنمط التدفّق (استخدم `steps`——فـ tabs بلا دلالة تسلسل)؛ التنقّل
+  الهرمي (استخدم `menu`)؛ عند الحاجة لمقارنة لوحتين في الوقت نفسه (استخدم `grid` جنبًا إلى جنب)؛
+  وعندما يفقد التبديل مسودّة النموذج يجب الحذر (يمكن لطبقة واجهة المستخدم استخدام keep-alive
+  للإبقاء).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getTabsClassNames,
+  resolveActiveName,
+  getNextActiveName,
+  getNameAfterRemove,
+  getTablistAria,
+  getTabAria,
+  getTabpanelAria,
+} from '@lh-ui/share/core/tabs'
+import type {
+  LhTabsType, LhTabsPosition, LhTabRecord, LhTabNavDirection,
+} from '@lh-ui/share/core/tabs'
+```
+
+## نية التصميم
+
+**`!= null` لا الاختزال بالقيمة الصادقة**: عند التحقق من modelValue تستخدم `resolveActiveName`
+المقارنة `modelValue != null`——لأن **اسم الصفحة مُعرِّف عمل، والسلسلة الفارغة قيمة مشروعة**.
+فعندما يربط المستخدم صراحةً علامة تبويب بـ `name: ''`، فإن الاختزال بالقيمة الصادقة
+(`if (modelValue && ...)`) يعامل السلسلة الفارغة كأنها «قيمة غير مُمرَّرة» فيتجاهلها، وينتقل
+التنشيط إلى أول علامة متاحة، فيحدث انحراف حالة يصعب تتبّعه.
+
+**يتضمّن التحقق disabled**: عندما يكون `modelValue` موجودًا لكن علامة التبويب المقابلة معطّلة،
+**لا تُنشَّط**، بل يُعاد الترجّح إلى أول علامة متاحة——فعدم قابلية اختيار علامة معطّلة قيد صارم،
+لا يُعدّى حتى بالتعيين القسري الخارجي.
+
+**`getNameAfterRemove` يبدأ باليمين ثم اليسار**: عند حذف علامة التبويب النشطة، تكون الأولوية
+لـ **أقرب عنصر متاح على اليمين** (للحفاظ على موضع النظر)، فإذا لم يوجد يمين فأقرب عنصر يسار.
+وهذا الترتيب يطابق حدس «انتقال التركيز جهة اليمين بعد الحذف». أما إذا لم يكن العنصر المحذوف
+هو النشط فيبقى التنشيط كما هو.
+
+**`getNextActiveName` غلاف @deprecated**: انتقلت خوارزمية التنقّل إلى `getNextListIndex` في
+`shared/keyboard`، واحتفظت هذه الدالة بالتوقيع القديم (أسماء الاتجاهات الدلالية
+'next'/'prev'/'first'/'last') وسلوكها القائم «الرجوع إلى العنصر الأول عندما تكون القيمة الحالية
+مجهولة أو معطّلة». **استخدم النواة مباشرة في الأكواد الجديدة**.
+
+**roving tabindex**: النمط المعتمد لتنقّل شريط علامات التبويب بلوحة المفاتيح هو roving
+tabindex——جميع العلامات `tabindex="-1"`، ولا العلامة النشطة إلا `tabindex="0"`. وتنقل مفاتيح
+الأسهم التركيز بين العلامات، ويقفز مفتاح Tab من شريط العلامات إلى محتوى اللوحة. وتُرجع
+`getNextActiveName` اسم العلامة الهدف، وتنقل طبقة واجهة المستخدم التركيز وتضبط tabindex بناء
+عليه.
+
+**الربط الثنائي aria**: علامة التبويب `aria-controls` → id اللوحة؛ واللوحة `aria-labelledby`
+← id العلامة النشطة. ويجب كتابة الطرفين، فيستطيع قارئ الشاشة القفز من أي طرف إلى الآخر.
+ويُخرج `aria-selected` عند التنشيط فقط (لا يُخرج false——فعدم التنشيط هو الحالة الافتراضية).
+
+## جدول الدوال
+
+| الدالة | التوقيع | الناتج | الدور |
+| --- | --- | --- | --- |
+| `getTabsClassNames` | `(state: { type, position }) => string[]` | أسماء الأصناف | المظهر + الموضع |
+| `resolveActiveName` | `(records, modelValue) => string \| null` | اسم العلامة النشطة | التحقق من modelValue + الترجّح |
+| `getNextActiveName` ⚠️ | `(records, currentName, direction) => string \| null` | اسم العلامة الهدف | التنقّل بلوحة المفاتيح |
+| `getNameAfterRemove` | `(records, removedName, currentName) => string \| null` | التنشيط المقترح | بعد الحذف يمينًا ثم يسارًا |
+| `getTablistAria` | `(id?) => LhAriaAttrs` | حزمة aria | role=tablist |
+| `getTabAria` | `(options: { active, disabled?, panelId?, id? }) => LhAriaAttrs` | حزمة aria | role=tab |
+| `getTabpanelAria` | `(options: { tabId?, id? }) => LhAriaAttrs` | حزمة aria | role=tabpanel |
+
+⚠️ غلاف توافق `@deprecated`، والأكواد الجديدة تستخدم `getNextListIndex` من `shared/keyboard`.
+
+## تعريفات الأنواع
+
+```ts
+export type LhTabsType = 'line' | 'card'      // مظهر مسطر / بطاقة
+export type LhTabsPosition = 'top' | 'bottom' // موضع العلامات
+export type LhTabNavDirection = 'next' | 'prev' | 'first' | 'last'
+
+export interface LhTabRecord {
+  name: string       // مُعرِّف فريد (مفتاح ثابت، لا يتغير مع دورة الحياة)
+  label: string      // عنوان علامة التبويب
+  disabled: boolean
+}
+```
+
+## إمكانية الوصول
+
+```ts
+getTabAria({ active: true, panelId: 'panel-1', id: 'tab-1' })
+// { role: 'tab', id: 'tab-1', 'aria-controls': 'panel-1', 'aria-selected': true }
+getTabAria({ active: false, disabled: true })
+// { role: 'tab', 'aria-disabled': true } (غير النشط لا يُخرج aria-selected)
+
+getTabpanelAria({ tabId: 'tab-1', id: 'panel-1' })
+// { role: 'tabpanel', id: 'panel-1', 'aria-labelledby': 'tab-1' }
+```
+
+- **اصطلاحات لوحة المفاتيح لـ role=tab** (APG): ←/→ تبدّل العلامات (**والتنشيط يتبع التركيز**——
+  مجرد تحريك التركيز يبدّلها، دون الحاجة لضغط Enter إضافي)؛ وHome/End تقفز لأول/آخر علامة. ويخرج
+  مفتاح Tab من شريط العلامات إلى اللوحة الحالية.
+- **first/last في `getNextActiveName`**: يدعم direction القيمتين 'first' / 'last' المقابلتين
+  لمفتاحي Home/End——فلا تعد كتابة معالجة الحدود بنفسك.
+- **تحتاج اللوحة tabindex**: تُضاف عادةً للوحة نفسها `tabindex="0"` ليتمكن مستخدمو لوحة
+  المفاتيح من القفز إلى محتواها (التوصية في APG). وهذه ليست مسؤولية core، بل تنفّذها طبقة
+  واجهة المستخدم.
+- **الطريقة الصحيحة لإخفاء اللوحة**: تُخرج اللوحات غير النشطة من شجرة إمكانية الوصول عبر
+  `v-if`/`hidden`؛ **ولا تترك اللوحة قابلة للتركيز بأي وسيلة سوى `visibility: hidden`**. وعند
+  الحاجة للإبقاء (مسودة نموذج)، استخدم `display: none` مع تصيير مخزّن.
+- **دلالة حذف aria-selected**: لا تُخرج السمة عند عدم التنشيط (بدل إخراج false)——تُحدّد APG أن
+  القيمة الافتراضية لـ aria-selected في tab هي false، وإخراج false صراحةً جائز لكنه زائد. وتتبع
+  `getTabAria` اصطلاح حذف القيم الكاذبة في `shared/a11y`.
+
+## أمثلة الاستخدام
+
+```ts
+import { resolveActiveName, getNameAfterRemove, getNextActiveName } from '@lh-ui/share/core/tabs'
+
+const records = [
+  { name: 'a', label: 'الأساسيات', disabled: false },
+  { name: 'b', label: 'الأمان', disabled: false },
+  { name: 'c', label: 'التنبيهات', disabled: true },
+]
+
+resolveActiveName(records, 'b')   // 'b'
+resolveActiveName(records, 'c')   // 'a' (c معطّل، الترجّح لأول متاح)
+resolveActiveName(records, '')    // 'a' (سلسلة فارغة != null يمرّ في فرع التحقق، لكن لا توجد علامة name === '' → الترجّح)
+resolveActiveName(records, undefined)  // 'a'
+resolveActiveName([], undefined)       // null (لا علامة متاحة)
+
+getNextActiveName(records, 'a', 'next')  // 'b' (عند تخطّي c المعطّل من a نحو next ينتج b)
+getNextActiveName(records, 'b', 'next')  // 'a' (فقط a/b متاح، دورة)
+getNextActiveName(records, 'unknown', 'next')  // 'a' (المجهول يُرجَّح للأول)
+
+getNameAfterRemove(records, 'b', 'b')  // 'a' (المحذوف هو النشط b: لا متاح يمين → أقرب يسار)
+getNameAfterRemove(records, 'a', 'b')  // 'b' (المحذوف غير النشط، يبقى b)
+getNameAfterRemove([{ name: 'a', disabled: true }], 'a', 'a')  // null (لا متاح)
+```
+
+```ts
+// التنشيط المُتحكَّم به (طبقة واجهة المستخدم)
+const activeName = ref<string | null>(null)
+const records = ref<LhTabRecord[]>([])
+
+function onTabClick(name: string) {
+  activeName.value = name
+}
+function onRemove(name: string) {
+  const next = getNameAfterRemove(records.value, name, activeName.value ?? '')
+  records.value = records.value.filter((r) => r.name !== name)
+  activeName.value = next
+}
+watch(records, () => {
+  activeName.value = resolveActiveName(records.value, activeName.value)
+}, { immediate: true })
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTabs v-model="activeName" type="card">
+    <LhTabPane name="basic" label="الإعدادات الأساسية">…</LhTabPane>
+    <LhTabPane name="security" label="إعدادات الأمان">…</LhTabPane>
+  </LhTabs>
+</template>
+```
+
+```tsx
+// React: تُسجَّل records بواسطة المكوّنات الفرعية TabPane (useEffect + context) أو تُمرَّر
+// مباشرة عبر props؛ ويُستدعى getNextActiveName + focus() في onKeyDown
+```
+
+```ts
+// uniapp: علامات <view> + scroll-view للتمرير الأفقي؛ ويُحدَّد موضع المسطر النشط عبر transform
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-tabs` | الحاوية الجذر |
+| `.lh-tabs--{line\|card}` | المظهر |
+| `.lh-tabs--{top\|bottom}` | موضع العلامات (ينقلب المسطر/إطار البطاقة تبعه) |
+| `.lh-tabs__header` / `__nav` / `__nav-wrap` | شريط العلامات / التنقّل / غلاف التمرير (شريط قابل للتمرير) |
+| `.lh-tabs__item` / `--active` / `--disabled` | علامة التبويب |
+| `.lh-tabs__active-bar` | المسطر النشط (نوع line، تحديد الموضع عبر transform) |
+| `.lh-tabs__content` / `__pane` | منطقة اللوحات |
+
+لون النص النشط `--lh-tabs-active-color` والمسطر بنفس اللون؛ ويستخدم نوع البطاقة إطار
+`--lh-border-color` مع رفع خلفية الحالة النشطة `--lh-bg-color`.
+
+## ملاحظات
+
+- **تمرير شريط العلامات**: عندما تكثر العلامات حتى تفيض، تحتاج إلى أزرار تمرير يمينًا ويسارًا
+  أو إيماءة انزلاق——`overflow: hidden` في `__nav-wrap` مع إزاحة `__nav` عبر transform تنفيذ
+  شائع، ويُحسب مقدار التمرير في طبقة واجهة المستخدم (لا تهتم به core).
+- **تجميع إطارات `type: card`**: يجب إزالة الإطار المتطابق مع منطقة المحتوى من علامة البطاقة
+  النشطة (في موضع top يُزال الإطار السفلي، وفي bottom العلوي)، وإلا يظهر إطار مزدوج——وهذا سبب
+  وجود أصناف position.
+- **الإضافة والحذف الديناميكيان للعلامات**: بعد الإضافة أو الحذف يجب إعادة تشغيل
+  `resolveActiveName` (مراقبة records). ويضمن استخدام `getNameAfterRemove` عند الحذف ألا تبقى
+  الحالة النشطة معلّقة.
+- **زر الإغلاق داخل علامة التبويب**: يجب أن يوقف زر ✕ في العلامات `closable` الحدث
+  `@click.stop` (وإلا يُطلق تبديل العلامة في الوقت نفسه)، ويحتاج إلى `aria-label`.
+- **keep-alive والأداء**: يُستحسن الإبقاء على اللوحات الثقيلة المتكرّر تبديلها (الرسوم البيانية،
+  الجداول) بدل هدمها وإعادة بنائها——في Vue عبر `<keep-alive>`، وفي React عبر إخفاء CSS مع
+  سياسة إلغاء التركيب. وcore لا تدرك ذلك.
+- **التوقيع القديم لـ `getNextActiveName`**: يستخدم direction أسماء دلالية ('next'/'prev') لا
+  قيم النواة 1/-1، **وعند جهالة القيمة الحالية يُرجَّح للعنصر الأول أيًا كان الاتجاه** (لا بحسب
+  الاتجاه)——وهذا حفاظ على السلوك القديم، فانتبه عند الترحيل.
+- **فخ اسم العلامة ذي السلسلة الفارغة**: `resolveActiveName(records, '')` يبحث عن علامة
+  `name === ''` في records——فإذا استخدم العمل السلسلة الفارغة للدلالة على «لا اختيار»، فستتعارض
+  مع اسم العلامة المشروع ذي السلسلة الفارغة. استخدم `null` لا `''` للدلالة على عدم الاختيار.
+
+<FnPlayground module="tabs" fn="getNameAfterRemove" params='{"records": [{"name": "a", "label": "الأساسيات", "disabled": false}, {"name": "b", "label": "الأمان", "disabled": false}, {"name": "c", "label": "التنبيهات", "disabled": true}], "removedName": "b", "currentName": "b"}' />

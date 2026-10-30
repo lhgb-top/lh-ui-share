@@ -1,0 +1,206 @@
+---
+title: progress —— Barre de progression
+description: 'clampPercent pour le clampage, resolveStatus pour le passage automatique à success à 100 %, getProgressColor pour la couleur selon l’état, sémantique progressbar'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La barre de progression exprime « où en est l'achèvement d'une chose » : envoi, téléchargement, installation, approbation. C'est un composant purement indicatif — la valeur pilote tout. `core/progress` gère le clampage du pourcentage, la déduction de l'état (passage automatique à success à 100 %), la conversion de la circonférence pour la barre circulaire, ainsi que la sémantique progressbar des APG.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhProgress` : progression d'un envoi de fichier, progression d'une tâche, indication de la durée d'un chargement, occupation d'une capacité.
+- Scénarios avec un rapport explicite « valeur courante / total ».
+- **À ne pas utiliser pour** : un chargement sans progression déterminée (utilisez `spinner` / `loading`, qui expriment « ça tourne » plutôt que « où on en est ») ; la navigation par étapes (utilisez `steps`).
+
+## Importation
+
+```ts
+import {
+  clampPercent,
+  resolveStatus,
+  getProgressClassNames,
+  getCircleCircumference,
+  getProgressColor,
+  formatPercentText,
+  getProgressAria,
+} from '@lh-ui/share/core/progress'
+import type { LhProgressType, LhProgressStatus, LhProgressState } from '@lh-ui/share/core/progress'
+```
+
+## Intentions de conception
+
+**La déduction automatique de `resolveStatus`** : lorsque `status` vaut `'normal'` (valeur par défaut), `value >= 100` devient automatiquement `'success'`. C'est la « convention plutôt que la configuration » — arrive à terme, c'est réussi, l'utilisateur n'a pas à écrire `:status="value >= 100 ? 'success' : 'normal'"` sur chaque barre. Mais **un état explicitement spécifié n'est pas surchargé** : avec `warning`, cela reste warning, même à 100 %.
+
+**Le NaN de `clampPercent` est ramené à zéro** : NaN renvoie 0 au lieu de se propager. Les valeurs de progression proviennent souvent de calculs asynchrones (`loaded / total`, NaN lorsque total vaut 0) ; le passage à zéro permet à l'UI d'afficher « 0 % » au lieu de crasher ou d'afficher `NaN%`.
+
+**La conversion de la circonférence du cercle** : `getCircleCircumference(width, strokeWidth)` = `2π × (width - strokeWidth) / 2`. C'est l'algorithme standard du `stroke-dasharray` SVG : `stroke-dasharray = circonférence`, `stroke-dashoffset = circonférence × (1 - percent/100)`. Il faut **soustraire d'abord la moitié de l'épaisseur du trait** du rayon, sinon le cercle déborde du canvas d'un cran.
+
+**Les trois niveaux de priorité de `getProgressColor`** : la color transmise par l'utilisateur (fonction ou chaîne) > le jeton correspondant à l'état > la couleur principale par défaut. La forme fonction (`(percentage) => string`) gère les **barres de progression dégradées** (par exemple 0-50 en vert, 50-80 en jaune, 80+ en rouge).
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `clampPercent` | `(value: number) => number` | [0,100] | NaN ramené à zéro |
+| `resolveStatus` | `(value, status) => LhProgressStatus` | État | normal et ≥100 → success |
+| `getProgressClassNames` | `(state: LhProgressState) => string[]` | Classes | Type / état / texte |
+| `getCircleCircumference` | `(width, strokeWidth) => number` | Circonférence | Calcul du dash SVG |
+| `getProgressColor` | `(status, color?, percentage?) => string` | Couleur | Priorité sur trois niveaux |
+| `formatPercentText` | `(percentage) => string` | `'50%'` | Texte arrondi |
+| `getProgressAria` | `(options: { percentage, label? }) => LhAriaAttrs` | Paquet d'attributs aria | Sémantique progressbar |
+
+## Définitions de types
+
+```ts
+export type LhProgressType = 'line' | 'circle'
+export type LhProgressStatus = 'normal' | 'success' | 'warning' | 'exception'
+
+export interface LhProgressState {
+  type: LhProgressType
+  status: LhProgressStatus
+  showText: boolean
+  strokeWidth: number   // En line, hauteur en px ; en circle, épaisseur du trait SVG
+  width: number         // Largeur du canvas du cercle, en px
+}
+```
+
+## Accessibilité
+
+```ts
+getProgressAria({ percentage: 60, label: 'Progression de l\'envoi' })
+// { role: 'progressbar', 'aria-valuenow': 60, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-label': 'Progression de l\'envoi' }
+
+getProgressAria({ percentage: 100 })
+// { role: 'progressbar', 'aria-valuenow': 100, 'aria-valuemin': 0, 'aria-valuemax': 100 }
+```
+
+- `role="progressbar"` est le rôle standard des APG : le lecteur d'écran annonce « barre de progression 60 % ».
+- **`aria-label` est indispensable en l'absence de texte visible** : une barre avec `showText: false` est totalement invisible pour l'utilisateur du lecteur d'écran et doit avoir un nom accessible. Avec un texte visible, on peut l'omettre (le texte est lui-même le nom).
+- La barre de progression est `aria-readonly` (implicite par défaut), aucune déclaration supplémentaire n'est nécessaire.
+- **La limitation du débit des annonces pour une progression dynamique** : pour une barre mise à jour des dizaines de fois par seconde, les variations fréquentes de `aria-valuenow` saturent le lecteur d'écran. La couche UI devrait réduire la fréquence de mise à jour de `aria-valuenow` à environ une fois par seconde (l'animation visuelle n'est pas affectée, seule la fréquence des mises à jour aria est réduite).
+
+## Exemples d'utilisation
+
+```ts
+import { clampPercent, resolveStatus, getProgressColor, getCircleCircumference } from '@lh-ui/share/core/progress'
+
+clampPercent(50)       // 50
+clampPercent(150)      // 100
+clampPercent(-10)      // 0
+clampPercent(NaN)      // 0
+
+resolveStatus(100, 'normal')    // 'success' (passage automatique à 100 %)
+resolveStatus(100, 'warning')   // 'warning' (l'état explicite n'est pas surchargé)
+resolveStatus(50, 'normal')     // 'normal'
+
+getProgressColor('normal')                 // 'var(--lh-primary-color)'
+getProgressColor('success')                // 'var(--lh-success-color)'
+getProgressColor('warning')                // 'var(--lh-warning-color)'
+getProgressColor('exception')              // 'var(--lh-danger-color)'
+getProgressColor('normal', '#f00')         // '#f00' (la chaîne est prioritaire)
+getProgressColor('normal', (p) => p > 80 ? 'var(--lh-danger-color)' : 'var(--lh-success-color)', 90)
+// 'var(--lh-danger-color)' (la fonction choisit la couleur selon le pourcentage courant)
+
+getCircleCircumference(120, 8)  // 2π × 56 ≈ 351.86
+formatPercentText(49.6)         // '50%' (arrondi)
+```
+
+```ts
+// Configuration de dégradé (color en fonction)
+const color = (percentage: number) =>
+  percentage < 30 ? 'var(--lh-success-color)'
+  : percentage < 70 ? 'var(--lh-warning-color)'
+  : 'var(--lh-danger-color)'
+```
+
+```vue
+<!-- Vue3 : linéaire -->
+<div :class="getProgressClassNames({ type: 'line', status, showText, strokeWidth, width })">
+  <div
+    class="lh-progress__bar"
+    role="progressbar"
+    :aria-valuenow="clamped"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    :aria-label="showText ? undefined : label"
+  >
+    <div
+      class="lh-progress__fill"
+      :style="{ width: clamped + '%', height: strokeWidth + 'px', background: barColor }"
+    />
+  </div>
+  <span v-if="showText" class="lh-progress__text">{{ formatPercentText(clamped) }}</span>
+</div>
+```
+
+```vue
+<!-- Vue3 : circulaire -->
+<div :class="getProgressClassNames({ type: 'circle', status, showText, strokeWidth, width })">
+  <svg :width="width" :height="width" :viewBox="`0 0 ${width} ${width}`">
+    <circle
+      :cx="width / 2" :cy="width / 2"
+      :r="(width - strokeWidth) / 2"
+      :stroke-width="strokeWidth"
+      fill="none"
+      class="lh-progress__circle-track"
+    />
+    <circle
+      :cx="width / 2" :cy="width / 2"
+      :r="(width - strokeWidth) / 2"
+      :stroke-width="strokeWidth"
+      fill="none"
+      :stroke="barColor"
+      stroke-linecap="round"
+      :stroke-dasharray="circumference"
+      :stroke-dashoffset="circumference * (1 - clamped / 100)"
+      :transform="`rotate(-90 ${width / 2} ${width / 2})`"
+    />
+  </svg>
+  <span v-if="showText" class="lh-progress__circle-text">{{ formatPercentText(clamped) }}</span>
+</div>
+```
+
+```ts
+const clamped = computed(() => clampPercent(props.percentage))
+const status = computed(() => resolveStatus(clamped.value, props.status))
+const barColor = computed(() => getProgressColor(status.value, props.color, clamped.value))
+const circumference = computed(() => getCircleCircumference(props.width, props.strokeWidth))
+```
+
+```tsx
+// React : pour le cercle, animation de stroke-dashoffset (transition CSS sur cette propriété)
+```
+
+```ts
+// uniapp : le linéaire utilise un <view> en largeur percentage ; le cercle exige
+// un <canvas> ou du SVG (support limité sur certaines cibles) ;
+// la solution simplifiée consiste à remplacer le cercle par une barre linéaire
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-progress` / `--line` / `--circle` | Classe de base / type |
+| `.lh-progress--success` / `--warning` / `--exception` | État (couleur du texte + couleur de remplissage) |
+| `.lh-progress--no-text` | Sans texte (supprime l'emplacement du texte à droite) |
+| `.lh-progress__bar` | Piste |
+| `.lh-progress__fill` | Remplissage (largeur en pourcentage) |
+| `.lh-progress__text` | Texte de la barre linéaire |
+| `.lh-progress__circle-track` | Piste du cercle |
+| `.lh-progress__circle-text` | Texte central du cercle |
+
+Couleur de la piste `--lh-fill-color`, remplissage par défaut `--lh-primary-color`, les couleurs d'état `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`.
+
+## Remarques
+
+- **La double signification de `strokeWidth`** : en mode line, c'est la **hauteur** du remplissage (px) ; en mode circle, c'est l'**épaisseur du trait** SVG. Une même prop, deux sémantiques : la couche UI la consomme différemment selon le `type`.
+- **La relation entre `width` et `strokeWidth` du cercle** : `strokeWidth` ne peut pas dépasser `width`, sinon le rayon devient négatif, la circonférence est calculée en valeur négative, et le comportement de `stroke-dashoffset` est indéfini.
+- **Avec `showText: false`, il faut obligatoirement un `aria-label`** — c'est une exigence forte d'accessibilité, pas une option.
+- **Les limites de l'animation** : lorsque la largeur de remplissage passe de 0 à 80 %, la transition CSS complète l'animation ; mais l'instant où `clamped` est ramené d'un NaN à zéro produit un clignotement, aussi la couche UI peut-elle attendre la stabilisation de la valeur avant de rendre.
+- **`resolveStatus` et la liaison d'état de la couche UI** : si le métier souhaite conserver normal à « 100 % mais traitement toujours en cours », la transmission explicite de `status="normal"` sera surchargée (parce que la déduction automatique ne se déclenche qu'à normal et que normal → success est unidirectionnel) — dans ce cas, utilisez plutôt `exception` ou une couleur personnalisée pour contourner.
+- **La sémantique métier d'un pourcentage supérieur à 100** : `clampPercent` clampe directement à 100. Si le métier doit exprimer un « dépassement » (par exemple 120 %), n'utilisez pas progress et affichez le nombre avec `statistic`.
+- **L'arrondi de `formatPercentText`** : `49.6` affiche `50 %` avec une perte de précision ; les métiers nécessitant des décimales formateront eux-mêmes (core ne fournit pas de paramètre, afin de garder la fonction minimale).
+
+<FnPlayground module="progress" fn="getProgressColor" params='{"status": "normal", "percentage": 90}' />

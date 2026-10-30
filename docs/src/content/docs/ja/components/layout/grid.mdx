@@ -1,0 +1,183 @@
+---
+title: grid グリッド —— レイアウト
+description: '24 列 CSS Grid グリッド：resolveBreakpoint のブレイクポイント判定、resolveResponsiveSize の下方フォールバック、span/offset/push/pull から grid-column へのクランプマッピング'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+グリッドはレイアウトの骨格です：ページを 24 列に切り分け、内容は列幅の比率に従って配置され、ブレイクポイントに合わせてレスポンシブに変化します。lh-ui のグリッドは **CSS Grid** をベースにしています（flex のパーセント幅ではありません）——位置決めの精度が高く、明示的な起点の指定をサポートします。`core/grid` が管理するのは**ブレイクポイントの判定、レスポンシブのフォールバック、列位置決めのクランプ計算**です——CSS だけでは「下方フォールバック」と「境界を越えた際のクランプ」は計算できません。
+
+## いつ使うか
+
+- 各端末で `<LhRow>` / `<LhCol>` を実装：ページのメインレイアウト、フォームの 2 列／3 列配置、カードウォール、ダッシュボード。
+- **レスポンシブ**な列幅が必要（PC は 3 列、タブレットは 2 列、モバイルは 1 列）。
+- **使うべきでないケース**：シンプルな 2 要素の左右揃え（flex や `space` を使う方が直接的）；不定幅の流れるようなレイアウト（grid の列幅は固定比率なためかえって扱いづらい）。
+
+## インポート方法
+
+```ts
+import {
+  LH_GRID_COLUMNS,
+  LH_GRID_BREAKPOINTS,
+  LH_GRID_BREAKPOINT_ORDER,
+  resolveBreakpoint,
+  resolveResponsiveSize,
+  getGridRowClassNames,
+  normalizeColSize,
+  clampSpan,
+  getColStyle,
+  getGridColClassNames,
+} from '@lh-ui/share/core/grid'
+import type {
+  LhGridBreakpoint, LhGridSpan, LhColSize, LhBreakpointSizes,
+} from '@lh-ui/share/core/grid'
+```
+
+## 設計意図
+
+**flex のパーセントではなく CSS Grid**：flex グリッドの各 col は `width: x/24` で、行内の折り返しは flex-wrap に頼り、列の間隔は負の margin で打ち消す——ハックの塊です。CSS Grid は直接 `grid-template-columns: repeat(24, 1fr)` とし、間隔は `gap`、col は `grid-column` で位置決めし、セマンティクスが綺麗です。代償は IE 未サポートですが——lh-ui のターゲット端末（モダンブラウザ + ミニプログラムの webview）はすべてカバー済みです。
+
+**ブレイクポイントの下方フォールバック**：`resolveResponsiveSize(sizes, 'md')` は md 桁から小さい方へ探し、最初に**宣言済み**の桁にヒットさせます。ユーザーが `{ xs: 24, lg: 12 }` しか書いていない場合、md（768~1024）の幅では xs の 24 にフォールバックします——**undefined ではありません**。これがレスポンシブ API の中核となる体験です：ユーザーは主要なブレイクポイントだけを宣言し、中間の桁は自動的に小画面の設定が引き継がれます。
+
+**`span = 0` はバグではなく番兵**：`span: 0, offset: 6` は「列を占めず、後続の内容を 6 列分だけ押し下げる」ことを意味します。この時 `getColStyle` は `7 / span 0` ではなく `7 / 25`（末列まで延伸）を出力します——後者は要素をゼロ幅に塌陷させてしまいます。
+
+**起点のクランプで容器の破裂を防ぐ**：`offset 21 + span 8` は起点 22 を算出し、境界を越えます。`getColStyle` は起点を `24 + 1 - 8 = 17` にクランプします——要素全体を収まる位置まで左へずらします。コメントに理由が書かれています：境界を越えた `grid-column` は Grid に**暗黙のトラック**を生成させ、容器の幅を破裂させます。
+
+**auto-placement と明示的配置の分水嶺**：純粋な span は `span N` を使い（起点を指定せず、Grid が自動配置）；offset/push/pull を伴う場合は `start / span N` を使い（明示的な起点で、自動配置を中断します）。コメントには実際の罠が記録されています：純粋な span を `1 / span N` と書いてしまうと、同行のすべての Col が列 1 から始まり、Grid は後ろのものを次の行へ押しやるしかなく——視覚上「縦並び」になってしまいます。
+
+**クラス名の直接結合ではなくマッピングテーブル**：`justify="center"` と `align="center"` が直接クラス名を結合すると `lh-row--center` が 2 つ衝突します（justify は justify-items、align は align-items で、2 つの異なる CSS プロパティです）。明示的なマッピングテーブルを使えば：justify の center → `lh-row--center`、align の center → `lh-row--middle`（center を middle の互換別名とし、主要ライブラリの API の慣習に合わせる）。副次的な利点：未知の値から汚いクラス名が生成されません。
+
+## 関数表
+
+| 関数 / 定数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `resolveBreakpoint` | `(width: number) => LhGridBreakpoint` | ブレイクポイント | ビューポート幅 → 桁 |
+| `resolveResponsiveSize` | `(sizes, breakpoint) => LhColSize \| undefined` | 有効なサイズ | 宣言済みの直近の桁へ下方フォールバック |
+| `getGridRowClassNames` | `(state: { justify?, align?, wrap? }) => string[]` | クラス名 | 整列／折り返し |
+| `normalizeColSize` | `(size?: LhColSize) => LhGridSpan` | 記述オブジェクト | 数値 → `{ span }` |
+| `clampSpan` | `(span?: number) => number` | [0, 24] の整数 | 非有限値は 0 に |
+| `getColStyle` | `(size?: LhColSize) => Record<string, string>` | インラインスタイル | grid-column の位置決め |
+| `getGridColClassNames` | `(size?: LhColSize) => string[]` | クラス名 | span / offset |
+
+定数：`LH_GRID_COLUMNS = 24`、`LH_GRID_BREAKPOINTS`（xs 0 / sm 640 / md 768 / lg 1024 / xl 1280）、`LH_GRID_BREAKPOINT_ORDER`（大きい順）。
+
+## 型定義
+
+```ts
+export type LhGridBreakpoint = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+
+export interface LhGridSpan {
+  span?: number        // 占める列数（0 = 列を占めない、offset の位置決めのみに使用）
+  offset?: number      // 左側に空ける列数
+  push?: number        // 起点を右へずらす
+  pull?: number        // 起点を左へずらす
+}
+
+export type LhColSize = number | LhGridSpan
+export type LhBreakpointSizes = Partial<Record<LhGridBreakpoint, LhColSize>>
+```
+
+## アクセシビリティ
+
+グリッドは純粋な配置のプリミティブで、**自体にアクセシビリティのセマンティクスはありません**——Row/Col に role を付けないでください。内容のセマンティクスは内部のコンポーネントが提供します。関連する 1 つの原則：
+
+- **配置の変化が DOM の順序を変えてはならない**：レスポンシブに並び替える際、Col の DOM 内の順序は固定で、視覚的な列数だけが変化します。異なるブレイクポイントで内容の順序を変えたい場合（「メイン内容は PC では左、モバイルでは上部」）は、ソースコードの順序 + `order` スタイルを使い、DOM の順序を切り替えないでください——スクリーンリーダーは DOM の順序で読み上げ、視覚と読み上げの順序が一致しないと混乱を招きます。
+
+## 使用例
+
+```ts
+import {
+  resolveBreakpoint, resolveResponsiveSize, getColStyle, clampSpan,
+} from '@lh-ui/share/core/grid'
+
+resolveBreakpoint(800)   // 'md'
+resolveBreakpoint(600)   // 'xs'（< 640）
+resolveBreakpoint(1300)  // 'xl'
+
+// 下方フォールバック：md 桁は未宣言 → xs を採る
+resolveResponsiveSize({ xs: 24, lg: 12 }, 'md')  // 24
+resolveResponsiveSize({ xs: 24, lg: 12 }, 'lg')  // 12
+resolveResponsiveSize({ xs: 24 }, 'xl')          // 24
+resolveResponsiveSize(undefined, 'md')           // undefined（宣言なし）
+```
+
+```ts
+getColStyle(8)             // { gridColumn: 'span 8' }（auto-placement）
+getColStyle({ span: 8, offset: 4 })
+// { gridColumn: '5 / span 8' }（起点 = offset+1、クランプ後に境界未越え）
+getColStyle({ span: 0, offset: 6 })
+// { gridColumn: '7 / 25' }（番兵：列を占めず、末列まで延伸）
+getColStyle({ span: 8, offset: 21 })
+// { gridColumn: '17 / span 8' }（境界越えのクランプ：起点 22 → 17）
+getColStyle({ span: 8, push: 4 })
+// { gridColumn: '5 / span 8' }（push 4 = 起点を右へ 4 つ移動）
+getColStyle({ span: 8, pull: 4 })
+// { gridColumn: '1 / span 8' }（起点 5-4=1、下限 1 にクランプ）
+getColStyle({})            // { gridColumn: 'span 24' }（宣言がなければ全幅を占める）
+
+clampSpan(8)    // 8
+clampSpan(30)   // 24（上限にクランプ）
+clampSpan(-5)   // 0
+clampSpan(NaN)  // 0（非有限値は 0 に）
+```
+
+```vue
+<!-- Vue3：レスポンシブ 3 列 → 2 列 → 1 列 -->
+<template>
+  <LhRow :gutter="16">
+    <LhCol v-for="item in list" :key="item.id" :xs="24" :sm="12" :lg="8">
+      <LhCard>{{ item.title }}</LhCard>
+    </LhCol>
+  </LhRow>
+</template>
+```
+
+```vue
+<!-- フォームの 2 列レイアウト + offset でボタンを配置 -->
+<template>
+  <LhRow :gutter="20">
+    <LhCol :span="12"><LhFormItem label="名前" prop="name" /></LhCol>
+    <LhCol :span="12"><LhFormItem label="メールアドレス" prop="email" /></LhCol>
+    <LhCol :span="12" :offset="12">
+      <LhButton type="primary" @click="submit">送信</LhButton>
+    </LhCol>
+  </LhRow>
+</template>
+```
+
+```tsx
+// React：ブレイクポイントの監視は UI 層が resize リスナーか useMediaQuery で state を駆動；
+// getColStyle は render の中で純関数として呼び出す
+```
+
+```ts
+// uniapp：<view> + grid；ミニプログラム側に window はなく、ブレイクポイントは UI 層が
+// uni.getSystemInfoSync() の safeArea/windowWidth または res.rpx の換算で駆動する。
+// core の resolveBreakpoint はそのまま使える
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-row` | 行コンテナ（`display: grid; grid-template-columns: repeat(24, 1fr)`） |
+| `.lh-row--{end\|center\|space-between\|space-around}` | 水平方向の整列（justify-items） |
+| `.lh-row--{middle\|bottom}` | 垂直方向の整列（align-items） |
+| `.lh-row--nowrap` | 折り返しなし |
+| `.lh-col` | 列コンテナ |
+| `.lh-col--{1..24}` | span の列数 |
+| `.lh-col--offset-{1..24}` | 左側のオフセット列数 |
+
+間隔のトークン `--lh-row-gutter`（行の間隔、`gutter` prop でオーバーライド）；列間は grid の `gap` で実現されます。
+
+## 注意事項
+
+- **`gutter` と grid gap**：Grid の gap は行と列の**両方**に同時に作用します；列の間隔だけで行の間隔が不要な場合、行コンテナで `row-gap: 0` を個別にオーバーライドしてください。
+- **レスポンシブブレイクポイントは UI 層が監視する必要がある**：`resolveBreakpoint` は純関数で、UI 層が自ら resize（または `matchMedia`）を監視して幅を渡さなければなりません。SSR の初回画面には window がなく、デフォルトで xs 桁をレンダリングし、クライアントの活性化後に修正します。
+- **auto と明示的配置を混用しない**：同行の中で 1 つの Col が純粋な span、もう 1 つが offset を使うと、明示的に配置された方が auto-placement を中断します——行内の配置結果が直感的でなくなる可能性があります。どちらも純粋な span にするか、すべて明示的にするかのどちらかにしてください。
+- **`push` / `pull` と `offset` の違い**：三者とも起点を変えますが、セマンティクスが異なります——`offset` は「左側に空白を残す」（余地を占めるというセマンティクス）、`push/pull` は「平行移動」（視覚的な並び替え）です。実装上は `getColStyle` の中でどちらも起点を変えますが、**クラス名のレイヤーで対応するクラスがあるのは offset のみ**（push/pull はインラインスタイルのみ）。
+- **24 列の座標系はハードな制約**：`span 25` は 24 にクランプされます；`offset 24 + span 1` の起点は 24 にクランプされます。業務側で 24 を超える細かい粒度が必要な場合は、列数を増やすのではなく `LhRow` をネストしてください。
+- **ネストしたグリッド**：`LhCol` の中にさらに `LhRow` を置くと、内側は改めて 24 列から計算を始めます——子グリッドは親の span のコンテキストを引き継ぎません。これは CSS Grid の本来の挙動です。
+- **クラス名の span とインラインスタイルの共存**：`getGridColClassNames` が出力する `lh-col--8` と `getColStyle` の `grid-column` は 2 つの仕組みです（クラス名は SCSS のメディアクエリ用、インラインは JS のレスポンシブ用）。**UI 層はどちらか一方を選んでください**。两者を同時に書くと互いにオーバーライドし合います（インラインスタイルが勝つ）。
+
+<FnPlayground module="grid" fn="getColStyle" params='{"size": {"span": 8, "offset": 4}}' />

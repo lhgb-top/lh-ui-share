@@ -1,0 +1,146 @@
+---
+title: input-number —— 數字輸入框
+description: 'incrementValue/decrementValue 步進與精度淨化，shouldDisableIncrement 判按鈕停用，spinbutton 語義屬性包'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+數字輸入框在輸入框之上加了三件事：**步進**（按 step 加減）、**鉗制**（不超出 min/max）、**精度**（小數位）。`core/input-number` 把這三件事的純計算抽出來，UI 層只負責把增減按鈕的事件接上。
+
+## 何時使用
+
+- 各端實作 `LhInputNumber`：數量選擇、金額輸入、分頁大小。
+- **不該用它**：純文字數字（用 `core/input`，使用者可能想輸入「大約 10 個」這類非嚴格數值）、滑桿式選擇（用 `core/slider` 更直觀）。
+
+## 匯入方式
+
+```ts
+import {
+  incrementValue,
+  decrementValue,
+  shouldDisableIncrement,
+  shouldDisableDecrement,
+  getDisplayValue,
+  getInputNumberAria,
+} from '@lh-ui/share/core/input-number'
+import type { LhInputNumberState } from '@lh-ui/share/core/input-number'
+```
+
+## 設計意圖
+
+`incrementValue` / `decrementValue` 的三道防線：
+
+1. **null 起始值**：`value === null` 時加按 `step`、減按 `-step`，而不是從 0 開始——使用者還沒填值就點加號，應當落到「一個步進」而非「min」。
+2. **精度淨化**：`precision` 經 `shared/sanitize` 的 `safePrecision` 淨化到 `[0, 100]` 整數，避免 `toFixed(101)` 拋 RangeError。這道防線與 `core/statistic` 共用。
+3. **非有限結果兜底**：內部 `clampSafe` 在結果為 NaN 時回退到 `clamp(0, min, max)`——髒 props（`step: NaN`）不會讓值變成 NaN 傳播到檢視。
+
+`shouldDisableIncrement` 的判定是 `value !== null && value >= max`：null 時不停（點了會變成 step），到達上界才停。這個 `!== null` 不能省，否則空輸入的加號按鈕是灰的。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `incrementValue` | `(value: number \| null, step: number, min: number, max: number, precision?: number) => number` | 新值 | 加步長 |
+| `decrementValue` | `(value: number \| null, step: number, min: number, max: number, precision?: number) => number` | 新值 | 減步長 |
+| `shouldDisableIncrement` | `(state: LhInputNumberState) => boolean` | 布林 | disabled 或已到上界 |
+| `shouldDisableDecrement` | `(state: LhInputNumberState) => boolean` | 布林 | disabled 或已到下界 |
+| `getDisplayValue` | `(value: number \| null, _placeholder: string) => string` | 顯示字串 | 有值 String 化，null 空字串 |
+| `clampValue` | 同 `shared/sanitize.clamp` | 鉗制值 | 相容性別名再匯出 |
+
+注意 `getDisplayValue` 的第二個參數 `_placeholder` 前綴底線、函式體未使用——佔位符的渲染是 UI 層的職責（placeholder 屬於「沒值時的提示」，與「值的顯示」是兩件事）。
+
+## 類型定義
+
+```ts
+export interface LhInputNumberState {
+  value: number | null
+  min: number
+  max: number
+  step: number
+  disabled: boolean
+  size: LhComponentSize
+  controls: boolean       // 是否顯示增減按鈕
+  precision: number | undefined
+  placeholder: string
+}
+```
+
+## 無障礙
+
+`getInputNumberAria` 輸出 APG 的 **spinbutton** 語義：
+
+```ts
+getInputNumberAria({ value: 5, min: 0, max: 10, step: 1 })
+// { role: 'spinbutton', 'aria-valuemin': 0, 'aria-valuemax': 10, 'aria-valuenow': 5 }
+
+getInputNumberAria({ value: null, min: 0, max: 10, step: 1 })
+// { role: 'spinbutton', 'aria-valuemin': 0, 'aria-valuemax': 10 }  —— null 不掛 valuenow
+```
+
+- `value != null` 才掛 `aria-valuenow`；空值掛 `aria-valuenow="NaN"` 會讓螢幕閱讀器播報異常。
+- `disabled` 掛 `aria-disabled`（而非依賴原生 disabled，因為部分端用自訂控制項）。
+- `ariaValueText` 掛 `aria-valuetext`——當數值本身不足以表達語義時用（如「3 天」而非「3」），**優先於 valuenow 播報**。
+
+## 使用範例
+
+```ts
+import { incrementValue, shouldDisableIncrement } from '@lh-ui/share/core/input-number'
+
+incrementValue(4, 1, 0, 10)      // 5
+incrementValue(null, 2, 0, 10)   // 2（null 起始按 step）
+incrementValue(9, 1, 0, 10)      // 10（鉗制到 max）
+incrementValue(9, 1, 0, 10, 2)   // 10，且 toFixed(2) 後 Number 化
+decrementValue(null, 2, 0, 10)   // -2（鉗制前是 -2，再被 clamp 到 0）
+
+shouldDisableIncrement({ value: 10, max: 10, min: 0, step: 1, disabled: false, ... })  // true
+shouldDisableIncrement({ value: null, max: 10, ... })                                   // false
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-input-number', `lh-input-number--${size}`]">
+  <button
+    v-if="controls"
+    class="lh-input-number__decrease"
+    :disabled="shouldDisableDecrement(state)"
+    aria-label="减少"
+    @click="emit('update:modelValue', decrementValue(modelValue, step, min, max, precision))"
+  >−</button>
+  <input
+    class="lh-input-number__input"
+    v-bind="getInputNumberAria({ value: modelValue, min, max, step, disabled })"
+  />
+  <button v-if="controls" class="lh-input-number__increase" :disabled="shouldDisableIncrement(state)">+</button>
+</div>
+```
+
+```tsx
+// React
+const next = incrementValue(value, step, min, max, precision)
+return <button onClick={() => onChange(next)} disabled={shouldDisableIncrement(state)}>+</button>
+```
+
+```ts
+// uniapp：增減按鈕用 view + @tap；步進值變化後受控回寫，注意鍵盤輸入與按鈕的競態
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-input-number` | 基礎類 |
+| `.lh-input-number--{small\|large}` | 尺寸檔（medium 為預設，無修飾類） |
+| `.lh-input-number--disabled` | 停用態 |
+| `.lh-input-number__input` | 中間輸入區 |
+| `.lh-input-number__increase` / `__decrease` | 增減按鈕 |
+
+高度 32px（與 input 的 37px、select 的 32px 構成「高度令牌專項」的不統一清單）。
+
+## 注意事項
+
+- **`step` 為 0 或負數**：`incrementValue` 不驗證 step 合法性，`step: 0` 會讓值不變；UI 層應保證 step 為正。
+- **精度與 step 的關係**：`precision` 只管顯示位數，不自動對齊 step。`step: 0.5` 但 `precision: 0` 會讓 `incrementValue(0, 0.5, ...)` 顯示成 `1`（先算後取整）。
+- **空值的語義**：`value === null` 與 `value === 0` 是兩回事，前者是「未填寫」。`getDisplayValue(null)` 傳回空字串而非 `'0'`。
+- 浮點累積：`0.1 + 0.2` 的經典問題在步進中真實存在；`precision` 的 `toFixed` 路徑是唯一的防線，設了 precision 就穩，不設就可能漂。
+
+<FnPlayground module="input-number" fn="incrementValue" params='{"value": 4, "step": 1, "min": 0, "max": 10, "precision": 2}' />

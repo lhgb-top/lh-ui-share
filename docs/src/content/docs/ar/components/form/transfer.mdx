@@ -1,0 +1,180 @@
+---
+title: transfer —— صندوق النقل
+description: 'partitionTransferData لتقسيم غير قابل للتغيير، و moveTransferKeys لتنظيف المفاتيح الشبحية، و getTransferCheckAllState ثلاثية الحالات، و sourceKeys مصدر بيانات واحد'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+يحل صندوق النقل مشكلة **النقل بالاختيار المتعدد في الاتجاهين**: العمود الأيسر هو «ما ينتظر الاختيار»، والعمود الأيمن هو «ما تم اختياره»، ويزرّان سهميان في الوسط ينقلان العناصر ذهاباً وإياباً. وهو أنسب من مجموعة checkbox عند تعدد الخيارات (ترقيم + بحث)، وأوضح من عدة select (فكلا العمودين مرئي). ويُنشئ `core/transfer` النموذج عبر **مصدر بيانات واحد `sourceKeys`** — فالعمود الأيسر هو «العناصر غير الموجودة في sourceKeys»، والعمود الأيمن هو «العناصر الموجودة في sourceKeys»، وكل العمليات مجرد تحويل لهذه المصفوفة.
+
+## متى يُستخدم
+
+- تُنجزه الأطراف على هيئة `LhTransfer`: توزيع الصلاحيات، اختيار أعضاء الأدوار، تصفية الوسوم، تحديد حقول البيانات.
+- عدد الخيارات كبير (>10)، مع الحاجة إلى تصفية بالبحث، ومشاهدة الجانبين «المختار/غير المختار» في آن واحد.
+- **لا ينبغي استخدامه**: عند قلة الخيارات عن 6 (مجموعة checkbox أو segmented أوفر للمساحة)؛ وعند الاختيار أحادي الاتجاه الذي لا يحتاج «النقل بالعودة» (select أنسب).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  partitionTransferData,
+  toggleTransferChecked,
+  toggleTransferCheckAll,
+  moveTransferKeys,
+  getTransferCheckAllState,
+  filterTransferItems,
+  getTransferClassNames,
+  getTransferPanelClassNames,
+} from '@lh-ui/share/core/transfer'
+import type { LhTransferItem, LhTransferSide } from '@lh-ui/share/core/transfer'
+```
+
+## القصد التصميمي
+
+**مصدر بيانات واحد `sourceKeys`**: قيمة المكوّن هي مصفوفة مفاتيح العمود الأيمن. ولا يُخزَّن حالة مستقلة للعمود الأيسر — فالقسم `partitionTransferData(data, sourceKeys)` يقتطع في كل مرة من البيانات الكاملة. ويتجنب هذا خطأ «عدم تزامن حالة العمودين» الكلاسيكي: فأي عملية نقل تحتاج تعديل مصفوفة واحدة فقط، وتُعاد حساب رؤية الطرفين تلقائياً.
+
+**تنظيف المفاتيح الشبحية في `moveTransferKeys`**: قد تظهر في `checked` مفاتيح غير موجودة في `data` (تحديدات قديمة متبقية بعد تحديث البيانات، وتُسمى **المفاتيح الشبحية**). فلا يمكن نقلها، ولا ينبغي أن تبقى في المنطقة المصدر لتلوث الإطار التالي — لذا تقوم الدالة بعد النقل **بترشيح المفاتيح الشبحية من المنطقة المصدر تبعاً**. وتذكر التعليقات اعتبارَين وراء هذا القرار.
+
+**تخطّي `toggleTransferCheckAll` للعناصر المعطَّلة**: لا يختار «تحديد الكل» سوى «القابلة للاختيار» (`!disabled`)، ولا ينظِّف «إلغاء تحديد الكل» إلا هذه العناصر — فتبقى حالة تحديد العناصر المعطَّلة دون تغيير، بما يتسق مع حدس «التعطيل = غير قابل للعمل».
+
+**ثلاثية `getTransferCheckAllState`**: `all` / `some` / `none` تشغّل الحالة `indeterminate` لمربع تحديد الكل — وهو التفاعل القياسي لمربعات تحديد الكل (خط أفقي عند التحديد الجزئي).
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `partitionTransferData` | `(data, sourceKeys) => { left, right }` | قائمتان للعمودين | تقسيم حسب keySet |
+| `toggleTransferChecked` | `(checked, key) => Array` | مصفوفة تحديد جديدة | إذا وُجدت تُزال، وإلّا تُضاف |
+| `toggleTransferCheckAll` | `(checked, sideItems) => Array` | مصفوفة تحديد جديدة | تحديد الكل/إلغاء الكل (مع تخطّي المعطَّل) |
+| `moveTransferKeys` | `(sourceKeys, data, checked, direction) => Array` | sourceKeys جديد | نقل وتنظيف المفاتيح الشبحية |
+| `getTransferCheckAllState` | `(checked, sideItems) => 'all' \| 'some' \| 'none'` | ثلاثي الحالات | تشغيل indeterminate |
+| `filterTransferItems` | `(items, query) => LhTransferItem[]` | قائمة مُصفَّاة | غير حساس لحالة الأحرف |
+| `getTransferClassNames` | `(state: { disabled }) => string[]` | أسماء أصناف | تعطيل |
+| `getTransferPanelClassNames` | `(side) => string[]` | أسماء أصناف | جهة اللوحة |
+
+## تعريفات الأنواع
+
+```ts
+export interface LhTransferItem {
+  key: string | number
+  label?: string       // يسمح العقد وقت التشغيل بالغياب (تعود طبقة UI لعرض key)
+  disabled?: boolean   // تعطيل (لا يمكن نقله، ولا يشترك في تحديد الكل)
+}
+
+export type LhTransferSide = 'left' | 'right'
+```
+
+## إمكانية الوصول
+
+تُجمَّع بنية إمكانية الوصول لصندوق النقل في طبقة UI، ولا يقدم core دوال حزم السمات (لأنه لا توجد طبقات منبثقة أو دلالات معقدة): كل لوح `role="listbox"`، وعناصر القائمة `role="option"` + `aria-selected`؛ وزرّا النقل في الوسط هما `<button>` عاديان، ويُوضَّح الاتجاه عبر `aria-label` (مثل «نقل 3 عناصر إلى اليمين»)؛ ويستخدم مربع تحديد الكل دلالة checkbox، وتُطلق الحالة `indeterminate` عبر `some` من `getTransferCheckAllState` في خاصية DOM.
+
+اصطلاح لوحة المفاتيح: بعد تركيز عنصر القائمة يختاره Space، ويتحرك ↑/↓؛ وبعد تركيز زر النقل ينفذه Enter.
+
+## أمثلة الاستخدام
+
+```ts
+import {
+  partitionTransferData, moveTransferKeys, getTransferCheckAllState, filterTransferItems,
+} from '@lh-ui/share/core/transfer'
+
+const data = [
+  { key: 'a', label: 'تفاح' },
+  { key: 'b', label: 'موز', disabled: true },
+  { key: 'c', label: 'كرز' },
+]
+
+partitionTransferData(data, ['c'])
+// { left: [تفاح, موز], right: [كرز] }
+
+moveTransferKeys(['c'], data, ['a', 'b'], 'left-to-right')
+// ['c', 'a']  — ف b معطَّل ولا يُنقل؛ وأُنقل a من اليسار إلى اليمين
+
+moveTransferKeys(['c'], data, ['a', 'ghost'], 'left-to-right')
+// ['c', 'a']  — يُهمَل المفتاح الشبحي 'ghost' ولا يبقى في النتيجة
+
+getTransferCheckAllState(['a'], [{ key: 'a' }, { key: 'b', disabled: true }, { key: 'c' }])
+// 'some' (القابلة للاختيار هي a و c، ولم يُحدَّد سوى a → جزئي؛ و b معطَّل ولا يُحتسب)
+
+filterTransferItems(data, 'موز')   // [{ key: 'b', label: 'موز' }]
+filterTransferItems(data, '')     // المصفوفة الأصلية (لا تُصفَّى الاستعلامات الفارغة)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTransferClassNames({ disabled })">
+  <transfer-panel
+    side="left"
+    :items="partition.left"
+    :checked="leftChecked"
+    @toggle="onToggle"
+    @check-all="onCheckAll"
+  />
+  <div class="lh-transfer__buttons">
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="leftChecked.length === 0"
+      :aria-label="`نقل ${leftChecked.length} عناصر إلى اليمين`"
+      @click="move('left-to-right')"
+    >→</button>
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="rightChecked.length === 0"
+      :aria-label="`نقل ${rightChecked.length} عناصر إلى اليسار`"
+      @click="move('right-to-left')"
+    >←</button>
+  </div>
+  <transfer-panel side="right" :items="partition.right" :checked="rightChecked" />
+</div>
+```
+
+```ts
+// ربط الحالة (تقسيم محسوب، و checked حالة تحديد محلية)
+const partition = computed(() => partitionTransferData(props.data, props.modelValue))
+const leftChecked = computed(() => state.checked.filter((k) => !props.modelValue.includes(k)))
+const rightChecked = computed(() => state.checked.filter((k) => props.modelValue.includes(k)))
+
+function move(direction) {
+  const checked = direction === 'left-to-right' ? leftChecked.value : rightChecked.value
+  emit('update:modelValue', moveTransferKeys(props.modelValue, props.data, checked, direction))
+  state.checked = state.checked.filter((k) => !checked.includes(k))  // تنظيف تحديد ما نُقل
+}
+```
+
+```tsx
+// React: sourceKeys هي القيمة المُتحكَّم بها؛ وحالة التحديد محلية عبر useState، وتُفرَّغ التحديدات المنقولة
+```
+
+```ts
+// uniapp: عمودان بـ <view> + تمرير بـ <scroll-view>؛ وتصفية صندوق البحث بـ filterTransferItems
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-transfer` | الصنف الأساسي (تخطيط أفقي flex) |
+| `.lh-transfer--disabled` | تعطيل |
+| `.lh-transfer-panel` | لوح واحد |
+| `.lh-transfer-panel--left` / `--right` | الجهة |
+| `.lh-transfer-panel__header` | رأس اللوح (مربع تحديد الكل + العدد) |
+| `.lh-transfer-panel__search` | صندوق البحث |
+| `.lh-transfer-panel__body` | منطقة القائمة |
+| `.lh-transfer-panel__item` | عنصر القائمة |
+| `.lh-transfer-panel__item--disabled` | عنصر معطَّل |
+| `.lh-transfer-panel__footer` | تذييل للحالة الفارغة/العدد |
+| `.lh-transfer__buttons` / `__button` | مجموعة الأزرار في الوسط |
+
+تُدار الحالة `indeterminate` لمربع تحديد رأس اللوح بواسطة `getTransferCheckAllState`.
+
+## ملاحظات
+
+- **`checked` و `sourceKeys` حالتان مستقلتان**: ف`checked` هو «ما تم تحديده الآن» (وقد يشمل الطرفين)، و`sourceKeys` هو «ما في العمود الأيمن» (قيمة المكوّن). وبعد النقل يجب تنظيف المفاتيح المنقولة من `checked` يدوياً، وإلّا بقيت في حالة التحديد (ف `moveTransferKeys` لا يعدِّل لك checked).
+- **مصدر المفاتيح الشبحية**: عند تحميل البيانات بشكل غير متزامن، يحدد المستخدم عدداً من العناصر، ثم يأتي تحديث البيانات فيُختفي بعض المفاتيح — هذه المفاتيح تبقى في `checked` فتصبح مفاتيح شبحية. وينظفها `moveTransferKeys`، لكن قد يتأثر أيضاً عدّ «تحديد الكل» في `toggleTransferCheckAll` (`getTransferCheckAllState`)، فمن الأوجب إعادة ترشيح حالة التحديد عند التصدير في طبقة UI بـ `byKey.has(key)`.
+- **حدود العنصر المعطَّل**: العنصر ذو `disabled: true` **لا يُنقل، ولا يشترك في تحديد الكل، ولا يُنظَّف بإلغاء تحديد الكل** — فهو يحتفظ بحالة تحديده الأصلية. وإذا احتاج العمل «فرض عدم تحديد العنصر المعطَّل»، فعالج ذلك في طبقة البيانات، ولا تعتمد على core.
+- **السماح بغياب `label`**: فالنوع يجعل `label?` اختيارياً، وعلى طبقة UI العودة لعرض `key` (`item.label ?? item.key`).
+- **أداء البيانات الكبيرة**: يطوف `partitionTransferData` على data كاملاً في كل مرة؛ ويعمل `filterTransferItems` عند تغيُّر query. وعند آلاف السجلات اعتبر التمرير الافتراضي (`core/shared/virtual`)، فدالة التقسيم في core هي O(n) وليست هي العنقود.
+- **ترتيب تطبيق البحث والتقسيم**: أولاً `partitionTransferData` ثم `filterTransferItems` لكل عمود — فلو عُكس الترتيب ستُصفَّف صندوق البحث البيانات الكاملة غير المقسَّمة.
+
+<FnPlayground module="transfer" fn="moveTransferKeys" params='{"sourceKeys": ["c"], "data": [{"key": "a", "label": "تفاح"}, {"key": "b", "label": "موز", "disabled": true}, {"key": "c", "label": "كرز"}], "checked": ["a", "b"], "direction": "left-to-right"}' />

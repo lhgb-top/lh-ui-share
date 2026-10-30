@@ -1,0 +1,124 @@
+---
+title: 快速開始
+description: '安裝 @lh-ui/share、按需匯入純函式、四種引入樣式的方式'
+---
+
+# 快速開始
+
+## 安裝
+
+```bash
+pnpm add @lh-ui/share
+# 或 npm i @lh-ui/share / yarn add @lh-ui/share
+```
+
+本套件 `external: []`，**沒有任何執行時依賴**，裝完即可用，不需要先 peer-install 框架。
+
+## 引入邏輯（JS / TS）
+
+### 裸匯入：全量
+
+```ts
+import { lhlocale, createNamespace, LH_THEME_PRESETS } from '@lh-ui/share'
+```
+
+全量入口 `./es/index.js`（CJS 走 `./lib/index.js`）。本套件 `sideEffects` 只宣告了
+`**/*.css` 與 `**/*.scss`，純 JS 模組可被 tree-shaking，不會因全量匯入打進多餘程式碼。
+
+### 子路徑匯入：按元件（推薦）
+
+```ts
+import { getButtonClasses, getButtonAria } from '@lh-ui/share/core/button'
+import { sxToStyle } from '@lh-ui/share/core/shared/sx'
+import { lhlocale } from '@lh-ui/share/locales'
+import { LH_THEME_PRESETS, buildPresetStyleText } from '@lh-ui/share/theme'
+```
+
+每個子路徑都有獨立的 types / import / require 三條件匯出，按需引入只會打進那一個元件
+的純函式。完整鍵表見[包入口與子路徑](/guide/exports)。
+
+## 引入樣式（四種方式）
+
+本套件 `files` 只發 `es / lib / dist / styles` 四個目錄，樣式有兩條路徑可引：
+
+### 1. 全量主題（最省心）
+
+```ts
+// 只有令牌，不含任何元件樣式，體積最小
+import '@lh-ui/share/theme.css'       // 明色 :root 令牌
+import '@lh-ui/share/theme-dark.css'  // 暗色 [data-theme='dark'] 覆蓋
+```
+
+適合「只想要設計令牌、元件樣式自己寫」的專案。
+
+### 2. 全量主題 + 全量元件樣式
+
+```ts
+import '@lh-ui/share/styles.css'      // dist/styles/index.css：令牌 + 全部 58 套元件
+```
+
+`dist/index.css` 是構建期聚合的最終產物，一條 import 拿到完整視覺。
+
+### 3. SCSS 原始碼按需引（要打包器能編 SCSS）
+
+```scss
+// 全量聚合（主題令牌 + 全部元件）
+@use '@lh-ui/share/styles/index.scss';
+
+// 單元件：只編這一套，產物體積最小
+@use '@lh-ui/share/styles/button';
+```
+
+`styles/` 目錄隨包發布的是**原始碼**，可被 vite / webpack 的 sass loader 即時編譯，
+方便在專案裡 `@use` 令牌做客製。
+
+### 4. 只引令牌做深度客製
+
+```scss
+@use '@lh-ui/share/styles/theme/common/var.scss' as *;
+
+.my-panel {
+  color: $lh-text-primary;
+  border: 1px solid $lh-border-color;
+}
+```
+
+`styles/theme/common/` 暴露 183 個 `$lh-*` SCSS 變數與 6 個國風花紋 mixin，
+詳見[設計令牌](/theme/tokens)與[花紋系統](/theme/patterns)。
+
+## TypeScript
+
+所有子路徑都帶 `types` 條件，無需額外 `@types` 套件：
+
+```ts
+import type { LhThemePreset, LhThemeVars } from '@lh-ui/share/theme'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+```
+
+類型匯出單獨走 `./es/**/*.d.ts`，`import type` 不會把實作打進產物。
+
+## 跑一個純函式看看
+
+不需要任何框架，Node 裡就能跑：
+
+```ts
+import { getButtonClasses } from '@lh-ui/share/core/button'
+
+getButtonClasses({ size: 'small', type: 'primary', disabled: true })
+// => 'lh-button lh-button--small lh-button--primary is-disabled'
+```
+
+想互動式試？文件站裡每個元件頁都帶**函式試玩**面板，改參數即時看輸出——
+比如 [steps 函式試玩](/components/navigation/steps)。
+
+## 暗色模式
+
+本套件元件不自己開關暗色，只認 CSS 變數。在根節點加屬性即全站翻轉：
+
+```html
+<html data-theme="dark">
+  <!-- 或 <body class="dark">，兩種選擇器 var-dark.scss 都覆蓋 -->
+</html>
+```
+
+原理與「編譯期烤死」陷阱見[暗色模式](/theme/dark-mode)。

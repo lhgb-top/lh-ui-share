@@ -1,0 +1,154 @@
+---
+title: select —— ドロップダウンセレクター
+description: 'findSelectOption の精密一致、getSelectOptionId の決定論的 id、combobox / listbox / option の 3 層アクセシビリティ属性パック'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ドロップダウンセレクターは「トリガー + フローティングレイヤーのリスト」パターンの最もシンプルな実装です。`core/select` はオプションの検索、決定論的な option id の生成、そして APG combobox パターンの 3 層アクセシビリティ属性パックを管理します。**位置決めの計算はここにはありません**——フローティングレイヤーの座標は `core/shared/popper` が担います（[popper](/ja/core/popper) を参照）。
+
+## いつ使うか
+
+- 各端の `LhSelect` 実装。
+- 単一選択のシーン；複数選択にはカスケードや checkbox-group を使います。
+- **使うべきでない**：選択肢にツリー状の階層が必要な場合（`cascader` を使う）、選択肢が数百を超える場合（`virtual-list` による仮想化を検討する）。
+
+## インポート方法
+
+```ts
+import {
+  findSelectOption,
+  getNextEnabledIndex,
+  getSelectOptionId,
+  getSelectTriggerAria,
+  getSelectListboxAria,
+  getSelectOptionAria,
+} from '@lh-ui/share/core/select'
+import type { LhSelectOption, LhSelectState } from '@lh-ui/share/core/select'
+```
+
+## 設計意図
+
+`getSelectOptionId(listboxId, index)` の「決定論的」であることは、APG combobox パターンが動作する前提です：トリガーは `aria-activedescendant` で現在のハイライト項目を参照し、両者が必ず**同一の DOM id** を指さなければなりません。UI 層に id を勝手に生成させてから同期を図るよりも、core 層で `${listboxId}-option-${index}` と定め、両端がこの規則に従って値を取るようにします。
+
+そのガードも同様に重要です：`listboxId` が空、index が整数でない、または `index < 0`（-1 はハイライトなしを表す）のときは **undefined** を返します——undefined の属性はフレームワークの v-bind で無視され、存在しない要素を指す `aria-activedescendant` は生まれません。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `findSelectOption` | `(options: LhSelectOption[], value: unknown) => LhSelectOption \| undefined` | オプション | `Object.is` で value に精密一致 |
+| `getNextEnabledIndex` | `(options: LhSelectOption[], currentIndex: number, direction: 1 \| -1) => number` | インデックス | **@deprecated**、`shared/keyboard.getNextListIndex` に転送 |
+| `getSelectOptionId` | `(listboxId: string \| undefined, index: number) => string \| undefined` | id | 決定論的な連結、不正な入力には undefined を返す |
+| `getSelectTriggerAria` | `(options: { visible: boolean; listboxId?: string; highlightedIndex: number }) => LhAriaAttrs` | aria 属性パック | combobox トリガー |
+| `getSelectListboxAria` | `(id?: string) => LhAriaAttrs` | aria 属性パック | listbox コンテナ |
+| `getSelectOptionAria` | `(options: { listboxId?: string; index: number; selected: boolean; disabled?: boolean }) => LhAriaAttrs` | aria 属性パック | 個々のオプション |
+
+## 型定義
+
+```ts
+export interface LhSelectOption {
+  label: string
+  value: unknown
+  disabled?: boolean
+}
+
+export interface LhSelectState {
+  options: LhSelectOption[]
+  highlightedIndex: number
+}
+```
+
+## アクセシビリティ
+
+3 層の属性パックが完全な combobox パターンを構成します：
+
+```ts
+// トリガー：aria-haspopup="listbox" + aria-expanded + aria-controls
+getSelectTriggerAria({ visible: true, listboxId: 'my-listbox', highlightedIndex: 2 })
+// { role: 'combobox', 'aria-expanded': true, 'aria-controls': 'my-listbox',
+//   'aria-haspopup': 'listbox', 'aria-activedescendant': 'my-listbox-option-2' }
+
+// フローティングレイヤー：role="listbox" + id（トリガーの aria-controls と対応）
+getSelectListboxAria('my-listbox')  // { role: 'listbox', id: 'my-listbox' }
+
+// オプション：role="option" + id + aria-selected
+getSelectOptionAria({ listboxId: 'my-listbox', index: 2, selected: true })
+// { role: 'option', id: 'my-listbox-option-2', 'aria-selected': true }
+```
+
+キーボード操作の完全なループ（UI 層が実装し、core がアルゴリズムを提供）：ArrowDown / Up で `highlightedIndex` を移動し（`shared/keyboard.getNextListIndex` を使い、先頭と末尾を循環しつつ disabled をスキップする）、Enter で選択、Esc で閉じます。**視覚的なハイライトは `highlightedIndex` と同源でなければなりません**。さもなくば「aria は A を指し、目には B が見える」という状態に陥ります。
+
+## 使用例
+
+```ts
+import { findSelectOption, getSelectOptionId, getSelectTriggerAria } from '@lh-ui/share/core/select'
+
+const options = [
+  { label: '青花瓷', value: 'cerblue' },
+  { label: '水墨', value: 'shuimo', disabled: true },
+]
+findSelectOption(options, 'cerblue')   // { label: '青花瓷', value: 'cerblue' }
+findSelectOption(options, 'nope')      // undefined
+getSelectOptionId('lb', 0)             // 'lb-option-0'
+getSelectOptionId('lb', -1)            // undefined（ハイライトなし）
+getSelectOptionId(undefined, 0)        // undefined
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-select', `lh-select--${size}`, { 'lh-select--open': visible, 'lh-select--disabled': disabled }]">
+  <button
+    class="lh-select__trigger"
+    v-bind="getSelectTriggerAria({ visible, listboxId, highlightedIndex })"
+    @click="toggle"
+  >
+    <span class="lh-select__value" :class="{ 'lh-select__value--placeholder': !selected }">
+      {{ selected ? selected.label : placeholder }}
+    </span>
+    <LhIcon class="lh-select__arrow" name="more" :size="12" />
+  </button>
+  <div v-if="visible" :id="listboxId" class="lh-select__dropdown" v-bind="getSelectListboxAria(listboxId)">
+    <div
+      v-for="(opt, i) in options"
+      :key="i"
+      class="lh-select__option"
+      :class="{ 'lh-select__option--highlighted': i === highlightedIndex, 'lh-select__option--selected': i === selectedIdx, 'lh-select__option--disabled': opt.disabled }"
+      v-bind="getSelectOptionAria({ listboxId, index: i, selected: i === selectedIdx, disabled: opt.disabled })"
+      @click="choose(opt)"
+    >{{ opt.label }}</div>
+  </div>
+</div>
+```
+
+```tsx
+// React：visible 状態 + useRef で listboxId を保持（useId で安定した id を生成）
+```
+
+```ts
+// uniapp：フローティングレイヤーは view の絶対配置；aria-activedescendant は非 h5 端でサポートされず、
+// キーボードナビゲーションはフォーカスの移動のみに退化し、読み上げは focus イベントに頼る
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-select` | 基底クラス |
+| `.lh-select--{small\|large}` / `--disabled` / `--open` | 状態修飾 |
+| `.lh-select__trigger` | トリガーボタン |
+| `.lh-select__value` / `--placeholder` | 表示値 / プレースホルダー状態 |
+| `.lh-select__arrow` / `__clear` / `__actions` | 矢印 / クリア / 操作領域 |
+| `.lh-select__dropdown` / `--teleported` | フローティングレイヤー（teleported は body へ転送されたことを示す） |
+| `.lh-select__option` / `--highlighted` / `--selected` / `--disabled` | オプションの 4 状態 |
+| `.lh-select__empty` | オプションなしのプレースホルダー |
+| `.lh-select-fade-*` | フローティングレイヤーの出入りトランジション（Vue3 のクラス名、Vue2 端は mixin で揃える） |
+
+## 注意事項
+
+- **`===` ではなく `Object.is`**：`findSelectOption` は `Object.is` を使い、`NaN` と `-0` のような境界を正しく処理します（実際のオプション値で使われることは稀ですが）。
+- **`getNextEnabledIndex` は非推奨**：実装は `shared/keyboard.getNextListIndex` に集約されており、この関数は転送するだけで、旧シグネチャを保っています。新規コードはコアを直接参照してください。
+- **id の安定性**：`listboxId` はコンポーネントのライフサイクル内で変わってはなりません（さもなくば `aria-activedescendant` が古い id を指します）。各端の安定した id 生成を使ってください。
+- **テレポート（teleport）**：フローティングレイヤーを body に転送しても `aria-controls` は有効です（同一ドキュメント内）が、**フォーカス管理**に注意してください——オプションのクリック後にフォーカスはトリガーに戻すべきです。
+
+<FnPlayground module="select" fn="findSelectOption" params='{"options": [{"label": "青花瓷", "value": "cerblue"}, {"label": "水墨", "value": "shuimo"}], "value": "cerblue"}' />

@@ -1,0 +1,132 @@
+---
+title: icon —— Icône
+description: 'getIconSize convertit les paliers de taille, getIconSvg récupère le path SVG interne, getIconAria fournit un paquet d’attributs aria à double mode décoratif / sémantique'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`core/icon` embarque un jeu de 33 icônes SVG au style chinois épuré et se charge de convertir les « paliers de taille » en `width/height` SVG et de traduire la décision « décoratif ou sémantique » en paquet d'attributs aria. Le composant icône lui-même n'a pas de machine à état de props — c'est un **ensemble de paramètres d'une fonction de rendu**.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhIcon` : `name` → path, `size` → pixels, `color` → `color` inline.
+- Partout où une icône accompagne du texte. **La grande majorité des icônes devraient être décoratives** (`decorative: true`, valeur par défaut) : le lecteur d'écran ne les annonce pas.
+- Quand une icône doit porter une sémantique (par exemple un bouton « supprimer » sans texte, uniquement une icône), il faut obligatoirement passer `decorative: false` + `label`, sinon le lecteur d'écran bute sur un graphique muet.
+
+## Importation
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+import type { LhIconState, LhIconName } from '@lh-ui/share/core/icon'
+import { LH_ICON_SVGS_CONST } from '@lh-ui/share/core/icon'
+```
+
+## Intentions de conception
+
+La taille d'une icône a deux sources possibles : les **paliers préréglés** (`'small'` / `'medium'`…) et les **nombres arbitraires**. `getIconSize` unifie les deux en un `number`, car les attributs `width` / `height` du SVG n'acceptent que des nombres (l'unité est déterminée par l'attribut lui-même) — la couche UI n'a pas besoin de distinguer « palier ou pixels ».
+
+L'accessibilité adopte la dichotomie « décoratif vs sémantique » des APG :
+
+- Icône décorative (par défaut) : `aria-hidden="true"`, sortie de l'arbre d'accessibilité. Une icône accolée à du texte relève toujours de ce cas.
+- Icône sémantique : `role="img"` + `aria-label`, elle devient un graphique annonçable.
+- Le troisième cas : `decorative: false` sans `label` — ni masquée ni dotée de sémantique, la fonction renvoie un objet vide. Il est prévu pour le scénario où le label du bouton à icône est fourni par l'`aria-label` de l'élément parent, afin d'éviter les annonces redondantes.
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getIconSize` | `(size: string \| number \| undefined) => number` | Valeur en pixels | Mapping des paliers, repli sur 16 pour les valeurs inconnues |
+| `getIconSvg` | `(name: LhIconName \| undefined) => string \| null` | path `d` ou null | Récupère une icône interne ; renvoie null sans lever d'erreur si introuvable |
+| `getIconStyle` | `(state: LhIconState) => Record<string, string>` | Style inline | width/height toujours présents, color selon le besoin |
+| `getIconAria` | `(options?: { decorative?: boolean; label?: string }) => LhAriaAttrs` | Paquet d'attributs aria | Double mode décoratif / sémantique |
+
+Mapping des paliers de taille : `mini: 12` / `small: 14` / `medium: 16` / `large: 20` / `x-large: 24` ; les chaînes inconnues ont une repli sur 16, de même que les valeurs falsy (y compris `0`).
+
+## Définitions de types
+
+```ts
+export interface LhIconState {
+  size: string | number | undefined
+  color: string | undefined
+  name?: LhIconName
+}
+
+export type LhIconName =
+  | 'star' | 'search' | 'check' | 'close' | 'warning' | 'error' | 'info'
+  | 'loading' | 'plus' | 'minus' | 'edit' | 'delete' | 'setting' | 'user'
+  | 'home' | 'menu' | 'more' | 'download' | 'upload' | 'refresh' | 'folder'
+  | 'file' | 'date' | 'clock' | 'email' | 'phone' | 'location' | 'image'
+  | 'share' | 'bell' | 'filter' | 'eye' | 'link'
+```
+
+## Accessibilité
+
+`getIconAria` est la fonction de paquet d'attributs aria de ce composant :
+
+```ts
+getIconAria()                            // { 'aria-hidden': true }  décoratif
+getIconAria({ label: 'Supprimer' })      // { 'aria-label': 'Supprimer', role: 'img' }
+getIconAria({ decorative: false })       // {}  le label est fourni par le parent
+```
+
+Notez que la valeur de `aria-hidden` est `true` (booléen) : `LhAriaAttrs` autorise la coexistence de booléens et de chaînes, et au moment du v-bind chaque framework les convertira en `"true"`.
+
+## Exemples d'utilisation
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+
+getIconSize('large')          // 20
+getIconSize(32)               // 32
+getIconSvg('check')           // 'M...'  données du path
+getIconSvg('not-exist')       // null (pas d'erreur, la couche UI rend un svg vide ou un espace réservé)
+getIconStyle({ size: 'large', color: 'var(--lh-primary-color)' })
+// { width: '20px', height: '20px', color: 'var(--lh-primary-color)' }
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="['lh-icon', { 'lh-icon--loading': name === 'loading' }]"
+  viewBox="0 0 1024 1024"
+  :width="px" :height="px"
+  v-bind="getIconAria({ decorative, label })"
+>
+  <path :d="path" />
+</svg>
+```
+
+```tsx
+// React
+const px = getIconSize(size)
+const aria = getIconAria({ decorative: !label, label })
+return (
+  <svg className="lh-icon" viewBox="0 0 1024 1024" width={px} height={px} {...aria}>
+    <path d={getIconSvg(name) ?? ''} />
+  </svg>
+)
+```
+
+```ts
+// uniapp : les cibles non h5 ne gèrent pas le svg en ligne, la couche UI
+// pré-rend le path en ressource image ; la valeur renvoyée par getIconSize
+// reste utilisée pour contrôler la taille de l'image.
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-icon` | Classe de base : `display: inline-block`, correction de l'alignement `vertical-align` |
+| `.lh-icon--loading` | Animation de rotation infinie de l'icône de chargement |
+
+La couleur de l'icône hérite par défaut de la couleur de texte du parent (`fill: currentColor`) ; lorsqu'une couleur de thème est souhaitée, elle est injectée explicitement via le `color` de `getIconStyle`.
+
+## Remarques
+
+- `getIconSvg` **renvoie null au lieu de lever une erreur** pour un nom inexistant — la couche UI doit traiter cette branche, sinon elle rendra un `<svg>` vide.
+- Le jeu d'icônes interne a un **style chinois épuré** et n'est pas compatible avec les bibliothèques d'icônes tierces (comme les noms de classe fontawesome d'element-plus). Pour des icônes métier, les `LhIcon` de chaque plateforme acceptent généralement un `path` ou un slot pour un dessin personnalisé.
+- L'animation de rotation de l'icône `loading` est côté CSS (`.lh-icon--loading`), pas dans core — core n'émet que les noms de classe.
+- Quand une icône est accolée à du texte, conservez l'état décoratif par défaut ; ne passez un label que lorsque « l'icône porte seule l'action ».
+
+<FnPlayground module="icon" fn="getIconSize" params='{"size": "large"}' />

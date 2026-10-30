@@ -1,0 +1,166 @@
+---
+title: locales —— 國際化
+description: 'lhlocale 單例的 t / tm / use / add / setLocale / subscribe，38 個頂層文案鍵與十門語言'
+---
+
+import LocaleInspector from '../../../../components/LocaleInspector.astro'
+
+lh-ui 家族的國際化是一個**純事件發射器**：`lhlocale` 不攜帶任何框架響應式，各 UI 庫的轉接層把它的 `version` 版本號轉成各自框架的重渲染信號。這樣一份語言包能同時給 Vue3 / Vue2 / React / uniapp 用，而 core 層不依賴任何框架。
+
+## 單例與匯入
+
+```ts
+import { lhlocale, zhCN, enUS, formatMessage } from '@lh-ui/share/locales'
+import type { LhLocalePath, LhLocaleType, LhLocaleMessages } from '@lh-ui/share/locales'
+```
+
+## 成員表
+
+| 成員 | 簽名 | 作用 |
+| --- | --- | --- |
+| `version` | `get version(): number` | 版本號：任何語言變更都會自增（UI 轉接層訂閱它觸發重渲染） |
+| `subscribe` | `(listener: LhLocaleListener) => () => void` | 訂閱語言變更；傳回取消訂閱函式 |
+| `use` | `(options: { locale: LhLocaleType; messages: LhLocaleMessages }) => void` | 註冊並切換語言 |
+| `t` | `(path: LhLocalePath, fallbackOrParams?) => string` | 根據路徑取得翻譯文案 |
+| `tm` | `(path: string, fallback?: string[]) => string[]` | 取得陣列文案（月份名 / 星期名） |
+| `getLocale` | `() => LhLocaleType` | 取得目前語言 |
+| `setLocale` | `(locale: LhLocaleType) => void` | 切換目前語言 |
+| `add` | `(locale: string, messages: LhLocaleMessages) => void` | 新增自訂語言包（深合併） |
+
+## 各方法的行為細節
+
+### t —— 字面量鍵自動補全
+
+```ts
+const t = lhlocale.t   // 箭頭函式屬性，解構不丟失 this
+
+t('pagination.total')                       // '共 {total} 条'
+t('pagination.total', { total: 42 })        // '共 42 条'
+t('not.exists', '兜底文案')                  // '兜底文案'
+t('not.exists')                             // 'not.exists'（回退到路徑本身）
+```
+
+`path` 的類型是 `LhLocalePath`——由 `zh-CN` 語言包的 `as const` 結構推匯出的**所有字串葉子路徑聯合類型**（如 `'input.placeholder'`）。寫錯鍵名編輯器會報錯。動態拚路徑（`t(\`pagination.\${key}\`)`）走寬鬆多載，類型上收 `string`。
+
+第二參數兩種形態：**字串**是兜底值；**物件**是 `{key}` 內插參數（底層走 [formatMessage](/core/format)）。
+
+### tm —— 陣列文案
+
+```ts
+lhlocale.tm('datepicker.months')
+// ['1月', '2月', …, '12月']
+
+lhlocale.tm('datepicker.weeks')   // ← 錯的，weeks 是物件不是陣列
+lhlocale.tm('datepicker.weeks.sun', ['日'])   // ← 也錯的，t() 才能取物件的字串葉子
+```
+
+`t()` 只傳回字串；陣列葉子（`months`）經 `tm()` 存取。未命中或非陣列傳回 `fallback`（缺省 `[]`）。
+
+### use vs add —— 兩個容易混的方法
+
+| | `use` | `add` |
+| --- | --- | --- |
+| 動作 | 註冊 **並切換** | 只註冊（當前語言時才廣播） |
+| messages 儲存 | 登記進使用者註冊表 `userLocales`，**不覆寫內建註冊表** | 同左 |
+| 合併方式 | 整包設定 | **深合併**到「當前生效的包」 |
+
+為什麼 `add` 是深合併：業務側通常只想改幾個鍵（把「確認」改成「提交」），其餘鍵保持內建包可用。舊實作整包替換，漏傳的鍵全部消失。
+
+為什麼 `use` 不覆寫內建註冊表：舊實作 `locales[locale] = messages` 會**永久銷毀內建語言包**（後續 `setLocale` 回不去）。現在內建包唯讀，使用者包優先。
+
+### setLocale 的「不脫節」語義
+
+```ts
+lhlocale.setLocale('en-US')   // 語言包沒註冊過
+lhlocale.getLocale()          // 'en-US'  ← 報告的是請求的語言
+lhlocale.t('pagination.total')// 內建預設包的文案，不是 en-US 的
+```
+
+看起來矛盾，其實是刻意的：解析順序是 `userLocales ?? 內建 locales ?? 預設包`。未註冊時 `getLocale()` 報告請求的語言、`t()` 用預設包內容——**兩者不脫節**（不會出現「報告英文、文案卻是中文」的怪異組合），業務側知道自己該 `add` 或 `use` 了。
+
+### version 與 subscribe
+
+```ts
+const unsubscribe = lhlocale.subscribe((version: number) => {
+  // 語言變了，觸發重渲染
+})
+unsubscribe()   // 元件卸載時調
+```
+
+`subscribe` 傳回取消函式（RxJS 風格）。`bump()` 內部 `try/catch` 隔離壞訂閱者並打 `[lhlocale] listener error:`，一個元件的監聽器拋錯不會影響別的元件。
+
+## 各端怎麼訂閱 version
+
+```ts
+// Vue3 / Vue2 / uniapp
+const version = ref(lhlocale.version)
+lhlocale.subscribe(() => (version.value = lhlocale.version))
+// 模板裡依賴 version，變化即重渲染
+
+// React
+useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)
+```
+
+## 語言檔案
+
+| 檔案 | 狀態 |
+| --- | --- |
+| `zh-CN.ts` | ✅ 預設語言（`as const`，`LhLocalePath` 的推導來源），真源 |
+| `zh-TW.ts` / `en-US.ts` / `ja-JP.ts` / `ko-KR.ts` / `es.ts` / `ar.ts`（RTL）/ `fr-FR.ts` / `ru.ts` | ✅ 完整（九語言，與各文件站一致，術語按家族 `docs/i18n/glossary.md`） |
+| `de-DE.ts` | ✅ 完整（**執行時擴充**語言包：僅元件庫執行時提供，各文件站無德語內容） |
+
+子路徑匯入：`@lh-ui/share/locales/lang/zh-CN`。各語言包的鍵結構與 `zh-CN.ts`
+完全一致（`tests/unit/locales.spec.ts` 的鏡像用例強制校驗），可直接 `setLocale` 切換。
+
+### 38 個頂層鍵
+
+`common` / `input` / `datepicker` / `timepicker` / `cascader` / `tag` / `badge` / `select` / `form` / `switch` / `slider` / `progress` / `avatar` / `descriptions` / `empty` / `alert` / `dialog` / `message` / `breadcrumb` / `pagination` / `tabs` / `steps` / `popconfirm` / `drawer` / `notification` / `loading` / `collapse` / `rate` / `backtop` / `image` / `menu` / `table` / `tree` / `treeSelect` / `transfer` / `upload` / `anchor` / `ariaLabels`
+
+十個語言檔案的頂層鍵數量一致（各 38 個），結構對齊。其中 `ariaLabels` 是無障礙文案鍵（約 40 條），各元件讀它生成 aria-label。
+
+典型的內插文案：
+
+```ts
+pagination.total: '共 {total} 条'
+pagination.sizeChanger: '{size} 条/页'
+pagination.page: '第 {page} 页'
+steps.step: '第 {index} 步'
+rate.stars: '{n} 星'
+cascader.columnLabel: '第 {n} 级'
+collapse.toggle: '展开或折叠 {title}'
+datepicker.panelTitle: '{year}年{month}'
+menu.submenuLabel: '子菜单 {title}'
+```
+
+## 新增一門新語言
+
+三步（`src/locales/lang/README.md` 有同款說明）：
+
+1. 建 `src/locales/lang/<lang>.ts`，匯出 `LhLocaleMessages` 結構（頂層鍵要對齊 38 個，可用 `satisfies` 驗證）。
+2. 在 `src/constants/index.ts` 的 `LH_LANGUAGE_CONST` 加常數。
+3. 在 `src/locales/locale.ts` 的內建註冊表 `locales` 裡掛載。
+
+然後 `pnpm test`（`theme.spec` / locale 相關用例有結構一致性回歸）。
+
+## 相關類型
+
+| 類型 | 定義 | 用途 |
+| --- | --- | --- |
+| `LhLocaleType` | 由 `LH_LANGUAGE_CONST` 推導 | 支援的語言程式碼聯合 |
+| `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | 語言包整體類型 |
+| `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | 語言包葉節點（遞迴唯讀） |
+| `LhLeaves<T>` | 遞迴推導 | 從語言包結構推出所有字串葉子的點號路徑聯合 |
+| `LhLocalePath` | `LhLeaves<typeof zhCN>` | `t()` 的字面量鍵類型 |
+| `LhTranslate` | 多載類型 | `t()` 的呼叫簽名 |
+| `LhTranslateArray` | `(path: string, fallback?: string[]) => string[]` | `tm()` 的呼叫簽名 |
+| `LhLocaleListener` | `(version: number) => void` | 語言變更監聽器 |
+| `LhLocaleOptions` | `{ locale: LhLocaleType; messages: LhLocaleMessages }` | `use()` 的入參 |
+
+## 注意事項
+
+- **`LhLeaves` 對陣列鍵傳回 `never`**：`datepicker.months` 是陣列，不按鍵定址，`t()` 的點號路徑無法命中它——陣列一律走 `tm()`。
+- **`t` 可解構**：它是箭頭函式屬性，`const t = lhlocale.t` 不丟 this。
+- **core 元件不直接調 `lhlocale`**：rate / pagination 用 [formatMessage](/core/format) 處理內插，文案鍵的查找仍在 UI 層完成——core 不依賴單例副作用。
+- **`add` 是深合併**：只覆蓋你傳的鍵，其餘保持。
+
+<LocaleInspector />

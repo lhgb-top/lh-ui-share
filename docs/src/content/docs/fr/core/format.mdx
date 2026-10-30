@@ -1,0 +1,99 @@
+---
+title: 'format —— Interpolation de messages'
+description: 'formatMessage remplace les marqueurs {key} par les valeurs des paramètres, les marqueurs inconnus sont conservés tels quels, partagé par rate / pagination'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`{total} 条`, `{n} 星`, `第 {index} 步` — les modèles de messages des paquets de langues doivent remplacer leurs marqueurs par des valeurs d'exécution. Cette capacité d'interpolation vivait à l'origine dans le singleton locales, mais lorsque des composants core (le nombre d'étoiles de rate, le nombre de pages de pagination) l'utilisent, cela fait **dépendre à l'envers** core des effets de bord au niveau module du singleton locales. Dérivée en une fonction pure sur les chaînes, l'interpolation de messages des composants core ne dépend plus d'aucun singleton.
+
+## Import
+
+```ts
+// Depuis le noyau partagé (recommandé)
+import { formatMessage } from '@lh-ui/share/core/shared/format'
+
+// Ou depuis l'entrée locales (la surface d'export est inchangée)
+import { formatMessage } from '@lh-ui/share/locales'
+```
+
+## Tableau des fonctions
+
+| Fonction | Signature | Rôle |
+| --- | --- | --- |
+| `formatMessage` | `(template: string, params?: Record<string, unknown>) => string` | remplace les marqueurs `'{key}'` par les valeurs issues de `params` |
+
+## Comportement détaillé
+
+```ts
+formatMessage('Total : {total}', { total: 42 }) // 'Total : 42'
+formatMessage('{n} étoiles', { n: 5 })          // '5 étoiles'
+formatMessage('sans marqueur')                  // 'sans marqueur'
+formatMessage('marqueur inconnu {missing}')     // 'marqueur inconnu {missing}'
+```
+
+Trois règles :
+
+1. **Les marqueurs inconnus sont conservés tels quels**. Pas d'erreur, pas de remplacement par une chaîne vide — l'appelant a généralement déjà récupéré le modèle à marqueurs depuis le paquet de langue ; si un marqueur n'a pas de paramètre correspondant, c'est que l'amont a oublié de le transmettre, et la conservation telle quelle rend le problème visible à l'écran (au lieu de l'avaler silencieusement).
+2. **Les valeurs passent uniformément par `String(...)`** : nombres comme booléens peuvent être interpolés.
+3. **`params` vaut `{}` par défaut** : sans paramètre transmis, le modèle est purement transmis.
+
+## La relation avec lhlocale
+
+`lhlocale.t(path, params)` fait en interne « chercher dans le paquet de langue → obtenir le modèle → appeler `formatMessage` » :
+
+```ts
+// Implémentation interne de locales (simplifiée)
+t(path, fallbackOrParams) {
+  const template = resolve(path) ?? fallback
+  return typeof fallbackOrParams === 'object'
+    ? formatMessage(template, fallbackOrParams)
+    : template
+}
+```
+
+La réexportation de `formatMessage` par `@lh-ui/share/locales` est délibérée — la vieille surface d'export la contenait, et après la descente dans core, le chemin d'import est resté identique : zéro modification en aval.
+
+## Quand l'utiliser et quand ne pas l'utiliser
+
+| Scénario | À utiliser ? |
+| --- | --- |
+| L'interpolation de messages au sein des composants core | ✅ Utiliser `formatMessage` directement (sans tirer le singleton locales) |
+| L'interpolation de messages dans le code métier | ✅ Plus sûr que `str.replace` (les marqueurs inconnus sont conservés) |
+| Recherche dans le paquet de langue + interpolation nécessaires | ❌ Utiliser `lhlocale.t(path, params)`, en une seule étape |
+| Le modèle a besoin de conditions / de pluriels | ❌ Cette fonction ne fait que des remplacements simples ; les messages conditionnels doivent être éclatés en plusieurs clés dans le paquet de langue |
+
+## Exemples d'utilisation
+
+### Le message du nombre total de la pagination
+
+```ts
+// Au sein du composant
+const totalText = computed(() =>
+  formatMessage(lhlocale.t('pagination.total'), { total: props.total }),
+)
+// Paquet de langue : '共 {total} 条'  →  '共 42 条'
+```
+
+### L'annonce du nombre d'étoiles de rate
+
+```ts
+const ariaLabel = formatMessage(lhlocale.t('rate.stars'), { n: currentValue.value })
+// Paquet de langue : '{n} 星'  →  '3 星'
+```
+
+### Un utilitaire de chaîne générique
+
+```ts
+// Une interpolation pure, sans rapport avec le paquet de langue
+formatMessage('Étape {index} sur {total}', { index: 2, total: 5 })
+// 'Étape 2 sur 5'
+```
+
+## Points d'attention
+
+- **La syntaxe des marqueurs est `{key}`** (accolades simples), et non `${key}`, ni `{{key}}`.
+- **Pas de modèles imbriqués** : les valeurs de `params` passent par `String()` une fois, sans analyse récursive.
+- **Performances** : un appel isolé fait une boucle de `String.replace` ; n'appelez pas en boucle à haute fréquence sur un même modèle — un `computed` côté UI suffit à le mettre en cache.
+
+<FnPlayground module="format" fn="formatMessage" params='{"template": "Total : {total} entrées", "params": {"total": 42}}' />

@@ -1,0 +1,99 @@
+---
+title: format —— 文案插值
+description: 'formatMessage 把 {key} 佔位符替換為參數值，未知佔位符原樣保留，rate / pagination 共用'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`{total} 條`、`{n} 星`、`第 {index} 步`——語言包裡的文案模板需要把佔位符換成執行時的數字。這個插值能力原本長在 locales 單例裡，但它被 core 元件（rate 的星數、pagination 的頁數）使用時，會讓 core **反向依賴** locales 的模組級單例副作用。下沉成一個純字串函式後，core 元件的文案插值不再依賴任何單例。
+
+## 匯入方式
+
+```ts
+// 從共享核心（推薦）
+import { formatMessage } from '@lh-ui/share/core/shared/format'
+
+// 或從 locales 入口（匯出面保持不變）
+import { formatMessage } from '@lh-ui/share/locales'
+```
+
+## 函式表
+
+| 函式 | 簽名 | 作用 |
+| --- | --- | --- |
+| `formatMessage` | `(template: string, params?: Record<string, unknown>) => string` | 把 `'{key}'` 佔位符替換為 `params` 中的值 |
+
+## 行為細節
+
+```ts
+formatMessage('共 {total} 条', { total: 42 })   // '共 42 条'
+formatMessage('{n} 星', { n: 5 })               // '5 星'
+formatMessage('没有占位符')                      // '没有占位符'
+formatMessage('未知占位 {missing}')               // '未知占位 {missing}'
+```
+
+三條規則：
+
+1. **未知佔位符原樣保留**。不報錯、不替換成空串——呼叫方通常已經從語言包取到了帶佔位符的模板，佔位符沒對應參數說明上游漏傳了，原樣保留讓問題在 UI 上可見（而不是靜默吞掉）。
+2. **值統一 `String(...)`**：數字、布林都能插值。
+3. **`params` 預設 `{}`**：不傳參數時純透傳模板。
+
+## 與 lhlocale 的關係
+
+`lhlocale.t(path, params)` 內部就是「查語言包 → 拿到模板 → 呼叫 `formatMessage`」：
+
+```ts
+// locales 內部實作（簡化）
+t(path, fallbackOrParams) {
+  const template = resolve(path) ?? fallback
+  return typeof fallbackOrParams === 'object'
+    ? formatMessage(template, fallbackOrParams)
+    : template
+}
+```
+
+`@lh-ui/share/locales` 重新匯出 `formatMessage` 是刻意的——老的匯出面裡有它，下沉到 core 後保持匯入路徑不變，下游零改動。
+
+## 什麼時候用它，什麼時候不用
+
+| 場景 | 用不用 |
+| --- | --- |
+| core 元件內部的文案插值 | ✅ 直接用 `formatMessage`（不引 locales 單例） |
+| 業務程式碼做文案插值 | ✅ 比 `str.replace` 更安全（未知佔位符保留） |
+| 需要查語言包 + 插值 | ❌ 用 `lhlocale.t(path, params)`，一步到位 |
+| 模板裡需要條件 / 複數 | ❌ 這個函式只做樸素替換；條件文案在語言包裡拆成多個鍵 |
+
+## 使用範例
+
+### pagination 的總數文案
+
+```ts
+// 元件內部
+const totalText = computed(() =>
+  formatMessage(lhlocale.t('pagination.total'), { total: props.total }),
+)
+// 語言包：'共 {total} 條'  →  '共 42 條'
+```
+
+### rate 的星數播報
+
+```ts
+const ariaLabel = formatMessage(lhlocale.t('rate.stars'), { n: currentValue.value })
+// 語言包：'{n} 星'  →  '3 星'
+```
+
+### 通用字串工具
+
+```ts
+// 不涉及語言包的純插值
+formatMessage('第 {index} 步 / 共 {total} 步', { index: 2, total: 5 })
+// '第 2 步 / 共 5 步'
+```
+
+## 注意事項
+
+- **佔位符語法是 `{key}`**（單花括號），不是 `${key}`、不是 `{{key}}`。
+- **不支援巢狀模板**：`params` 的值會被 `String()` 一次，不會遞迴解析。
+- **效能**：單次呼叫做的是 `String.replace` 迴圈，別在高頻迴圈裡對同一模板反覆呼叫——UI 層算個 `computed` 快取即可。
+
+<FnPlayground module="format" fn="formatMessage" params='{"template": "共 {total} 條", "params": {"total": 42}}' />

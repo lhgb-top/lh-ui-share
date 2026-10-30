@@ -1,0 +1,224 @@
+---
+title: time-picker —— Выбор времени
+description: 'parseTime/formatTime — парсинг по токенам фиксированной ширины, generateTimeColumn — stepped-колонки, wrapTimeValueInRange — циклический переход, семантика dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Выбор времени реализован как **три прокручиваемые колонки** (часы/минуты/секунды): пользователь прокручивает каждую колонку, а не вводит цифры в одном поле. `core/time-picker` отвечает за парсинг и форматирование строк фиксированной ширины, генерацию колонок с заданным шагом, фильтрацию и циклический переход допустимых значений, а также за семантику APG dialog + listbox. Поддерживаются два режима: `time` (только время) и `date-time` (дата + время).
+
+## Когда использовать
+
+- На всех платформах реализован `LhTimePicker`: время записи, отложенные задачи, настройки часов работы.
+- Значение — это «момент» с точностью до минут или секунд.
+- **Не использовать**: если нужна только дата (используйте `date-picker`); для временных диапазонов (два time-picker или режим диапазона `isRange`).
+
+## Импорт
+
+```ts
+import {
+  padNumber,
+  formatTime,
+  parseTime,
+  extractTime,
+  generateTimeColumn,
+  createDateTime,
+  isValidTime,
+  formatDateToTimeString,
+  getHourStep,
+  getMinuteStep,
+  getSecondStep,
+  getDisabledHours,
+  getDisabledMinutes,
+  getDisabledSeconds,
+  getHourRange,
+  filterTimeColumnByRange,
+  wrapTimeValueInRange,
+  clampTimeValue,
+  getTimePickerClassNames,
+  getTimePickerTriggerAria,
+  getTimePickerPanelAria,
+  getTimePickerColumnAria,
+} from '@lh-ui/share/core/time-picker'
+import type {
+  LhTimeData,
+  LhTimeColumn,
+  LhTimePickerState,
+  LhTimePickerOptions,
+  LhTimeColumnType,
+  LhTimePickerMode,
+  LhTimeSelectEventData,
+} from '@lh-ui/share/core/time-picker'
+```
+
+## Замысел дизайна
+
+`parseTime` / `formatTime` используют **токены фиксированной ширины** (`HH` / `mm` / `ss` — каждый ровно 2 символа), а не универсальную библиотеку дат. Это сознательный компромисс: у времени всего три компонента, позиционный разбор через `substring(idx, idx+2)` намного легче регулярных выражений или moment, и строго симметричен с `formatTime` — что написано, то и разобрано. При неудачном разборе всегда возвращается null, никаких «грязных» частичных данных.
+
+`generateTimeColumn` защищён от плохого `step`: неположительные значения нормализуются до 1 (`step: 0` сделал бы `for` бесконечным), дробные округляются (`step: 2.5` превращается в 2). `wrapTimeValueInRange` **возвращает значение как есть, если диапазон покрывает весь полный интервал** — это совместимость со старым поведением: например, для колонки часов диапазон [0,23], и при прокрутке за границу нужно остановиться на краю, а не перекидывать на противоположный; циклический переход происходит, только если явно задан подинтервал (например [9, 18]). `clampTimeValue`, наоборот, всегда прижимает к границам диапазона и нужна, чтобы сходящееся выбранное значение вернулось в допустимый интервал.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `padNumber` | `(n: number) => string` | `'09'` | дополнение нулём до двух цифр |
+| `formatTime` | `(hours, minutes, seconds, format?) => string` | `'09:30:00'` | сборка по format |
+| `parseTime` | `(timeStr, format?) => LhTimeData \| null` | данные времени \| null | позиционный разбор |
+| `extractTime` | `(date: Date) => LhTimeData` | часы/минуты/секунды | извлечение из Date |
+| `generateTimeColumn` | `(type, step?, disabledValues?) => LhTimeColumn[]` | параметры колонки | с признаком isDisabled |
+| `createDateTime` | `(baseDate, hours, minutes, seconds) => Date` | новый Date | сохранить дату, заменить время |
+| `isValidTime` | `(hours, minutes, seconds) => boolean` | допустимо ли | проверка диапазона значений |
+| `formatDateToTimeString` | `(date: Date, format: string) => string` | строка | Date → отображаемый текст |
+| `getHourStep` / `getMinuteStep` / `getSecondStep` | `(options?) => number` | шаг | запасное значение по умолчанию 1 |
+| `getDisabledHours` / `getDisabledMinutes` / `getDisabledSeconds` | `(options?, …) => number[]` | заблокированные значения | вызывает колбэк вызывающей стороны |
+| `getHourRange` | `(start, end) => { start, end }` | нормализованный диапазон | прижим к [0,23] |
+| `filterTimeColumnByRange` | `(columns, start, end) => LhTimeColumn[]` | отфильтрованная колонка | оставить только элементы диапазона |
+| `wrapTimeValueInRange` | `(value, start, end) => number` | значение с циклическим переходом | переход при выходе за границу |
+| `clampTimeValue` | `(value, start, end) => number` | прижатое значение | прижим к границе при выходе |
+| `getTimePickerClassNames` | `(state: { size, disabled, visible }) => string[]` | классы | размер/блокировка/развёрнут |
+| `getTimePickerTriggerAria` | `(visible, panelId?) => LhAriaAttrs` | пакет aria-атрибутов | haspopup dialog |
+| `getTimePickerPanelAria` | `(id?) => LhAriaAttrs` | пакет aria-атрибутов | role=dialog |
+| `getTimePickerColumnAria` | `(label?) => LhAriaAttrs` | пакет aria-атрибутов | role=listbox |
+
+## Определения типов
+
+```ts
+export type LhTimePickerMode = 'time' | 'date-time'
+export type LhTimeColumnType = 'hour' | 'minute' | 'second'
+
+export interface LhTimeData {
+  hours: number
+  minutes: number
+  seconds: number
+}
+
+export interface LhTimeColumn {
+  value: number
+  text: string
+  isSelected: boolean
+  isDisabled: boolean
+}
+
+export interface LhTimePickerOptions {
+  hours?:   { step?: number; disabledHours?:   () => number[] }
+  minutes?: { step?: number; disabledMinutes?: (hour: number) => number[] }
+  seconds?: { step?: number; disabledSeconds?: (hour: number, minute: number) => number[] }
+}
+
+export interface LhTimeSelectEventData {
+  column: LhTimeColumnType
+  value: number
+}
+```
+
+## Доступность
+
+Панель времени всплывает как **dialog** (триггер `aria-haspopup="dialog"`), а три колонки внутри панели — это **listbox**. Эта семантика приходит из общего ядра `getPopupTriggerAria`:
+
+```ts
+getTimePickerTriggerAria(true, 'lh-time-panel')
+// { 'aria-expanded': true, 'aria-haspopup': 'dialog', 'aria-controls': 'lh-time-panel' }
+
+getTimePickerPanelAria('lh-time-panel')
+// { role: 'dialog', id: 'lh-time-panel' }
+
+getTimePickerColumnAria('Часы')
+// { role: 'listbox', 'aria-label': 'Часы' }
+```
+
+- Элементы колонки должны иметь `role="option"` + `aria-selected` (UI-слой рендерит `LhTimeColumn.isSelected`) + `aria-disabled` (`isDisabled`).
+- Клавиатура: после фокуса на колонке ↑/↓ перемещаются по **незаблокированным** элементам и выбирают их; Esc закрывает панель.
+- Семантика dialog означает, что при развёрнутой панели нужно удерживать фокус внутри (`core/shared/focus-trap`), чтобы он не ушёл за пределы панели.
+
+## Примеры использования
+
+```ts
+import {
+  parseTime, formatTime, generateTimeColumn, isValidTime, createDateTime,
+} from '@lh-ui/share/core/time-picker'
+
+formatTime(9, 30, 5)                    // '09:30:05'
+formatTime(9, 30, 5, 'HH:mm')           // '09:30'
+parseTime('09:30:05')                   // { hours: 9, minutes: 30, seconds: 5 }
+parseTime('09:30:05', 'HH:mm')          // { hours: 9, minutes: 30, seconds: 0 } (отсутствующее ss дополняется нулём)
+parseTime('99:99:99')                   // null (значения вне диапазона)
+parseTime('abc', 'HH:mm:ss')            // null (NaN)
+parseTime('09:30', 'YYYY-MM-DD')        // null (в format нет токенов времени)
+generateTimeColumn('hour', 1)           // 24 элемента: 00..23
+generateTimeColumn('minute', 15)        // 4 элемента: 00 15 30 45
+generateTimeColumn('minute', 0)         // 60 элементов (step 0 нормализуется в 1)
+generateTimeColumn('hour', 1, [0, 1, 2])// первые три элемента с isDisabled: true
+isValidTime(23, 59, 59)                 // true
+isValidTime(24, 0, 0)                   // false
+createDateTime(new Date('2026-10-12'), 9, 30, 0)  // 2026-10-12 09:30:00
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTimePickerClassNames({ size, disabled, visible })">
+  <input
+    class="lh-time-picker__input"
+    :value="formatDateToTimeString(value, format)"
+    v-bind="getTimePickerTriggerAria(visible, panelId)"
+    @click="open"
+  />
+  <div v-if="visible" class="lh-time-picker__panel" v-bind="getTimePickerPanelAria(panelId)">
+    <div
+      v-for="col in columns"
+      :key="col.type"
+      class="lh-time-picker__column"
+      v-bind="getTimePickerColumnAria(col.label)"
+    >
+      <div
+        v-for="opt in col.items"
+        :key="opt.value"
+        class="lh-time-picker__option"
+        :class="{ 'is-selected': opt.isSelected, 'is-disabled': opt.isDisabled }"
+        role="option"
+        :aria-selected="opt.isSelected"
+        @click="onSelect(col.type, opt.value)"
+      >
+        {{ opt.text }}
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+```tsx
+// React: генерация колонок
+// const hours = generateTimeColumn('hour', getHourStep(options), getDisabledHours(options))
+// колонка минут зависит от выбранного часа: getDisabledMinutes(options, selectedHour)
+```
+
+```ts
+// uniapp: <picker mode="time"> — встроенный компонент (значения в формате 'HH:mm'),
+// для кастомных прокручиваемых колонок нужны <picker-view> + <picker-view-column>;
+// функции генерации колонок из core используются как есть
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-time-picker` | базовый класс |
+| `.lh-time-picker--{small\|large}` | размер |
+| `.lh-time-picker--disabled` | отключено |
+| `.lh-time-picker__input` | поле-триггер |
+| `.lh-time-picker__panel` | всплывающая панель |
+| `.lh-time-picker__column` | одиночная прокручиваемая колонка |
+| `.lh-time-picker__option` | элемент колонки |
+| `.lh-time-picker__footer` | панель подтверждения/отмены (режим date-time) |
+
+Известная проблема (из «специальной задачи по токенам высоты»): высота элементов управления time-picker равна 33px и не совпадает с input (37) и select (32); корневая причина — отсутствие токенов `--lh-control-height-*`.
+
+## Замечания
+
+- **Порядок токенов в format может быть любым**: `formatTime` и `parseTime` берут значения по позиции токена в format, и `'mm:HH'` также корректно проходит туда-обратно. Но при смешивании с нетокенными символами (например `'HH时mm分'`) `parseTime` всё равно отсчитывает фиксированные 2 символа, и это безопасно для нелатини (она не является токеном), **зато цифровые разделители ломают позиции** — в `'09点30'` в позиции `mm` окажется `'点3'`, разбор даст NaN и null. Держите в format только токены и нецифровые разделители.
+- **Отказоустойчивость `parseTime`**: возвращается null, а не исключение; UI-слой должен обработать null при потере фокуса полем (обычно сохранить прежнее значение и показать подсказку).
+- **Взаимодействие шага и блокировки**: `disabledValues` только помечает элементы заблокированными, не отфильтровывая их — клавиатурная навигация на UI-слое должна сама перепрыгивать элементы с `isDisabled`.
+- **Режим `date-time`**: дата — ответственность `date-picker`, а время переисполняет этот модуль; в панели обычно сначала выбирают дату, потом время, и `createDateTime(baseDate, …)` объединяет их. Обратите внимание, что при null `baseDate` берётся дата **текущего момента**.
+- **Режим диапазения `isRange`**: `rangeStart` / `rangeEnd` — два `LhTimeData`, и заблокированные значения второй колонки зависят от выбора в первой (например, время окончания должно быть позже начала); UI-слой считает их динамически через колбэки `getDisabledMinutes` и подобные.
+- **`SS` в верхнем регистре — это не секунды**: только строчное `ss` — секунды; `HH` в верхнем регистре и `mm`/`ss` в нижнем — фиксированное написание, совпадающее с договорённостью в day.js и подобных библиотеках.
+
+<FnPlayground module="time-picker" fn="generateTimeColumn" params='{"type": "minute", "step": 15}' />

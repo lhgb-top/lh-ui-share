@@ -1,0 +1,205 @@
+---
+title: message —— グローバルメッセージ
+description: 'resolveMessageDuration のセマンティックな長さ、clampMessageQueue のキュー削り、live region ロールマッピング（alert/status）'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+グローバルメッセージは「操作完了後の軽いフィードバック」です：保存成功、ネットワークエラー、コピー成功。画面上部からスライドインし、数秒停留して自動的に消え、ユーザー操作を中断しません。`core/message` が管理するのは**メッセージキューの勘定**——長さをセマンティクスから導出、上限超過時に削り、レコードを生成し、さらに live region ロールを決めます。
+
+## いつ使うか
+
+- 各端末で `LhMessage` を実装（サービス式 API：`LhMessage.success('保存しました')`）：操作フィードバック、軽量なエラー提示、読み込み中の提示。
+- 短いテキストで、ユーザーによる処理を必要としない瞬時通知。
+- **使うべきでないケース**：ユーザーの操作を要する確認（`dialog` / `popconfirm` を使う）；内容が多い、またはタイトルを伴う（`notification` を使う）；ページ内に固定された提示バー（`alert` を使う）。
+
+## インポート方法
+
+```ts
+import {
+  LH_MESSAGE_DURATION_DEFAULT,
+  LH_MESSAGE_MAX_DEFAULT,
+  LH_MESSAGE_OFFSET_DEFAULT,
+  getMessageRole,
+  getMessageIconName,
+  getMessageClassNames,
+  resolveMessageDuration,
+  clampMessageQueue,
+  createMessageRecord,
+} from '@lh-ui/share/core/message'
+import type { LhMessageType, LhMessageRecord, LhMessageState } from '@lh-ui/share/core/message'
+```
+
+## 設計意図
+
+**`resolveMessageDuration` のセマンティックな長さ**：`loading` タイプのデフォルトは **0（自動的に閉じない）**——読み込み中のメッセージが自動的に消えるのは不条理で、業務コードが明示的に閉じなければなりません。ただし**duration を明示的に渡した場合は明示値を尊重します**——`resolveMessageDuration(0, 'loading')` は 0（明示）、`resolveMessageDuration(undefined, 'loading')` も 0（セマンティックなデフォルト）、両者は結果が同じでも経路が違います；`resolveMessageDuration(5000, 'loading')` は 5000（明示的オーバーライド）。
+
+**`clampMessageQueue` は削除されたレコードを返す**：保持されたものだけでなく `removed` も返し、その `onClose` の発火は呼び出し側の責任です。この設計は重要です：キューの削り取り時にメッセージが強制除去されるのに onClose を発火させないと、業務側のクリーンアップコールバック（計測や状態リセットなど）が永久に実行されません。
+
+**live region ロールマッピング**（`alert` / `notification` と同パラダイム）：`warning` / `danger` / `error` → `role="alert"`（**即座に割り込んで読み上げ**）、それ以外 → `role="status"`（**キューに入って穏やかに読み上げ**）。この区別には実利的な意味があります：エラー情報は通常ユーザーが即座に知る必要があり、成功情報はユーザーの現在の操作がひと段落するまで待ってから読まれても構いません。
+
+**`getMessageIconName` は loading に null を返す**：loading の回転アイコンは `LhSpinner` コンポーネントが描画する（アニメーションが必要）ため、静的アイコンではありません——UI 层はこれに従って異なるコンポーネントをレンダリングします。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getMessageRole` | `(type: LhMessageType) => LhAlertRole` | 'alert' \| 'status' | live region ロール |
+| `getMessageIconName` | `(type) => string \| null` | アイコン名 | loading は null |
+| `getMessageClassNames` | `(state: LhMessageState) => string[]` | クラス名 | タイプ + 閉じるボタンあり |
+| `resolveMessageDuration` | `(duration: number \| undefined, type) => number` | ミリ秒 | loading のデフォルトは 0 |
+| `clampMessageQueue` | `(items, max) => { kept, removed }` | 削り取り結果 | 最新 max 件を保持 |
+| `createMessageRecord` | `(partial, seq) => LhMessageRecord` | レコード | デフォルトの長さとオフセットを補完 |
+
+定数：`LH_MESSAGE_DURATION_DEFAULT = 3000`、`LH_MESSAGE_MAX_DEFAULT = 5`、`LH_MESSAGE_OFFSET_DEFAULT = 20`。
+
+## 型定義
+
+```ts
+export type LhMessageType = 'info' | 'success' | 'warning' | 'danger' | 'error' | 'loading'
+
+export interface LhMessageRecord {
+  id: number
+  type: LhMessageType
+  content: string
+  duration: number     // 0 は自動的に閉じないことを示す
+  showClose: boolean
+  offset: number       // ビューポート上端からのオフセット px
+  sx?: LhSxProps
+  onClose?: () => void
+}
+
+export interface LhMessageState {
+  type: LhMessageType
+  showClose: boolean
+}
+```
+
+`LhMessageType` は汎用セマンティック定数（`LH_TYPES_CONST`：info/success/warning/danger/error）に `loading` を追加したものです。
+
+## アクセシビリティ
+
+```ts
+getMessageRole('danger')   // 'alert'
+getMessageRole('warning')  // 'alert'
+getMessageRole('info')     // 'status'
+getMessageRole('success')  // 'status'
+getMessageRole('loading')  // 'status'
+```
+
+- `role="alert"` の要素は**DOM に現れた瞬間に読み上げられ**、エラーに適しています；`role="status"` はキューに入れて読み上げられ、成功／情報に適しています。
+- **aria-live の補足**：UI 层のレンダリングでは通常 `aria-live="polite"`（status）や `aria-live="assertive"`（alert）も併記します——`role` に暗黙含まれており、重複宣言は基本的に無害ですが、一部のスクリーンリーダーは role のサポートの方が安定しているため、両方を書くのが最も安全です。
+- **重複メッセージの読み上げ**：連続して 3 件の「保存しました」は 3 回読み上げられますが、これは正しい挙動です（各件が新しいイベント）。抑制したい場合は業務層で重複判定してください。
+- **閉じるボタン**：`aria-label="閉じる"`（アイコンボタンにテキストがないため）。
+
+## 使用例
+
+```ts
+import { resolveMessageDuration, clampMessageQueue, createMessageRecord } from '@lh-ui/share/core/message'
+
+resolveMessageDuration(undefined, 'success')  // 3000
+resolveMessageDuration(undefined, 'loading')  // 0（読み込み中は自動的に閉じない）
+resolveMessageDuration(5000, 'loading')       // 5000（明示的オーバーライド）
+
+clampMessageQueue([{ id: 1 }, { id: 2 }, { id: 3 }], 2)
+// { kept: [{ id: 2 }, { id: 3 }], removed: [{ id: 1 }] }  ← 最も古いものを削除
+
+clampMessageQueue([{ id: 1 }, { id: 2 }], 0)  // { kept: [...], removed: [] }（max <= 0 は削らない）
+
+createMessageRecord({ type: 'success', content: '保存しました', showClose: true }, 7)
+// { id: 7, type: 'success', content: '保存しました', showClose: true,
+//   duration: 3000, offset: 20 }
+```
+
+```ts
+// サービス層の実装（UI 層）：シングルトンキュー + インクリメンタルな通番
+let seq = 0
+const queue = ref<LhMessageRecord[]>([])
+
+function open(type: LhMessageType, content: string, options?: Partial<LhMessageRecord>) {
+  const record = createMessageRecord(
+    { type, content, showClose: false, ...options },
+    ++seq,
+  )
+  queue.value = [...queue.value, record]
+  // キューが上限超過：最も古いものを削除しつつ onClose を発火
+  const { kept, removed } = clampMessageQueue(queue.value, LH_MESSAGE_MAX_DEFAULT)
+  removed.forEach((r) => r.onClose?.())
+  queue.value = kept
+  // 自動的に閉じる
+  if (record.duration > 0) {
+    setTimeout(() => close(record.id), record.duration)
+  }
+  return record.id
+}
+
+const api = {
+  info: (c: string, o?) => open('info', c, o),
+  success: (c: string, o?) => open('success', c, o),
+  warning: (c: string, o?) => open('warning', c, o),
+  error: (c: string, o?) => open('error', c, o),
+  loading: (c: string, o?) => open('loading', c, o),
+}
+```
+
+```vue
+<!-- Vue3：レンダリング層 -->
+<teleport to="body">
+  <div class="lh-message" :style="{ top: offset + 'px' }">
+    <transition-group name="lh-message-fade" tag="div" class="lh-message__list">
+      <div
+        v-for="record in queue"
+        :key="record.id"
+        :class="getMessageClassNames({ type: record.type, showClose: record.showClose })"
+        :role="getMessageRole(record.type)"
+      >
+        <LhSpinner v-if="record.type === 'loading'" :size="14" />
+        <LhIcon v-else :name="getMessageIconName(record.type)!" />
+        <span class="lh-message__content">{{ record.content }}</span>
+        <button v-if="record.showClose" type="button" aria-label="閉じる" @click="close(record.id)">✕</button>
+      </div>
+    </transition-group>
+  </div>
+</teleport>
+```
+
+```ts
+// loading の典型的な使い方：保存時に表示、完了時に閉じる
+const id = LhMessage.loading('保存中…')
+await save()
+LhMessage.close(id)
+LhMessage.success('保存しました')
+```
+
+```tsx
+// React：createPortal でキューをレンダリング；閉じる処理は各件のタイマーを clearTimeout で管理
+```
+
+```ts
+// uniapp：fixed 配置 + アニメーション；キューは同モデル。LhSpinner は h5 以外の端末で view の回転で実装
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-message` | コンテナ（fixed で上部中央） |
+| `.lh-message__list` | キュー（transition-group） |
+| `.lh-message__item` | 1 件のメッセージ |
+| `.lh-message__item--{info\|success\|warning\|danger\|error\|loading}` | セマンティックタイプ（アイコン色 + ボーダー／背景色） |
+| `.lh-message__item--closable` | 閉じるボタンあり（ボタンのためにスペースを確保） |
+| `.lh-message__content` | テキスト |
+
+4 つのセマンティック色：`--lh-info-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`；背景は `--lh-bg-color` + 軽いボーダー + シャドウ。
+
+## 注意事項
+
+- **`loading` メッセージは手動で閉じなければならない**：`resolveMessageDuration(undefined, 'loading')` は 0 を返し、自動的に消えません。閉じ忘れると「読み込み中」が永遠に残ります——これが最も多い誤用です。
+- **`error` と `danger` の関係**：两者とも `alert` ロールと `error` アイコンにマッピングされます——`danger` は汎用セマンティック定数の命名で、`error` はその別名（message で一般的な `LhMessage.error()` API と揃えるため）。業務層はどちらを使っても構いません。
+- **キュー上限 `LH_MESSAGE_MAX_DEFAULT = 5`**：高頻度なシーン（アップロード進捗など）では簡単に 5 件を超えて削られます——削られたレコードの `onClose` は呼び出し側が発火し、業務側のタイマーも同時にクリーンアップしてください。
+- **`offset` の意味**：ビューポート上端からの**初期**オフセットです。複数メッセージの積み上げ間隔は UI 層が高さに応じて加算します（`notification` の `computeStackOffsets` を参照）。
+- **`id` の一意性**：サービス層の `seq` はモジュールレベルでインクリメントすれば十分です；複数インスタンスが共存する場合（マイクロフロントエンド）、id のプレフィックスを外部から渡して衝突を避けてください。
+- **SSR 安全性**：メッセージサービスは DOM に依存する（teleport、setTimeout）ため、SSR 下では自動生成をスキップし、クライアント側の活性化後に利用可能にしてください。
+- **`duration: 0` と `showClose: false` のデッドロック**：自動的に閉じず、手動でも閉じられないメッセージは永遠に存在します——業務側が id を保持して `close(id)` を呼ぶ場合を除きます。ユーザーに少なくとも 1 つの閉じる手段を残してください。
+
+<FnPlayground module="message" fn="resolveMessageDuration" params='{"duration": null, "type": "loading"}' />

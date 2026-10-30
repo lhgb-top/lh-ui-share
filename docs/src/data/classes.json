@@ -906,7 +906,6 @@
     ".lh-sr-only",
     ".lh-switch",
     ".lh-switch--checked",
-    ".lh-switch--checked__core",
     ".lh-switch--disabled",
     ".lh-switch--large",
     ".lh-switch--loading",

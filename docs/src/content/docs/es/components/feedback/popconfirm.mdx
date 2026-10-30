@@ -1,0 +1,167 @@
+---
+title: popconfirm —— Burbuja de confirmación
+description: 'la solución ligera para la doble confirmación: semántica de alertdialog, tono warning por defecto, contrato de eventos de los botones de confirmar/cancelar'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Borrar, enviar, publicar: las operaciones «que no se pueden deshacer fácilmente» exigen una segunda confirmación del usuario. `dialog` es demasiado pesado (modal, roba el foco, máscara), así que `popconfirm` abre una pequeña burbuja in situ: una frase + dos botones, y al confirmar desaparece de inmediato. Es el componente cuyo **peso de interacción queda justo entre tooltip y dialog**.
+
+## Cuándo usarlo
+
+- Cada framework implementa `<LhPopconfirm>`: borrar una fila, deshacer una operación, vaciar datos, enviar un pedido.
+- Doble confirmación **ligera, in situ y con poco margen para deshacer**.
+- **No usarlo para**: consecuencias tan graves que exijan la atención completa del usuario (usa `dialog` — la máscara modal fuerza el foco); cuando solo es informar (usa `tooltip` / `message`); confirmaciones que requieren escribir un motivo o marcar opciones (usa `dialog` con un formulario).
+
+## Importación
+
+```ts
+import {
+  LH_POPCONFIRM_TYPE_DEFAULT,
+  LH_POPCONFIRM_PLACEMENT_DEFAULT,
+  getPopconfirmIconName,
+  getPopconfirmClass,
+  getPopconfirmTriggerAria,
+  getPopconfirmPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popconfirm'
+import type { LhPopconfirmType, LhPopconfirmTrigger, LhPopconfirmState } from '@lh-ui/share/core/popconfirm'
+```
+
+## Intención de diseño
+
+**El tono por defecto es warning, no info**: `LH_POPCONFIRM_TYPE_DEFAULT = 'warning'` — que aparezca una confirmación casi siempre significa «hay un riesgo», así que el tono por defecto debería ser de advertencia. info se reserva para confirmaciones puramente informativas («¿Marcar como leído?») y danger para operaciones irreversibles («Tras borrar no se puede recuperar»).
+
+**Tres tonos, tres iconos**: info → `info`; warning → `warning`; danger → `error` (el nombre del icono es error y no danger — la iconoteca lo llama error, es un mapeo entre dos formas de nombrarlo). Un type desconocido retrocede a warning.
+
+**`role="alertdialog"` en lugar del `"dialog"` de popover**: alertdialog es, en ARIA, «un diálogo que exige una respuesta inmediata del usuario» — los lectores de pantalla lo **anuncian con prioridad** (con la capacidad de interrupción de un alert, pero pidiendo al usuario que elija). Se ajusta mejor que dialog a la semántica de «esperando tu decisión».
+
+**El contrato de eventos de confirmar/cancelar vive en la capa UI**: core solo ofrece clases, iconos, aria y retardos; los eventos `onConfirm` / `onCancel`, los textos de los botones y el estado de carga están en la capa UI — porque implican comunicación del árbol de componentes (emit) y core no toca las APIs del marco.
+
+**Retardos alineados con popover**: los valores por defecto de `getDefaultDelay` son 200/100, igual que popover — la burbuja de confirmación también admite el disparo por hover y el puntero tiene que poder entrar en ella.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `getPopconfirmIconName` | `(type: LhPopconfirmType) => string` | nombre del icono | un type desconocido retrocede a warning |
+| `getPopconfirmClass` | `(state: { type, placement, popperClass? }) => string[]` | clases | tono + posición |
+| `getPopconfirmTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | bolsa aria | expanded/controls/haspopup |
+| `getPopconfirmPopperAria` | `(id?) => LhAriaAttrs` | bolsa aria | role=alertdialog |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | retardos | por defecto 200 / 100 |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | si se permite | se intercepta con disabled |
+
+Constantes: `LH_POPCONFIRM_TYPE_DEFAULT = 'warning'` y `LH_POPCONFIRM_PLACEMENT_DEFAULT = 'top'`.
+
+## Definiciones de tipos
+
+```ts
+export type LhPopconfirmType = 'info' | 'warning' | 'danger'
+export type LhPopconfirmTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopconfirmState {
+  type?: LhPopconfirmType
+  trigger?: LhPopconfirmTrigger
+  placement?: LhPlacement
+  visible?: boolean
+  disabled?: boolean
+  showIcon?: boolean             // por defecto true
+}
+```
+
+## Accesibilidad
+
+```ts
+getPopconfirmPopperAria('pc-1')
+// { role: 'alertdialog', id: 'pc-1' }
+getPopconfirmTriggerAria(true, 'pc-1')
+// { 'aria-expanded': true, 'aria-controls': 'pc-1', 'aria-haspopup': 'true' }
+```
+
+- **El anuncio de alertdialog**: cuando un lector de pantalla se encuentra un alertdialog, anuncia su contenido de inmediato (aria-labelledby o el texto interno) y **el usuario no tiene que ir a leerlo activamente** — esto lo hace más imperativo que dialog, y encaja con la intención de «esperando tu confirmación».
+- **Botones con un texto claro**: «Aceptar / Cancelar» es mejor que «OK / NO» o botones de icono. Con el tono `danger`, se recomienda que el texto del botón de confirmación deje clara la consecuencia («Eliminar» en lugar de «Aceptar»).
+- **Cancelar es la dirección segura**: ¿Enter dispara por defecto **confirmar** o **cancelar**? La práctica habitual es que el foco inicial caiga en el botón **Cancelar** (un Tab + Enter y el usuario sale a salvo) — en operaciones destructivas no pongas el foco por defecto en el botón de confirmar. Es una decisión de la capa UI; core no entra.
+- **Esc = cancelar**: cuando `canCloseOnEscape` lo permite, Esc debería disparar onCancel y no limitarse a cerrar — semánticamente, «cerrar la confirmación» es «no confirmar».
+- **Iconos con aria-hidden**: los iconos semánticos (warning/error) ya están comunicados por el texto; el icono es decorativo, para evitar que el lector anuncie «advertencia» por duplicado.
+
+## Ejemplos de uso
+
+```ts
+import { getPopconfirmIconName, getPopconfirmClass, LH_POPCONFIRM_TYPE_DEFAULT } from '@lh-ui/share/core/popconfirm'
+
+getPopconfirmIconName('info')     // 'info'
+getPopconfirmIconName('warning')  // 'warning'
+getPopconfirmIconName('danger')   // 'error'
+getPopconfirmIconName('other' as never)  // 'warning' (respaldo)
+
+getPopconfirmClass({ type: 'danger', placement: 'top' })
+// ['lh-popconfirm__popper', 'lh-popconfirm__popper--danger', 'lh-popconfirm__popper--top']
+
+LH_POPCONFIRM_TYPE_DEFAULT  // 'warning'
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopconfirm
+    title="Tras borrar no se puede recuperar. ¿Seguro que quieres eliminar esta fila?"
+    type="danger"
+    confirm-text="Eliminar"
+    cancel-text="Cancelar"
+    @confirm="remove(row)"
+  >
+    <template #reference>
+      <LhButton type="danger" size="small">Eliminar</LhButton>
+    </template>
+  </LhPopconfirm>
+</template>
+
+<script setup>
+async function remove(row) {
+  // Se dispara onConfirm; el componente puede admitir confirmLoading: la burbuja
+  // solo se cierra cuando termina la operación asíncrona
+  await api.delete(row.id)
+  LhMessage.success('Eliminado')
+}
+</script>
+```
+
+```ts
+// Confirmación asíncrona: durante la confirmación se desactivan los botones + se
+// muestra un loading; si falla, la burbuja permanece abierta.
+// Esta es lógica de la capa UI: core no mantiene estado asíncrono
+```
+
+```tsx
+// React: onConfirm/onCancel se pasan como props; un visible controlado acompaña la confirmación asíncrona
+```
+
+```ts
+// uniapp: la burbuja es un <view>; el estado pulsado de los botones usa hover-class; el contrato de eventos sigue el mismo modelo
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-popconfirm__popper` | contenedor de la burbuja |
+| `.lh-popconfirm__popper--{info\|warning\|danger}` | tono (color del icono + color del botón de confirmar) |
+| `.lh-popconfirm__popper--{top\|bottom\|…}` | posición |
+| `.lh-popconfirm__icon` | icono de tono |
+| `.lh-popconfirm__title` | texto del título |
+| `.lh-popconfirm__actions` | zona de botones (alineados a la derecha) |
+
+El color del botón de confirmar sigue al tono: danger usa `--lh-danger-color`; warning, `--lh-warning-color`; info, `--lh-primary-color`.
+
+## Advertencias
+
+- **El título debe dejar clara la consecuencia**: «¿Seguro que quieres borrarlo?» es un mal texto (no indica la consecuencia); «Tras borrar no se puede recuperar. ¿Seguro que quieres eliminar esta fila?» es un buen texto. Este es el núcleo de la experiencia del popconfirm.
+- **No anidarlo**: un popconfirm dentro de otro popconfirm confunde al usuario sobre qué capa está confirmando. Si necesitas confirmaciones de varios pasos, usa dialog.
+- **Cuando el disparador es un botón desactivado**: un botón `disabled` no dispara eventos (limitación nativa) y el popconfirm no se abre — la capa de negocio debe resolverlo (envolver el botón en un elemento no desactivado o no renderizarlo directamente cuando esté desactivado).
+- **El momento de cerrar en una confirmación asíncrona**: mientras se procesa la confirmación, desactiva ambos botones + un escudo anti doble clic; si falla, **mantiene la burbuja abierta** y muestra el error; solo cierra con éxito. Cerrar la burbuja de forma síncrona dentro de onConfirm es un bug frecuente.
+- **La combinación con message**: tras la confirmación, usa `message` para la retroalimentación de éxito («Eliminado») — los dos forman la cadena estándar de «confirmar → ejecutar → retroalimentar».
+- **El disparo por hover en móvil**: al igual que popover, las pantallas táctiles no tienen hover. El valor por defecto entre plataformas es el disparo por click.
+- **`role="alertdialog"` no implica la semántica de los botones**: la zona de botones debe renderizarse como `<button>` de verdad (no un div + onclick) para que los usuarios de teclado puedan operarlos.
+
+<FnPlayground module="popconfirm" fn="getPopconfirmIconName" params='{"type": "danger"}' />

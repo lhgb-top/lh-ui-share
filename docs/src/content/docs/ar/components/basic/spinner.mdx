@@ -1,0 +1,113 @@
+---
+title: spinner —— رسم تحميل دوار
+description: 'جدول تعيين المقاس إلى القطر LH_SPINNER_SIZE_PX، ويُخرج getSpinnerClassNames معدّلات المقاس'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`spinner` هو «رسم دوار» صرف — ليس غطاء تحميل (فذلك `LhLoading`)، وليس هيكلًا عظميًا (فذلك `LhSkeleton`)، بل **عنصر دوار** قابل لإعادة الاستخدام: أيقونة التحميل داخل الزر، وأيقونة loading في الرسائل، والدائرة الدوّارة في زاوية تحميل البطاقة، كلها من شأنه.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhSpinner`، وفي أي مكان داخل المكوّنات يحتاج إلى رسم دوار (button loading، message loading وغيرها).
+- **لا يجب استخدامه**: تحميل الشاشة بالكامل، وتحميل منطقة. تلك مسؤولية `LhLoading` (ولا يكون `spinner` سوى جزء منه).
+
+## طريقة الاستيراد
+
+```ts
+import { getSpinnerClassNames } from '@lh-ui/share/core/spinner'
+import { LH_SPINNER_SIZE_PX, LH_SPINNER_SIZE_CONST } from '@lh-ui/share/core/spinner'
+import type { LhSpinnerSize } from '@lh-ui/share/core/spinner'
+```
+
+## نية التصميم
+
+يتوافق نظام مقاس spinner مع درجات المقاس العامة (`LH_SPINNER_SIZE_CONST` يُفتَح مباشرةً من `LH_SIZE_CONST`)، لكن **تعيين البكسل مستقل** — ف mediums المكوّن هو 24px بينما ارتفاع الزر medium هو 37px، ولا يجب أن يتطابق الرسم مع الحاوية في المقاس. وهذا الاستقلال مكتوب في الثوابت لا متبعثر كأرقام سحرية هنا وهناك.
+
+`LH_SPINNER_SIZE_PX` هو المصدر الوحيد للحقيقة، ويقرأ منه الطرف البصري لضبط width/height الخاص بـ SVG/العنصر، بدلًا من كتابة `size === 'small' ? 16 : 24` بنفسه.
+
+## جدول الدوال والثوابت
+
+| المُصدَّر | التوقيع / القيمة | الدور |
+| --- | --- | --- |
+| `getSpinnerClassNames` | `(state: { size: LhSpinnerSize }) => string[]` | مصفوفة أسماء الأصناف |
+| `LH_SPINNER_SIZE_CONST` | `{ small: 'small', medium: 'medium', large: 'large', mini: 'mini', 'x-large': 'x-large' }` | تعداد المقاسات (مُحاذى مع `LH_SIZE_CONST`) |
+| `LH_SPINNER_SIZE_PX` | `{ mini: 12, small: 16, medium: 24, large: 32, 'x-large': 40 }` | المقاس ← القطر بالبكسل |
+
+```ts
+getSpinnerClassNames({ size: 'small' })  // ['lh-spinner', 'lh-spinner--small']
+LH_SPINNER_SIZE_PX['large']              // 32
+```
+
+## تعريف الأنواع
+
+```ts
+export type LhSpinnerSize =
+  (typeof LH_SPINNER_SIZE_CONST)[keyof typeof LH_SPINNER_SIZE_CONST]
+// 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+```
+
+## إمكانية الوصول
+
+لا يوفّر `core/spinner` حزمة سمات aria. وتتوقف معالجة إمكانية الوصول للرسم الدوار على **مكان ظهوره**:
+
+- **spinner داخل زر**: يُضاف `aria-busy="true"` إلى الزر، ويحمل spinner نفسه `aria-hidden`.
+- **spinner داخل رسالة**: فإن دور live-region للرسالة قد أوصل بالفعل «المعالجة جارية»، فيُزخرف spinner.
+- **العرض المستقل لـ «جارٍ التحميل»**: يجب أن يصاحبه نص مقروء (مثل «جارٍ التحميل...»)؛ فالرسم وحده لا يحمل معلومة لمستخدم قارئ الشاشة.
+
+المبدأ العام: **يجب أن يحمل الرسم الدوار `aria-hidden` دائمًا**، وتُحمل المعلومة بالدلالات من حوله (aria-busy، role، نص).
+
+## أمثلة الاستخدام
+
+```ts
+import { getSpinnerClassNames, LH_SPINNER_SIZE_PX } from '@lh-ui/share/core/spinner'
+
+getSpinnerClassNames({ size: 'medium' })  // ['lh-spinner', 'lh-spinner--medium']
+LH_SPINNER_SIZE_PX['medium']              // 24
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="getSpinnerClassNames({ size })"
+  :width="px" :height="px"
+  viewBox="0 0 50 50"
+  aria-hidden="true"
+>
+  <circle class="lh-spinner__circle" cx="25" cy="25" r="20" fill="none" />
+</svg>
+```
+
+```tsx
+// React
+const px = LH_SPINNER_SIZE_PX[size]
+return (
+  <svg className={getSpinnerClassNames({ size }).join(' ')} width={px} height={px} viewBox="0 0 50 50" aria-hidden="true">
+    <circle className="lh-spinner__circle" cx="25" cy="25" r="20" fill="none" />
+  </svg>
+)
+```
+
+```ts
+// uniapp: دعم svg للأطراف غير h5 ضعيف، فيُستبدل عادةً بطريقة CSS border الدوارة أو GIF؛
+// ولا تزال قيم القطر من LH_SPINNER_SIZE_PX صالحة (عرض وارتفاع طريقة border)
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- | --- |
+| `.lh-spinner` | الصنف الأساسي: حركة الدوران (`animation: lh-spinner-rotate`) |
+| `.lh-spinner--{mini\|small\|medium\|large\|x-large}` | درجات المقاس (تضبط العرض والارتفاع) |
+| `.lh-spinner__circle` | circle في SVG: قوس جزئي بحدّ + `stroke-linecap: round` |
+
+لون الخط افتراضيًا `currentColor` (يرث لون نص العنصر الأب)، ويُعرَّف طول الدوران في طبقة الأنماط، وتُوقفه وسائط CSS تحت `prefers-reduced-motion`.
+
+## ملاحظات
+
+- **اتساق المقاسات**: small في `LH_SPINNER_SIZE_PX` هو 16px بينما small في الأيقونات هو 14px (راجع [الأيقونات](/ar/components/basic/icon)) — وهذا عدم اتساق معروف في الدرجات، ومُسجَّل في «مشروع رموز الارتفاع» ليُوحَّد عبر changeset لاحقًا، في الوقت الحالي استخدم جدول الثوابت مباشرةً بدلًا من الحساب بنفسك.
+- لا يتحقق `getSpinnerClassNames` من صحة `size` (النوع يضمن ذلك)، فتمرير قيمة خارجة يُنتج صنفًا قذرًا بلا نمط.
+- زاوية قوس حدّ circle في SVG (stroke-dasharray) مُثبَّت في طبقة الأنماط على قوس نحو 75%، ولتعديل الزاوية عدِّل الأنماط لا core.
+- حركة الدوران هي CSS keyframes، واحترام `prefers-reduced-motion` يقع على طبقة الأنماط.
+
+<FnPlayground module="spinner" fn="getSpinnerClassNames" params='{"state": {"size": "medium"}}' />

@@ -1,0 +1,121 @@
+---
+title: 包入口與子路徑
+description: '@lh-ui/share 的 77 個 exports 鍵全表與按需匯入實踐'
+---
+
+# 包入口與子路徑
+
+`package.json` 的 `exports` 欄位定義了**唯一合法的匯入路徑**——沒列在這裡的路徑
+（比如直接 `@lh-ui/share/es/core/button/logic.js`）會被 Node / 打包器拒絕。本套件共
+**77 個鍵**。
+
+## 頂層鍵一覽
+
+| 鍵 | 指向 | 用途 |
+| --- | --- | --- |
+| `.` | `es/index.js` / `lib/index.js` | 全量裸匯入 |
+| `./package.json` | `./package.json` | 工具讀版本號 |
+| `./core` | `es/core/index.js` | 全部 core 純函式聚合 |
+| `./core/<元件>/*` | `es/core/<元件>/*` | **56 個元件**逐個按需 |
+| `./core/shared/*` | `es/core/shared/*` | 12 個共享核心模組 |
+| `./constants` | `es/constants/index.js` | `LH_*` 常數 |
+| `./locales` | `es/locales/index.js` | lhlocale + zhCN / enUS |
+| `./locales/lang/*` | `es/locales/lang/*` | 6 個語言包單獨引 |
+| `./theme` | `es/theme/index.js` | 主題執行時原語 + 預設 |
+| `./types` | `es/types/index.d.ts` | **僅類型**，無實作 |
+| `./types/components/*` | `es/types/components/*.d.ts` | 元件 Props 類型（僅類型） |
+| `./utils` | `es/utils/index.js` | createNamespace / deepMerge 等純工具 |
+| `./utils/*` | `es/utils/*` | 工具按檔案引 |
+| `./theme.css` | `dist/theme/index.css` | 明色令牌 |
+| `./theme-dark.css` | `dist/theme/index-dark.css` | 暗色覆蓋 |
+| `./styles.css` | `dist/styles/index.css` | 令牌 + 全量元件樣式 |
+| `./dist/*` | `dist/*` | dist 產物直通 |
+| `./styles/*` | `styles/<name>/index.scss` | **單元件 SCSS 原始碼** |
+| `./styles/index.scss` | `styles/index.scss` | 全量 SCSS 聚合 |
+| `./styles/theme/index.scss` | `styles/theme/index.scss` | 主題 SCSS 聚合 |
+| `./styles/theme/common/*` | `styles/theme/common/*.scss` | 令牌 / 花紋 / 過渡 mixin |
+
+## 三條件匯出
+
+除純 CSS / SCSS 與 `types` 鍵外，每個 JS 鍵都同時給三個條件：
+
+```json
+"./core/button/*": {
+  "types": "./es/core/button/*.d.ts",
+  "import": "./es/core/button/*.js",
+  "require": "./lib/core/button/*.js"
+}
+```
+
+- `import` —— ESM 產物（`es/`），preserveModules 鏡像原始碼結構，按需引入只打那一個檔案。
+- `require` —— CJS 產物（`lib/`），給 Node 直跑 / jest 等場景。
+- `types` —— `.d.ts`，`import type` 走它，零執行時成本。
+
+## 56 個 core 子路徑
+
+```
+affix · alert · anchor · avatar · backtop · badge · breadcrumb · button ·
+calendar · card · cascader · checkbox · collapse · config · date-picker ·
+descriptions · dialog · divider · drawer · dropdown · empty · form · grid ·
+icon · image · input · input-number · loading · menu · message ·
+notification · pagination · popconfirm · popover · progress · radio · rate ·
+segmented · select · skeleton · slider · space · spinner · statistic ·
+steps · switch · table · tabs · tag · time-picker · timeline · tooltip ·
+transfer · tree · upload · virtual-list
+```
+
+每個子路徑的匯出面以元件頁的「函式表」為準，逐頁可查（見左側導航「元件 API」）。
+
+## 12 個共享核心子路徑
+
+```
+core/shared/a11y · date · delay · focus-trap · format · keyboard ·
+popper · pt · sanitize · sx · types · virtual
+```
+
+這是被各端 UI 庫引用最頻繁的一層。各模組文件見左側「共享核心」。
+
+## tree-shaking 與 sideEffects
+
+```json
+"sideEffects": ["**/*.css", "**/*.scss"]
+```
+
+只有樣式檔案有副作用。純 JS 子路徑可安全 tree-shaking：
+
+- ✅ `import { getButtonClasses } from '@lh-ui/share/core/button'` 只打 button。
+- ✅ `import type { LhSxProps } from '@lh-ui/share/core/shared/sx` 編譯期擦除。
+- ⚠️ `import '@lh-ui/share/styles.css'` 是**全量**，不能 tree-shake——
+  樣式請用 `./styles/<name>` SCSS 原始碼自己編，或用各 UI 庫的按需產物。
+
+## styles 子路徑的兩種形態
+
+`./styles/*` 指向的是 **SCSS 原始碼**（`styles/<name>/index.scss`），不是編譯產物：
+
+```scss
+@use '@lh-ui/share/styles/button';   // ✅ 打包器編 SCSS
+```
+
+```ts
+import '@lh-ui/share/styles/button'   // ❌ 需要 .scss 擴展且打包器不認
+```
+
+如果你不想在專案裡編 SCSS，引 `./styles.css`（全量）或用各 UI 庫構建好的
+`es/<name>/style/index.css`（lh-ui-plus） / `es/components/<name>/style/index.css`
+（lh-ui-vue2）。
+
+## 本地連動（家族內開發）
+
+家族內各 UI 庫不依賴 npm：dev / test 設定帶**存在性守衛**地把 `@lh-ui/share/**`
+alias 到同級 `lh-ui-share/` 的原始碼：
+
+| 匯入 | 家族配置下指向 |
+| --- | --- |
+| `@lh-ui/share/styles/**` | `lh-ui-share/styles/**`（SCSS 原始碼，vite 即時編譯） |
+| `@lh-ui/share/core/**` | `lh-ui-share/src/core/**` |
+| `@lh-ui/share/{utils,constants,theme,locales,types}/**` | `lh-ui-share/src/$1/**` |
+| `@lh-ui/share`（裸） | `lh-ui-share/src/index.ts` |
+
+同級 share 倉不存在時守衛傳回空陣列，自動回退到已安裝的 npm 套件——**單倉 clone 與
+家族配置都能跑**。本規則同樣適用於發版：share 新增深檔案後若沒跑 `pnpm build`
+（含 sync-exports），npm 側沒有對應 exports 鍵，下游 `pnpm up` 會 MODULE_NOT_FOUND。

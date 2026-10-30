@@ -1,0 +1,231 @@
+---
+title: upload —— Téléversement
+description: 'createUploadUid l’identifiant unique, isFileRejected la validation des trois familles de règles accept, LhUploadRequest la fonction de requête extérieure, automate à quatre états'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Le téléversement est le seul contrôle d'une bibliothèque d'UI qui **doit obligatoirement confier les effets de bord à l'appelant** : le transfert de fichiers dépend d'un client HTTP, or la couche core ne peut pas dépendre d'une mise en œuvre particulière d'axios ou de fetch. La conception de `core/upload` est donc très pure : il gère la validation, l'automate à états et la mise à jour immuable de la liste de fichiers, **en laissant « comment transférer » sous forme d'interface** (`LhUploadRequest`), implémentée par chaque cible ou chaque projet.
+
+## Quand l'utiliser
+
+- Chaque framework implémente `LhUpload` : téléversement d'avatar, de pièces jointes, d'images en lot, téléversement par glisser-déposer.
+- Les scénarios nécessitant d'afficher la progression, les états succès / échec, et la possibilité de réessayer.
+- **À ne pas utiliser pour** : simplement laisser l'utilisateur choisir un chemin de fichier (un input natif suffit) ; les logiques complexes comme le téléversement par fragments ou la reprise après interruption (l'automate de core reste utilisable, mais la fonction de requête est à écrire soi-même).
+
+## Import
+
+```ts
+import {
+  LH_UPLOAD_MAX_SIZE,
+  createUploadUid,
+  formatFileSize,
+  createUploadFile,
+  exceedsMaxSize,
+  exceedsMaxCount,
+  normalizeUploadAccept,
+  isFileRejected,
+  patchUploadFile,
+  removeUploadFile,
+  getUploadClassNames,
+  getUploadFileClassNames,
+  getUploadFileAria,
+  getUploadDropzoneAria,
+} from '@lh-ui/share/core/upload'
+import type {
+  LhUploadFile,
+  LhUploadFileStatus,
+  LhUploadRequest,
+} from '@lh-ui/share/core/upload'
+```
+
+## Intentions de conception
+
+**Pourquoi `createUploadUid` n'utilise pas un compteur auto-incrémenté** : la première implémentation utilisait un compteur auto-incrémenté au niveau du module + `Date.now()`, mais share est mise en paquet par trois bibliothèques UI distinctes, et **les instances des différentes bibliothèques produisent le même uid dans la même milliseconde** (horodatage identique + chaque compteur partant de 0). Le passage à `crypto.randomUUID()` corrige ce véritable bug de conflit de concurrence ; les environnements sans cette API (certaines exécutions d'uniapp) se rabattent sur l'horodatage + un nombre aléatoire.
+
+**Les trois familles de règles accept de `isFileRejected`** : l'extension `.png` est comparée au **nom du fichier**, le joker `image/*` est comparé au **vrai MIME** (`file.type`), et le MIME spécifique `image/png` est comparé à `file.type`. Le commentaire indique une contrainte essentielle : **l'attribut natif `<input accept>` n'est qu'un filtrage indicatif** (l'utilisateur peut basculer le sélecteur de fichiers sur « tous les fichiers »), la validation de la couche core est donc la dernière ligne de défense, et on ne doit pas laisser passer systématiquement les règles joker — sinon un `.exe` glissé par l'utilisateur en contournant le sélecteur serait traité comme une image.
+
+**La garde `Number.isFinite` de `exceedsMaxSize`** : lorsque `maxSize` n'est pas un nombre fini, on considère qu'il n'y a pas de limite et l'on renvoie false. « Ne pas limiter la taille » peut ainsi s'exprimer par `Infinity`, sans recourir à des sentinelles comme 0 ou -1 qui se confondent facilement avec des « valeurs légitimes ».
+
+**La mise à jour immuable** : `patchUploadFile` / `removeUploadFile` renvoient de nouveaux tableaux, à fournir directement à l'état réactif, afin d'éviter les problèmes de mutabilité liés à un splice manuel.
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `createUploadUid` | `(prefix?) => string` | uid | crypto.randomUUID en priorité |
+| `formatFileSize` | `(bytes: number) => string` | `'1.5 MB'` | taille lisible par un humain |
+| `createUploadFile` | `(file: File, uid?) => LhUploadFile` | élément de téléversement | status ready / percent 0 |
+| `exceedsMaxSize` | `(file: File, maxSize: number) => boolean` | dépassement ou non | un nombre non fini est considéré comme illimité |
+| `exceedsMaxCount` | `(current: number, limit: number) => boolean` | dépassement du nombre ou non | limit ≤ 0 = illimité |
+| `normalizeUploadAccept` | `(accept?: string \| string[] \| null) => string[]` | tableau de règles | la chaîne est découpée sur les virgules |
+| `isFileRejected` | `(file: { name, type }, accept: string[]) => boolean` | refusé ou non | les trois familles de règles |
+| `patchUploadFile` | `(files, uid, patch) => LhUploadFile[]` | nouveau tableau | mise à jour immuable |
+| `removeUploadFile` | `(files, uid) => LhUploadFile[]` | nouveau tableau | suppression immuable |
+| `getUploadClassNames` | `(state: { dragOver, disabled }) => string[]` | classes | survol du glisser / désactivé |
+| `getUploadFileClassNames` | `(status) => string[]` | classes | les quatre états |
+| `getUploadFileAria` | `(statusId?) => LhAriaAttrs` | paquet d'attributs aria | aria-describedby |
+| `getUploadDropzoneAria` | `(disabled?) => LhAriaAttrs` | paquet d'attributs aria | role=button |
+
+## Définitions de types
+
+```ts
+export type LhUploadFileStatus = 'ready' | 'uploading' | 'success' | 'fail'
+
+export interface LhUploadFile {
+  uid: string
+  name: string
+  size: number
+  status: LhUploadFileStatus
+  percent: number        // 0-100
+  url?: string           // renvoyé par le serveur en cas de succès
+  error?: string         // cause de l'échec
+  raw?: File             // l'objet File original
+}
+
+export const LH_UPLOAD_MAX_SIZE = 5 * 1024 * 1024  // 5 Mo par défaut
+
+/** Signature de la fonction de requête de téléversement (fournie par l'utilisateur, la bibliothèque n'embarque pas de client HTTP) */
+export type LhUploadRequest = (options: {
+  file: File
+  onProgress: (percent: number) => void
+}) => Promise<{ url?: string }>
+```
+
+## Accessibilité
+
+```ts
+getUploadFileAria('lh-upload-status-1')
+// { 'aria-describedby': 'lh-upload-status-1' }
+
+getUploadDropzoneAria(false)
+// { role: 'button' }
+
+getUploadDropzoneAria(true)
+// { role: 'button', 'aria-disabled': true }
+```
+
+- L'élément de fichier est associé à l'élément de description de l'état par `aria-describedby` (« Téléversement en cours 45 % », « Échec du téléversement : expiration du délai réseau »), afin que le lecteur d'écran annonce les états asynchrones — c'est le moyen central de l'accessibilité des contrôles asynchrones.
+- La zone de dépôt est un `role="button"` (cliquable, elle ouvre le sélecteur de fichiers, et l'on peut aussi y déposer des fichiers), déclenchée au clavier par Enter / Espace.
+- **L'annonce de la progression** : une barre de progression purement visuelle est invisible pour le lecteur d'écran ; l'élément de texte pointé par `aria-describedby` doit mettre à jour son contenu lorsque percent change (avec un débit limité par la couche UI, afin d'éviter une annonce à chaque pourcent).
+- Les boutons de réessayer / de suppression des éléments en échec doivent avoir un `aria-label` (les boutons à icône sont sans texte).
+
+## Exemples d'utilisation
+
+```ts
+import {
+  createUploadFile, exceedsMaxSize, isFileRejected, normalizeUploadAccept, patchUploadFile,
+} from '@lh-ui/share/core/upload'
+
+normalizeUploadAccept('image/png, .jpg , image/gif')
+// ['image/png', '.jpg', 'image/gif']
+normalizeUploadAccept(['.pdf'])      // ['.pdf']
+normalizeUploadAccept(null)          // []
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['.png'])          // false
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['image/*'])       // false
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['image/gif'])     // true
+isFileRejected({ name: 'a.exe', type: '' }, ['image/*'])                // true (sans MIME, on ne laisse pas passer)
+isFileRejected({ name: 'a.png', type: 'image/png' }, [])                // false (une règle vide n'interdit rien)
+exceedsMaxSize(new File([], 'a.png'), 1024)       // true (un fichier vide a une size de 0, qui ne dépasse pas 1024 ; cet exemple dépend de la taille réelle)
+exceedsMaxSize(file, Infinity)                    // false
+formatFileSize(512)       // '512 B'
+formatFileSize(1536)      // '1.5 KB'
+formatFileSize(5 * 1024 * 1024)  // '5.0 MB'
+```
+
+```ts
+// La chaîne de validation (la couche UI l'exécute séquentiellement dans onBeforeUpload)
+function validate(file: File, accept: string, maxSize: number): string | undefined {
+  const rules = normalizeUploadAccept(accept)
+  if (isFileRejected(file, rules)) return 'Type de fichier non autorisé'
+  if (exceedsMaxSize(file, maxSize)) return `Le fichier ne doit pas dépasser ${formatFileSize(maxSize)}`
+}
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getUploadClassNames({ dragOver, disabled })">
+  <div
+    class="lh-upload__dropzone"
+    v-bind="getUploadDropzoneAria(disabled)"
+    tabindex="0"
+    @click="openPicker"
+    @dragover.prevent="dragOver = true"
+    @dragleave.prevent="dragOver = false"
+    @drop.prevent="onDrop"
+  >
+    <input ref="inputRef" type="file" :accept="accept" multiple hidden @change="onChange" />
+    <span class="lh-upload__hint">Cliquez ou glissez des fichiers ici pour les téléverser</span>
+  </div>
+  <ul class="lh-upload__file-list">
+    <li
+      v-for="f in files"
+      :key="f.uid"
+      :class="getUploadFileClassNames(f.status)"
+      v-bind="getUploadFileAria(`lh-upload-status-${f.uid}`)"
+    >
+      <span class="lh-upload__file-name">{{ f.name }}</span>
+      <span class="lh-upload__file-size">{{ formatFileSize(f.size) }}</span>
+      <div class="lh-upload__progress"><div :style="{ width: f.percent + '%' }" /></div>
+      <span :id="`lh-upload-status-${f.uid}`" class="lh-upload__status">
+        {{ statusText(f) }}
+      </span>
+      <button v-if="f.status === 'fail'" type="button" aria-label="Réessayer" @click="retry(f)">↻</button>
+      <button type="button" aria-label="Supprimer" @click="files = removeUploadFile(files, f.uid)">✕</button>
+    </li>
+  </ul>
+</div>
+```
+
+```ts
+// Exécution du téléversement (la fonction de requête est fournie par le projet)
+async function run(file: LhUploadFile) {
+  files = patchUploadFile(files, file.uid, { status: 'uploading', percent: 0 })
+  try {
+    const { url } = await httpRequest({
+      file: file.raw!,
+      onProgress: (percent) => { files = patchUploadFile(files, file.uid, { percent }) },
+    })
+    files = patchUploadFile(files, file.uid, { status: 'success', percent: 100, url })
+  } catch (error) {
+    files = patchUploadFile(files, file.uid, { status: 'fail', error: String(error) })
+  }
+}
+```
+
+```tsx
+// React : files est un useState, la valeur de retour de patchUploadFile est passée directement à setFiles
+```
+
+```ts
+// uniapp : <button open-type="chooseFile"> ou uni.chooseImage ;
+// la validation et l'automate de core s'utilisent tels quels, le HTTP passe par uni.uploadFile (avec onProgressUpdate)
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-upload` | classe de base |
+| `.lh-upload--dragover` | survol du glisser (bordure en surbrillance) |
+| `.lh-upload--disabled` | désactivé |
+| `.lh-upload__dropzone` | zone de dépôt / de clic |
+| `.lh-upload__hint` | texte d'invite |
+| `.lh-upload__file-list` / `__file` | liste de fichiers / élément de fichier |
+| `.lh-upload__file--{ready\|uploading\|success\|fail}` | les quatre états |
+| `.lh-upload__file-name` / `__file-size` / `__status` | informations du fichier |
+| `.lh-upload__progress` | piste de la barre de progression (le div intérieur est le remplissage) |
+
+Couleur de succès `--lh-success-color`, échec `--lh-danger-color`, remplissage de la progression `--lh-primary-color`.
+
+## Remarques
+
+- **La règle joker d'accept repose sur le vrai MIME** : `file.type` est déduit par le navigateur à partir de l'extension, et **peut être une chaîne vide dans certains environnements** (par exemple avec une extension non standard). Avec une règle joker, `isFileRejected` **refuse** les fichiers dont le MIME est vide (on ne laisse pas passer) — c'est un compromis de sécurité délibéré : mieux vaut refuser à tort que laisser passer. Si votre métier ne reconnaît que les extensions, utilisez vous-même des règles du type `.png`.
+- **La limite de `exceedsMaxCount`** : la détection est `current >= limit`, avec limit ≤ 0 pour illimité — notez que l'argument attendu est « le nombre d'éléments déjà présents », et non « combien il en reste à téléverser ».
+- **Le uid du téléversement simultané** : un même fichier ne doit pas lancer deux téléversements en même temps, on bloque le bouton de réessai par l'état `status === 'uploading'` ; l'unicité inter-bibliothèques de l'uid est garantie par `createUploadUid()`.
+- **La conservation du raw en cas de renvoi** : `createUploadFile` a stocké `raw` ; en cas d'échec, le renvoi rappelle la fonction de requête avec `raw` ; si le métier n'a pas besoin de conserver l'objet File (sensibilité de la mémoire), on peut ne pas le stocker.
+- **La valeur de retour de `LhUploadRequest`** : seul `{ url? }` est convenu ; si le serveur renvoie une autre structure (comme `{ data: { url } }`), convertissez-la dans la fonction de requête avant de résoudre, sans demander à core de s'adapter à tous les formats de backend.
+- **Le débit des annonces de progression** : la fréquence de déclenchement de `onProgress` peut être très élevée (un gros fichier, un déclenchement par fragment) ; la mise à jour du texte pointé par `aria-describedby` doit être limitée (par exemple tous les 10 %), sous peine de saturer le lecteur d'écran.
+- **La réinitialisation de la valeur de l'input** : si l'utilisateur choisit deux fois de suite le même fichier, l'événement `change` ne se déclenche pas la deuxième fois — après la sélection, réinitialisez avec `input.value = ''`.
+
+<FnPlayground module="upload" fn="isFileRejected" params='{"file": {"name": "photo.png", "type": "image/png"}, "accept": ["image/*", ".pdf"]}' />

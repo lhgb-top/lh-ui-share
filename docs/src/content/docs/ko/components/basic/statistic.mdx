@@ -1,0 +1,131 @@
+---
+title: statistic —— 통계 수치
+description: 'formatStatisticValue가 고정 정밀도 + 천 단위 구분을 적용, 초대형 정수는 문자열 경로로 정밀도를 잃지 않고, precision은 safePrecision으로 정제'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+통계 수치 컴포넌트는 '핵심 숫자'를 보여줍니다: 일일 활성 사용자, 수익, 완료율. 핵심 위험은 레이아웃이 아니라 **정밀도**입니다: `Number(12345678901234567890).toFixed(2)`는 JS에서 잘못된 결과를 내고(안전 정수 범위 초과), `(0.1).toFixed`류의 반올림에도 부동소수점 함정이 있습니다. `core/statistic`의 `formatStatisticValue`가 이런 함정을 공유 계층에서 한 번에 메우며, 세 단말이 함께 씁니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhStatistic`을 구현할 때: 대시보드 숫자, 보고서 요약, 완료도 표시.
+- 임의의 수치를 '고정 소수 자리 + 천 단위 구분'으로 형식화해야 하는 경우, 컴포넌트를 쓰지 않더라도 `formatStatisticValue`를 직접 호출할 수 있습니다.
+- **사용하면 안 되는 곳**: 통화 기호, 단위 변환, 시간대 형식화. 이것들은 비즈니스 계층의 일입니다; 날짜 형식화는 `core/shared/date`를 씁니다.
+
+## 가져오기
+
+```ts
+import { formatStatisticValue, getStatisticClassNames } from '@lh-ui/share/core/statistic'
+import type { LhStatisticState } from '@lh-ui/share/core/statistic'
+```
+
+## 설계 의도
+
+`formatStatisticValue`의 세 가지 정밀도 방어선:
+
+1. **잘못된 입력도 오류를 던지지 않음**: NaN / Infinity는 `String(value)` 그대로 반환하고, '수가 아닌 것'을 형식화하려 하지 않습니다.
+2. **precision 정제**: `toFixed(101)`은 RangeError를 던지지만, 여기서는 먼저 `shared/sanitize`의 `safePrecision`으로 `[0, 100]` 정수로 정제합니다. 이 방어선은 `input-number`와 공유합니다([input-number](/ko/components/form/input-number) 참고).
+3. **초대형 정수는 문자열 경로**: 정수 부분이 `Number.MAX_SAFE_INTEGER`를 넘을 때, 전체 과정이 Number 변환을 거치지 않습니다. 반올림은 문자열 십진 자리올림(내부 `incrementDigits`)으로, 그룹화는 문자열 잘라내기(`formatBigString`)로 합니다. 이것이 `99999999999999999999`를 올바르게 형식화할 수 있는 유일한 방법입니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `formatStatisticValue` | `(value: number \| string, state: Pick<LhStatisticState, 'precision' \| 'separator'>) => string` | 형식화 문자열 | 정밀도 + 천 단위 구분 |
+| `getStatisticClassNames` | `(prefixCls?: string) => string[]` | 클래스명 배열 | 컨테이너 클래스, 접두어 교체 가능 |
+
+동작 세부:
+
+| 입력 | 출력 | 경로 |
+| --- | --- | --- |
+| `1234567.891`, `{ precision: 2, separator: ',' }` | `'1,234,567.89'` | toFixed + 그룹화 |
+| `1234567.8`, `{ precision: 0, separator: '' }` | `'1234568'` | 구분 없음 |
+| `'99999999999999999999'`, `{ precision: 0, separator: ',' }` | `'99,999,999,999,999,999,999'` | 문자열 경로 |
+| `NaN`, 임의 | `'NaN'` | 그대로 반환 |
+| `'abc'`, 임의 | `'abc'` | `Number('abc')`가 NaN |
+
+구분자는 **정수 그룹화**에만 쓰이며, 소수점은 `.`으로 고정입니다(각 단말이 표시할 때 현지화 소수점이 필요하면 UI 계층에서 교체).
+
+## 타입 정의
+
+```ts
+export interface LhStatisticState {
+  precision: number      // 소수 자리 수(safePrecision으로 [0, 100]에 정제)
+  separator: string      // 천 단위 구분자, 빈 문자열은 그룹화하지 않음
+}
+```
+
+## 접근성
+
+`core/statistic`는 aria 속성 묶음을 출력하지 않습니다. 통계 수치의 접근성 요점은 UI 계층에 있습니다:
+
+- 숫자 자체는 일반 텍스트로도 스크린 리더가 읽을 수 있지만, **천 단위 구분 쉼표는 '쉼표'로 음성화**됩니다('1,234,567'이 '일 쉼표 이삼사...'로 읽히는 등). 숫자 블록 전체에 `aria-label`을 주어 언어적인 서술('일백이십삼만 사천오백육십칠' 또는 '1 2 3 4 5 6 7'처럼 자리수별)로 표현해야 합니다.
+- 수치 변화 애니메이션(목표값으로 스크롤)은 순수 시각적이고 정보를 담지 않습니다; 애니메이션 도중 수치를 읽을 수 없다면, 값이 확정될 때까지 이전 값의 aria-label을 유지해야 합니다.
+
+## 사용 예
+
+```ts
+import { formatStatisticValue } from '@lh-ui/share/core/statistic'
+
+formatStatisticValue(9876543.21, { precision: 1, separator: ' ' })
+// '9 876 543.2'
+
+formatStatisticValue(0.1 + 0.2, { precision: 2, separator: '' })
+// '0.30'  (0.30000000000000004의 일부가 아님)
+
+formatStatisticValue('12345678901234567890', { precision: 0, separator: ',' })
+// '12,345,678,901,234,567,890'
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getStatisticClassNames()">
+  <span v-if="prefix" class="lh-statistic__prefix">{{ prefix }}</span>
+  <span class="lh-statistic__content">
+    <span class="lh-statistic__title">{{ title }}</span>
+    <span class="lh-statistic__value" :aria-label="ariaLabel">
+      {{ formatStatisticValue(value, { precision, separator }) }}
+    </span>
+  </span>
+  <span v-if="suffix" class="lh-statistic__suffix">{{ suffix }}</span>
+</div>
+```
+
+```tsx
+// React
+const text = formatStatisticValue(value, { precision, separator })
+return (
+  <div className="lh-statistic">
+    <span className="lh-statistic__content">
+      <span className="lh-statistic__title">{title}</span>
+      <span className="lh-statistic__value" aria-label={spoken}>{text}</span>
+    </span>
+  </div>
+)
+```
+
+```ts
+// uniapp: 순수 문자열 출력, 단말 간 차이 없음; 애니메이션은 각 단말의 자체 스크롤 방식을 사용
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-statistic` | 기본 클래스: 레이아웃 |
+| `.lh-statistic__title` | 제목(보조 글자색, 작은 글자 크기) |
+| `.lh-statistic__content` | 콘텐츠 영역(제목 + 수치가 세로로 나열) |
+| `.lh-statistic__value` | 수치(주 글자색, 큰 글자 크기, 가변폭 숫자 `font-variant-numeric: tabular-nums`) |
+| `.lh-statistic__prefix` / `.lh-statistic__suffix` | 앞뒤 붙임(예: ¥, %) |
+
+수치 글꼴은 `--lh-font-family-numeric` 토큰(있는 경우)을 따라 숫자 너비가 정렬되도록 합니다.
+
+## 주의사항
+
+- **precision 상한 100**: 초과하면 `safePrecision`이 자르되 오류를 던지지 않습니다; 음수 precision은 0이 됩니다.
+- **문자열 입력의 의미**: `formatStatisticValue('123', ...)`는 먼저 `Number('123')`을 시도하고 성공하면 숫자 경로를 따릅니다; `'abc'`만 그대로 반환합니다. 초대형 정수 문자열은 **반드시 문자열로 넘겨야** 합니다. 숫자 리터럴 `99999999999999999999`는 JS 소스 수준에서 이미 정밀도를 잃으며, core가 되돌릴 수 없습니다.
+- UI 계층에서 천 단위 구분의 `toLocaleString`을 **직접 쓰지 마세요**: 실행 시점의 locale에 영향을 받아 세 단말이 일치하지 않을 수 있습니다; `formatStatisticValue`로 통일하세요.
+- `getStatisticClassNames`의 `prefixCls` 매개변수는 접두어 교체를 허용하고(기본 `lh-statistic`), 일부 단말이 기존 클래스명과 공존해야 하는 경우에 씁니다.
+
+<FnPlayground module="statistic" fn="formatStatisticValue" params='{"value": 1234567.891, "state": {"precision": 2, "separator": ","}}' />

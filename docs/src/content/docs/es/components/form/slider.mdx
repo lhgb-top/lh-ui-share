@@ -1,0 +1,167 @@
+---
+title: slider —— Deslizador
+description: 'ajuste a pasos con snapToStep, conversión de porcentaje con getValueFromPosition, valor inicial de intervalo con getInitialValue, bolsa de atributos semánticos slider'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El deslizador convierte la selección numérica en una **operación espacial**: arrastrar es más intuitivo que teclear y permite ver de un vistazo dónde se sitúa el valor dentro del rango. `core/slider` gestiona la conversión bidireccional «valor ↔ posición», el ajuste a pasos (snap), el valor inicial de los dos puntos del modo intervalo (range) y la semántica slider de APG.
+
+## Cuándo usarlo
+
+- Todos los extremos implementan `LhSlider`: volumen, rango de precios, ajuste de opacidad.
+- Escenarios con valores continuos o una granularidad de paso gruesa.
+- **No usarlo**: entrada de valores numéricos precisos (usa `input-number`; un deslizador no puede expresar un valor no múltiplo del paso como «37»).
+
+## Importación
+
+```ts
+import {
+  snapToStep,
+  clampAndSnap,
+  getValueFromPosition,
+  getPositionFromValue,
+  getSliderClassNames,
+  getInitialValue,
+  buildMarksList,
+  getSliderThumbAria,
+} from '@lh-ui/share/core/slider'
+import type { LhSliderState, LhSliderMark } from '@lh-ui/share/core/slider'
+```
+
+## Intención de diseño
+
+`snapToStep` **devuelve el valor original** cuando `step` no es finito o es `<= 0`, en lugar de devolver NaN — `step: 0` produciría NaN en la operación de módulo; aquí se trata el «paso no válido» como «sin ajuste», y el clamp puro de límites se deja a `clampAndSnap`. Separación de responsabilidades: el ajuste y el clamp son dos cosas independientes.
+
+Que `getPositionFromValue` devuelva 0 cuando `max === min` evita la división por cero: si el rango degenera en un punto, el deslizador naturalmente debe estar en el extremo inicial.
+
+`getInitialValue` devuelve `[clamp a min, clamp a (min+max)/2]` en el modo intervalo — el segundo deslizador se sitúa por defecto en el **punto medio** y no en max, por razones visuales (dos deslizadores pegados parecen un bug).
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `snapToStep` | `(value: number, min: number, step: number) => number` | valor ajustado | alinea al punto de la rejilla más cercano según step |
+| `clampAndSnap` | `(value: number, min: number, max: number, step: number) => number` | valor normalizado | primero el ajuste, luego el clamp |
+| `getValueFromPosition` | `(pct: number, min: number, max: number, step: number) => number` | valor numérico | porcentaje → valor |
+| `getPositionFromValue` | `(value: number, min: number, max: number) => number` | porcentaje [0,1] | valor → posición |
+| `getSliderClassNames` | `(state: LhSliderState) => string[]` | clases | disabled/range/size |
+| `getInitialValue` | `(state: LhSliderState) => number \| [number, number]` | valor inicial | el modo intervalo devuelve dos puntos |
+| `buildMarksList` | `(marks?: Record<number, string>) => LhSliderMark[]` | matriz de marcas | orden ascendente por value |
+| `getSliderThumbAria` | `(options: { value, min, max, vertical?, disabled?, ariaValueText? }) => LhAriaAttrs` | bolsa de atributos aria | semántica slider |
+
+## Definiciones de tipos
+
+```ts
+export interface LhSliderMark {
+  label: string
+  value: number
+}
+
+export interface LhSliderState {
+  value: number | [number, number] | null
+  min: number
+  max: number
+  step: number
+  disabled: boolean
+  range: boolean              // modo intervalo (dos deslizadores)
+  showInput: boolean          // acoplar con input-number
+  size: LhComponentSize
+  marks: Record<number, string> | undefined
+}
+```
+
+## Accesibilidad
+
+`getSliderThumbAria` devuelve la semántica slider de APG. **En el modo intervalo debe llamarse una vez para cada deslizador**:
+
+```ts
+getSliderThumbAria({ value: 30, min: 0, max: 100 })
+// { role: 'slider', 'aria-valuenow': 30, 'aria-valuemin': 0, 'aria-valuemax': 100 }
+
+getSliderThumbAria({ value: 60, min: 0, max: 100, vertical: true, disabled: true })
+// { role: 'slider', 'aria-valuenow': 60, 'aria-valuemin': 0, 'aria-valuemax': 100,
+//   'aria-orientation': 'vertical', 'aria-disabled': true }
+```
+
+- `vertical` produce `aria-orientation: 'vertical'` (la horizontal es la dirección por defecto y no se declara).
+- `ariaValueText` produce `aria-valuetext` — se usa cuando el valor necesita una expresión semántica (como «30 %» o «lento») y **se anuncia con prioridad sobre valuenow**.
+- Interacción de teclado (capa UI): ←/→ o ↓/↑ aumentan/disminuyen según step; Home/End saltan a min/max; PageUp/Down dan pasos grandes.
+
+## Ejemplos de uso
+
+```ts
+import { getValueFromPosition, getPositionFromValue, snapToStep } from '@lh-ui/share/core/slider'
+
+getValueFromPosition(0.5, 0, 100, 1)   // 50
+getValueFromPosition(0.333, 0, 100, 5) // 35 (ajustado a múltiplo de 5)
+getPositionFromValue(30, 0, 100)       // 0.3
+getPositionFromValue(150, 0, 100)      // 1 (con clamp)
+getPositionFromValue(50, 50, 50)       // 0 (max===min, evita la división por cero)
+snapToStep(7, 0, 5)                    // 5
+snapToStep(8, 0, 5)                    // 10
+snapToStep(7, 0, 0)                    // 7 (step no válido, sin ajuste)
+buildMarksList({ 0: 'Bajo', 100: 'Alto' })  // [{ label: 'Bajo', value: 0 }, { label: 'Alto', value: 100 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSliderClassNames({ value, min, max, step, disabled, range, showInput, size, marks })">
+  <div class="lh-slider__track">
+    <div class="lh-slider__bar" :style="{ width: pct + '%' }" />
+    <div
+      class="lh-slider__button-wrapper"
+      :style="{ left: pct + '%' }"
+      v-bind="getSliderThumbAria({ value, min, max, disabled })"
+      @pointerdown="startDrag"
+    >
+      <div class="lh-slider__button" />
+    </div>
+    <template v-if="marks">
+      <div v-for="mark in buildMarksList(marks)" :key="mark.value" class="lh-slider__marks">
+        <span class="lh-slider__mark" :style="{ left: getPositionFromValue(mark.value, min, max) * 100 + '%' }">
+          {{ mark.label }}
+        </span>
+      </div>
+    </template>
+  </div>
+</div>
+```
+
+```tsx
+// React: el arrastre usa pointer events + getBoundingClientRect para calcular el porcentaje
+// const pct = (clientX - rect.left) / rect.width
+// onChange(getValueFromPosition(pct, min, max, step))
+```
+
+```ts
+// uniapp: <slider> es un componente integrado (deslizador único), soporta min/max/step/show-value;
+// el modo intervalo y las marks necesitan una implementación propia con view,
+// el arrastre usa @touchmove
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-slider` | clase base |
+| `.lh-slider--{small\|large}` | tamaño (tamaño del deslizador) |
+| `.lh-slider--disabled` | deshabilitado |
+| `.lh-slider--range` | modo intervalo (dos deslizadores + tramo central resaltado) |
+| `.lh-slider__track` | pista |
+| `.lh-slider__bar` | intervalo seleccionado (tramo resaltado) |
+| `.lh-slider__button-wrapper` / `__button` | deslizador (pulgar) |
+| `.lh-slider__marks` / `__mark` | marcas |
+| `.lh-slider__input` / `__input-text` | campo de entrada acoplado |
+
+Color de la pista `--lh-fill-color`, tramo seleccionado `--lh-primary-color`.
+
+## Advertencias
+
+- **`getPositionFromValue` devuelve un decimal en [0,1]**; la capa UI añade el `%`; no creas que devuelve el porcentaje.
+- **Alineación del ajuste y las marcas**: el value de `marks` debería ser múltiplo de step; de lo contrario la marca caerá entre dos valores ajustados y el usuario no podrá arrastrarla hasta allí.
+- **Cruce del modo intervalo**: los dos deslizadores pueden cruzarse entre sí (la capa UI normalmente lo prohíbe o los intercambia automáticamente); el `clampAndSnap` del core no gestiona esta semántica.
+- **Modo vertical**: con `vertical`, la altura de la pista sustituye a la anchura y el denominador de la conversión debe cambiar; el `getValueFromPosition` del core es independiente del eje (toma el porcentaje); la capa UI calcula el pct.
+- **Acoplamiento de `showInput`**: el min/max/step de `input-number` debería coincidir con el del slider; de lo contrario los rangos de valores de ambos serán inconsistentes.
+
+<FnPlayground module="slider" fn="getValueFromPosition" params='{"pct": 0.35, "min": 0, "max": 100, "step": 5}' />

@@ -1,0 +1,154 @@
+---
+title: focus-trap —— 포커스 관리
+description: '포커스 가능 요소 열거, Tab 포커스 트랩, inert 소유권 레지스트리와 열 때 기록 / 닫을 때 반환, Dialog / Drawer / Popover가 공유'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+모달, 서랍, 이미지 미리보기 같은 **오버레이 컴포넌트**에는 세 가지 포커스 의무가 있습니다: 열 때 사용자가 원래 어디에 있었는지 기억하기, 열려 있는 동안 Tab을 플로팅 층 안에 가두기, 닫을 때 포커스를 되돌려 주기. 이 세 가지를 dialog / drawer / popover / popconfirm / image-viewer에서 각각 작성하면 반드시 어긋남이 생기고, `shared/focus-trap`이 그 유일한 구현입니다.
+
+## 가져오기
+
+```ts
+import {
+  getFocusableElements,
+  focusFirst,
+  focusLast,
+  saveActiveElement,
+  restoreActiveElement,
+  trapTabKey,
+  supportsInert,
+  setInertOutside,
+} from '@lh-ui/share/core/shared/focus-trap'
+```
+
+## 함수 표
+
+| 함수 | 시그니처 | 역할 |
+| --- | --- | --- |
+| `getFocusableElements` | `(container: HTMLElement \| null \| undefined) => HTMLElement[]` | 컨테이너 안에서 Tab으로 진입 가능한 요소 열거 |
+| `focusFirst` | `(container) => boolean` | 첫 번째 포커스 가능 요소에 포커스, 없으면 `false` |
+| `focusLast` | `(container) => boolean` | 마지막 포커스 가능 요소에 포커스, 없으면 `false` |
+| `saveActiveElement` | `() => HTMLElement \| null` | 되돌려 주기 위해 현재 활성 요소 기록(SSR 가드) |
+| `restoreActiveElement` | `(el: HTMLElement \| null \| undefined) => void` | 포커스 반환 |
+| `trapTabKey` | `(container: HTMLElement, event: KeyboardEvent) => boolean` | Tab / Shift+Tab 처리, 포커스를 컨테이너 안에 가둠 |
+| `supportsInert` | `() => boolean` | 현재 환경이 `inert` 속성을 지원하는지 |
+| `setInertOutside` | `(container, active: boolean, locked?: HTMLElement[]) => HTMLElement[]` | 컨테이너 바깥의 DOM에 inert를 추가 / 제거 |
+
+## 각 함수의 동작 디테일
+
+### getFocusableElements
+
+먼저 선택자로 후보를 매칭합니다: `a[href]`, `button:not([disabled])`, `input:not([disabled]):not([type="hidden"])`, `select` / `textarea:not([disabled])`, `video[controls]`, `audio[controls]`, `[contenteditable]:not([contenteditable="false"])`, `[tabindex]:not([tabindex="-1"])`. 그 다음 `isHiddenForFocus`로 **조상 체인을 따라** `disabled` / 음수 tabindex / `hidden` / `aria-hidden="true"` / `display:none` / `visibility:hidden`에 의해 가려진 요소를 제외합니다.
+
+조상 체인을 따르는 것이 중요합니다: teleport로 나간 팝업 층은 부모의 `aria-hidden`에 영향을 받는 경우가 많아, 요소 자신만 검사하면 누락이 생깁니다. `container`가 비면 `[]`를 반환합니다.
+
+### focusFirst / focusLast
+
+`{ preventScroll: true }`로 포커스를 줍니다. **이유**: 플로팅 층이 body로 teleport된 첫 tick 안에는 요소의 위치가 임시적일 수 있으며, 기본 `focus()`가 페이지를 요소의 임시 위치로 스크롤합니다. 스크롤을 방지하면 이 시각적 도약을 피할 수 있습니다. 포커스 가능 요소가 없으면 `false`를 반환하며, UI 계층은 이에 따라 포커스를 컨테이너 자신에 둘지(`tabindex="-1"`) 결정합니다.
+
+### saveActiveElement / restoreActiveElement
+
+플로팅 층을 열 때 `const last = saveActiveElement()`, 닫을 때 `restoreActiveElement(last)`를 호출합니다. 반환 시 건너뛰는 조건:
+
+- `el`이 비어 있거나 `document`가 없음: 곧바로 반환.
+- `!el.isConnected`: 트리거 버튼이 `v-if`로 언마운트된 경우(닫으면서 파괴되는 등), 포커스하지 않음.
+- **타깃이 조상 `inert`로 잠겨 있음**: 현재 포커스 요소를 `blur()`로 전환합니다. 이것은 사양이 보장하는 폴백 경로입니다——blur 뒤에 포커스는 body로 돌아가, 잠긴 요소에 포커스가 걸리지 않습니다.
+
+### trapTabKey
+
+```
+event.key !== 'Tab' 또는 event.defaultPrevented  →  false 반환(처리하지 않음)
+컨테이너에 사용 가능한 포커스 없음  →  preventDefault(), true 반환(가두어 포커스가 밖으로 나가지 않게 함)
+포커스가 경계에 있음  →  preventDefault(), 다른 쪽 끝으로 점프, true 반환
+```
+
+경계 판정은 **목록 인덱스**를 사용하고 참조 비교가 아닙니다. 이유: 포커스가 컨테이너 안에 있지만 Tab 시퀀스에 없는 요소에 놓일 수 있습니다(예: `tabindex="-1"`인 컨테이너 자신이 포커스를 받은 경우). 이때 `document.activeElement`가 `getFocusableElements()`의 결과에서 발견되지 않고(`idx === -1`), 알고리즘은 이를 "머리보다 앞"으로 취급해 Shift+Tab은 마지막 항목으로, 보통 Tab은 첫 항목으로 점프합니다——직관에 부합합니다.
+
+### setInertOutside와 소유권 레지스트리
+
+`inert`는 W3C 표준 속성(2024년부터 모든 브라우저가 지원)이며, 요소에 `inert`를 부여하면 그 요소와 하위 트리 전체가 보조 기술에서 숨겨지고, 포커스 불가, 클릭 불가가 됩니다. 이것은 "Tab 포커스 트랩"보다 더 철저한 배경 잠금입니다——스크린 리더 사용자가 가려진 페이지 콘텐츠에 잘못 진입하지 않습니다.
+
+`setInertOutside`의 잠금 경로: `container`에서 조상 체인을 따라 `body`까지 올라가며, 각 층에서 **container를 포함하지 않는 형제 서브트리**에 inert를 표시합니다. 이렇게 하면 플로팅 층과 그 조상 체인만 도달 가능하고 나머지는 전부 잠깁니다.
+
+어려운 점은 **다중 플로팅 층 중첩**입니다: dialog 안에 다시 popover를 열었을 때, popover가 닫힌다고 dialog까지 잠금이 풀려서는 안 됩니다. 해결책은 소유권 레지스트리(`WeakMap`)입니다:
+
+- 잠글 때, 잠긴 각 노드에 "누가 잠갔는지"를 등록합니다; 중복 호출은 소유권만 등록하고 **중복 setAttribute하지 않습니다**(멱등).
+- 풀 때, 어떤 노드가 **어떤 컨테이너의 소유권도 보유하지 않게** 되었을 때만 inert를 제거합니다.
+- `locked` 매개변수는 추가 면제 목록(예: 여전히 열려 있는 다른 오버레이 컨테이너)이며, 이 노드들은 container의 조상 체인에 있지 않아도 잠기지 않습니다.
+
+반환값: 잠글 때는 잠긴 노드의 배열(디버깅 / 테스트 단언용), 풀 때는 `[]`입니다.
+
+경계: inert 미지원 시 `[]` 반환(trapTabKey 포커스 트랩 방안으로 폴백); `document.body`가 없으면 `locked` 반환; 컨테이너가 이미 문서에서 떨어져 있으면 잔여 소유권을 먼저 해제하고 중복 제거된 `locked`를 반환합니다.
+
+### supportsInert
+
+점진적 향상용: 오래된 브라우저(Safari 15.4 이전)에는 `inert`가 없으며, `setInertOutside`는 빈 배열을 곧바로 반환합니다. 이때 컴포넌트는 **여전히 `trapTabKey`를 활성화**해 폴백해야 합니다. 두 방안은 공존할 수 있으며, inert가 더 철저한 층입니다.
+
+## 사용 예시
+
+### 완전한 모달 포커스 생명주기
+
+```ts
+// Vue3 dialog 컴포넌트
+let lastFocused: HTMLElement | null = null
+let lockedNodes: HTMLElement[] = []
+
+function open() {
+  lastFocused = saveActiveElement()
+  dialogVisible.value = true
+  nextTick(() => {
+    if (!panelRef.value) return
+    focusFirst(panelRef.value)
+    lockedNodes = setInertOutside(panelRef.value, true)
+  })
+}
+
+function close() {
+  setInertOutside(panelRef.value, false, lockedNodes)
+  dialogVisible.value = false
+  restoreActiveElement(lastFocused)
+}
+
+function onKeydown(e: KeyboardEvent) {
+  trapTabKey(panelRef.value, e)   // false를 반환하면 Tab이 아님, 다른 로직에 맡김
+}
+```
+
+### React 연결
+
+```tsx
+useEffect(() => {
+  if (!open) return
+  const last = saveActiveElement()
+  focusFirst(panelRef.current)
+  const locked = setInertOutside(panelRef.current, true)
+
+  const onKeydown = (e: KeyboardEvent) => trapTabKey(panelRef.current, e)
+  document.addEventListener('keydown', onKeydown)
+
+  return () => {
+    document.removeEventListener('keydown', onKeydown)
+    setInertOutside(panelRef.current, false, locked)
+    restoreActiveElement(last)
+  }
+}, [open])
+```
+
+### 중첩 플로팅 층
+
+```ts
+// dialog가 열린 상태에서 그 안에 다시 popover 열기
+const popoverLocked = setInertOutside(popoverRef.value, true, lockedNodes)
+// popover 닫기: dialog는 여전히 lockedNodes 면제 목록에 있어 잠금이 풀리지 않음
+setInertOutside(popoverRef.value, false, popoverLocked)
+```
+
+## 주의 사항
+
+- **SSR 안전**: `saveActiveElement`는 `document`가 없을 때 `null`을 반환합니다; `getFocusableElements`는 `null`을 받으면 `[]`를 반환합니다. 다만 `trapTabKey` / `setInertOutside`는 DOM이 필요하므로 클라이언트에서만 호출하세요.
+- **포커스 반환을 잊지 마세요**: 이것은 접근성의 필수 요건입니다. 잠기기만 하고 반환하지 않으면, 키보드 사용자가 팝업 층을 닫을 때마다 포커스를 body에 잃어버려 경험이 매우 나빠집니다.
+- **`v-if`로 언마운트된 트리거**: `restoreActiveElement`는 이미 `disconnected`된 요소를 건너뜁니다(`isConnected === false`). 이때 포커스는 자연스럽게 body로 돌아가므로, 문서에 없는 노드를 억지로 `focus()`하지 마세요.
+- **소유권 레지스트리는 모듈 레벨 상태**: `WeakMap`은 자동 GC되지만, 같은 프로세스의 다중 인스턴스가 동일한 테이블을 공유합니다——이것은 의도적인 것입니다. 그렇지 않으면 두 플로팅 층이 서로의 존재를 몰라 잘못 풀어버리게 됩니다.
+
+<FnPlayground module="focus-trap" fn="supportsInert" params='{}' />

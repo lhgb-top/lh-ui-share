@@ -1,0 +1,120 @@
+---
+title: tag —— 標籤
+description: 'getTagClassNames 計算類型/尺寸/圓角/可關閉/停用/描邊修飾類'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+標籤用於標記、分類與選取。`core/tag` 只做一件事：把標籤的狀態算成類別名陣列。它比按鈕更簡單——沒有互動判定、沒有尺寸回退，所有視覺變體都直接落在類別名上。
+
+## 何時使用
+
+- 各端實作 `LhTag`：類別名全由 `getTagClassNames` 產出。
+- 需要複用標籤視覺但不引入元件的場景（如表格單元格內的狀態標記），可以直接引 core 函式 + `styles/tag` 的類別名。
+- **不該用它**：需要 `sx` 微調或自訂顏色的場景。標籤的顏色是語義令牌，想自訂請用 ConfigProvider 的 componentTheme 而不是改 core。
+
+## 匯入方式
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+import type { LhTagState, LhTagType } from '@lh-ui/share/core/tag'
+```
+
+## 設計意圖
+
+標籤的狀態全是「視覺開關」，沒有任何計算邏輯。`getTagClassNames` 的原則是**為真才追加**：`type` 與 `size` 為假值時連修飾類都不產，`closable` / `disabled` / `round` / `hit` 各自獨立判斷。這保證類別名陣列永遠是「最小充分集」，不會出現 `lh-tag--undefined` 這種髒類。
+
+`hit`（描邊）是標籤相對按鈕獨有的語義：標籤常需要「輕量存在感」，描邊比填滿更合適。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getTagClassNames` | `(state: LhTagState) => string[]` | 類別名陣列 | 計算標籤全部類別名 |
+
+輸出範例：
+
+```ts
+getTagClassNames({ type: 'success', size: 'small', closable: true, disabled: false, round: false, hit: true })
+// ['lh-tag', 'lh-tag--success', 'lh-tag--small', 'lh-tag--closable', 'lh-tag--hit']
+```
+
+## 類型定義
+
+```ts
+export type LhTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhTagState {
+  type: LhTagType
+  size: LhComponentSize        // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  closable: boolean            // 可關閉（渲染 × 按鈕）
+  disabled: boolean            // 停用（關閉按鈕也不回應）
+  round: boolean               // 圓角
+  hit: boolean                 // 描邊而非填滿
+}
+```
+
+## 無障礙
+
+`core/tag` 不輸出 aria 屬性包：標籤是純展示元素，預設對讀屏軟體呈現其文字內容即可。**關閉按鈕**應當用原生 `<button>`（或各端等價元素）承載，並給 `aria-label`（如「移除」），這是 UI 層的職責。
+
+一個易被忽略的點：用標籤做篩選條件（如 `LhSelect` 的多選 tag）時，它就有了互動語義，此時應為整個可點選區域加 `role="button"`——這在各端 UI 層處理，core 不參與。
+
+## 使用範例
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+
+getTagClassNames({ type: 'primary', size: 'medium', closable: false, disabled: false, round: false, hit: false })
+// ['lh-tag', 'lh-tag--primary', 'lh-tag--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getTagClassNames({ type, size, closable, disabled, round, hit })">
+  <slot />
+  <button v-if="closable" class="lh-tag__close" aria-label="关闭" @click="!disabled && emit('close')">
+    <LhIcon name="close" :size="12" />
+  </button>
+</span>
+```
+
+```tsx
+// React
+const cls = getTagClassNames({ type, size, closable, disabled, round, hit })
+return (
+  <span className={cls.join(' ')}>
+    {children}
+    {closable && <CloseButton disabled={disabled} />}
+  </span>
+)
+```
+
+```ts
+// uniapp：類別名一致；close 按鈕用 view + @tap，aria-label 各端支援情況不一，
+// 可降級為不渲染讀屏語義（非 h5 端讀屏能力本就有限）
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-tag` | 基礎類：inline-flex、內邊距、字級、圓角 |
+| `.lh-tag--{primary\|success\|warning\|danger\|info\|default}` | 語義類型（底色 + 字色） |
+| `.lh-tag--{mini\|small\|medium\|large\|x-large}` | 尺寸檔 |
+| `.lh-tag--round` | 大圓角（膠囊形） |
+| `.lh-tag--hit` | 描邊風格 |
+| `.lh-tag--closable` | 預留關閉按鈕右側間距 |
+| `.lh-tag--disabled` | 停用狀態：降透明度 + 禁止游標 |
+| `.lh-tag__text` | 文字節點（溢出省略） |
+| `.lh-tag__close` | 關閉按鈕 |
+
+顏色全部 `var(--lh-*)`，暗色由 `var-dark.scss` 翻轉。
+
+## 注意事項
+
+- `type` 與 `size` 為假值時**不產出修飾類**（不是兜底到 default），若 UI 層依賴 `lh-tag--default` 存在，需顯式傳 `type: 'default'`。
+- 關閉按鈕的停用判定在 UI 層（`disabled` 阻止 click），core 的 `--disabled` 只管視覺。
+- `round` 與 `hit` 可共存，得到「描邊膠囊」。
+
+<FnPlayground module="tag" fn="getTagClassNames" params='{"state": {"type": "warning", "size": "small", "closable": true, "disabled": false, "round": true, "hit": false}}' />

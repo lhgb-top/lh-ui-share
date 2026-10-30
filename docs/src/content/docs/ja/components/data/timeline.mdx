@@ -1,0 +1,161 @@
+---
+title: timeline —— タイムライン
+description: 'getTimelineSide の左右交互、4 種類のセマンティックノードタイプ、alternate の 2 段組レイアウト'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+タイムラインは「時刻で並んだイベント」を可視化します：1 本の縦線がいくつかのノードを串刺しにし、各ノードは時刻、タイトル、コンテンツを持ちます。物流の軌跡、操作ログ、バージョンの更新記録によく使われます。`core/timeline` は軽量です——主な仕事はレイアウト側の左右交互の計算とクラス名の組み立てです。
+
+## いつ使うか
+
+- 各端末で `LhTimeline` を実装するケース：物流の軌跡、承認記録、バージョン更新ログ、操作の監査フロー。
+- イベントが**時刻順**で、タイムライン感を際立たせたいシーン。
+- **使うべきでないケース**：時間の次元がないステップ（`steps` を使う。こちらは時間ではなく進捗を強調する）；イベントのフィルタ / 検索が必要（リスト + フィルタを使う）。
+
+## インポート方法
+
+```ts
+import {
+  getTimelineItemClassNames,
+  getTimelineClassNames,
+  getTimelineSide,
+} from '@lh-ui/share/core/timeline'
+import type { LhTimelineMode, LhTimelineType, LhTimelineItemState } from '@lh-ui/share/core/timeline'
+```
+
+## 設計意図
+
+**2 つのレイアウトモード**：
+
+- `left`（デフォルト）：縦線は最左にあり、すべてのコンテンツは右側の 1 段に並びます。シンプルで情報密度が高い。
+- `alternate`：縦線が中央に来て、コンテンツは**左右に交互**に並びます——`getTimelineSide(index)` が `index % 2` で側を決めます（偶数は左、奇数は右）。このモードは視覚的に対称で、コンテンツブロックが大きく、タイムラインがページの主体である場合に向いています。
+
+**`getTimelineSide` が core にあってスタイルにない理由**：側は CSS のクラス名だけでなく、**コンテンツを構成する子コンポーネントの並び順**も決定します（タイムスタンプが左段のときはコンテンツの前、右段のときはコンテンツの後に来る）。純関数で算出することで各端末のレンダリングロジックが一致し、「Vue では左右交互、React ではすべて左」といった乖離が起きません。
+
+**4 種類のセマンティックタイプ**：`primary` / `success` / `warning` / `danger` で、ノードのドットの色に対応します。セマンティクスはイベント性質に応じて呼び出し側が与えます（成功した操作は success、警告は warning）。core はクラス名へのマッピングだけで、ビジネス上の意味の解釈はしません。
+
+**`isLast` の用途**：最後のノードは**縦線を描きません**（`--last` クラスが `::before` の線分を除去します）。そうしないと軸線が最後のノードをもう一截り越しすぎます。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getTimelineItemClassNames` | `(state: LhTimelineItemState) => string[]` | クラス名 | タイプ / 中空 / 側 / 末項 |
+| `getTimelineClassNames` | `(mode: LhTimelineMode) => string[]` | クラス名 | alternate 修飾 |
+| `getTimelineSide` | `(index: number) => 'left' \| 'right'` | 側 | 偶数は左、奇数は右 |
+
+## 型定義
+
+```ts
+export type LhTimelineMode = 'left' | 'alternate'
+export type LhTimelineType = 'primary' | 'success' | 'warning' | 'danger'
+
+export interface LhTimelineItemState {
+  type: LhTimelineType | undefined
+  hollow: boolean       // 中空のノード（枠線のみ、「未到達」のイベントに使う）
+  side: 'left' | 'right'  // alternate モードでの側
+  isLast: boolean
+}
+```
+
+## アクセシビリティ
+
+timeline は**純粋な表示コンポーネント**で、APG のインタラクティブなロールはありません。コンテンツ自体が順序付きリストのセマンティクスを持つため、`<ol>` で包むことを推奨します：
+
+```html
+<ol class="lh-timeline">
+  <li class="lh-timeline__item">
+    <time datetime="2026-10-12T10:00">10:00</time> 注文は配達完了しました
+  </li>
+</ol>
+```
+
+- `<time>` 要素によりスクリーンリーダーと検索エンジンが時刻を認識できます；`datetime` 属性は ISO 8601 形式にします。
+- ノードのドットは純粋な装飾です。`aria-hidden="true"` を付けるか擬似要素で実装します（擬素要素はもともとアクセシビリティツリーに含まれません）。
+- timeline が**進捗**を表現している場合（「現在は第 3 ステップまで進行」など）は、`steps` に切り替えて `aria-current` を付けることを検討してください。
+
+## 使用例
+
+```ts
+import { getTimelineSide, getTimelineClassNames } from '@lh-ui/share/core/timeline'
+
+getTimelineSide(0)  // 'left'
+getTimelineSide(1)  // 'right'
+getTimelineSide(2)  // 'left'
+getTimelineClassNames('alternate')  // ['lh-timeline', 'lh-timeline--alternate']
+getTimelineClassNames('left')       // ['lh-timeline']
+```
+
+```vue
+<!-- Vue3：alternate モード -->
+<ol :class="getTimelineClassNames(mode)">
+  <li
+    v-for="(item, index) in items"
+    :key="item.id"
+    :class="getTimelineItemClassNames({
+      type: item.type,
+      hollow: item.hollow,
+      side: getTimelineSide(index),
+      isLast: index === items.length - 1,
+    })"
+  >
+    <template v-if="mode === 'alternate'">
+      <!-- 左段 -->
+      <div v-if="getTimelineSide(index) === 'left'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+        <p class="lh-timeline__desc">{{ item.desc }}</p>
+      </div>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <!-- 右段 -->
+      <div v-if="getTimelineSide(index) === 'right'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+    <template v-else>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <div class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+  </li>
+</ol>
+```
+
+```tsx
+// React：alternate モードでは側がレンダリング順を決める。getTimelineSide(index) で分岐
+```
+
+```ts
+// uniapp：<view> で列挙；alternate の 2 段組は絶対配置 + 左右 50% のレイアウト
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-timeline` | 基本クラス（`<ol>` のリセット） |
+| `.lh-timeline--alternate` | 交互モード（軸線を中央に） |
+| `.lh-timeline__item` | 単一のノード項目 |
+| `.lh-timeline__item--{primary\|success\|warning\|danger}` | セマンティックタイプ（ドットの色） |
+| `.lh-timeline__item--hollow` | 中空のドット（未到達） |
+| `.lh-timeline__item--right` | alternate の右段 |
+| `.lh-timeline__item--last` | 末項（次の軸線を描かない） |
+| `.lh-timeline__dot` | ドット（`::before` が軸線を描画） |
+| `.lh-timeline__content` / `__time` / `__title` / `__desc` | コンテンツ領域 |
+
+軸線の色 `--lh-border-color`；ドットの 4 色はそれぞれ `--lh-primary-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`；中空のノードは枠線 + 透明な背景。
+
+## 注意事項
+
+- **`isLast` は必ず渡す**：渡さないと軸線が最後のノードを越えて伸び、視覚的に途中で切れたプログレスバーのように見えます。
+- **`alternate` モードのデータの順序**：左右の交互は**index に基づく**もので、データの時刻順と一致します——UI 層でソートしたあとに side を計算しないでください。side がずれます。
+- **中空ノード `hollow` のセマンティクス**：「このイベントにはまだ到達していない」ことを表します（物流の「受け取り待ち」など）。`type` とは直交します：中空 + warning は「未到達かつリスクあり」を表します。
+- **コンテンツの溢れ**：alternate モードでは各段が半分の幅しかなく、長いテキストは何度も折り返されます；コンテンツが多い場合は `left` モードにするか、コンテンツ領域に `max-height` + 展開を設定してください。
+- **時刻のフォーマット**：core は時刻をフォーマットしません。UI 層は `core/shared/date.formatDate` を使うか自分で処理します；`<time datetime>` は機械的に解析されるために ISO 形式でなければなりません。
+- **逆順タイムライン**：最新のイベントを先頭にしたいシーンがあります——データ層で reverse するだけで、core は方向を感知しません。
+
+<FnPlayground module="timeline" fn="getTimelineSide" params='{"index": 3}' />

@@ -1,0 +1,122 @@
+---
+title: tag —— Étiquette
+description: 'getTagClassNames calcule les classes modificatrices de type / taille / arrondi / fermable / désactivé / contour'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+L'étiquette sert à marquer, classer et sélectionner. `core/tag` ne fait qu'une seule chose : calculer l'état de l'étiquette en un tableau de classes. Plus simple que le bouton — pas de décision d'interaction, pas de repli de taille —, toutes les variantes visuelles tombent directement dans les noms de classe.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhTag` : les noms de classe sont entièrement produits par `getTagClassNames`.
+- Pour réutiliser le rendu visuel de l'étiquette sans introduire le composant (marqueur d'état dans une cellule de tableau, par exemple), on peut importer directement les fonctions de core + les noms de classe de `styles/tag`.
+- **À ne pas utiliser pour** : les ajustements à la `sx` ou les couleurs personnalisées. Les couleurs de l'étiquette sont des jetons sémantiques ; pour personnaliser, utilisez le componentTheme du ConfigProvider plutôt que de modifier core.
+
+## Importation
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+import type { LhTagState, LhTagType } from '@lh-ui/share/core/tag'
+```
+
+## Intentions de conception
+
+L'état de l'étiquette est entièrement constitué d'« interrupteurs visuels », sans aucune logique de calcul. Le principe de `getTagClassNames` est **l'ajout uniquement quand la valeur est vraie** : quand `type` et `size` sont falsy, on ne produit même pas de classe modificatrice ; `closable` / `disabled` / `round` / `hit` sont évalués indépendamment. Cela garantit que le tableau de classes reste toujours « l'ensemble minimal suffisant », sans classe parasite du type `lh-tag--undefined`.
+
+`hit` (contour) est une sémantique propre à l'étiquette par rapport au bouton : l'étiquette a souvent besoin d'une « présence légère », et le contour convient mieux que le remplissage.
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getTagClassNames` | `(state: LhTagState) => string[]` | tableau de classes | Calcule tous les noms de classe de l'étiquette |
+
+Exemple de sortie :
+
+```ts
+getTagClassNames({ type: 'success', size: 'small', closable: true, disabled: false, round: false, hit: true })
+// ['lh-tag', 'lh-tag--success', 'lh-tag--small', 'lh-tag--closable', 'lh-tag--hit']
+```
+
+## Définitions de types
+
+```ts
+export type LhTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhTagState {
+  type: LhTagType
+  size: LhComponentSize        // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  closable: boolean            // Fermable (rendu d'un bouton ×)
+  disabled: boolean            // Désactivé (le bouton de fermeture ne répond pas non plus)
+  round: boolean               // Angles arrondis
+  hit: boolean                 // Contour plutôt que remplissage
+}
+```
+
+## Accessibilité
+
+`core/tag` ne fournit pas de paquet d'attributs aria : l'étiquette est un élément purement indicatif, et il suffit que son contenu textuel soit présenté tel quel au lecteur d'écran. Le **bouton de fermeture** devrait être porté par un `<button>` natif (ou l'équivalent de chaque plateforme), avec un `aria-label` (par exemple « Retirer ») — c'est la responsabilité de la couche UI.
+
+Un point souvent négligé : quand l'étiquette sert de critère de filtrage (par exemple les tags Multi-select de `LhSelect`), elle acquiert une sémantique d'interaction, et il faut alors poser `role="button"` sur toute la zone cliquable — cela se traite dans chaque couche UI, core n'intervient pas.
+
+## Exemples d'utilisation
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+
+getTagClassNames({ type: 'primary', size: 'medium', closable: false, disabled: false, round: false, hit: false })
+// ['lh-tag', 'lh-tag--primary', 'lh-tag--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getTagClassNames({ type, size, closable, disabled, round, hit })">
+  <slot />
+  <button v-if="closable" class="lh-tag__close" aria-label="Fermer" @click="!disabled && emit('close')">
+    <LhIcon name="close" :size="12" />
+  </button>
+</span>
+```
+
+```tsx
+// React
+const cls = getTagClassNames({ type, size, closable, disabled, round, hit })
+return (
+  <span className={cls.join(' ')}>
+    {children}
+    {closable && <CloseButton disabled={disabled} />}
+  </span>
+)
+```
+
+```ts
+// uniapp : noms de classe identiques ; le bouton de fermeture utilise un view + @tap,
+// le support de aria-label varie selon les plateformes, repli possible
+// vers un rendu sans sémantique de lecteur d'écran (les capacités de lecteur
+// des cibles non h5 sont de toute façon limitées)
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-tag` | Classe de base : inline-flex, Padding, taille de police, arrondi |
+| `.lh-tag--{primary\|success\|warning\|danger\|info\|default}` | Type sémantique (couleur de fond + couleur de texte) |
+| `.lh-tag--{mini\|small\|medium\|large\|x-large}` | Paliers de taille |
+| `.lh-tag--round` | Grand arrondi (forme capsule) |
+| `.lh-tag--hit` | Style contour |
+| `.lh-tag--closable` | Marge droite réservée au bouton de fermeture |
+| `.lh-tag--disabled` | État désactivé : opacité réduite + curseur interdit |
+| `.lh-tag__text` | Nœud de texte (ellipsis en cas de débordement) |
+| `.lh-tag__close` | Bouton de fermeture |
+
+Toutes les couleurs en `var(--lh-*)`, basculées en mode sombre par `var-dark.scss`.
+
+## Remarques
+
+- Quand `type` et `size` sont falsy, **aucune classe modificatrice n'est produite** (pas de repli sur default) : si la couche UI dépend de la présence de `lh-tag--default`, il faut transmettre explicitement `type: 'default'`.
+- La décision de désactivation du bouton de fermeture se trouve dans la couche UI (`disabled` bloque le click) ; le `--disabled` de core ne gère que le visuel.
+- `round` et `hit` peuvent coexister, pour obtenir une « capsule en contour ».
+
+<FnPlayground module="tag" fn="getTagClassNames" params='{"state": {"type": "warning", "size": "small", "closable": true, "disabled": false, "round": true, "hit": false}}' />

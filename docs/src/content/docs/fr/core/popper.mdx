@@ -1,0 +1,154 @@
+---
+title: 'popper —— Moteur de positionnement des couches flottantes'
+description: 'computePosition réalise le placement selon 12 positions, le retournement sur l''axe principal et le clamp sur l''axe secondaire, avec des rects purs en entrée, directement testable unitairement'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Le tooltip, le popover, le popconfirm, le dropdown, la liste déroulante de select, le panneau de cascader, le calendrier de date-picker — dans lh-ui, tout ce qui « flotte à côté d'un déclencheur » tire sa position d'une seule et même fonction.
+
+## Pourquoi pas floating-ui / popper.js
+
+Les quatre ports de la famille (Vue3 / Vue2 / React / uniapp) doivent importer ce paquet ; le volume et le rythme de mise à jour d'une bibliothèque de positionnement tiers deviendraient une charge quadruple. Le moteur de positionnement de share ne couvre que le sous-ensemble réellement utilisé par la famille : 12 positions, le retournement sur l'axe principal, le clamp sur l'axe secondaire, le décalage de la flèche — environ 300 lignes, sans dépendance, des entrées et sorties en fonctions pures — **il ne crée pas de DOM, n'écoute aucun événement, ne lance aucun requestAnimationFrame**. L'ordonnancement et le rendu sont laissés à chaque couche UI (Vue3 utilise `watchEffect`, React `useLayoutEffect`, uniapp les événements de défilement de page).
+
+## Import
+
+```ts
+import {
+  computePosition,
+  parsePlacement,
+  getWindowViewport,
+  type LhPlacement,
+  type LhComputePositionOptions,
+} from '@lh-ui/share/core/shared/popper'
+```
+
+## Types et constantes
+
+```ts
+// 12 positions = 4 directions × 3 alignements (le suffixe center peut être omis)
+export type LhPlacement =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhPlacementDir = 'top' | 'bottom' | 'left' | 'right'
+export type LhPlacementAlign = 'start' | 'center' | 'end'
+
+// La structure minimale isomorphe à un DOMRect — on construit directement des littéraux lors des tests
+export interface LhDOMRectLike {
+  top: number
+  left: number
+  width: number
+  height: number
+  right: number
+  bottom: number
+}
+
+export interface LhComputePositionOptions {
+  placement?: LhPlacement       // 'bottom' par défaut
+  gap?: number                  // espacement avec le déclencheur, 8 par défaut
+  padding?: number              // marge de sécurité du viewport, 8 par défaut
+  flip?: boolean                // retournement sur l'axe principal en cas de débordement, true par défaut
+  shift?: boolean               // clamp sur l'axe secondaire, true par défaut
+}
+
+export interface LhPopperPosition {
+  top: number
+  left: number
+  placement: LhPlacement        // la position réellement effective après retournement
+  arrowOffset: number           // décalage de la flèche sur l'axe secondaire (px, calculé à partir de l'origine de l'axe secondaire de la couche flottante)
+}
+```
+
+## Tableau des fonctions
+
+| Fonction | Signature | Rôle |
+| --- | --- | --- |
+| `parsePlacement` | `(placement: LhPlacement) => { dir, align }` | décompose la position en « direction + alignement », repli sur `bottom` pour une direction illégale et sur `center` pour un alignement illégal |
+| `buildPlacement` | `(dir: LhPlacementDir, align: LhPlacementAlign) => LhPlacement` | reconstruit la position à partir de la direction et de l'alignement (le suffixe est omis pour `center`) |
+| `flipDir` | `(dir: LhPlacementDir) => LhPlacementDir` | retournement sur l'axe principal : top↔bottom, left↔right |
+| `basePosition` | `(dir, align, trigger, popper, gap) => { top, left }` | le placement de base selon la position (**sans tenir compte des contraintes du viewport**) |
+| `fitsInViewport` | `(dir, trigger, popper, viewport, gap, padding) => boolean` | la couche flottante tient-elle entièrement dans le viewport dans la direction indiquée (jugement sur l'axe principal) |
+| `computePosition` | `(trigger, popper, viewport, options?) => LhPopperPosition` | **l'entrée principale** : le calcul complet du positionnement |
+| `getWindowViewport` | `() => LhDOMRectLike` | construit le rect du viewport à partir de la fenêtre du navigateur ; garde SSR, largeur et hauteur nulles sans `window` |
+| `isOutsideViewport` | `(rect, viewport) => boolean` | le rect a-t-il complètement quitté le viewport (lorsque le déclencheur n'est plus visible au défilement, la couche flottante devrait être fermée) |
+
+## Le flux de calcul de computePosition
+
+```
+flip (retournement sur l'axe principal)
+  → on ne retourne que si la direction retournée tient (sinon le retournement empire les choses)
+  → placement selon la position (basePosition)
+  → shift : clamp sur l'axe secondaire (le long de la marge de sécurité padding)
+  → clamp sur l'axe principal (uniquement quand flip est activé et qu'aucun des deux côtés ne tient : on colle au côté où l'on peut)
+  → clamp de sécurité sur le côté bas (filet de sécurité, garantit l'absence de coordonnées négatives)
+```
+
+Les points de conception clés :
+
+- **Le retournement est conditionnel**. L'implémentation erronée courante est « débordement ⇒ retournement » ; or lorsque le déclencheur est au centre exact du viewport et que la couche flottante est très haute, le retournement aboutit à un débordement encore pire. `computePosition` demande d'abord à `fitsInViewport` « le retournement tient-il ? », et s'il ne tient pas, ne se retourne pas et applique le clamping sur l'axe principal.
+- **La fonction renvoie le `placement` réellement effectif**. Après retournement, le champ `placement` devient la nouvelle position, à partir de laquelle la couche UI bascule les classes de flèche (`is-top` / `is-bottom`) — la direction de la flèche doit coïncider avec la position effective, faute de quoi la flèche semblera se détacher visuellement de la couche flottante.
+- **La flèche pointe toujours vers le centre du déclencheur** ; `arrowOffset` est le décalage sur l'axe secondaire, clamped dans les limites de la couche flottante ; la borne supérieure de `padding` est la moitié de la couche flottante, afin d'éviter l'inversion des bornes haute et basse (la flèche sortirait de la couche flottante).
+
+## Exemples d'utilisation
+
+### Fonction pure (testable unitairement directement)
+
+```ts
+const trigger = { top: 100, left: 50, width: 80, height: 32, right: 130, bottom: 132 }
+const popper = { top: 0, left: 0, width: 200, height: 120, right: 200, bottom: 120 }
+const viewport = { top: 0, left: 0, width: 375, height: 667, right: 375, bottom: 667 }
+
+computePosition(trigger, popper, viewport, { placement: 'top' })
+// le dessus du déclencheur tient :
+// { top: 132 - 8 - 120, left: ..., placement: 'top', arrowOffset: ... }
+```
+
+### Le câblage Vue3
+
+```ts
+// Au sein du composant flottant
+function update() {
+  if (!triggerEl.value || !popperEl.value) return
+  const pos = computePosition(
+    triggerEl.value.getBoundingClientRect(),
+    popperEl.value.getBoundingClientRect(),
+    getWindowViewport(),
+    { placement: placementRef.value, gap: 8 },
+  )
+  popperEl.value.style.top = `${pos.top}px`
+  popperEl.value.style.left = `${pos.left}px`
+  actualPlacement.value = pos.placement
+}
+
+onMounted(() => {
+  watchEffect(update)          // recalcul lorsque les dépendances réactives changent
+  window.addEventListener('scroll', update, true)
+})
+```
+
+### Le câblage React
+
+```tsx
+useLayoutEffect(() => {
+  if (!triggerRef.current || !popperRef.current) return
+  const pos = computePosition(/* ... */)
+  setPos(pos)
+}, [open, placement])
+```
+
+### Le câblage uniapp
+
+`getBoundingClientRect` n'a pas la même implémentation sur chaque bout d'uniapp (les mini-programmes nécessitent `uni.createSelectorQuery`) ; une fois la couche UI obtenu le rect, elle appelle le même `computePosition` — l'algorithme lui-même est strictement identique.
+
+## Points d'attention
+
+- **Les entrées subissent d'abord une sanitisation champ par champ** : les champs non finis (NaN / Infinity) sont ramenés à 0, aucun mauvais rect ne peut s'infiltrer dans les calculs géométriques.
+- **Sans risque en SSR** : `getWindowViewport()` renvoie un rect de largeur et hauteur nulles dans un environnement sans `window` ; `computePosition` lui-même ne touche pas au DOM, on peut donc précalculer une position côté serveur.
+- **La sémantique de `flip: false`** : l'appelant assume lui-même le débordement de l'axe principal ; dans ce cas, l'axe principal ne conserve que le clamp du côté bas (la couche flottante ne sera pas poussée en coordonnées négatives). Les scénarios à « direction fixe » que sont `select` / `cascader` l'utilisent.
+- **Pas de gestion des écoutes Resize / Scroll** : l'ordonnancement est l'affaire de la couche UI ; share garantit seulement « des entrées données, une sortie déterminée ».
+- Attention, `LhPosition` (`'top-left'` / `'bottom-right'` etc., voir [types](/fr/core/types)) et lui sont **deux modèles de position** : `LhPosition` sert à la sémantique « contre le bord » de affix / backtop, sans suffixe d'alignement `-start` / `-end` ; ne les mélangez pas.
+
+<FnPlayground module="popper" fn="computePosition" params='{"trigger": {"top": 100, "left": 50, "width": 80, "height": 32, "right": 130, "bottom": 132}, "popper": {"top": 0, "left": 0, "width": 200, "height": 120, "right": 200, "bottom": 120}, "viewport": {"top": 0, "left": 0, "width": 375, "height": 667, "right": 375, "bottom": 667}, "options": {"placement": "top"}}' />

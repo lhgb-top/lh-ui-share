@@ -1,0 +1,99 @@
+---
+title: format —— 텍스트 보간
+description: 'formatMessage가 {key} 자리 표시자를 매개변수 값으로 치환, 알 수 없는 자리 표시자는 있는 그대로 유지, rate / pagination이 공유'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`총 {total}건`, `별 {n}개`, `{index}번째 단계`——언어 팩의 텍스트 템플릿은 자리 표시자를 런타임 숫자로 교체해야 합니다. 이 보간 능력은 원래 locales 싱글톤에 있었지만, core 컴포넌트(rate의 별 개수, pagination의 페이지 수)가 사용할 때 core가 locales의 모듈 레벨 싱글톤 부작용에 **역의존**하게 됩니다. 순수한 문자열 함수로 강등한 덕분에 core 컴포넌트의 텍스트 보간은 더 이상 어떤 싱글톤에도 의존하지 않습니다.
+
+## 가져오기
+
+```ts
+// 공유 코어에서(권장)
+import { formatMessage } from '@lh-ui/share/core/shared/format'
+
+// 또는 locales 진입점에서(내보내기 표면은 그대로 유지)
+import { formatMessage } from '@lh-ui/share/locales'
+```
+
+## 함수 표
+
+| 함수 | 시그니처 | 역할 |
+| --- | --- | --- |
+| `formatMessage` | `(template: string, params?: Record<string, unknown>) => string` | `'{key}'` 자리 표시자를 `params`의 값으로 치환 |
+
+## 동작 디테일
+
+```ts
+formatMessage('총 {total}건', { total: 42 })   // '총 42건'
+formatMessage('별 {n}개', { n: 5 })            // '별 5개'
+formatMessage('자리 표시자 없음')              // '자리 표시자 없음'
+formatMessage('알 수 없는 자리 표시자 {missing}')  // '알 수 없는 자리 표시자 {missing}'
+```
+
+세 가지 규칙:
+
+1. **알 수 없는 자리 표시자는 있는 그대로 유지**. 에러를 내지 않고, 빈 문자열로 치환하지도 않습니다——호출자는 보통 언어 패에서 자리 표시자가 있는 템플릿을 이미 가져온 상태이며, 자리 표시자에 대응하는 매개변수가 없다는 것은 상류에서 누락했다는 뜻입니다. 있는 그대로 유지하면 문제가 UI에서 보이게 합니다(조용히 삼켜지는 대신).
+2. **값은 `String(...)`으로 통일**: 숫자, 불리언 모두 보간 가능합니다.
+3. **`params`의 기본값은 `{}`**: 매개변수를 전달하지 않으면 템플릿을 그대로 통과시킵니다.
+
+## lhlocale과의 관계
+
+`lhlocale.t(path, params)`의 내부는 "언어 팩 조회 → 템플릿 획득 → `formatMessage` 호출"입니다:
+
+```ts
+// locales 내부 구현(단순화)
+t(path, fallbackOrParams) {
+  const template = resolve(path) ?? fallback
+  return typeof fallbackOrParams === 'object'
+    ? formatMessage(template, fallbackOrParams)
+    : template
+}
+```
+
+`@lh-ui/share/locales`가 `formatMessage`를 다시 내보내는 것은 의도적입니다——예전 내보내기 표면에 그것이 있었고, core로 강등한 뒤에도 임포트 경로를 바꾸지 않아 하류의 수정량이 0입니다.
+
+## 언제 사용하고 언제 사용하지 않는가
+
+| 상황 | 사용 여부 |
+| --- | --- |
+| core 컴포넌트 내부의 텍스트 보간 | ✅ `formatMessage`를 직접 사용(locales 싱글톤을 끌어오지 않음) |
+| 비즈니스 코드에서 텍스트 보간 | ✅ `str.replace`보다 안전(알 수 없는 자리 표시자 유지) |
+| 언어 팩 조회 + 보간이 필요 | ❌ `lhlocale.t(path, params)` 사용, 한 번에 처리 |
+| 템플릿에 조건 / 복수형이 필요 | ❌ 이 함수는 단순 치환만 합니다; 조건부 텍스트는 언어 팩에서 여러 키로 분리 |
+
+## 사용 예시
+
+### pagination의 총개수 텍스트
+
+```ts
+// 컴포넌트 내부
+const totalText = computed(() =>
+  formatMessage(lhlocale.t('pagination.total'), { total: props.total }),
+)
+// 언어 팩: '共 {total} 条'  →  '共 42 条'
+```
+
+### rate의 별 개수 음성
+
+```ts
+const ariaLabel = formatMessage(lhlocale.t('rate.stars'), { n: currentValue.value })
+// 언어 팩: '{n} 星'  →  '3 星'
+```
+
+### 범용 문자열 도구
+
+```ts
+// 언어 팩과 무관한 순수 보간
+formatMessage('{index}번째 단계 / 총 {total}단계', { index: 2, total: 5 })
+// '2번째 단계 / 총 5단계'
+```
+
+## 주의 사항
+
+- **자리 표시자 문법은 `{key}`**(중괄호 한 번)이며, `${key}`가 아니고 `{{key}}`도 아닙니다.
+- **중첩 템플릿 미지원**: `params`의 값은 `String()`으로 한 번 처리되며, 재귀적으로 파싱하지 않습니다.
+- **성능**: 단일 호출이 하는 일은 `String.replace` 순환입니다. 고빈도 루프 안에서 같은 템플릿에 반복 호출하지 마세요——UI 계층에서 `computed`로 캐싱하면 충분합니다.
+
+<FnPlayground module="format" fn="formatMessage" params='{"template": "총 {total}건", "params": {"total": 42}}' />

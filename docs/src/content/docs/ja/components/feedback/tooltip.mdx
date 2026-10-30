@@ -1,0 +1,197 @@
+---
+title: tooltip —— ツールチップ
+description: 'getDefaultDelay の表示／非表示遅延（表示 200 / 非表示 0）、role=tooltip と aria-describedby のペアリング規約'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Tooltip は「ホントした時に見る補足説明」です：ボタンのアイコンの意味が分からない、リンクの文案が切り詰められている、テーブルのセルに完全な内容が入りきらない。`core/tooltip` はとても薄いです——位置決めは `shared/popper` に、遅延は `shared/delay` に任せ、自らは**このコンポーネントのデフォルトのテンポ**と**aria のペアリング規約**だけを宣言します。
+
+## いつ使うか
+
+- 各端末で `<LhTooltip>` を実装：トリガー要素に 1 行の短い説明（1 文）を補足。
+- 文案が切り詰められている（ellipsis）時の完全な内容の提示。
+- アイコンボタンのセマンティクスの解釈。
+- **使うべきでないケース**：インタラクティブな内容を置く場合（`popover` を使う——tooltip の中にボタンは置かない）；確認系の操作（`popconfirm` を使う）；エラーフィードバック（`message` を使う）；**モバイル**（hover がなく、タッチスクリーンでは tooltip はほぼトリガーできない。popover の click トリガーか長押しに切り替える）。
+
+## インポート方法
+
+```ts
+import {
+  getPopperClassNames,
+  getPopperStyle,
+  getDefaultDelay,
+  getTooltipPopperAria,
+  getTooltipTriggerAria,
+} from '@lh-ui/share/core/tooltip'
+import type {
+  LhTooltipPlacementCore,
+  LhTooltipTriggerCore,
+  LhTooltipEffectCore,
+  LhTooltipState,
+} from '@lh-ui/share/core/tooltip'
+```
+
+## 設計意図
+
+**デフォルト遅延の非対称**：表示 200ms、非表示 0ms——**表示は遅く、非表示は速く**。表示遅延は誤タップを防ぎ（マウスがボタンの群れを横切るだけで 1 つ 1 つにヒントを出すべきではない）、非表示 0ms は外に出たら即座に消え、引きずらないことを保証します。対照的に popover の非表示は 100ms（下記参照）で、两者的のテンポの差はインタラクションの重さを反映しています。
+
+**aria のペアリング規約**：トリガーは `aria-describedby` で浮層の id を指し、浮層は `role="tooltip"` を持ちます。これは WAI-ARIA の標準的な做法です：スクリーンリーダーがトリガーにフォーカスした際にヒントの内容も合わせて読み上げ、**ユーザーがホバーしに行かなくても情報を得られる**ようにします——これはアクセシビリティ上最も見落とされやすい点で、純粋に視覚的な tooltip はキーボードのユーザーには全く見えません。
+
+**`@deprecated` 別名の扱い**：`getPopperClass` / `getPopperStyle` は旧名で、下流の vue2 リポジトリが使用中です。互換のために残しつつ deprecated とマークし、新規のコードでは `getPopperClassNames`（getXxxClassNames の規約）を使います。**消してはならない**——下流がまだ import しており、リネートは下流も同時に直す必要があります。
+
+**`getPopperStyle` は maxWidth だけを管理**：数値 → px、文字列はそのまま。位置座標は `shared/popper` の `computePosition` が計算し、浮層の transform／位移は UI 層が popper state にバインドした結果です。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getPopperClassNames` | `(state: { effect, placement }) => string[]` | クラス名 | テーマ効果 + 位置 |
+| `getPopperStyle` ⚠️ | `(state: { maxWidth }) => Record<string, string>` | インラインスタイル | maxWidth の正規化 |
+| `getDefaultDelay` | `(show?, hide?) => { show, hide }` | 遅延 | デフォルト 200 / 0 |
+| `getTooltipPopperAria` | `(id?) => LhAriaAttrs` | aria バッグ | role="tooltip" |
+| `getTooltipTriggerAria` | `(tooltipId?) => LhAriaAttrs` | aria バッグ | aria-describedby |
+
+⚠️ を付けたものは `@deprecated` の互換別名で、新規のコードでは新しい名前を使います。
+
+定数（型）：`LhTooltipPlacementCore` は 12 の位置、`LhTooltipTriggerCore`、`LhTooltipEffectCore = 'dark' | 'light'`。
+
+## 型定義
+
+```ts
+export type LhTooltipPlacementCore =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhTooltipTriggerCore = 'hover' | 'focus' | 'click' | 'contextmenu'
+export type LhTooltipEffectCore = 'dark' | 'light'
+
+export interface LhTooltipState {
+  visible: boolean
+  effect: LhTooltipEffectCore
+  placement: LhTooltipPlacementCore
+  maxWidth?: number | string
+  showDelay?: number
+  hideDelay?: number
+}
+```
+
+## アクセシビリティ
+
+```ts
+getTooltipPopperAria('tip-1')
+// { role: 'tooltip', id: 'tip-1' }
+getTooltipTriggerAria('tip-1')
+// { 'aria-describedby': 'tip-1' }
+getTooltipTriggerAria()  // {}（id を渡さない場合は出力しない。この場合は aria-label でフォールバックすべき）
+```
+
+- **id は両端で一致しなければならない**：トリガーの `aria-describedby` の値は、浮層がレンダリングされた後の実際の id と等しい必要があります。サーバー側レンダリング時には id が空の可能性があります——id を渡さない場合、関数は空のオブジェクトを返すため、UI 層は `aria-label` でフォールバックすべきです。`aria-describedby` が存在しない要素を指すようにしてはなりません（スクリーンリーダーが「参照先の要素が存在しない」と報告します）。
+- **focus トリガーがキーボードのユーザーをカバー**：`trigger: 'focus'` の時、Tab でフォーカスされると即座に表示されます——これは推奨されるデフォルトのアクセシビリティ挙動で、hover-only はキーボードのユーザーには全く見えません。
+- **role="tooltip" の内容の制限**：WAI-ARIA は tooltip の中に**インタラクティブな要素（ボタン、リンク）を置くべきではない**と定めています——インタラクションが必要なら `popover`（role=dialog）を使います。この制約はスタイルにも同時に反映されます：tooltip は通常 pointer-events: none を持ちます。
+- **長いテキスト**：`maxWidth` が折り返し幅を制限しますが、tooltip は段落を承载すべきではありません——1 文を超える場合は popover の使用を検討してください。
+
+## 使用例
+
+```ts
+import { getDefaultDelay, getPopperClassNames, getPopperStyle } from '@lh-ui/share/core/tooltip'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 0 }
+getDefaultDelay(0, 500)                // { show: 0, hide: 500 }（明示的オーバーライド）
+
+getPopperClassNames({ effect: 'dark', placement: 'top' })
+// ['lh-tooltip__popper', 'lh-tooltip__popper--dark', 'lh-tooltip__popper--top']
+
+getPopperStyle({ maxWidth: 200 })    // { maxWidth: '200px' }
+getPopperStyle({ maxWidth: '30em' }) // { maxWidth: '30em' }
+getPopperStyle({})                   // {}
+```
+
+```ts
+// 表示／非表示のステートマシン（UI 層）：遅延は shared/delay の resolveDelay で正規化
+const state = reactive<LhTooltipState>({
+  visible: false, effect: 'dark', placement: 'top',
+})
+
+let showTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleShow() {
+  clearTimeout(showTimer)
+  const { show } = getDefaultDelay(props.showDelay, props.hideDelay)
+  showTimer = setTimeout(() => { state.visible = true }, show)
+}
+function scheduleHide() {
+  clearTimeout(showTimer)
+  const { hide } = getDefaultDelay(props.showDelay, props.hideDelay)
+  setTimeout(() => { state.visible = false }, hide)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTooltip content="削除すると元に戻せません" placement="top">
+    <button type="button" aria-label="削除"><LhIcon name="delete" /></button>
+  </LhTooltip>
+</template>
+
+<!-- コンポーネント内部：トリガーと浮層 -->
+<template>
+  <span
+    class="lh-tooltip__trigger"
+    v-bind="getTooltipTriggerAria(popperId)"
+    @mouseenter="scheduleShow" @mouseleave="scheduleHide"
+    @focus="scheduleShow" @blur="scheduleHide"
+  >
+    <slot />
+  </span>
+  <teleport to="body">
+    <transition name="lh-tooltip-fade">
+      <div
+        v-if="state.visible"
+        :id="popperId"
+        :class="getPopperClassNames({ effect: state.effect, placement: state.placement })"
+        :style="{ ...getPopperStyle({ maxWidth: props.maxWidth }), ...popperStyle }"
+        v-bind="getTooltipPopperAria(popperId)"
+        role="tooltip"
+      >
+        <slot name="content">{{ props.content }}</slot>
+      </div>
+    </transition>
+  </teleport>
+</template>
+```
+
+```tsx
+// React：trigger 要素は children をクローンしてイベントと aria を注入（React.cloneElement）；
+// 浮層は createPortal + useFloating（@floating-ui または自作 popper）
+```
+
+```ts
+// uniapp：<view> + catchtouchstart；hover はミニプログラム側に存在せず、tooltip はモバイルでは
+// 主に h5 にサービスする。ミニプログラムのシーンでは popover の click トリガーに切り替えるべき
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-tooltip__trigger` | トリガーのラッパー（inline） |
+| `.lh-tooltip__popper` | 浮層 |
+| `.lh-tooltip__popper--{dark\|light}` | テーマ効果 |
+| `.lh-tooltip__popper--{top\|top-start\|…}` | 12 の位置（矢印の向きを含む） |
+
+dark 効果：`--lh-tooltip-bg-dark`（黒に近い）+ 白字；light 効果：`--lh-bg-color` + `--lh-text-primary`。角丸 `--lh-border-radius-small`、内側の余白 `--lh-tooltip-padding`、文字サイズ `--lh-font-size-small`。
+
+## 注意事項
+
+- **遅延の双方向クリア**：表示のタイマーが発火する前にマウスが出たら clearTimeout しなければなりません；さもないとマウスが去った後にヒントが出ます。上記のステートマシンの例は showTimer しかクリアしていませんが、完全な実装では双方向をクリアする必要があります。
+- **浮層自体へのホバー**：tooltip の `pointer-events` は通常 none であるため「浮層に入る」という事態は存在しません——しかし popover は許可しており、两者的の非表示遅延の差はここから来ています。
+- **制御と非制御**：`v-model:visible` の制御モードでは、外部の visible の変化を内部 state に同期しなければなりません；遅延のタイマーも制御状態に合わせてリセットします。
+- **複数の tooltip の共存**：各インスタンスの popperId は一意でなければなりません（useId またはインクリメンタルな通番）。さもないと aria-describedby が間違った要素を指します。
+- **`getPopperClass` / `getPopperStyle` は deprecated 別名**：新規のコードでは `getPopperClassNames` を使います；旧名は下流の vue2 リポジトリでまだ参照されており、削除する前にまず下流を直す必要があります（赤線 5 の発版順序）。
+- **内容が空の時の扱い**：`content` が空なら空の浮層を表示すべきではありません——UI 層は空内容の時に表示をスキップ（`v-if="content"`）します。これは core の職責ではありません。
+- **無効化されたトリガー要素**：ネイティブに `disabled` となったボタンは mouseenter/focus イベントをトリガーせず、tooltip は効きません。一般的な做法はトリガーを無効化されていない要素（`.lh-tooltip__trigger` の span）で包んでイベントを受け取ることです——これが trigger クラス名が存在する理由の 1 つです。
+
+<FnPlayground module="tooltip" fn="getDefaultDelay" params='{"showDelay": null, "hideDelay": null}' />

@@ -1,0 +1,180 @@
+---
+title: 'tabs 標籤頁 —— 導航'
+description: 'resolveActiveName 的空串頁簽名、getNameAfterRemove 刪頁後的啟動策略、tab/tabpanel 雙向 aria 關聯'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+標籤頁是「同一區域的內容切換器」：設定頁的「基礎 / 安全 / 通知」、瀏覽器的標籤頁。它把多個面板疊在同一塊空間，用頁簽切換顯隱——節省縱向空間，代價是同時只能看一個面板。`core/tabs` 管的是**啟動狀態解析、刪頁後的啟動策略、roving tabindex 導航**。
+
+## 何時使用
+
+- 各端實作 `<LhTabs>` / `<LhTabPane>`：設定頁、詳情頁分區、儀表板面板切換。
+- 內容**互斥**且**平級**的分區。
+- **不該用它**：流程式的步驟（用 `steps`——tabs 無順序語義）；層級導航（用 `menu`）；需要同時對照兩個面板（用 `grid` 並排）；切換會丟失表單草稿時要謹慎（UI 層可用 keep-alive 保活）。
+
+## 匯入方式
+
+```ts
+import {
+  getTabsClassNames,
+  resolveActiveName,
+  getNextActiveName,
+  getNameAfterRemove,
+  getTablistAria,
+  getTabAria,
+  getTabpanelAria,
+} from '@lh-ui/share/core/tabs'
+import type {
+  LhTabsType, LhTabsPosition, LhTabRecord, LhTabNavDirection,
+} from '@lh-ui/share/core/tabs'
+```
+
+## 設計意圖
+
+**`!= null` 而非真值短路**：`resolveActiveName` 判斷 modelValue 時用 `modelValue != null`——因為**頁簽名是業務標識，空串是合法值**。使用者顯式綁定到 `name: ''` 的頁簽時，真值短路（`if (modelValue && ...)`)會把空串當「未傳值」而忽略，啟動到第一個可用頁簽，造成難以排查的狀態錯位。
+
+**啟動驗證含 disabled**：`modelValue` 存在但對應的頁簽被停用時，**不啟動它**，回退到第一個可用頁簽——停用頁簽不可選取是硬約束，連外部強制設定都不行。
+
+**`getNameAfterRemove` 的先右後左**：刪掉的是目前啟動頁簽時，優先選**右側最近的可用項**（保持視線位置），右側沒有再選左側最近項。這個順序符合「刪除後焦點順勢右移」的直覺。被刪項不是啟動項時維持原啟動。
+
+**`getNextActiveName` 是 @deprecated 外殼**：導航演算法已收斂到 `shared/keyboard.getNextListIndex`，本函式保留舊簽名（'next'/'prev'/'first'/'last' 的語義化方向名）與「目前值未知或被停用時回退首項」的既有行為。**新程式碼直接用核心**。
+
+**roving tabindex**：頁簽列的鍵盤導航標準模式是 roving tabindex——所有頁簽 `tabindex="-1"`，只有啟動頁簽 `tabindex="0"`。方向鍵在頁簽間移動焦點，Tab 鍵從頁簽列跳到面板內容。`getNextActiveName` 傳回目標頁簽名，UI 層據此移動焦點並設 tabindex。
+
+**雙向 aria 關聯**：頁簽 `aria-controls` → 面板 id；面板 `aria-labelledby` → 啟動頁簽 id。兩端都要寫，讀屏軟體從任一端都能跳到另一端。`aria-selected` 只在啟動時輸出（false 不輸出——未啟動是預設狀態）。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getTabsClassNames` | `(state: { type, position }) => string[]` | 類別名 | 外觀 + 位置 |
+| `resolveActiveName` | `(records, modelValue) => string \| null` | 啟動頁簽名 | modelValue 驗證 + 回退 |
+| `getNextActiveName` ⚠️ | `(records, currentName, direction) => string \| null` | 目標頁簽名 | 鍵盤導航 |
+| `getNameAfterRemove` | `(records, removedName, currentName) => string \| null` | 建議啟動 | 刪頁後先右後左 |
+| `getTablistAria` | `(id?) => LhAriaAttrs` | aria 包 | role=tablist |
+| `getTabAria` | `(options: { active, disabled?, panelId?, id? }) => LhAriaAttrs` | aria 包 | role=tab |
+| `getTabpanelAria` | `(options: { tabId?, id? }) => LhAriaAttrs` | aria 包 | role=tabpanel |
+
+⚠️ 為 `@deprecated` 相容外殼，新程式碼用 `shared/keyboard` 的 `getNextListIndex`。
+
+## 類型定義
+
+```ts
+export type LhTabsType = 'line' | 'card'      // 下劃線 / 卡片外觀
+export type LhTabsPosition = 'top' | 'bottom' // 頁簽位置
+export type LhTabNavDirection = 'next' | 'prev' | 'first' | 'last'
+
+export interface LhTabRecord {
+  name: string       // 唯一標識（穩定鍵，不隨生命週期變化）
+  label: string      // 頁簽標題
+  disabled: boolean
+}
+```
+
+## 無障礙
+
+```ts
+getTabAria({ active: true, panelId: 'panel-1', id: 'tab-1' })
+// { role: 'tab', id: 'tab-1', 'aria-controls': 'panel-1', 'aria-selected': true }
+getTabAria({ active: false, disabled: true })
+// { role: 'tab', 'aria-disabled': true }（未啟動不輸出 aria-selected）
+
+getTabpanelAria({ tabId: 'tab-1', id: 'panel-1' })
+// { role: 'tabpanel', id: 'panel-1', 'aria-labelledby': 'tab-1' }
+```
+
+- **role=tab 的鍵盤約定**（APG）：←/→ 切換頁簽（且**啟動跟隨焦點**——移動焦點即切換，不需要再按 Enter）；Home/End 跳到首/末頁簽。Tab 鍵離開頁簽列進入目前面板。
+- **`getNextActiveName` 的 first/last**：direction 支援 'first' / 'last'，對應 Home/End 鍵——別自己再寫一遍邊界判斷。
+- **面板需要 tabindex**：面板本身通常加 `tabindex="0"`，讓鍵盤使用者能 Tab 進面板內容（APG 推薦做法）。這不是 core 的職責，UI 層實作。
+- **隱藏面板的正確方式**：未啟動的面板用 `v-if`/`hidden` 移出可存取性樹；**不要用 `visibility: hidden` 之外的手段讓面板殘留可聚焦**。若需要保活（表單草稿），用 `display: none` + 快取渲染。
+- **aria-selected 的省略語義**：未啟動時不輸出該屬性（而非輸出 false）——APG 規定 tab 的 aria-selected 預設為 false，顯式輸出 false 雖然合法但冗餘。`getTabAria` 遵循 `shared/a11y` 的假值省略約定。
+
+## 使用範例
+
+```ts
+import { resolveActiveName, getNameAfterRemove, getNextActiveName } from '@lh-ui/share/core/tabs'
+
+const records = [
+  { name: 'a', label: '基础', disabled: false },
+  { name: 'b', label: '安全', disabled: false },
+  { name: 'c', label: '通知', disabled: true },
+]
+
+resolveActiveName(records, 'b')   // 'b'
+resolveActiveName(records, 'c')   // 'a'（c 停用，回退首個可用）
+resolveActiveName(records, '')    // 'a'（空串 != null 走驗證分支，但無 name 為 '' 的頁簽 → 回退）
+resolveActiveName(records, undefined)  // 'a'
+resolveActiveName([], undefined)       // null（無可用頁簽）
+
+getNextActiveName(records, 'a', 'next')  // 'b'（跳過停用的 c 時從 a next 得 b）
+getNextActiveName(records, 'b', 'next')  // 'a'（只有 a/b 可用，循環）
+getNextActiveName(records, 'unknown', 'next')  // 'a'（未知回退首項）
+
+getNameAfterRemove(records, 'b', 'b')  // 'a'（刪的是啟動項 b：右側無可用 → 左側最近）
+getNameAfterRemove(records, 'a', 'b')  // 'b'（刪的不是啟動項，維持 b）
+getNameAfterRemove([{ name: 'a', disabled: true }], 'a', 'a')  // null（無可用）
+```
+
+```ts
+// 受控啟動（UI 層）
+const activeName = ref<string | null>(null)
+const records = ref<LhTabRecord[]>([])
+
+function onTabClick(name: string) {
+  activeName.value = name
+}
+function onRemove(name: string) {
+  const next = getNameAfterRemove(records.value, name, activeName.value ?? '')
+  records.value = records.value.filter((r) => r.name !== name)
+  activeName.value = next
+}
+watch(records, () => {
+  activeName.value = resolveActiveName(records.value, activeName.value)
+}, { immediate: true })
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhTabs v-model="activeName" type="card">
+    <LhTabPane name="basic" label="基础设置">…</LhTabPane>
+    <LhTabPane name="security" label="安全设置">…</LhTabPane>
+  </LhTabs>
+</template>
+```
+
+```tsx
+// React：records 由 TabPane 子組件註冊（useEffect + context）或直接由 props 傳入；
+// 鍵盤導航用 onKeyDown 調 getNextActiveName + focus()
+```
+
+```ts
+// uniapp：<view> 頁籤 + scroll-view 橫向捲動；激活下劃線用 transform 定位
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-tabs` | 根容器 |
+| `.lh-tabs--{line\|card}` | 外觀 |
+| `.lh-tabs--{top\|bottom}` | 頁簽位置（下劃線/卡片邊框隨之翻轉） |
+| `.lh-tabs__header` / `__nav` / `__nav-wrap` | 頁簽列 / 導航 / 捲動包裹（可捲動頁簽列） |
+| `.lh-tabs__item` / `--active` / `--disabled` | 頁簽 |
+| `.lh-tabs__active-bar` | 啟動下劃線（line 類型，transform 定位） |
+| `.lh-tabs__content` / `__pane` | 面板區 |
+
+啟動文字色 `--lh-tabs-active-color`、下劃線同色；卡片類型用 `--lh-border-color` 邊框 + 啟動狀態背景 `--lh-bg-color` 抬高。
+
+## 注意事項
+
+- **頁簽列捲動**：頁簽多到溢出時需要左右捲動按鈕或手勢滑動——`__nav-wrap` 的 `overflow: hidden` + `__nav` 的 transform 平移是常見實作，捲動量由 UI 層算（core 不管）。
+- **`type: card` 的邊框拼接**：卡片頁簽啟動狀態要去掉與內容區重合的那條邊框（top 位置去底邊、bottom 位置去頂邊），否則出現雙重邊框——這是 position 類別名存在的原因。
+- **動態增刪頁簽**：增刪後 `resolveActiveName` 要重跑（watch records）。刪頁用 `getNameAfterRemove` 保證啟動狀態不懸空。
+- **頁簽內放關閉按鈕**：`closable` 頁簽的 ✕ 按鈕要 `@click.stop`（否則同時觸發頁簽切換），且需 `aria-label`。
+- **keep-alive 與效能**：頻繁切換的重面板（圖表、表格）建議保活而非銷毀重建——Vue 用 `<keep-alive>`、React 用 CSS 隱藏 + 卸載策略。core 無感知。
+- **`getNextActiveName` 的舊簽名**：direction 用語義名（'next'/'prev'）而非核心的 1/-1，且**目前值未知時無論方向都回退首項**（不是按方向走）——這是舊行為的保留，遷移時注意。
+- **空串頁簽名的陷阱**：`resolveActiveName(records, '')` 會在 records 裡找 `name === ''` 的頁簽——若業務用空串表示「未選擇」，會與合法的空串頁簽名衝突。用 `null` 而非 `''` 表示未選擇。
+
+<FnPlayground module="tabs" fn="getNameAfterRemove" params='{"records": [{"name": "a", "label": "基础", "disabled": false}, {"name": "b", "label": "安全", "disabled": false}, {"name": "c", "label": "通知", "disabled": true}], "removedName": "b", "currentName": "b"}' />

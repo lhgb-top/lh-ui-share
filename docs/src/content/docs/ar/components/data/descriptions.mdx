@@ -1,0 +1,177 @@
+---
+title: descriptions —— قائمة وصف
+description: 'يبني buildDescriptionRows بنية الصفوف وفق span (قيمة احتياطية للقيم غير الصالحة، وتقييد للتجاوز، وحشو للصف الأخير)'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+قائمة الوصف هي «جدول للقراءة فقط»: تعرض عدة حقول لسجل واحد (تسمية + قيمة)، دون حاجة إلى فرز أو تصفية أو ترقيم صفحات. وتتركز صعوبتها في **حساب الالتفاف عندما يشغل عنصر عدة أعمدة**: عنصر ما له `span: 2`، لكن لم يبقَ في الصف سوى عمود واحد، فما العمل؟ والصف الأخير به عنصران فقط بينما الأعمدة أربعة، فهل تُحشى بعناصر نائبة؟ يجيب `buildDescriptionRows` عن هذه الأسئلة.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhDescriptions`: صفحات التفاصيل (تفاصيل الطلب، وبيانات المستخدم)، وملخصات الإعدادات، وعرض معلومات تدفقات الاعتماد.
+- مجموعات «تسمية-قيمة» للقراءة فقط، مع الحاجة إلى احتواء عدة حقول في كل صف.
+- **لا يجب استخدامه**: الجداول التي تحتاج إلى فرز/تصفية/عمليات على الصفوف (استخدم `table`)؛ وعرض حقل واحد (يكفي تسمية + نص)؛ ومشاهد التحرير (استخدم `form`).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getDescriptionsClassNames,
+  buildDescriptionRows,
+} from '@lh-ui/share/core/descriptions'
+import type { LhDescriptionsItem, LhDescriptionsState } from '@lh-ui/share/core/descriptions'
+```
+
+## نية التصميم
+
+قواعد `buildDescriptionRows` الأربع كلها دفاعية، وكلٌّ منها تقابل صنفًا من المدخلات الحقيقية:
+
+1. **قيمة احتياطية لـ span غير الصالح تساوي 1**: `span <= 0`، وNaN، وغير الأرقام (`Number('عرض')` = NaN) تُعالَج كلها كـ 1. وغالبًا ما تأتي الإعدادات من props يمررها المستخدم، فلا ينبغي للقيم القذرة أن تهدم التخطيط إلى صفر عمود.
+2. **تقييد تجاوز العرض المتبقي للصف**: عندما يكون `used + span > column` يُقيَّد إلى العرض المتبقي (عمود واحد على الأقل). فلو التُفَّ السطر مباشرة، لترك الصف الحالي فجوة تبدو كأنها خلل برمجي.
+3. **العنصر الذي يتجاوز span به الصف كله يُقيَّد إلى الصف كاملًا**: عندما يكون `column: 3` ويُمرَّر عنصر بـ `span: 5`، فإنه يشغل الصف كاملًا بدلًا من التجاوز.
+4. **حشو الصف الأخير**: عندما لا يبلغ الصف الأخير `column`، يُخبر الحقل `filler` طبقة العرض بعدد الخلايا النائبة التي يجب إضافتها — ففي الأنماط ذات الحدود، عدم الحشو يترك حدًّا ناقصًا.
+
+القيمة المُعادة هي «مصفوفة صفوف»، يحتوي كل صف على `cells` (العناصر + span الفعلي) و`filler` (عدد العناصر النائبة المطلوب). ولا يحتاج الطرف البصري سوى حلقتي `v-for`.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getDescriptionsClassNames` | `(state: LhDescriptionsState) => string[]` | أسماء الأصناف | معدّلات الحدود |
+| `buildDescriptionRows` | `(items: LhDescriptionsItem[], column: number) => Row[]` | بنية الصفوف | التفاف + حشو |
+
+```ts
+type Row = {
+  cells: { item: LhDescriptionsItem; span: number }[]
+  filler: number
+}
+```
+
+## تعريف الأنواع
+
+```ts
+export interface LhDescriptionsItem {
+  label: string
+  value?: string | number    // يمكن أيضًا تمريره عبر فتحة النطاق
+  span?: number              // عدد الأعمدة المشغولة، الافتراضي 1، ويُقيَّد إذا تجاوز column
+}
+
+export interface LhDescriptionsState {
+  column: number    // عدد الأعمدة المعروضة في كل صف
+  border: boolean   // هل تُعرض الحدود (تخطيط جدولي)
+}
+```
+
+## إمكانية الوصول
+
+`descriptions` **مكوّن عرضي**، ولا يتطلب أدوار APG. وبنية DOM الموصى بها هي دلالة قائمة التعريف:
+
+```html
+<dl>
+  <dt>اسم المستخدم</dt><dd>lhgb</dd>
+  <dt>البريد الإلكتروني</dt><dd>i@lhgb.top</dd>
+</dl>
+```
+
+وهذا يقابل نموذج بيانات «التسمية-القيمة» طبيعيًا، فيستطيع قارئ الشاشة نطق «اسم المستخدم: lhgb» بشكل صحيح. وإن طُبِّق بـ `<table>` (شائع في الأنماط ذات الحدود)، فأضف `role="presentation"` أو احتفظ بدلالة ترويسة الجدول — ولا تستخدم `<th scope="row">` فعلًا دون تقديم summary، فسيظن قارئ الشاشة أنه جدول تفاعلي.
+
+وعند وجود حدود، تُضاف `aria-hidden="true"` إلى الخلايا النائبة التي يضيفها `filler`، لتفادي نطق قارئ الشاشة لخلايا فارغة.
+
+## أمثلة الاستخدام
+
+```ts
+import { buildDescriptionRows } from '@lh-ui/share/core/descriptions'
+
+// column 3: العنصر الثالث span 2، لكن لم يبقَ في الصف سوى عمود واحد ← يُقيَّد إلى 1
+buildDescriptionRows([
+  { label: 'اسم المستخدم', value: 'lhgb' },
+  { label: 'البريد الإلكتروني', value: 'i@lhgb.top' },
+  { label: 'التوقيع', value: 'مبرمج', span: 2 },
+], 3)
+// [{ cells: [اسم المستخدم(1), البريد الإلكتروني(1), التوقيع(1)], filler: 0 }]  ← بعد التقييد يمتلئ الصف تمامًا
+
+// ملاحظة: التنفيذ **يقيَّد إلى العرض المتبقي** لا أن يلتف إلى السطر التالي
+// — فعندما لا يسع span في الصف الحالي لا يُدفع إلى الصف التالي
+buildDescriptionRows([
+  { label: 'اسم المستخدم', value: 'lhgb' },
+  { label: 'التوقيع', value: 'مبرمج', span: 2 },
+  { label: 'البريد الإلكتروني', value: 'i@lhgb.top' },
+], 2)
+// [
+//   { cells: [اسم المستخدم(1), التوقيع(2→1 تقييد)], filler: 0 },  ← صف ممتلئ
+//   { cells: [البريد الإلكتروني(1)], filler: 1 },                    ← الصف الأخير يُحشى بعنصر نائب واحد
+// ]
+
+// عنصر واحد يتجاوز span به عدد أعمدة الصف كله: يُقيَّد كذلك إلى العرض المتبقي (هنا الصف كاملًا)
+buildDescriptionRows([{ label: 'A', span: 1 }, { label: 'B', span: 5 }], 2)
+// [{ cells: [A(1), B(5→1 تقييد)], filler: 0 }]  ← B يدخل في العمود المتبقي من الصف الأول
+
+// فقط عندما يكون B وحده وتجاوز span به الصف كاملًا يشغله كله
+buildDescriptionRows([{ label: 'B', span: 5 }], 2)
+// [{ cells: [B(5→2 تقييد)], filler: 0 }]
+
+// قيمة احتياطية لـ span غير الصالح
+buildDescriptionRows([{ label: 'A', span: 0 }, { label: 'B', span: NaN }, { label: 'C', span: -1 }], 3)
+// [{ cells: [A(span 1), B(span 1), C(span 1)], filler: 0 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getDescriptionsClassNames({ column, border })">
+  <div v-for="(row, ri) in rows" :key="ri" class="lh-descriptions__row">
+    <template v-for="(cell, ci) in row.cells" :key="ci">
+      <div class="lh-descriptions__label" :style="{ gridColumn: `span ${cell.span}` }">
+        {{ cell.item.label }}
+      </div>
+      <div class="lh-descriptions__value" :style="{ gridColumn: `span ${cell.span}` }">
+        <slot :name="cell.item.label" :item="cell.item">{{ cell.item.value }}</slot>
+      </div>
+    </template>
+    <div
+      v-for="f in row.filler"
+      :key="`filler-${f}`"
+      class="lh-descriptions__filler"
+      aria-hidden="true"
+    />
+  </div>
+</div>
+```
+
+```ts
+const rows = computed(() => buildDescriptionRows(props.items, props.column))
+```
+
+```tsx
+// React: استخدام gridColumn في CSS grid بالشكل `span ${cell.span}`؛
+// انتبه إلى أن label وvalue يشغل كل منها span أعمدة، فـ «column 3» هي فعليًا 6 خلايا شبكية
+```
+
+```ts
+// uniapp: <view> + نسبة flex (span / column * 100%)؛
+// وعند وجود border تُحاكى خطوط الجدول في تخطيط flex بعناصر زائفة أو box-shadow
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-descriptions` | الصنف الأساسي |
+| `.lh-descriptions--border` | ذو حدود (يميَّز التسمية بلون خلفية) |
+| `.lh-descriptions__row` | صف واحد |
+| `.lh-descriptions__label` | خلية التسمية |
+| `.lh-descriptions__value` | خلية القيمة |
+| `.lh-descriptions__filler` | عنصر نائب للصف الأخير (`aria-hidden`) |
+
+ولعرض التسمية وضعان: تحت `border` تكون التسمية والقيمة بنفس العرض في العمود نفسه؛ وبلا حدود يتحدد عرض التسمية بالمحتوى (يمكن استبداله عبر `--lh-descriptions-label-width`). ولون نص التسمية `--lh-text-color-secondary`، وللقيمة `--lh-text-color-primary`.
+
+## ملاحظات
+
+- **علاقة column بخلايا الشبكة**: `span` بوحدة «عدد العناصر»، لكن عند العرض يشغل كلٌّ من التسمية والقيمة نصيبًا من العرض. فإذا اعتُبر كلٌّ من label/value خلية شبكية في CSS grid، احتاج `column: 3` فعليًا إلى 6 أعمدة — فيجب أن يكون تعريف عدد الأعمدة في الطرف البصري متسقًا مع `column` في core (عنصر واحد = وحدة span واحدة).
+- **column المتجاوب**: على الشاشات الضيقة يُصغَّر `column` (مثل 3 → 1)، ويُعاد حساب `buildDescriptionRows`. ولا core يستمع إلى عرض الشاشة، بل الطرف البصري هو الذي يبدّل عبر استعلامات الوسائط أو استعلامات الحاوية.
+- **مفتاح الفتحة ذات النطاق**: عادةً ما يستخدم الطرف البصري `item.label` اسمًا للفتحة، وهو متوافق مع الإطارات عندما تحتوي التسمية على محارف خاصة (مسافات، صينية)، لكنه يتعارض عند وجود `/` أو تسميات مكررة — يُستحسن أن يوفّر الطرف البصري اسمًا بديلًا للحقل `slot` (لا يوفّره هذا النوع حاليًا، ويمكن لكل طرف توسيعه).
+- **`filler` ضروري فقط في وضع border**: فبدون حدود لا تُرى الخلايا النائبة، لكن الاحتفاظ بها لا يكلف شيئًا إضافيًا في العرض، وتوحيد العرض أبسط.
+- **items فارغة**: تُعيد `buildDescriptionRows([], 3)` القيمة `[]`، فيعرض الطرف البصري حاوية فارغة — فلا تنسَ توفير حالة فراغ (مكوّن `empty` أو نص تلميحي).
+- **العرض الافتراضي للقيمة**: ما يُعرض عندما تكون `value` قيمة undefined يحدده الطرف البصري (عادة `—`)، ولا يتدخل core في النص.
+
+<FnPlayground module="descriptions" fn="buildDescriptionRows" params='{"items": [{"label": "اسم المستخدم", "value": "lhgb"}, {"label": "البريد الإلكتروني", "value": "i@lhgb.top"}, {"label": "التوقيع", "value": "مبرمج", "span": 2}], "column": 2}' />

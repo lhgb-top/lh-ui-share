@@ -1,0 +1,187 @@
+---
+title: نظرة عامة على نظام السمة
+description: 'خمس بدائيع وقت التشغيل ومزامنة مزدوجة المصدر لرموز SCSS: جانب JS يحقن متغيرات CSS، والمكوّنات تستهلك var() فقط'
+---
+
+import PresetPreview from '../../../../components/PresetPreview.astro'
+
+نظام السمة في lh-ui **ذا مصدرين**، ويجب توضيح هذه النقطة أولًا:
+
+| المصدر | المحتوى | طريقة الاستهلاك |
+| --- | --- | --- |
+| `styles/theme/common/var.scss` + `var-dark.scss` | خصائص CSS المخصصة (`--lh-*`) | `var(--lh-*)` في SCSS المكوّنات، تُقيَّم في وقت التشغيل |
+| `styles/theme/common/variables.scss` | متغيرات SCSS (`$lh-*`) | تُخبَز في وقت الترجمة إلى قيم ملموسة، وتُستخدم في الحسابات (دوال الألوان، تركيب الظلال، إلخ) |
+| `src/theme/themes/index.ts` | تخطيط `vars` لخمس مسبقات | حقن JS في وقت التشغيل في `<style>` (ConfigProvider / ThemeStudio) |
+
+**لا تعترف المكوّنات إلا بمتغيرات CSS**. وغاية وجود نظام السمة في جانب JS هي: حقن مجموعة
+من رموز التصميم **في وقت التشغيل** داخل شجرة فرعية من DOM، كي تبدِّل المكوّنات مظهرها
+دون إعادة الترجمة.
+
+## المساران
+
+### 1. مسبقات السمة (جاهزة للاستخدام مباشرةً)
+
+خمس مسبقات إعداد مدمجة: 青花瓷 (الخزف الأزرق) / 松花绿 (أخضر الصنوبر) / 朱砂 (الزنجفر) /
+水墨 (رسم الحبر) / 藤黄 (أصفر عشبي). وتستخدم طبقة واجهة المستخدم `buildPresetStyleText(vars)`
+لتوليد نص `<style>` وكتابته في DOM.
+
+```ts
+import { LH_THEME_PRESETS, buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+const preset = LH_THEME_PRESETS[0]                    // 青花瓷 (الخزف الأزرق)
+const styleText = buildPresetStyleText(preset.vars)  // يُجمَّع في نص CSS
+// → يُحقن في <style id="lh-preset-theme">
+```
+
+لمزيد من التفاصيل انظر [مسبقات السمة](/ar/theme/presets).
+
+### 2. التخصيص في وقت التشغيل (themeVars)
+
+يستقبل ConfigProvider خاصية `themeVars` بمفاتيح **مختصرة** (تُضاف إليها بادئة `--lh-`
+تلقائيًا):
+
+```vue
+<lh-config-provider :theme-vars="{ 'primary-color': '#1677ff' }">
+  <App />
+</lh-config-provider>
+```
+
+لمزيد من التفاصيل انظر [التخصيص في وقت التشغيل](/ar/theme/customization).
+
+## خمس بدائيع وقت التشغيل
+
+يُصدِّر `src/theme/index.ts` (والتنفيذ في `src/theme/themes/index.ts`):
+
+| البدائية | التوقيع | الاستخدام |
+| --- | --- | --- |
+| `LH_THEME_PRESETS` | `LhThemePreset[]` | مصفوفة جميع المسبقات، يمر عليها docs و ConfigProvider |
+| `registerTheme(preset)` | `(preset: LhThemePreset) => void` | تسجيل مسبقة أو الكتابة فوقها (الكتابة فوق الاسم نفسه، ويمكن أيضًا الكتابة فوق المسبقات الداخلية) |
+| `getThemePreset(name)` | `(name: LhThemePresetName) => LhThemePreset \| undefined` | جلب المسبقة بالاسم |
+| `getThemeVars(name)` | `(name: LhThemePresetName) => LhThemeVars \| undefined` | جلب vars الخاصة بها بالاسم (يُعيد `undefined` إذا لم تكن مُسجَّلة) |
+| `buildPresetStyleText(vars)` | `(vars: Record<string, string>) => string` | تجميع vars في نص `<style>` قابل للحقن |
+
+وهنالك بدائيع حساب التباين (يستخدمها `verify:theme` و ThemeStudio):
+
+| البدائية | التوقيع | الاستخدام |
+| --- | --- | --- |
+| `getRelativeLuminance(color)` | `(color: string \| undefined) => number \| undefined` | السطوع النسبي وفق WCAG (يُعيد `undefined` لغير hex) |
+| `getContrastRatio(a, b)` | `(a, b: string \| undefined) => number \| undefined` | نسبة التباين وفق WCAG (1~21) |
+| `buildPresetDarkVars(vars)` | `(vars: Record<string, string>) => Record<string, string>` | اشتقاق متغيرات الكتلة الداكنة من vars المسبقة |
+| `LH_PRESET_THEME_STYLE_ID` | `'lh-preset-theme'` | المعرّف الثابت لعنصر الحقن |
+
+## الأنواع
+
+```ts
+export type LhThemePresetName =
+  | 'cerblue' | 'songhua' | 'zhusha' | 'shuimo' | 'golden'
+  | (string & {})          // ← أسماء مخصصة مفتوحة، مع الإبقاء على الإكمال التلقائي للحرفيات
+
+export interface LhThemePreset {
+  name: LhThemePresetName
+  label: string            // الاسم الصيني
+  labelEn: string          // الاسم الإنجليزي
+  description: string      // وصف السمة
+  vars: Record<string, string>   // تخطيط متغيرات CSS
+}
+
+export type LhThemeVars = Record<string, string>
+```
+
+إن `(string & {})` في نهاية `LhThemePresetName` حيلة في TS: تُبقي الإكمال التلقائي للحرفيات
+الخمس الأولى، وتسمح في الوقت نفسه بتمرير أي سلسلة عبر `registerTheme({ name: 'my-brand', ... })`.
+وتُعيد الأسماء غير المُسجَّلة `undefined` في `getThemePreset` / `getThemeVars`.
+
+## قيد الحقن: كتابة `<style>` فقط، لا style مضمَّن
+
+هذا **أهم قيد** في نظام السمة، وقد واجهنا مرة فخًا فيه:
+
+```ts
+// ✅ صحيح: كتابة عنصر <style>، الخصوصية 0,1,0
+const el = document.createElement('style')
+el.id = LH_PRESET_THEME_STYLE_ID
+el.textContent = buildPresetStyleText(vars)
+document.head.appendChild(el)
+
+// ❌ خطأ: كتابة style مضمَّن (inline) على documentElement، الخصوصية 1,0,0,0
+Object.assign(document.documentElement.style, vars)
+```
+
+**لماذا**: تخصص style المضمَّنة درجة خصوصية أعلى من **أي ورقة أنماط**، فتطغى على إعلانات
+الوضع الداكن الكاملة داخل `var-dark.scss` (`[data-theme='dark'], .dark { --lh-*: ... }`)،
+مما يُفسد ألوان الوضع الداكن — إذ تُسحَق المتغيرات الداكنة بقيم فاتحة مضمَّنة.
+
+بنية النص التي يُولِّدها `buildPresetStyleText`:
+
+```css
+:root {
+  --lh-primary-color: #2B4C7C;
+  /* ...vars المسبقة كاملة */
+}
+
+[data-theme='dark'],
+.dark {
+  --lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent);
+  --lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff);
+  /* تفتيح إضافي للون الرئيسي في المسبقات الداكنة */
+}
+```
+
+تأتي الكتلة الداكنة **بعد** كتلة `:root` ولديها الخصوصية نفسها، فيغلِّبها المتصفح —
+وبالتالي لا تتسرّب القيمة الفاتحة لـ `--lh-selected-color` المُعلَن عنها في `:root`
+للمسبقات ذات اللون الرئيسي الفاتح إلى الوضع الداكن. ويُشتق محتوى الكتلة الداكنة من
+`buildPresetDarkVars`.
+
+## اشتقاق الوضع الداكن في buildPresetDarkVars
+
+ثلاث قواعد:
+
+1. **إعادة تعريف متغيرين دون قيد** (بالإشارة عبر `var()`، تُقيَّمان على العنصر المُطبَّق
+   عليه، وتتبعان اللون الرئيسي الحالي):
+   - `--lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent)`
+   - `--lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff)`
+
+2. **تفتيح اللون الرئيسي الداكن**: إذا كانت نسبة تباين `--lh-primary-color` مقابل خلفية
+   الصفحة الداكنة `#1A1A2E` (`DARK_PAGE_BG`) أقل من 3 (`DARK_PRIMARY_CONTRAST_THRESHOLD`)،
+   يُحكَم بأنه لون رئيسي داكن ويُضاف تفتيحه:
+   - `--lh-primary-color: color-mix(in srgb, <قيمة حرفية> 55%, #fff)` —— **يعوَّض بالقيمة
+     الحرفية مباشرةً**، لأن `color-mix(var(--lh-primary-color) …)` يُنشئ دورة CSS ذاتية الإشارة
+   - `--lh-primary-color-hover: color-mix(in srgb, var(--lh-primary-color) 70%, #fff)`
+   - `--lh-primary-color-active: color-mix(in srgb, var(--lh-primary-color) 85%, #000)`
+   - `--lh-color-on-primary: #101410` (`INK_ON_LIGHTENED_PRIMARY`) —— فبعد التفتيح يصبح
+     تباين النص الأبيض أقل من 3:1، فيُستبدل بالنص الأسود (الحبر)
+
+3. يحسب التباين عبر `getContrastRatio(getRelativeLuminance(primary), getRelativeLuminance(DARK_PAGE_BG))`.
+   وتُعيد القيم غير hex (بما فيها القيم الديناميكية التي تحوي `var()`) القيمة `undefined`،
+  فتُعامَل على أنها «لا يمكن الحكم عليها» — ولهذا يجب أن يكون اللون الرئيسي في vars
+   المسبقة قيمة hex حرفية.
+
+## المزامنة المزدوجة المصدر
+
+**عند تغيير اللون الرئيسي لسمة داخلية، يجب تعديل المصدرين معًا**:
+
+1. `vars['--lh-primary-color']` للمسبقة داخل `src/theme/themes/index.ts` (لحقن JS في وقت التشغيل)
+2. `$lh-primary-color` في `styles/theme/common/variables.scss` (لحسابات SCSS في المكوّنات)
+
+ويوجد اختبار ارتجاع للاتساق في `tests/unit/theme.spec.ts`، يُمسك أي عدم مزامنة عند تشغيل
+`pnpm test`.
+
+## ما لا تستطيع السمة فعله
+
+- **لا تستطيع تغيير ارتفاع عناصر التحكم**: فرموز الارتفاع `--lh-control-height-*` لم
+  تُنشأ بعد (تتفاوت ارتفاعات عناصر التحكم، وهو مُسجَّل في «مشروع رموز الارتفاع» بانتظار
+  changeset لاحق).
+- **لا تستطيع تغيير بنية المكوّن**: فالسمة تبدِّل قيم الرموز فقط، وتبقى التخطيط وبنية
+  DOM كما هي.
+- **الزخارف نظام مستقل**: انظر [الزخارف الصينية](/ar/theme/patterns).
+
+## معاينة المسبقات
+
+<PresetPreview />
+
+## وثائق ذات صلة
+
+- [مسبقات السمة](/ar/theme/presets) —— شرح المسبقات الداخلية الخمس
+- [رموز التصميم](/ar/theme/tokens) —— الجدول الكامل: 185 فاتحًا + 118 داكنًا
+- [التخصيص في وقت التشغيل](/ar/theme/customization) —— themeVars / componentTheme / patternComponents
+- [الوضع الداكن](/ar/theme/dark-mode) —— الآلية وفخ الخبز في وقت الترجمة
+- [الزخارف الصينية](/ar/theme/patterns) —— 6 زخارف مدمجة

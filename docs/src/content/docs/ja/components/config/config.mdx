@@ -1,0 +1,163 @@
+---
+title: 'config グローバル設定 —— 設定'
+description: 'mergeConfig の 3 層結合、LH_THEME_DEFAULT=cerblue、getEffectiveXxx の取り出しチェーン（core はプリセット名だけを返し、DOM 注入は UI 層が行う）'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ConfigProvider は「グローバルスイッチの単一の入口」です：アプリを `<LhConfigProvider :size="..." :theme="..." :locale="...">` でラップすると、内側のすべてのコンポーネントのデフォルトサイズ、テーマ、言語、z-index のベースラインが一斉に変わります。これは何もレンダリングせず、**設定コンテキスト**だけを提供します。`core/config` が管理するのは設定の結合と取り出しチェーンです——具体的な生效方式（CSS 変数の注入、locale インスタンスの提供）は UI 層にあります。
+
+## いつ使うか
+
+- 各端が `<LhConfigProvider>` を実装する：アプリ全体のラップ、テーマ切り替え、国際化の切り替え、グローバルサイズの調整。
+- **コンポーネントをまたいだデフォルト値の統一**が必要で、かつ**実行時に切り替えたい**ケース。
+- **使うべきでない**：単一コンポーネントのサイズ / テーマ（そのコンポーネントに props を直接渡せばよく、ConfigProvider は「デフォルト値」の層です）。
+
+## インポート方法
+
+```ts
+import {
+  mergeConfig,
+  getEffectiveSize,
+  getEffectiveZIndex,
+  getEffectiveTheme,
+} from '@lh-ui/share/core/config'
+import {
+  LH_THEME_DEFAULT,
+  createDefaultConfig,
+} from '@lh-ui/share/core/config'
+import type { LhConfigState } from '@lh-ui/share/core/config'
+```
+
+## 設計意図
+
+**3 層結合の優先度**：`mergeConfig(defaults, global, local)` は平坦に結合し、後者が前者を上書きします——`デフォルト値 < グローバル（ConfigProvider）< 局所（コンポーネント props）`。`createDefaultConfig()` が下敷きとなり、すべてのフィールドに値があることを保証します（欠落した設定が undefined となり下流の分解でエラーになることを防ぐ）。
+
+**`size` のデフォルト値は 'medium' ではなく undefined**：これは意図的なものです——undefined は「未設定、SCSS トークンのデフォルト値を使う」を意味します。もし core が 'medium' を返すと、`styles/` の `--lh-control-height-medium` のデフォルト段階と脱結合し、トークンのデフォルト段階を変えても反映されなくなります。**undefined は「スタイル層へフォールバックする」シグナルです**。
+
+**`getEffectiveTheme` はプリセット名しか返さない**：`'cerblue'` のような文字列を返し、**vars オブジェクトは返さず、DOM にも触れない**。UI 層は名前を受け取ったあと `getThemeVars(name)` で vars を取り、さらに `buildPresetStyleText(vars)` で `<style>` テキストを生成して注入します。この分割により core はゼロ DOM を保ち（レッドライン 1）、注入のタイミングと場所の制御は UI 層に残ります。
+
+**`LH_THEME_DEFAULT = 'cerblue'` の二重ソース同期**：デフォルトのプリセット名と `styles/theme/common/variables.scss` のデフォルト主色（`$lh-primary`）は必ず同源でなければならず、`theme.spec.ts` が回帰テストで守っています。デフォルトテーマを変えるときは両方を一緒に変えてください。そうでないと JS 側が注入するプリセットと SCSS がコンパイルしたデフォルト色が一致しなくなります。
+
+**zIndex のベースラインは 2000**：ポップアップ系コンポーネント（dialog / drawer / popover / dropdown…）はこのベースラインから順に増やします。ベースラインを全局的に上げるのは「業務ページにさらに高い z-index の要素がある」という衝突のケース向けです——これは ConfigProvider が存在する古典的な理由の 1 つです。
+
+## 関数表
+
+| 関数 / 定数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `createDefaultConfig` | `() => LhConfigState` | デフォルト設定 | 下敷きの値 |
+| `mergeConfig` | `(defaults, global, local) => LhConfigState` | 結合された設定 | デフォルト < グローバル < 局所 |
+| `getEffectiveSize` | `(localSize?, globalSize?) => LhComponentSize \| undefined` | 有効サイズ | undefined はスタイル層へフォールバック |
+| `getEffectiveZIndex` | `(localZIndex?, globalZIndex) => number` | 有効 z-index | 局所 ?? グローバル |
+| `getEffectiveTheme` | `(localTheme?, globalTheme?) => LhThemePresetName` | 有効プリセット名 | 名前だけを返し、DOM に触れない |
+
+定数：`LH_THEME_DEFAULT = 'cerblue'`。
+
+## 型定義
+
+```ts
+export interface LhConfigState {
+  size: LhComponentSize | undefined    // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  zIndex: number                       // ポップアップ層のベースライン
+  locale: LhComponentLanguage          // 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR' | 'de-DE' | 'fr-FR'
+  theme: LhThemePresetName             // プリセット名（registerTheme が登録したカスタム名も同様に合法）
+}
+```
+
+`size` の 5 段階は `LH_SIZE_CONST`（`src/constants`）から来ており、そのうち `old: 'x-large'` は**高齢者向け段階**のセマンティクスエイリアス（大きな文字とコントロール）で、値は `x-large` と同じです——適老化のケースにセマンティクスを持った設定の入口を与えます。
+
+`locale` の 6 言語は `LH_LANGUAGE_CONST` から来ており、デフォルトは `LH_LANGUAGE_DEFAULT = 'zh-CN'` です。
+
+## アクセシビリティ
+
+ConfigProvider とアクセシビリティの直接の関係は 1 箇所だけです：**locale の切り替えがコンポーネント内蔵文案の言語を変える**（フォーム検証の「この項目は必須です」/「This field is required」など）。これは `locales` の `lhlocale` インスタンスを通じて配信されます——`core/locales` と `reference/locales` のページを参照してください。
+
+- **言語切り替えの生效範囲**：locale は ConfigProvider が context を通じて配信し、**すでにレンダリング済みのコンポーネントは即座に応答します**（リアクティブな更新）。SSG のケースでは初回画面の言語はビルド時に決まり、クライアントの活性化後にユーザー設定へ切り替わります。
+- **テーマ切り替えは再レンダリング不要**：テーマは CSS 変数の注入によって生效し、コンポーネントのスタイルは `var(--lh-*)` で消費する——テーマを切り替えても style 要素の中身が変わるだけで、コンポーネントの DOM は動きません。これが設計上の重要な脱結合です。
+
+## 使用例
+
+```ts
+import {
+  mergeConfig, getEffectiveSize, getEffectiveZIndex, getEffectiveTheme, createDefaultConfig,
+} from '@lh-ui/share/core/config'
+
+createDefaultConfig()  // { size: undefined, zIndex: 2000, locale: 'zh-CN', theme: 'cerblue' }
+
+mergeConfig(
+  {},                       // コンポーネントレベルのデフォルト（通常は空）
+  { size: 'small', theme: 'ink' },  // グローバル ConfigProvider
+  { size: 'large' },        // 局所 props
+)
+// { size: 'large', zIndex: 2000, locale: 'zh-CN', theme: 'ink' }
+
+getEffectiveSize('large', 'small')   // 'large'
+getEffectiveSize(undefined, 'small') // 'small'
+getEffectiveSize(undefined, undefined)  // undefined（SCSS のデフォルト段階へフォールバック）
+
+getEffectiveZIndex(3000, 2000)  // 3000
+getEffectiveZIndex(undefined, 2500)  // 2500
+
+getEffectiveTheme('ink', 'cerblue')   // 'ink'
+getEffectiveTheme(undefined, 'cerblue')  // 'cerblue'
+getEffectiveTheme(undefined, undefined)  // 'cerblue'（LH_THEME_DEFAULT がフォールバック）
+```
+
+```ts
+// UI 層：テーマ注入（<style> 要素にだけ書ける。documentElement のインライン style には書けない——
+// インライン style の特異度は var-dark.scss のダーク変数のまとまりより高く、ダーク配色の乱れを招く）
+import { getThemeVars, buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyTheme(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+  const styleText = buildPresetStyleText(vars)
+  let el = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!el) {
+    el = document.createElement('style')
+    el.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(el)
+  }
+  el.textContent = styleText
+}
+```
+
+```vue
+<!-- Vue3：ルートのラップ -->
+<template>
+  <LhConfigProvider :size="size" :theme="theme" :locale="locale">
+    <App />
+  </LhConfigProvider>
+</template>
+```
+
+```tsx
+// React：createContext + useContext で配信；テーマ切り替えは effect の中で applyTheme を呼ぶ
+```
+
+```ts
+// uniapp：グローバル設定は globalData か store に持たせる；テーマ注入は同じモデル（h5 端は <style> に書き、
+// 小程序端は page の style 属性で CSS 変数を項目ごとに渡す——小程序は <style> 注入をサポートしない）
+```
+
+## スタイルとトークン
+
+ConfigProvider に独自のスタイルはありません。影響を与えるトークン：
+
+| 設定 | 影響するトークン |
+| --- | --- |
+| `size` | `--lh-control-height-mini/small/medium/large/x-large`（コンポーネントの size クラス名で選択） |
+| `theme` | `--lh-*` トークン全体（`buildPresetStyleText` が `:root` ブロックを生成） |
+| `zIndex` | `--lh-z-index-{dialog/drawer/popover/...}` のベースライン |
+
+## 注意事項
+
+- **`size: undefined` は仕様であって漏れではない**：「スタイル層のデフォルト段階へフォールバックする」ことを意味します。`getEffectiveSize` は 'medium' にハードコードするのではなく undefined までチェーンフォールバックするため、SCSS のデフォルト段階を変えればグローバルなデフォルトサイズが変わります。
+- **テーマは `<style>` 要素にだけ書ける**：`buildPresetStyleText` のコメントは明確に警告しています——`documentElement` のインライン style に書くと、特異度が `var-dark.scss` のダーク変数のまとまりより高くなり、ダークモードの配色が乱れます。
+- **`theme` は registerTheme が登録したカスタム名を受け取る**：`registerTheme(preset)` で登録したあと、ConfigProvider の theme にカスタム名を指定できます——`getThemeVars` がそれを見つけます。プリセットは内蔵の 5 つに限られません。
+- **入れ子の ConfigProvider**：局所はグローバルを、内側は外側を上書きします。典型的な使い方：ある領域だけさらに大きなサイズが必要な場合（タッチ操作盤など）にそこだけ追加でラップする。
+- **locale と theme で生效方式が異なる**：locale は context（リアクティブなデータフロー）を通り、theme は CSS 変数の注入（DOM 操作）を通ります。locale の切り替えは UI 層が `lhlocale.setLocale()` を呼び、テーマの切り替えは UI 層が `applyTheme` を呼ぶ——両者を一つの effect に混ぜないでください。
+- **SSR でのテーマのちらつき**：サーバーはユーザーのテーマを知らない（cookie / localStorage にある）ため、初回画面はデフォルトテーマでレンダリングされ、クライアントの活性化後に切り替えると一瞬ちらつきます。よくある解法は `<head>` の中に同期スクリプトをインラインで入れ、localStorage を早期に読んで `data-theme` を注入することです——これはデプロイ層のことであり、core は関与しません。
+- **zIndex ベースラインの意味**：2000 に設定するのは業務層に 0〜1999 のスペースを残すためです（ナビゲーションバー、カスタムの浮遊層）。もし業務に z-index 9999 の要素がありポップアップ層を隠すなら、コンポーネントごとに直すのではなくグローバルのベースラインを上げてください。
+
+<FnPlayground module="config" fn="mergeConfig" params='{"defaults": {}, "global": {"size": "small", "theme": "ink"}, "local": {"size": "large"}}' />

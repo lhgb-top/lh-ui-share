@@ -1,0 +1,128 @@
+---
+title: badge —— Insignia
+description: 'getBadgeClassNames calcula los tres modificadores de estado oculto/punto/valor cero; count lo calcula la capa UI antes de pasarlo'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La insignia es el soporte visual del «número de notificaciones»: un punto rojo en una esquina, un número, o un marcador de posición oculto. El modelo de estado de `core/badge` ya ha plegado la **semántica numérica** en tres valores booleanos: la capa UI se encarga de calcular «si el número es 0, si debe mostrarse», y core solo mapea esos tres booleanos a nombres de clase.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhBadge`: los nombres de clase los produce `getBadgeClassNames`.
+- Cuando se necesite reutilizar el aspecto de insignia en elementos personalizados (como el indicador de `LhAvatar` o los elementos de `LhMenu`), importa directamente las funciones de core.
+- **No usarlo para**: la lógica de truncamiento «99+», animaciones, etc.; son responsabilidad de los props de la capa UI, core no procesa valores.
+
+## Importación
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+import type { LhBadgeState, LhBadgeType } from '@lh-ui/share/core/badge'
+```
+
+## Intención de diseño
+
+De los estados de la insignia, lo más destacable son los tres estados visuales mutuamente excluyentes `isHidden` / `isDot` / `isZero`:
+
+- `isDot`: no muestra número, solo un punto (recordatorio fuerte, el número es desconocido o irrelevante).
+- `isZero`: el valor es 0. Muchos diseños eligen «ni el 0 se oculta» (para que el usuario vea claramente «no hay» en lugar de «aún no se ha cargado»), con un estilo visualmente atenuado.
+- `isHidden`: oculto por completo (`display: none`), para «no hay mensajes nuevos».
+
+La lógica de evaluación de estos tres (si `value === 0`, el prop `hidden`, etc.) la completa la capa UI; core solo recibe la conclusión. Así, cada plataforma puede tener una estrategia distinta de «cuándo ocultar», mientras que la apariencia visual se mantiene consistente.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `getBadgeClassNames` | `(state: LhBadgeState) => string[]` | matriz de nombres de clase | calcula todos los nombres de clase de la insignia |
+
+Salida de ejemplo:
+
+```ts
+getBadgeClassNames({ type: 'danger', size: 'small', isHidden: false, isDot: true, isZero: false })
+// ['lh-badge', 'lh-badge--danger', 'lh-badge--small', 'lh-badge--dot']
+```
+
+## Definiciones de tipos
+
+```ts
+export type LhBadgeType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhBadgeState {
+  type: LhBadgeType
+  size: LhComponentSize
+  isHidden: boolean
+  isDot: boolean
+  isZero: boolean
+}
+```
+
+## Accesibilidad
+
+`core/badge` no emite un paquete de atributos aria, pero el **tratamiento de accesibilidad de la insignia en la capa UI es muy importante** y a menudo se hace mal:
+
+- La insignia es un **énfasis visual decorativo**; el contenido en sí (como «3 mensajes sin leer») debe portarlo un texto semántico. Añadir `aria-hidden="true"` a la insignia es el valor por defecto seguro.
+- Si la insignia es la única fuente de información (un indicador puro sin texto), es obligatorio proporcionar un `aria-label` o declararlo en el elemento padre, de lo contrario los usuarios de lector de pantalla no percibirán en absoluto «hay mensajes nuevos».
+- No dejes que el lector de pantalla anuncie los dígitos de una insignia numérica uno a uno («9» y «9» se leerían como «nueve nueve»); debe formatearse como «99 más» o delegarse en el `aria-label` de la capa UI.
+
+## Ejemplos de uso
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+
+getBadgeClassNames({ type: 'primary', size: 'medium', isHidden: false, isDot: false, isZero: false })
+// ['lh-badge', 'lh-badge--primary', 'lh-badge--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span class="lh-badge-wrapper">
+  <slot />
+  <sup
+    v-if="!hidden"
+    :class="getBadgeClassNames({ type, size, isHidden: hidden, isDot, isZero: value === 0 })"
+    aria-hidden="true"
+  >
+    {{ isDot ? '' : displayValue }}
+  </sup>
+</span>
+```
+
+```tsx
+// React
+const cls = getBadgeClassNames({ type, size, isHidden, isDot, isZero })
+return (
+  <span className="lh-badge-wrapper">
+    {children}
+    {!isHidden && <sup className={cls.join(' ')} aria-hidden="true">{isDot ? '' : value}</sup>}
+  </span>
+)
+```
+
+```ts
+// uniapp: la insignia suele usar view con posicionamiento absoluto en plataformas distintas de h5;
+// el truncamiento del número (99+) lo gestionan los props de la capa UI
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-badge` | clase base: indicador de esquina con posicionamiento absoluto, esquinas redondeadas, tamaño de fuente, color de texto |
+| `.lh-badge--{primary\|success\|warning\|danger\|info\|default}` | tipo semántico (color de fondo) |
+| `.lh-badge--{small\|medium\|large}` | escala de tamaño (incluye `.lh-badge--mini` / `--x-large`) |
+| `.lh-badge--dot` | forma de punto (círculo pequeño fijo, no renderiza contenido) |
+| `.lh-badge--zero` | atenuación del valor cero (transparencia, menor peso visual) |
+| `.lh-badge--hidden` | oculto por completo |
+| `.lh-badge__content` | nodo de contenido |
+| `.lh-badge-zoom-enter-active` / `.lh-badge-zoom-leave-active` | transición de escala al aparecer/desaparecer |
+
+La posición de la insignia depende de que el envoltorio exterior `.lh-badge-wrapper` aporte `position: relative` (lo garantiza la capa UI de cada plataforma).
+
+## Notas
+
+- Cuando `isDot` e `isZero` son ambos verdaderos, en los estilos prevalece `--dot` (la forma de punto no renderiza contenido, el modificador de cero carece de sentido): la capa UI debería evitar esa combinación.
+- La tabla de tipos de `LhBadgeType` incluye `'default'`, pero lo más habitual en una insignia es `'danger'` (punto rojo); `'default'` es un gris neutro.
+- Las clases de transición `lh-badge-zoom-*` siguen el estilo Vue3 de `-enter-active` / `-leave-active`; la plataforma Vue2 las alinea con el mixin `lh-enter-both` (ver [mixins de transición](/es/reference/transition-mixins)).
+
+<FnPlayground module="badge" fn="getBadgeClassNames" params='{"state": {"type": "danger", "size": "small", "isHidden": false, "isDot": true, "isZero": false}}' />

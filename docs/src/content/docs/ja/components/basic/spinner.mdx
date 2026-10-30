@@ -1,0 +1,113 @@
+---
+title: spinner —— 回転ローディング図形
+description: 'LH_SPINNER_SIZE_PX はサイズから直径へのマッピングテーブル、getSpinnerClassNames がサイズモディファイアクラスを出力'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`spinner` は純粋な「回転する図形」です——読み込みマスク（それは `LhLoading`）でもなく、スケルトン（それは `LhSkeleton`）でもなく、再利用可能な**回転要素**です：ボタン内の読み込みアイコン、メッセージ通知内の loading アイコン、カードの読み込み隅の回転图形、どれもこれです。
+
+## いつ使うか
+
+- 各端が `LhSpinner` を実装するほか、任意のコンポーネント内部で回転图形が必要な場所（button loading、message loading など）。
+- **使うべきでない**：画面全体の読み込み、領域の読み込み。それは `LhLoading` の責務です（`spinner` はその一部にすぎません）。
+
+## インポート方法
+
+```ts
+import { getSpinnerClassNames } from '@lh-ui/share/core/spinner'
+import { LH_SPINNER_SIZE_PX, LH_SPINNER_SIZE_CONST } from '@lh-ui/share/core/spinner'
+import type { LhSpinnerSize } from '@lh-ui/share/core/spinner'
+```
+
+## 設計意図
+
+spinner のサイズ体系はグローバルなサイズ段階と揃っています（`LH_SPINNER_SIZE_CONST` は `LH_SIZE_CONST` を直接展開する）が、**ピクセルのマッピングは独立しています**——コンポーネントの「medium」は 24px で、ボタンの medium の高さは 37px であり、图形とコンテナは同サイズである必要はありません。この独立性はあちこちのマジックナンバーではなく、定数に書き込まれています。
+
+`LH_SPINNER_SIZE_PX` が唯一の情報源です。UI 層は自分で `size === 'small' ? 16 : 24` と書くのではなく、これを読んで SVG / 要素の width / height を設定します。
+
+## 関数と定数テーブル
+
+| エクスポート | シグネチャ / 値 | 役割 |
+| --- | --- | --- |
+| `getSpinnerClassNames` | `(state: { size: LhSpinnerSize }) => string[]` | クラス名配列 |
+| `LH_SPINNER_SIZE_CONST` | `{ small: 'small', medium: 'medium', large: 'large', mini: 'mini', 'x-large': 'x-large' }` | サイズ列挙（`LH_SIZE_CONST` と揃える） |
+| `LH_SPINNER_SIZE_PX` | `{ mini: 12, small: 16, medium: 24, large: 32, 'x-large': 40 }` | サイズ → 直径 px |
+
+```ts
+getSpinnerClassNames({ size: 'small' })  // ['lh-spinner', 'lh-spinner--small']
+LH_SPINNER_SIZE_PX['large']              // 32
+```
+
+## 型定義
+
+```ts
+export type LhSpinnerSize =
+  (typeof LH_SPINNER_SIZE_CONST)[keyof typeof LH_SPINNER_SIZE_CONST]
+// 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+```
+
+## アクセシビリティ
+
+`core/spinner` は aria 属性パックを提供しません。回転する图形のアクセシビリティの扱いは**それがどこに現れるか**によって決まります：
+
+- **ボタン内の spinner**：ボタンに `aria-busy="true"` を付け、spinner 自身は `aria-hidden` にする。
+- **メッセージ通知内の spinner**：メッセージの live-region role がすでに「処理中」を伝えているため、spinner は装飾化する。
+- **単独で「読み込み中」を示す**：読み可能なテキスト（「読み込み中…」など）を必ず伴わせる。純粋な图形はスクリーンリーダーのユーザーにとって無情報と等しいです。
+
+一般原則：**回転する图形自体は常に `aria-hidden` にすべき**であり、情報はその周囲のセマンティクス（aria-busy、role、テキスト）が担います。
+
+## 使用例
+
+```ts
+import { getSpinnerClassNames, LH_SPINNER_SIZE_PX } from '@lh-ui/share/core/spinner'
+
+getSpinnerClassNames({ size: 'medium' })  // ['lh-spinner', 'lh-spinner--medium']
+LH_SPINNER_SIZE_PX['medium']              // 24
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="getSpinnerClassNames({ size })"
+  :width="px" :height="px"
+  viewBox="0 0 50 50"
+  aria-hidden="true"
+>
+  <circle class="lh-spinner__circle" cx="25" cy="25" r="20" fill="none" />
+</svg>
+```
+
+```tsx
+// React
+const px = LH_SPINNER_SIZE_PX[size]
+return (
+  <svg className={getSpinnerClassNames({ size }).join(' ')} width={px} height={px} viewBox="0 0 50 50" aria-hidden="true">
+    <circle className="lh-spinner__circle" cx="25" cy="25" r="20" fill="none" />
+  </svg>
+)
+```
+
+```ts
+// uniapp：非 h5 端は svg アニメーションのサポートが乏しく、通常は CSS border の回転方案や GIF に差し替える；
+// LH_SPINNER_SIZE_PX の直径値は引き続き適用される（border 方案の幅と高さ）
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-spinner` | ベースクラス：回転アニメーション（`animation: lh-spinner-rotate`） |
+| `.lh-spinner--{mini\|small\|medium\|large\|x-large}` | サイズの段階（幅と高さを設定） |
+| `.lh-spinner__circle` | SVG circle：部分弧のストローク + `stroke-linecap: round` |
+
+線の色はデフォルトで `currentColor`（親の文字色を継承）です。回転速度はスタイル層で定義し、`prefers-reduced-motion` 下では CSS メディアクエリが一時停止させます。
+
+## 注意事項
+
+- **サイズの不一致**：`LH_SPINNER_SIZE_PX` の small は 16px ですが、アイコンの small は 14px です（[アイコン](/ja/components/basic/icon) を参照）——これは既知の段階の不統一で、「高さトークン特集」に記録され、後日の changeset で統一される予定です。現段階では自分で換算するのではなく、定数テーブルをそのまま使ってください。
+- `getSpinnerClassNames` は `size` の妥当性を検証しません（型が保証する）。範囲外の値を渡すとスタイルのない汚いクラスが産出されます。
+- SVG circle のストローク弧度（`stroke-dasharray`）はスタイル層で約 75% の弧に固定されています。弧度を変えるなら core ではなくスタイルを変えてください。
+- 回転アニメーションは CSS keyframes で、`prefers-reduced-motion` の尊重はスタイル層にあります。
+
+<FnPlayground module="spinner" fn="getSpinnerClassNames" params='{"state": {"size": "medium"}}' />

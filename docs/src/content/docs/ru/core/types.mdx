@@ -1,0 +1,110 @@
+---
+title: types —— общие union-типы
+description: 'LhComponentSize / LhComponentLanguage / LhComponentType / LhPosition, выводятся из констант в constants'
+---
+
+Четыре union-типа, общие для компонентов core. Их значения — не выписанные вручную литералы, а **выведенные из `as const`-констант в `src/constants/`**: добавили размер / язык — правится только константа, а тип подтягивается автоматически.
+
+## Импорт
+
+```ts
+import type {
+  LhComponentSize,
+  LhComponentLanguage,
+  LhComponentType,
+  LhPosition,
+} from '@lh-ui/share/core/shared/types'
+```
+
+## Четыре типа
+
+| Тип | Определение | Фактические значения |
+| --- | --- | --- |
+| `LhComponentSize` | `(typeof LH_SIZE_CONST)[keyof typeof LH_SIZE_CONST]` | `'small' \| 'medium' \| 'large' \| 'mini' \| 'x-large'` |
+| `LhComponentLanguage` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | `'zh-CN' \| 'en-US' \| 'ja-JP' \| 'ko-KR' \| 'de-DE' \| 'fr-FR'` |
+| `LhComponentType` | `(typeof LH_TYPES_CONST)[keyof typeof LH_TYPES_CONST] \| 'default' \| 'primary'` | `'success' \| 'warning' \| 'error' \| 'info' \| 'danger' \| 'default' \| 'primary'` |
+| `LhPosition` | объединение литералов | `'top' \| 'top-left' \| 'top-right' \| 'bottom' \| 'bottom-left' \| 'bottom-right' \| 'left' \| 'right'` |
+
+### `'x-large'` в LhComponentSize
+
+Это **специальный размер для пожилых пользователей** (крупный шрифт, большая зона касания). Обратите внимание на структуру в константе:
+
+```ts
+// src/constants/index.ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',
+  large: 'large',
+  mini: 'mini',
+  old: 'x-large',   // ключ old, значение 'x-large'; // специальный для пожилых
+} as const
+```
+
+**Имя ключа не совпадает со значением** (`old` ↔ `'x-large'`), а в union-тип попадает именно **значение** `'x-large'`. При этом переключатель «режим для пожилых» в props компонента — это отдельное булево поле `old?: boolean` (см. [LhBaseProps](/ru/reference/types)): перечисление размеров и проп-переключатель — разные вещи, не путайте.
+
+### Два базовых цвета LhComponentType
+
+`'default'` / `'primary'` не входят в `LH_TYPES_CONST` (там пять **семантических цветов**: успех / предупреждение / ошибка / информация / опасность) — они добавлены на уровне типа как `| 'default' | 'primary'`. Это не «статусная семантика», а базовые цвета внешнего вида компонентов вроде кнопок.
+
+### LhPosition и LhPlacement —— две разные модели
+
+| | `LhPosition` | `LhPlacement` ([popper](/ru/core/popper)) |
+| --- | --- | --- |
+| Назначение | прилипание к краю (affix / backtop) | позиционирование плавающих слоёв (tooltip / popover) |
+| Значения | `'top'` / `'top-left'` / `'top-right'` / `'bottom'` / `'bottom-left'` / `'bottom-right'` / `'left'` / `'right'` | `'top'` / `'top-start'` / `'top-end'` / `'bottom'` / `'bottom-start'` / `'bottom-end'` / `'left'` / `'left-start'` / `'left-end'` / `'right'` / `'right-start'` / `'right-end'` |
+| Суффикс выравнивания | `-left` / `-right` (только оба края) | `-start` / `-end` (семантическое выравнивание, поддерживает RTL-переворот) |
+
+`-left` / `-right` у `LhPosition` — **физические направления**, а `-start` / `-end` у `LhPlacement` — **логические направления** (в RTL автоматически переворачиваются). Не используйте их взаимозаменяемо.
+
+## Почему выводится из констант
+
+```ts
+// Антипример: union написан вручную, при добавлении языка править в двух местах
+type LhComponentLanguage = 'zh-CN' | 'en-US'  // ← легко разойтись с константой
+
+// Подход этого репозитория: константа — единственный источник
+type LhComponentLanguage = (typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]
+```
+
+Чтобы добавить язык, достаточно дописать одну строку в `LH_LANGUAGE_CONST` — и тип, `LhLocaleType`, и проверка параметра `setLocale` обновляются автоматически. Это конкретное воплощение принципа разделения слоёв «константы `LH_XXX`, типы `LhXxx`» из [соглашения об именовании](/ru/guide/naming).
+
+## Примеры использования
+
+### props компонента
+
+```ts
+import type { LhComponentSize, LhComponentType } from '@lh-ui/share/core/shared/types'
+
+interface LhButtonProps {
+  type?: LhComponentType   // автодополнение 'primary' | 'success' | …
+  size?: LhComponentSize   // автодополнение 'small' | 'medium' | …
+}
+```
+
+### Обобщённая версия для расширения в бизнесе
+
+На стороне бизнеса часто нужно «тип компонента + пара своих типов»; `src/types/components/base.ts` предоставляет обобщённую версию (см. [справочник types](/ru/reference/types)):
+
+```ts
+import type { LhTypes } from '@lh-ui/share/types'
+
+type MyButtonType = LhTypes<'brand' | 'dangerous'>
+// → LhComponentType | 'brand' | 'dangerous'
+```
+
+### Проверка во время выполнения
+
+Сам тип не проверяет значения в рантайме. Внутри компонента проверка по значениям делается через константу:
+
+```ts
+import { LH_SIZE_CONST } from '@lh-ui/share/constants'
+
+const isValidSize = (v: string): v is LhComponentSize =>
+  Object.values(LH_SIZE_CONST).includes(v as LhComponentSize)
+```
+
+## Замечания
+
+- **Экспортируются только типы**: модуль подключает константы через `import type`, и после компиляции не появляется никакого кода времени выполнения (кроме самой константы). Импорт только типов не влияет на размер пакета.
+- **`'mini'` и `'x-large'` — расширенные ступени**: `small / medium / large` — обычные три ступени; `mini` — для компактных inline-сценариев (кнопки действий внутри таблицы), `x-large` — ступень доступности для пожилых. Не все компоненты поддерживают все пять ступеней; ориентируйтесь на документацию конкретного компонента.
+- **`LhPosition` не входит в публичную поверхность экспорта `src/types`**: он живёт в `core/shared/types`, и его нужно импортировать из `@lh-ui/share/core/shared/types`; в `@lh-ui/share/types` его нет.

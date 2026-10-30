@@ -1,0 +1,137 @@
+---
+title: Guía de contribución
+description: 'Las seis líneas rojas, las convenciones de nomenclatura, las convenciones de los mensajes de commit y la lista de autoverificación antes de abrir la PR'
+---
+
+Bienvenido a contribuir a @lh-ui/share. Este documento es la **restricción estricta** de la colaboración: la mayor parte de las convenciones no son una preferencia de estilo, sino la condición previa para que todo funcione correctamente a través de las cuatro bibliotecas de UI.
+
+## Las seis líneas rojas
+
+### 1. `src/` prohíbe cualquier dependencia de framework
+
+```ts
+// ❌ Prohibido absolutamente
+import { ref } from 'vue'
+import { useState } from 'react'
+import { ... } from '@dcloudio/uniapp'
+
+// ✅ Solo se permiten funciones puras y tipos
+export function computeSomething(input: Foo): Bar { ... }
+```
+
+**Por qué**: share es la **única capa compartida independiente del framework** de la familia. Un solo `import 'vue'` y las versiones de React y uniapp quedan inservibles. La CI tiene una puerta de grep.
+
+El cableado reactivo corresponde a cada capa de UI (`ref()` / `useState()` / `useSyncExternalStore()`); core solo emite datos puros. Véase [el diseño de lhlocale](/es/reference/locales#cómo-se-suscribe-cada-plataforma-a-version): un emisor de eventos puro que cada extremo convierte en su propia señal de re-renderizado.
+
+### 2. `styles/` es la única fuente de los estilos de componentes
+
+- Prohibido copiar los estilos a cualquier biblioteca de UI para modificarlos a mano.
+- **Toda modificación de estilos se hace únicamente en este repositorio**.
+
+Las diferencias de nombres de clases de transición entre extremos están recogidas por los [tres transition mixins](/es/reference/transition-mixins); **los estilos de componentes tienen prohibido volver a escribir los nombres de clase duplicados a mano**, todo mediante `@include`. Cuando haya que colgar el estado en un nodo descendente, se pasa el segundo parámetro.
+
+### 3. Las pruebas unitarias de core existen en una sola copia
+
+`tests/unit/` es el resultado de las pruebas **compartido por las tres bibliotecas**. Las bibliotecas de UI no deben copiar las pruebas unitarias de core de este repositorio.
+
+### 4. ~~Los bordes finos de 1 px debían llevar la marca `/* hairline */`~~ —— **Derogado**
+
+uniapp v3 emite px directamente, ya no transpila a rpx y la marca hairline perdió su utilidad (véase `docs/bugfix-log.md` D-02). Las 65 marcas históricas de `styles/` se conservan como comentarios normales; **los nuevos bordes de 1 px no necesitan la marca**. Los bordes estructurales (2 px / 3 px) nunca la llevaron.
+
+### 5. Orden de publicación: primero share, luego las bibliotecas de UI
+
+Cambio en share → changeset → release → cada biblioteca hace `pnpm up @lh-ui/share` y la regresión. **No se puede saltar**: el release de las bibliotecas de UI depende del tarball ya publicado de share.
+
+### 6. Los símbolos propios deben llevar el prefijo LH
+
+Al añadir constantes / tipos / interfaces **se cumple desde el principio**; no se deja para unificarlo después (el renombrado histórico está en el changeset `lh-prefix-naming`).
+
+## Convenciones de nomenclatura
+
+Alineadas con `docs/project/development-guide.md` del repositorio plus y unificadas para toda la familia:
+
+| Nivel | Convención | Ejemplo |
+| --- | --- | --- |
+| Raíz de dominio inverso | `top.lhgb` (`www.lhgb.top` al revés) | Raíz de nomenclatura de todos los repositorios de la familia; el `homepage` / `repository` / `author` del `package.json` usa `lhgb.top` |
+| Nombre de paquete JS / npm | scope `@lh-ui/*` | Los nombres de paquete npm no admiten puntos; el dominio inverso cae en la capa de metadatos |
+| Constantes | `LH_XXX`, `LH_<módulo>_<concepto>` | `LH_SIZE_DEFAULT`, `LH_THEME_PRESETS` |
+| Constantes de valor por defecto | Sufijo `DEFAULT` | `LH_DRAWER_DIRECTION_DEFAULT` |
+| Tipos / Interfaces | `LhXxx` | `LhThemePreset`, `LhSxProps` |
+| Singleton de módulo / objeto en minúsculas | `lhXxx` | `lhlocale` |
+| Nombres de clase BEM | `lh-xxx` | `lh-button__text--disabled` |
+| `name` del componente | `LhXxx` | `name: 'LhButton'` |
+
+### Registro de exenciones
+
+Lo que por convención establecida no lleva prefijo obligatorio (se registra aquí el motivo antes de cambiarlo):
+
+- **Las exportaciones de los paquetes de idioma `zhCN` / `enUS`** —— nomenclatura estándar de locales, y reexportadas como API pública por las tres bibliotecas de UI; renombrarlas tiene una superficie de rotura demasiado grande.
+- **Los valores en forma de cadena de los nombres de los presets de tema** (`name: 'cerblue'`, etc.) —— son valores de configuración que el usuario escribe en el `theme` del ConfigProvider; cambiarlos rompería la configuración de todos los usuarios finales. El **identificador TS correspondiente sí lleva prefijo** (`LhCerblue`).
+- **Los símbolos exportados por dependencias de terceros** no se exigen.
+
+## Responsabilidades de los directorios
+
+| Directorio | Responsabilidad |
+| --- | --- |
+| `src/core/<name>/` | Lógica de funciones puras del componente (`logic.ts` / `types.ts` / `index.ts`), cero imports de framework |
+| `src/core/shared/` | Núcleo compartido entre componentes (12 módulos, véase el [sumario](/es/core/overview)) |
+| `src/theme/` | Lado TS del tema (tipos + cinco presets) |
+| `src/constants/` / `src/locales/` / `src/types/` / `src/utils/` | Constantes / paquetes de idioma / tipos / utilidades puras |
+| `styles/` | Única fuente de los estilos BEM de los componentes (`<name>/index.scss` + `theme/common/*.scss`) |
+| `tests/unit/` | La única copia de las pruebas unitarias de core |
+| `scripts/` | Scripts de construcción y verificación |
+| `docs/` | El sitio de documentación (Astro Starlight), **no entra en el producto de npm** |
+
+## Convenciones de los mensajes de commit
+
+- **Los comentarios y los mensajes de commit van en chino**.
+- **El mensaje de commit se escribe en markdown y es muy detallado**: línea de asunto + descripción del alcance + lista de archivos añadidos / modificados + tabla de puntos clave del diseño + estado de la verificación.
+- Configuración de Prettier: comillas simples, sin punto y coma, 2 espacios, printWidth 100. `pnpm format` solo cubre los archivos de configuración; el resto se alinea a mano.
+
+## Lista para añadir un componente core nuevo
+
+1. El trío `src/core/<name>/{logic,types,index}.ts`
+2. `tests/unit/core/<name>.spec.ts`
+3. Añadir la exportación en `src/core/index.ts`
+4. `styles/<name>/index.scss` (si no, algún extremo se queda sin producto de estilos; omisión silenciosa)
+5. changeset (minor)
+
+Después se ejecuta:
+
+```bash
+pnpm test && pnpm lint && pnpm typecheck
+pnpm build                    # sync:exports genera las nuevas claves de exports
+pnpm verify:dts && pnpm verify:styles
+```
+
+## Lista de autoverificación antes de abrir la PR
+
+- [ ] No hay ni un solo `import 'vue' | 'react' | '@dcloudio/*'` dentro de `src/` (línea roja 1)
+- [ ] Las modificaciones de estilos solo están en `styles/` (línea roja 2)
+- [ ] Los colores son siempre `var(--lh-*, fallback)`, sin nuevos valores de color codificados de forma rígida
+- [ ] Los nuevos nombres de clases de transición usan el mixin; nada de escribir `-enter-from` / `-leave-from` a mano
+- [ ] Los tokens nuevos están en `var.scss`; si el valor es una interpolación `#{$lh-*}`, `var-dark.scss` tiene la cobertura correspondiente
+- [ ] Los símbolos nuevos llevan el prefijo `LH` / `Lh` (línea roja 6)
+- [ ] `pnpm test` / `pnpm lint` / `pnpm typecheck` pasan
+- [ ] Tras `pnpm build`, `pnpm verify:dts` / `pnpm verify:styles` pasan
+- [ ] Hay changeset y el nivel es correcto
+- [ ] El componente nuevo tiene su `styles/<name>/index.scss` y existe `tests/unit/core/<name>.spec.ts` (línea roja 3)
+- [ ] Si se cambiaron tokens / nombres de clase / iconos, se ha ejecutado `pnpm docs:data` para refrescar los datos de la documentación
+
+## Tareas pendientes conocidas (registradas como changesets futuros; bienvenido a reclamarlas)
+
+«Especial de tokens de altura»:
+
+1. Las alturas de los controles no están unificadas (input 37 / select 32 / cascader 27→32 / date-time 33 / input-number 32); la causa raíz es que `var.scss` no tiene un token `--lh-control-height-*`
+2. El `padding-top: 16px` asimétrico del `--has-label` del input
+3. El spinner y el icon no coinciden en la talla de su tamaño homónimo (small 16 frente a 14)
+4. El check del checkbox tiene fijado `top:2/left:5` en lugar del centrado al 50 % (correcto con la caja de 16 px; al cambiar de tamaño queda desplazado)
+5. El `translate(-50%,-50%)` del switch está repetido y codificado de forma rígida tanto en la base como en los keyframes
+
+## Documentación relacionada
+
+- [Introducción al proyecto](/es/guide/introduction) —— el lugar de share en la familia
+- [Convenciones de nomenclatura](/es/guide/naming) —— la versión completa de las reglas de nomenclatura
+- [Estrategia de inyección de estilos por extremo](/es/guide/injection) —— el mecanismo de implementación de la línea roja 2
+- [Sistema de verificación](/es/development/verification) —— las verificaciones que hay que pasar antes de la PR
+- [Proceso de publicación](/es/development/release) —— el flujo completo de la línea roja 5

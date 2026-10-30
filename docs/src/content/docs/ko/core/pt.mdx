@@ -1,0 +1,121 @@
+---
+title: pt —— 패스스루 속성 병합
+description: 'mergePt가 PT 속성 패키지(class / style / attrs)와 기본 클래스명을 얕게 병합, 컴포넌트 내부 요소의 스타일 패스스루에 사용'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+컴포넌트 내부에는 여러 요소가 있습니다(버튼의 `<button>`과 그 안의 `<span>`, 입력상자의 `<input>`과 앞쪽 아이콘 `<i>`). 사용자가 외부에서 그중 하나를 미세 조정하려면 어떻게 할까요? lh-ui의 답은 **PT(PassThrough) 속성 패키지**입니다: 컴포넌트가 `pt` prop을 노출하고, 내부 요소 이름별로 `class` / `style` / `attrs`를 패스스루합니다. `mergePt`가 그것을 컴포넌트 자신의 기본 클래스명과 병합합니다.
+
+## 사용 시기
+
+- 컴포넌트 라이브러리 내부: 각 내부 요소마다 `mergePt(props.pt?.icon, 'lh-button__icon')`를 호출해, 붙여야 할 class / style / attrs를 얻습니다.
+- 사용자 측에서 `pt` prop으로 컴포넌트 내부를 미세 조정하되, `:deep()`으로 관통하지 않아도 됩니다.
+
+**사용하면 안 되는 경우**: 테마 수준의 커스터마이징([themeVars](/ko/theme/customization) 사용); 단순한 클래스명 추가(`class` prop 사용).
+
+## 가져오기
+
+```ts
+import { mergePt, type LhPtAttrs } from '@lh-ui/share/core/shared/pt'
+```
+
+## 타입과 함수
+
+```ts
+export interface LhPtAttrs {
+  class?: string | string[] | Record<string, boolean>
+  style?: Record<string, string>
+  attrs?: Record<string, any>
+}
+```
+
+| 함수 | 시그니처 | 역할 |
+| --- | --- | --- |
+| `mergePt` | `(pt: LhPtAttrs \| undefined, baseClass: string) => { class: string[]; style: Record<string, string>; attrs: Record<string, any> }` | PT 속성과 기본 클래스명 병합 |
+
+## 병합 규칙
+
+### class
+
+`baseClass`는 **항상 배열의 첫 자리**이고, 사용자의 class는 그 뒤에 옵니다:
+
+```ts
+mergePt({ class: 'my-icon' }, 'lh-button__icon')
+// { class: ['lh-button__icon', 'my-icon'], style: {}, attrs: {} }
+
+mergePt({ class: ['a', 'b'] }, 'lh-button__icon')
+// class: ['lh-button__icon', 'a', 'b']
+
+mergePt({ class: { active: true, disabled: false } }, 'lh-button__icon')
+// class: ['lh-button__icon', 'active']   —— 객체에서는 값이 참인 키만 취함
+
+mergePt({ class: 'a  b ' }, 'lh-button__icon')
+// class: ['lh-button__icon', 'a', 'b']   —— 문자열은 공백으로 분할, 빈 문자열은 걸러냄
+```
+
+`baseClass`가 앞에 오는 이유: **BEM 기본 클래스명의 명시도가 사용자 클래스명에 눌려서는 안 되기 때문**입니다(단일 클래스명끼리는 나중에 적힌 쪽이 먼저 적힌 쪽을 덮어씁니다). 컴포넌트의 `--primary` 수식자가 여전히 사용자의 `my-icon`을 덮어쓸 수 있어야 합니다.
+
+### style / attrs
+
+```ts
+mergePt(undefined, 'lh-button__icon')
+// { class: ['lh-button__icon'], style: {}, attrs: {} }   —— pt가 비면 전부 빈 값
+
+mergePt({ style: { color: 'red' }, attrs: { 'data-x': '1' } }, 'lh-button__icon')
+// { class: ['lh-button__icon'], style: { color: 'red' }, attrs: { 'data-x': '1' } }
+```
+
+**주의**: `style` / `attrs`는 **참조 그대로 패스스루**되며 복사하지 않습니다. UI 계층은 받은 뒤 `v-bind="merged.attrs"` / `:style="merged.style"`로 바로 사용하면 됩니다; 컴포넌트 내부에서 반환값을 변경하지 마세요.
+
+## 사용 예시
+
+### 컴포넌트 내부(버튼의 아이콘 요소)
+
+```ts
+// button 컴포넌트
+const iconPt = computed(() => mergePt(props.pt?.icon, 'lh-button__icon'))
+```
+
+```vue
+<template>
+  <button class="lh-button">
+    <i v-if="icon" v-bind="iconPt.attrs" :class="iconPt.class" :style="iconPt.style" />
+    <span><slot /></span>
+  </button>
+</template>
+```
+
+### 사용자 측
+
+```vue
+<lh-button
+  :pt="{
+    icon: { class: 'text-lg', style: { marginRight: '4px' } },
+    $root: { attrs: { 'data-test': 'submit' } },
+  }"
+>
+  제출
+</lh-button>
+```
+
+### React
+
+```tsx
+const iconPt = mergePt(pt?.icon, 'lh-button__icon')
+
+return (
+  <button className="lh-button">
+    {icon && <i className={iconPt.class.join(' ')} style={iconPt.style} {...iconPt.attrs} />}
+  </button>
+)
+```
+
+## 주의 사항
+
+- **얕은 병합, deepMerge 없음**: `class`는 배열 수준에서 이어 붙이고, `style` / `attrs`는 통째로 교체합니다. 깊은 병합은 여기서 의미가 없습니다(class는 트리가 아니라 목록입니다).
+- **`pt`가 비면 전부 빈 객체**: UI 계층은 판단 없이 구조 분해할 수 있습니다.
+- **반환된 class는 배열**: Vue의 `:class`는 배열을 받고, React는 `.join(' ')`이 필요합니다.
+- **기본 클래스명은 생략할 수 없음**: `mergePt(pt, '')`는 첫 항목이 빈 문자열인 배열을 얻습니다——BEM 기본 클래스명은 스타일의 닻이며, 각 내부 요소마다 반드시 있어야 합니다.
+
+<FnPlayground module="pt" fn="mergePt" params='{"pt": {"class": "my-icon text-lg"}, "baseClass": "lh-button__icon"}' />

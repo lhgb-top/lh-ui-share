@@ -1,0 +1,133 @@
+---
+title: radio —— ラジオボタン
+description: 'isRadioChecked は Object.is で modelValue と value を判定、getRadioClassNames はタイプ修飾を出力'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ラジオボタンのセマンティクスは「1 つのグループで 1 つだけ有効になる」ことです。`core/radio` はこれを最もシンプルな判定に抽象化します：**現在のグループ値 `modelValue` は自分の `value` と等しいか**。checkbox の集合演算とは異なり、radio は単一値の比較です。
+
+## いつ使うか
+
+- 各端の `LhRadio` と `LhRadioGroup` の実装（group が `modelValue` を持ち、item が自身の選択状態を判定する）。
+- 排他的な選択：性別、支払い方法、タブ式のフォーム分岐。
+- **使うべきでない**：複数選択には `checkbox`；スイッチには `switch`；セグメント切り替えには `segmented`（より視覚的に軽量）。
+
+## インポート方法
+
+```ts
+import { isRadioChecked, getRadioClassNames } from '@lh-ui/share/core/radio'
+import type { LhRadioState } from '@lh-ui/share/core/radio'
+```
+
+## 設計意図
+
+`isRadioChecked` は `===` ではなく `Object.is(modelValue, value)` を使います。checkbox と同様の理由です：NaN / -0 に対する集合のセマンティクスの一貫性、そして「任意の型の値をラジオのキーにできる」ことです。
+
+radio には toggle 関数がありません——選択とは**値の代入**（`modelValue = value`）です。これが単一選択と複数選択の数学的な違いです（1 つの変数への代入 vs 1 つの集合への追加・削除）。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `isRadioChecked` | `(state: LhRadioState) => boolean` | 真偽値 | `Object.is(modelValue, value)` |
+| `getRadioClassNames` | `(type: string) => string[]` | クラス名配列 | `lh-radio` + タイプ修飾 |
+
+```ts
+getRadioClassNames('primary')  // ['lh-radio', 'lh-radio--primary']
+getRadioClassNames('')         // ['lh-radio']
+```
+
+## 型定義
+
+```ts
+export interface LhRadioState {
+  modelValue: unknown   // グループの現在の値
+  value: unknown        // この radio の値
+  checked: boolean
+}
+```
+
+## アクセシビリティ
+
+checkbox と同様です：**ネイティブの `<input type="radio">`** を使います。セマンティクス、キーボード操作、フォーム送信がすべて無料で手に入ります。radio の name 属性が鍵です——同じグループの radio は name を共有しなければならず、ブラウザの方向キーによるナビゲーション（同グループ間を矢印キーで移動）がそれに依存しています。
+
+```ts
+// スクリーンリーダーが読み上げるのは label の文字 +「選択済み / 未選択」の状態で、ネイティブ radio がすべてカバーする
+```
+
+## 使用例
+
+```ts
+import { isRadioChecked, getRadioClassNames } from '@lh-ui/share/core/radio'
+
+isRadioChecked({ modelValue: 'b', value: 'b', checked: false })  // true
+isRadioChecked({ modelValue: 'b', value: 'a', checked: false })  // false
+```
+
+```vue
+<!-- Vue3 -->
+<div class="lh-radio-group" :class="`lh-radio-group--${size}`">
+  <label
+    v-for="opt in options"
+    :key="String(opt.value)"
+    :class="getRadioClassNames(type)"
+    :class-mod="{ 'lh-radio--checked': isRadioChecked({ modelValue, value: opt.value, checked: false }) }"
+  >
+    <span class="lh-radio__box">
+      <input
+        class="lh-radio__input"
+        type="radio"
+        :name="groupName"
+        :checked="modelValue === opt.value"
+        @change="emit('update:modelValue', opt.value)"
+      />
+    </span>
+    <span class="lh-radio__label">{{ opt.label }}</span>
+  </label>
+</div>
+```
+
+```tsx
+// React
+const [value, setValue] = useState('a')
+return options.map((opt) => (
+  <label key={opt.value} className="lh-radio">
+    <input
+      type="radio"
+      name={groupName}
+      checked={value === opt.value}
+      onChange={() => setValue(opt.value)}
+    />
+    <span className="lh-radio__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp：<radio-group> + <radio> は内蔵コンポーネントで、change イベントが直接選択項目の value を渡す；
+// uniapp の radio の value は文字列しかサポートしない点に注意
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-radio` | 基底クラス |
+| `.lh-radio--checked` / `--disabled` | 状態 |
+| `.lh-radio--{small\|large}` | サイズのバリエーション |
+| `.lh-radio__box` | カスタムラジオサークル（ネイティブの見た目を上書き） |
+| `.lh-radio__input` | ネイティブ input（視覚的に隠す、セマンティクスは保持） |
+| `.lh-radio__label` | 文字 |
+| `.lh-radio-group` / `--{small\|large}` | グループコンテナ |
+
+選択状態の内側のドットには `var(--lh-primary-color)`、無効状態には `--lh-text-disabled` を使います。
+
+## 注意事項
+
+- **`type` パラメータと checkbox-group のサイズは別物**：radio の `getRadioClassNames(type)` が出力するのは**タイプ**修飾（primary など）で、サイズ修飾は group 側にあります（`lh-radio-group--{size}`）。
+- **name はグループ内で一致させなければならない**：さもなくばブラウザのキーボードナビゲーション（同グループ間の矢印移動）が効かず、フォーム送信時に複数の値が送信されます。
+- **`modelValue` の初期値**：ある option の value か、`undefined`（何も選ばない）にすべきです。選択肢に存在しない値を与えると、すべての radio が未選択になり、UI から復元できなくなります。
+- radio と segmented はどちらも排他的な切り替えを作れます：radio は「フォームコントロール」のセマンティクス（ネイティブ、送信可能）で、segmented は「ビュー切り替え」のセマンティクス（より軽量で、ボタングループに近い）です。
+
+<FnPlayground module="radio" fn="getRadioClassNames" params='{"type": "primary"}' />

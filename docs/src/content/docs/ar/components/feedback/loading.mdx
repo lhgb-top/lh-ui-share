@@ -1,0 +1,178 @@
+---
+title: loading —— غطاء التحميل
+description: 'resolveLoadingTarget لحل وجهة التركيب، ensurePositioned لإصلاح التموضع وإعادته، ودلالة aria-busy'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+يغطّي غطاء التحميل منطقة (أو الصفحة بأكملها) دلالةً على أن «هنا يجري العمل». ما يديره `core/loading` هو **حل وجهة التركيب** و**إصلاح التموضع**—فالسياق الأمر `v-loading="true"` يحتاج إلى جعل القناع متموضعاً بشكل absolute فوق العنصر المُطلِق، ولكن العناصر ذات التموضع static لا يمكن أن تكون سلفاً تموضعياً، وهذا الإصلاح هو مهمة core.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة توجيه `v-loading` أو مكوّن `<LhLoading>`: إرسال النموذج، تحديث الجدول، تحميل الصفحة بأكملها.
+- عندما يجب **تغطية منطقة محددة بوضوح** (لا الصفحة كاملة).
+- **لا ينبغي استخدامه**: التنبيهات النصية البحتة (استخدم `message`)؛ المهام الخلفية غير محددة المدة (استخدم `notification` مع إمكانية الإلغاء)؛ الهياكل العظمية (استخدم `skeleton`—فالتحميل يفترض ثبات تخطيط المحتوى بينما skeleton يفترض تغيّره).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getLoadingClassNames,
+  resolveLoadingTarget,
+  isLoadingFullscreen,
+  ensurePositioned,
+  getLoadingAria,
+} from '@lh-ui/share/core/loading'
+import type { LhLoadingOptions, LhLoadingHandle, LhLoadingState } from '@lh-ui/share/core/loading'
+```
+
+## القصد التصميمي
+
+**توحيد الحالات الثلاث في `resolveLoadingTarget`**: عدم التمرير → `document.body` (ملء الشاشة)؛ السلسلة → `querySelector` مع **الرجوع إلى body عند عدم الوجود** (فخطأ في كتابة المُحدِّد لن يتسبب بانهيار، بل يتحول إلى غطاء ملء للشاشة)؛ العنصر يُعاد كما هو. this الرجوع حاسم: فالـ target الذي تتلقاه الواجهة الأمرية قادم من ref/مُحدِّد كتبه المستخدم، ويجب أن تكون البيانات القذرة لها حدّ أسفل.
+
+**«استعارة مع الإرجاع» في `ensurePositioned`**: العنصر ذو التموضع static يُغيَّر مؤقتاً إلى relative، ويُعاد `restore()` لإرجاعه عند الإزالة. **لا يُغيَّر سوى position في النمط المضمَّن (inline)**، دون المساس بالأصناف أو بقية الأنماط—وعند الإرجاع تُستعاد قيمة position المضمَّنة إلى قيمتها الأصلية (التي قد تكون سلسلة فارغة). وإذا كان للعنصر تموضع بالفعل (relative/absolute/fixed/sticky)، لا يُفعل شيء وتكون `restore` دالة فارغة—فلا حاجة لاستدعائها لمعرفة الحالة، يُكتفى باستدعائها دون قيد.
+
+**معيار ملء الشاشة هو «هل الهدف هو body»**: `isLoadingFullscreen(target)` بدلاً من تمرير علم (flag) إضافي—فاكتفاء كون الهدف body يُعدّ ملءً للشاشة، ويُضاف الصنف `--fullscreen` إلى القناع (تموضع fixed + z-index أعلى). حارس SSR: يُعاد false عند عدم وجود `document`.
+
+**الدلالة المزدوجة في `getLoadingAria`**: `aria-busy="true"` يُعلَّم على المنطقة المغطّاة (كيلا يُعلن قارئ الشاشة محتواها القديم قبل اكتمال التحميل)، والأيقونة الدوّارة هي **رسم زخرفي** → `aria-hidden` (لتجنّب إعلان قارئ الشاشة عبارات مثل «رسم دوّار»). تُعيد `busy: false` كائناً فارغاً—بحيث يمكن لطبقة UI عمل `v-bind` لها دون قيد.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `getLoadingClassNames` | `(state: LhLoadingState) => string[]` | أسماء الأصناف | ملء الشاشة / مع نص |
+| `resolveLoadingTarget` | `(target: string \| HTMLElement \| undefined) => HTMLElement` | العنصر الهدف | الرجوع إلى body عند عدم العثور على المُحدِّد |
+| `isLoadingFullscreen` | `(target: HTMLElement) => boolean` | هل هو ملء للشاشة | الهدف هو body يعني ملء الشاشة |
+| `ensurePositioned` | `(target: HTMLElement) => { restore }` | مقبض الإرجاع | static → relative، والإرجاع عند الإزالة |
+| `getLoadingAria` | `(busy?: boolean) => LhAriaAttrs` | حزمة سمات aria | aria-busy + aria-hidden للأيقونة |
+
+## تعريفات الأنواع
+
+```ts
+export interface LhLoadingOptions {
+  text?: string                      // نص القناع
+  fullscreen?: boolean               // إجبار ملء الشاشة
+  background?: string                // لون خلفية القناع (تجاوز شفافيته الافتراضية)
+  spinner?: boolean                  // إظهار الأيقونة الدوّارة (افتراضياً true)
+  target?: string | HTMLElement      // وجهة التركيب
+  delay?: number                     // تأخير العرض بالمللي ثانية (منع الوميض)
+}
+
+export interface LhLoadingHandle {
+  close: () => void                  // إغلاق القناع وإزالته
+  setText: (text: string) => void    // تحديث النص ديناميكياً
+}
+
+export interface LhLoadingState {
+  fullscreen: boolean
+  withText: boolean                  // عند وجود نص يُحجز مكان لحاوية النص
+}
+```
+
+## إمكانية الوصول
+
+```ts
+getLoadingAria(true)   // { 'aria-hidden': true, 'aria-busy': true }
+getLoadingAria(false)  // {} (للربط v-bind غير المشروط)
+```
+
+- `aria-busy="true"` هو وسم «المنطقة مشغولة» المعياري في WAI-ARIA، الذي يعلم قارئ الشاشة بأن المحتوى على وشك التغيّر فلا يُعلن محتواه القديم حالياً. يُعلَّم على **حاوية المحتوى المغطّى**، لا على طبقة القناع نفسها.
+- `aria-hidden` للأيقونة الدوّارة: فهي تغذية راجعة بصرية بحتة، والنص (إن وُجد) يمرّر المعلومة نصياً.
+- **يجب أن يكون للنص معنى**: «جارٍ التحميل…» أفضل من «loading»؛ والتقدّم بالنسب المئوية («تم تحميل 76%») أكثر ملاءمة لمستخدمي قارئ الشاشة—فعند تغيّر نص القناع يُعلنه قارئ الشاشة (بينما يبقى ضبط `aria-live` من شأن طبقة UI).
+- **غطاء ملء الشاشة والتركيز**: يبقى المحتوى قابلاً للتركيز بـ Tab أثناء غطاء ملء الشاشة—فإذا أردت منع التفاعل، فعلى طبقة UI اعتراضه على القناع أو تطبيق `inert` على منطقة المحتوى (راجع آلية inert في `shared/focus-trap`).
+
+## أمثلة الاستخدام
+
+```ts
+import { resolveLoadingTarget, ensurePositioned, isLoadingFullscreen, getLoadingClassNames } from '@lh-ui/share/core/loading'
+
+resolveLoadingTarget(undefined)              // document.body (ملء الشاشة)
+resolveLoadingTarget('.table-wrapper')       // العنصر الموجود؛ وعند عدم الوجود → body
+resolveLoadingTarget(elRef)                  // يُعاد كما هو
+
+const el = resolveLoadingTarget(props.target)
+const restore = ensurePositioned(el).restore  // static → relative مع تسجيل القيمة الأصلية
+try {
+  // …عرض القناع…
+} finally {
+  restore()                                   // إرجاع position عند الإزالة
+}
+
+isLoadingFullscreen(document.body)  // true
+isLoadingFullscreen(tableEl)        // false
+```
+
+```ts
+// الخدمة الأمرية (طبقة UI): الإنشاء / الإغلاق / العدّ
+const instances = new Map<HTMLElement, { count: number; restore: () => void; el: HTMLElement }>()
+
+function showLoading(target: HTMLElement, text?: string) {
+  const hit = instances.get(target)
+  if (hit) { hit.count++; return }
+  const { restore } = ensurePositioned(target)
+  const mask = createMask(text, isLoadingFullscreen(target))
+  target.appendChild(mask)
+  instances.set(target, { count: 1, restore, el: mask })
+}
+
+function closeLoading(target: HTMLElement) {
+  const hit = instances.get(target)
+  if (!hit) return
+  hit.count--
+  if (hit.count > 0) return        // عدّ المراجع: عدة تحميلات لا تُغلق إلا واحداً
+  hit.el.remove()
+  hit.restore()                    // إرجاع position
+  instances.delete(target)
+}
+```
+
+```vue
+<!-- Vue3: توجيه v-loading -->
+<template>
+  <div class="table-wrapper" v-loading="loading">
+    <LhTable :data="rows" />
+  </div>
+</template>
+
+<script setup>
+// تنفيذ التوجيه: عند mounted يُحدَّد الإظهار وفقاً لقيمة binding.value
+const loading = ref(false)
+async function refresh() {
+  loading.value = true
+  try { rows.value = await fetch() } finally { loading.value = false }
+}
+</script>
+```
+
+```tsx
+// React: خطاف useLoading (ref + useEffect لإدارة تركيب القناع واستدعاء restore)
+```
+
+```ts
+// uniapp: القناع عبر <view> + absolute؛ و ensurePositioned يعمل على h5 فقط،
+// أما التطبيقات المصغّرة فلها سلوك fixed/absolute مختلف، وتتكفل طبقة UI بالتكيف
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-loading` | حاوية القناع (absolute يغطي الهدف) |
+| `.lh-loading--fullscreen` | ملء الشاشة (fixed + z-index أعلى) |
+| `.lh-loading--with-text` | مع نص (ترتيب عمودي للأيقونة + النص) |
+| `.lh-loading__spinner` | الأيقونة الدوّارة (`LhSpinner`) |
+| `.lh-loading__text` | النص |
+
+لون خلفية القناع `--lh-mask-color` (شفاف، بنسخة فاتحة وأخرى داكنة)؛ ولون النص `--lh-text-primary-regular`؛ وz-index هو `--lh-z-index-loading`.
+
+## ملاحظات
+
+- **يجب استدعاء `restore()`**: فـ `ensurePositioned` غيّر قيمة position المضمَّنة للعنصر الهدف، وعدم إرجاعها سيترك تلوثاً بـ «relative» في التخطيط (خصوصاً في الحالات التي يكون فيها `position: static` مقصوداً). استخدم try/finally لضمان ذلك.
+- **عدم العثور على المُحدِّد يتحول بهدوء إلى ملء الشاشة**: `resolveLoadingTarget('.typo-selector')` سيرجع إلى body—فعند تتبّع «لماذا يغطّي القناع الشاشة بأكملها» ابدأ بفحص المُحدِّد.
+- **عدّ المراجع**: عدة تحميلات متزامنة على المنطقة نفسها (طلبان في آن واحد) تتطلب عدّاً، ولا يُغلق القناع إلا عند اكتمال آخرها. لا يحتفظ core بأي حالة، فالمحاسبة من شأن طبقة UI.
+- **`delay` لمنع الوميض**: الطلبات السريعة (أقل من 200ms) تجعل القناع يومض وكأنه علة. يمكن لطبقة UI تأخير العرض، فإن اكتمل الطلب أولاً يُلغى العرض.
+- **الأقنعة المتداخلة**: إذا كانت هناك منطقة B مغطّاة داخل منطقة A مغطّاة أيضاً، فيجب على طبقة UI ضمان أن يغطّي قناع B المنطقة B فقط من حيث z-index وpointer-events—فـ core يحسب تموضع هدف واحد فقط.
+- **حوارس SSR**: يحتوي كلٌ من `isLoadingFullscreen` و`ensurePositioned` على حارس `typeof document/window === 'undefined'`، ولكن **غطاء التحميل بحد ذاته مفهوم من جهة العميل**، ولا ينبغي استدعاء الخدمة على الخادم في SSR.
+- **غطاء ملء الشاشة لا يحجب التفاعل**: هو في الوضع الافتراضي مجرد غطاء بصري، وتظل الأزرار في الخلفية قابلة للنقر (إلا إذا عالجت طبقة القناع pointer-events). وعند الحاجة إلى حجب إلزامي تُضاف `inert` في طبقة UI.
+
+<FnPlayground module="loading" fn="getLoadingAria" params='{"busy": true}' />

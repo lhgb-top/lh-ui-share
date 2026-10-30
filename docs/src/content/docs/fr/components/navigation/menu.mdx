@@ -1,0 +1,156 @@
+---
+title: 'menu menu —— Navigation'
+description: "toggleMenuOpen : double mode accordéon / normal, liaison aria-expanded des sous-menus, @deprecated moveMenuFocus a été regroupé dans shared/keyboard"
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Le menu est la navigation squelette d'un site : menu horizontal supérieur, menu vertical latéral, menu à icônes repliable. La différence avec `dropdown` est la **persistance et la hiérarchie** — le menu réside en permanence dans la page et peut imbriquer des sous-niveaux à l'infini ; le dropdown est une liste d'actions temporaire surgissant d'un clic. `core/menu` gère la comptabilité de l'état déployé et la sémantique d'accessibilité ; la mise en page et le positionnement relèvent entièrement du SCSS.
+
+## Quand l'utiliser
+
+- Chaque port implémente `<LhMenu>` / `<LhSubMenu>` / `<LhMenuItem>` : navigation principale de site, barre latérale d'arrière-plan, sommaire de site documentaire.
+- Une navigation nécessitant **plus de deux niveaux** de hiérarchie.
+- **À éviter** : une rangée de boutons d'actions alignés (utilisez `space` + `button`) ; un menu d'actions temporaire surgissant (utilisez `dropdown`) ; le bascule de contenu par onglets (utilisez `tabs`).
+
+## Import
+
+```ts
+import {
+  getMenuClassNames,
+  getMenuItemClassNames,
+  getSubMenuClassNames,
+  getMenuItemGroupClassNames,
+  toggleMenuOpen,
+  isMenuOpen,
+  moveMenuFocus,
+  getMenuAria,
+  getMenuItemAria,
+  getSubMenuAria,
+} from '@lh-ui/share/core/menu'
+import type { LhMenuMode } from '@lh-ui/share/core/menu'
+```
+
+## Intentions de conception
+
+**Le mode accordéon autorise zéro ouvert** : avec `uniqueOpened: true`, `toggleMenuOpen` appelé sur un élément déjà déployé renvoie `[]` (tout replié) ; sur un élément non déployé, il renvoie `[key]` (lui seul est conservé). Notez qu'il ne s'agit pas de « garder au moins un élément ouvert » — zéro ouvert est permis, ce qui fait de « tout replier » un état interactif.
+
+**Le mode normal est une addition/suppression, pas un remplacement** : la fonction renvoie un nouveau tableau (`filter` pour retirer / ajout pour ajouter) en laissant les autres éléments déployés intacts — dans un menu multi-niveaux, avoir plusieurs sous-menus ouverts simultanément est un besoin courant.
+
+**`moveMenuFocus` est une enveloppe @deprecated** : l'algorithme de navigation cyclique a été regroupé dans `getNextListIndex` de `core/shared/keyboard` ; cette fonction conserve l'ancienne signature (recevant un tableau d'éléments DOM) pour les références existantes en aval. Ce qu'elle fait : filtrer les éléments dont `tabIndex === -1` (équivalent des éléments disabled du noyau), et replier sur le premier élément lorsque l'élément courant n'est pas dans la liste. **Le nouveau code doit utiliser `getNextListIndex` directement**.
+
+**Le trio aria** : conteneur `role="menu"`, éléments feuilles `role="menuitem"`, titres de sous-menus `role="menuitem"` + `aria-expanded` + `aria-controls`. Notez que **le titre d'un sous-menu n'est pas un rôle enfant de menuitem** — dans la structure de menu APG, un élément de menu dépliable reste un menuitem, l'état déployé étant exprimé par aria-expanded.
+
+**Classes et états séparés** : `--active` / `--disabled` / `--opened` sont des classes booléennes indépendantes, combinées par le SCSS. `--collapse` (état replié) est une classe de niveau conteneur qui affecte le rendu de tous les éléments enfants (le menu à icônes n'affiche que les icônes, le tooltip complète le texte).
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getMenuClassNames` | `(state: { mode, collapse }) => string[]` | classes | mode de mise en page + état replié |
+| `getMenuItemClassNames` | `(state: { active, disabled }) => string[]` | classes | élément feuille |
+| `getSubMenuClassNames` | `(state: { active, disabled, opened }) => string[]` | classes | sous-menu |
+| `getMenuItemGroupClassNames` | `() => string[]` | classes | conteneur de groupe |
+| `toggleMenuOpen` | `(openeds, key, uniqueOpened) => string[]` | nouveau tableau | déployer/replier (immutable) |
+| `isMenuOpen` | `(openeds, key) => boolean` | ouvert ou non | recherche par includes |
+| `moveMenuFocus` ⚠️ | `(items, currentEl, direction) => HTMLElement \| null` | élément cible | déplacement du focus ↑/↓ |
+| `getMenuAria` | `(id?) => LhAriaAttrs` | paquet aria | role=menu |
+| `getMenuItemAria` | `(state: { disabled? }) => LhAriaAttrs` | paquet aria | menuitem |
+| `getSubMenuAria` | `(options: { opened, disabled?, menuId? }) => LhAriaAttrs` | paquet aria | menuitem + expanded |
+
+⚠️ est une enveloppe de compatibilité `@deprecated` ; le nouveau code doit utiliser `getNextListIndex` de `shared/keyboard`.
+
+## Définitions de types
+
+```ts
+export type LhMenuMode = 'horizontal' | 'vertical'
+```
+
+## Accessibilité
+
+```ts
+getMenuAria('menu-1')            // { role: 'menu', id: 'menu-1' }
+getMenuItemAria({ disabled: true })  // { role: 'menuitem', 'aria-disabled': true }
+getSubMenuAria({ opened: true, menuId: 'menu-1' })
+// { role: 'menuitem', 'aria-expanded': true, 'aria-controls': 'menu-1' }
+getSubMenuAria({ opened: false })
+// { role: 'menuitem', 'aria-expanded': false }
+```
+
+- **La valeur fausse d'aria-expanded est également produite** : `{ 'aria-expanded': false }` est significative — elle indique explicitement au lecteur d'écran « ce sous-menu est replié ». Cela suit la convention de `shared/a11y` : seul undefined (non transmis) est omis ; false est une valeur d'état légitime.
+- **La divergence des modèles de navigation clavier** : les menus horizontaux utilisent ←/→, les menus verticaux ↑/↓ — c'est la convention du modèle de menu APG. Les utilisateurs de lecteurs d'écran s'attendent au comportement correspondant lorsqu'ils appuient sur les touches directionnelles — `moveMenuFocus` ne fournit que la direction verticale 1/-1 ; le ←/→ des menus horizontaux est mappé par la couche UI qui appelle la même fonction.
+- **aria-current pour marquer la page courante** : en plus de la classe `--active`, il est recommandé que la couche UI ajoute `aria-current="page"` sur l'élément de menu actif (même sémantique que le dernier élément de `breadcrumb`), afin que le lecteur d'écran annonce « page courante ».
+- **La compensation textuelle du menu replié** : en mode `collapse`, seules les icônes sont affichées ; le texte des éléments de menu devrait être placé dans un `aria-label` ou un tooltip au survol — sinon les boutons à icônes sont sans nom pour les lecteurs d'écran.
+- **Sauter les éléments désactivés** : les éléments `--disabled` ne répondent pas au clic (interceptés par la couche UI) mais restent dans le DOM. La navigation clavier doit les sauter (le filtrage par tabIndex de `moveMenuFocus`).
+
+## Exemples d'utilisation
+
+```ts
+import { toggleMenuOpen, isMenuOpen } from '@lh-ui/share/core/menu'
+
+toggleMenuOpen(['a', 'b'], 'b', false)  // ['a'] (mode normal, replie b)
+toggleMenuOpen(['a'], 'b', false)       // ['a', 'b'] (déploie b)
+toggleMenuOpen(['a'], 'a', true)        // [] (accordéon : un nouvel appui replie, zéro ouvert est autorisé)
+toggleMenuOpen(['a'], 'b', true)        // ['b'] (accordéon : seul b est conservé)
+
+isMenuOpen(['a', 'b'], 'a')  // true
+isMenuOpen(['a'], 'c')       // false
+```
+
+```ts
+// État déployé contrôlé (couche UI) : openeds est un tableau et non un Set, pour faciliter la sérialisation et le v-model
+const openeds = ref<string[]>([])
+function onSubMenuClick(key: string) {
+  openeds.value = toggleMenuOpen(openeds.value, key, props.uniqueOpened)
+}
+```
+
+```vue
+<!-- Vue3 : menu vertical latéral -->
+<template>
+  <LhMenu mode="vertical" :collapse="collapsed" :unique-opened="true">
+    <LhSubMenu index="1">
+      <template #title><LhIcon name="settings" /><span>Paramètres système</span></template>
+      <LhMenuItem index="1-1" @click="go('/users')">Gestion des utilisateurs</LhMenuItem>
+      <LhMenuItem index="1-2" disabled>Gestion des droits</LhMenuItem>
+    </LhSubMenu>
+    <LhMenuItem index="2" @click="go('/profile')">Espace personnel</LhMenuItem>
+  </LhMenu>
+</template>
+```
+
+```tsx
+// React : openeds avec useState<string[]> ; clic sur un élément de menu via navigate ;
+// l'état replié est diffusé aux sous-menus via un context (au lieu de passer des props à chaque niveau)
+```
+
+```ts
+// uniapp : <view> + catchtap ; le mode replié utilise une animation de transition à largeur fixe en px côté mini-programme
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-menu` | conteneur |
+| `.lh-menu--{horizontal\|vertical}` | mode de mise en page |
+| `.lh-menu--collapse` | état replié (icônes uniquement) |
+| `.lh-menu-item` | élément feuille |
+| `.lh-menu-item--active` / `--disabled` | actif / désactivé |
+| `.lh-sub-menu` / `--active` / `--disabled` / `--opened` | titre de sous-menu |
+| `.lh-sub-menu__popup` | sous-chirurgicale en pop-up (menu horizontal) |
+| `.lh-menu-item-group` | groupe (avec titre de groupe) |
+
+Fond de l'élément actif `--lh-menu-item-active-background`, couleur de texte `--lh-menu-item-color` (les jetons en clair doivent être explicitement retournés dans var-dark, voir le chapitre « pièges du mode sombre » du AGENTS.md racine) ; jeton de hauteur `--lh-menu-item-height`.
+
+## Points d'attention
+
+- **openeds est un tableau et non un objet** : l'ordre est sans importance mais les doublons sont interdits ; `toggleMenuOpen` garantit l'unicité. La sérial dans le query de routage ou le localStorage est plus immédiate avec un tableau.
+- **L'accordéon ne contrôle que le même niveau** : `uniqueOpened` ne rend mutuellement exclusifs que les sous-menus directs **d'un même menu** ; les sous-menus petits-enfants ne sont pas affectés (ils gèrent leurs propres openeds).
+- **Les sous-niveaux des menus horizontaux sont en pop-up** : le premier niveau s'étale horizontalement, le second se déploie vers le bas (classe `lh-sub-menu__popup`, positionnement par `shared/popper`) ; les sous-niveaux des menus verticaux se déployent en ligne (en comprimant le contenu situé en dessous). Les deux modes ont des structures DOM différentes, pilotées par mode.
+- **`--active` doit être synchronisé avec le routage** : l'état actif du menu suit généralement la route courante ; la couche UI écoute les changements de route pour mettre à jour l'index actif — core ne touche pas au routage.
+- **Le tooltip de l'état replié** : avec `collapse: true`, il ne reste que les icônes des éléments de menu, le texte doit être complété par un `tooltip` (affiché au survol). C'est un point de coopération entre les deux composants.
+- **La dépendance DOM de `moveMenuFocus`** : elle reçoit des `HTMLElement[]` et ne peut être appelée que côté navigateur (ignorée en SSR) ; de plus, elle filtre sur tabIndex et non sur la classe disabled — la couche UI doit garantir que les éléments désactivés ont un tabIndex de -1.
+- **menu et dropdown ont le même rôle mais des usages différents** : les deux utilisent `role="menu"`. menu est une navigation persistante, dropdown une liste d'actions temporaire — ne faites pas passer un dropdown pour la navigation d'un site (il disparaît au rafraîchissement, sans lien profond possible).
+
+<FnPlayground module="menu" fn="toggleMenuOpen" params='{"openeds": ["a"], "key": "b", "uniqueOpened": true}' />

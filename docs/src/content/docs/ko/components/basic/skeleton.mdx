@@ -1,0 +1,151 @@
+---
+title: skeleton —— 스켈레톤
+description: 'getSkeletonRowWidths가 마지막 줄을 짧게 하는 너비 열을 생성, getSkeletonAria가 자리표시자를 숨기고 UI 계층의 aria-busy를 요구'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+스켈레톤은 '로딩 완료 전'의 자리표시자입니다: 회색 블록으로 곧 나타날 레이아웃을 흉내 내어, 사용자가 '잠시 후 무엇을 보게 될지' 예상하게 합니다. `core/skeleton`은 텍스트 줄의 너비 열을 계산하고(마지막 줄을 짧게, 실제 단락처럼), '이것은 자리표시자이지 콘텐츠가 아니다'라는 접근성 신호를 준비합니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhSkeleton`을 구현할 때: 카드 로딩, 목록 로딩, 글 로딩.
+- 어떤 영역이든 '로딩 중'의 시각을 표현해야 할 때, 스켈레톤이 로딩 회전표보다 '앞으로 올 레이아웃에 더 가깝습니다'.
+- **사용하면 안 되는 곳**: 로딩 시간이 매우 짧은(300ms 미만) 경우. 스켈레톤이 번쩍이는 것이 오히려 방해됩니다; '데이터가 비어 있음'에도 사용하지 마세요. 그것은 `LhEmpty`입니다.
+
+## 가져오기
+
+```ts
+import {
+  getSkeletonClassNames,
+  getSkeletonItemClassNames,
+  getSkeletonRowWidths,
+  getSkeletonAria,
+} from '@lh-ui/share/core/skeleton'
+import type { LhSkeletonState, LhSkeletonVariant } from '@lh-ui/share/core/skeleton'
+```
+
+## 설계 의도
+
+`getSkeletonRowWidths(rows)`의 마지막 줄 `60%`는 세부적이지만 중요한 설계입니다: 실제 텍스트 단락의 마지막 줄은 거의 항상 가득 차지 않습니다. 모두 같은 너비의 스켈레톤은 '문자'가 아니라 '줄무늬 벽지'처럼 보이며, 이 60%가 자리표시자에 '텍스트 느낌'을 줍니다.
+
+`rows > 1`일 때만 마지막 줄을 짧게 합니다: 줄이 하나뿐이면 그것은 온전한 한 줄입니다(한 줄을 짧게 하면 오히려 제목이 잘린 것처럼 보임). `rows <= 0`은 빈 배열을 반환하고 오류를 던지지 않습니다.
+
+`getSkeletonAria()`는 항상 `{ 'aria-hidden': true }`를 반환합니다. 스켈레톤 콘텐츠는 정보량이 0이므로 스크린 리더가 읽지 않아야 합니다. 하지만 **숨기는 것만으로는 부족**: 소스 코드 주석은 UI 계층이 바깥쪽 컨테이너에 동시에 `aria-busy="true"`를 붙일 것을 요구하며, 이렇게 하면 데이터가 준비되었을 때 스크린 리더가 실제 콘텐츠를 다시 읽습니다. 이 두 속성은 한 쌍입니다: `aria-hidden`이 노이즈를 걷어내고, `aria-busy`가 '나중에 다시 읽을' 표시를 합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getSkeletonClassNames` | `(state: LhSkeletonState) => string[]` | 클래스명 배열 | 애니메이션, 아바타 포함 수정자 |
+| `getSkeletonItemClassNames` | `(variant: LhSkeletonVariant, animated: boolean) => string[]` | 클래스명 배열 | 자리표시자 블록 형태와 애니메이션 |
+| `getSkeletonRowWidths` | `(rows: number) => string[]` | 너비 열 | 텍스트 줄 너비 생성 |
+| `getSkeletonAria` | `() => LhAriaAttrs` | aria 속성 묶음 | 항상 `{ 'aria-hidden': true }` |
+
+출력 예:
+
+```ts
+getSkeletonRowWidths(3)   // ['100%', '100%', '60%']
+getSkeletonRowWidths(1)   // ['100%']
+getSkeletonRowWidths(0)   // []
+getSkeletonItemClassNames('text', true)
+// ['lh-skeleton-item', 'lh-skeleton-item--text', 'lh-skeleton-item--animated']
+```
+
+## 타입 정의
+
+```ts
+export type LhSkeletonVariant = 'text' | 'rect' | 'circle'
+
+export interface LhSkeletonState {
+  animated: boolean
+  avatar: boolean
+}
+```
+
+## 접근성
+
+```ts
+// UI 계층의 바깥쪽 컨테이너
+const aria = { 'aria-busy': true }   // '콘텐츠 로딩 중, 준비되면 다시 읽어주세요' 표시
+// 스켈레톤 요소 자체
+const skeletonAria = getSkeletonAria()  // { 'aria-hidden': true }
+```
+
+흔한 실수는 한 가지만 하는 것입니다: `aria-hidden`만 하면 스크린 리더 사용자가 데이터가 준비된 후 새 콘텐츠를 놓칩니다(이미 읽었다고 생각함); `aria-busy`만 하면 스크린 리더가 스켈레톤의 빈 콘텐츠를 읽으려 시도합니다.
+
+## 사용 예
+
+```ts
+import { getSkeletonRowWidths, getSkeletonItemClassNames } from '@lh-ui/share/core/skeleton'
+
+getSkeletonRowWidths(4)
+// ['100%', '100%', '100%', '60%']
+
+getSkeletonItemClassNames('circle', false)
+// ['lh-skeleton-item', 'lh-skeleton-item--circle']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSkeletonClassNames({ animated, avatar })" aria-busy="true">
+  <div v-if="avatar" class="lh-skeleton__avatar">
+    <div :class="getSkeletonItemClassNames('circle', animated)" />
+  </div>
+  <div class="lh-skeleton__content">
+    <div
+      v-for="(w, i) in getSkeletonRowWidths(rows)"
+      :key="i"
+      :class="getSkeletonItemClassNames('text', animated)"
+      :style="{ width: w }"
+      v-bind="getSkeletonAria()"
+    />
+  </div>
+</div>
+```
+
+```tsx
+// React
+const widths = getSkeletonRowWidths(rows)
+return (
+  <div className={getSkeletonClassNames({ animated, avatar }).join(' ')} aria-busy={true}>
+    <div className="lh-skeleton__content">
+      {widths.map((w, i) => (
+        <div
+          key={i}
+          className={getSkeletonItemClassNames('text', animated).join(' ')}
+          style={{ width: w }}
+          {...getSkeletonAria()}
+        />
+      ))}
+    </div>
+  </div>
+)
+```
+
+```ts
+// uniapp: 애니메이션은 h5가 아닌 단말에서 매끄럽지 않을 수 있으며, 각 단말의 UI 계층이 플랫폼에 따라 animated를 끄도록 저하할 수 있습니다
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-skeleton` | 기본 클래스: 레이아웃 |
+| `.lh-skeleton--animated` | shimmer 스캔 애니메이션 활성화 |
+| `.lh-skeleton--with-avatar` | 아바타 + 텍스트의 조합 레이아웃(아바타 왼쪽에 자리 확보) |
+| `.lh-skeleton-item` | 단일 자리표시자 블록 |
+| `.lh-skeleton-item--{text\|rect\|circle}` | 형태: 텍스트 줄 / 사각형 / 원형 |
+| `.lh-skeleton-item--animated` | 스캔 애니메이션 |
+| `.lh-skeleton__avatar` / `.lh-skeleton__content` | 아바타 영역과 콘텐츠 영역 |
+
+자리표시자 블록 색은 `--lh-skeleton-*` 토큰을 사용하고(배경보다 약간 어두운 회색 + 스캔 하이라이트), 다크 모드에서 자동으로 어둡게 조정됩니다.
+
+## 주의사항
+
+- `rows`가 0이나 음수면 빈 배열을 반환하고 UI 계층은 줄을 렌더링하지 않습니다. 이것은 유효한 입력이지 오류가 아닙니다.
+- 스켈레톤의 **레이아웃은 실제 콘텐츠와 일치해야 합니다**(같은 카드 구조, 같은 줄 수). 그렇지 않으면 로딩 완료 시 레이아웃이 흔들립니다. `LhCard`의 `loading` 상태를 쓰는 것이 스켈레톤을 따로 두는 것보다 더 편합니다.
+- shimmer 애니메이션은 일부 사용자에게 전정 자극원입니다; `prefers-reduced-motion`을 존중할 책임은 스타일 계층에(`@media` 안에서 애니메이션 비활성화) 있으며, core 계층은 인지하지 않습니다.
+- `aria-busy`는 스켈레톤 자신이 아니라 **데이터 컨테이너**에 붙여야 합니다. 스켈레톤이 제거된 후 `aria-busy`도 함께 제거해야 합니다.
+
+<FnPlayground module="skeleton" fn="getSkeletonRowWidths" params='{"rows": 3}' />

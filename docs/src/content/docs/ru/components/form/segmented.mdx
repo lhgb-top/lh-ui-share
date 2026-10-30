@@ -1,0 +1,172 @@
+---
+title: segmented —— Сегментированный переключатель
+description: 'нормализация вариантов normalizeSegmentedOptions, навигация с клавиатуры moveSegmentedIndex, пакет семантических атрибутов radiogroup'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Сегментированный переключатель — это **компактная версия радиокнопок**: варианты раскладываются в одну полосу с подсвеченной группой кнопок, а выбранный элемент отмечается скользящим блоком. По сравнению с группой radio он экономит вертикальное пространство и выглядит современнее; по сравнению со select он выводит все варианты на экран, экономя одно нажатие. `core/segmented` занимается нормализацией двух способов записи вариантов, определением отключённости всей группы, навигацией с клавиатуры и семантикой APG radiogroup.
+
+## Когда использовать
+
+- В каждой платформе реализован `LhSegmented`: переключение представлений (список / сетка / карточки), временной диапазон (день / неделя / месяц), компактные настройки перечислимого типа.
+- Сценарии с малым числом вариантов (2–5) и **взаимоисключающим** выбором.
+- **Не использовать для**: более 6 вариантов (берите select или группу radio); множественного выбора (группа checkbox); длинных текстов вариантов (перенос строк будет некрасивым).
+
+## Импорт
+
+```ts
+import {
+  normalizeSegmentedOptions,
+  isSegmentedDisabled,
+  getSegmentedClassNames,
+  moveSegmentedIndex,
+  getSegmentedAria,
+  getSegmentedItemAria,
+} from '@lh-ui/share/core/segmented'
+import type {
+  LhSegmentedInput,
+  LhSegmentedNormalized,
+  LhSegmentedState,
+} from '@lh-ui/share/core/segmented'
+```
+
+## Замысел дизайна
+
+`normalizeSegmentedOptions` принимает два способа записи — `['День', 'Неделя', 'Месяц']` или `[{ label: 'День', value: 'day' }]` — и нормализует их к единой форме. Это компромисс «снисходительный ввод, строгая внутренняя структура»: чем снисходительнее props UI-библиотеки, тем меньше когнитивная нагрузка пользователя; после приведения к `LhSegmentedNormalized` все последующие проверки отключённости, навигация и рендер работают с одной структурой.
+
+`isSegmentedDisabled(options, disabled)` выполняет **объединение двух уровней отключённости**: отключение на уровне группы или отключение любого отдельного варианта делает всю группу недоступной — поскольку выбранный блок сегментированного переключателя скользит синхронно, «полуотключённая» группа привела бы к застреванию ползунка.
+
+`moveSegmentedIndex` делегирует вызов `getNextListIndex` из общего ядра (`core/shared/keyboard`), выполняя циклическую навигацию с пропуском отключённых элементов, а для пустого массива возвращая current.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `normalizeSegmentedOptions` | `(options: LhSegmentedInput[]) => LhSegmentedNormalized[]` | нормализованные варианты | приведение строковой краткой записи |
+| `isSegmentedDisabled` | `(options: LhSegmentedNormalized[], disabled?: boolean) => boolean` | отключено ли | объединение уровня группы и уровня варианта |
+| `getSegmentedClassNames` | `(state: LhSegmentedState) => string[]` | имена классов | disabled/block |
+| `moveSegmentedIndex` | `(options, current: number, direction: 1 \| -1) => number` | целевой индекс | циклический переход с пропуском отключённых |
+| `getSegmentedAria` | `(options?: { disabled?; label? }) => LhAriaAttrs` | пакет aria-атрибутов | семантика radiogroup |
+| `getSegmentedItemAria` | `(options: { selected; disabled? }) => LhAriaAttrs` | пакет aria-атрибутов | семантика radio |
+
+## Определения типов
+
+```ts
+export type LhSegmentedValue = string | number
+
+export interface LhSegmentedOption {
+  label: string
+  value: LhSegmentedValue
+  disabled?: boolean
+}
+
+/** Входной вариант (строковая краткая запись или объект) */
+export type LhSegmentedInput = LhSegmentedValue | LhSegmentedOption
+
+export interface LhSegmentedNormalized {
+  label: string
+  value: LhSegmentedValue
+  disabled: boolean
+}
+
+export interface LhSegmentedState {
+  disabled: boolean
+  block: boolean   // занять всю ширину родителя (равные по ширине сегменты)
+}
+```
+
+## Доступность
+
+С точки зрения доступности сегментированный переключатель является **группой радиокнопок**: контейнер получает `role="radiogroup"`, а каждый сегмент — `role="radio"` + `aria-checked`. Вся семантика предоставляется двумя пакетными функциями атрибутов:
+
+```ts
+getSegmentedAria({ disabled: false, label: 'Представление' })
+// { role: 'radiogroup', 'aria-label': 'Представление' }
+
+getSegmentedItemAria({ selected: true })
+// { role: 'radio', 'aria-checked': true }
+
+getSegmentedItemAria({ selected: false, disabled: true })
+// { role: 'radio', 'aria-checked': false, 'aria-disabled': true }
+```
+
+- Если у контейнера нет видимого label, укажите `aria-label` (доступное имя) через параметр `label`.
+- Взаимодействие с клавиатурой (UI-слой): ←/↑ и →/↓ перемещаются через `moveSegmentedIndex` и сразу выбирают (режим radio — «перемещение равно выбору», а не режим кнопок «перемещение + Enter»).
+- `roving tabindex`: `tabindex="0"` ставится только выбранному элементу (или первому), остальным `-1`, чтобы Tab не останавливался на каждом элементе группы.
+
+## Примеры использования
+
+```ts
+import { normalizeSegmentedOptions, moveSegmentedIndex, isSegmentedDisabled } from '@lh-ui/share/core/segmented'
+
+normalizeSegmentedOptions(['День', 'Неделя', 'Месяц'])
+// [{ label: 'День', value: 'День', disabled: false }, ...]
+
+normalizeSegmentedOptions([{ label: 'День', value: 'day' }, 'Неделя'])
+// [{ label: 'День', value: 'day', disabled: false }, { label: 'Неделя', value: 'Неделя', disabled: false }]
+
+const opts = normalizeSegmentedOptions([
+  { label: 'День', value: 'day' },
+  { label: 'Неделя', value: 'week', disabled: true },
+  { label: 'Месяц', value: 'month' },
+])
+moveSegmentedIndex(opts, 0, 1)   // 2 (пропускает отключённую неделю)
+moveSegmentedIndex(opts, 2, 1)   // 0 (цикл)
+moveSegmentedIndex([], 0, 1)     // 0 (пустой массив)
+isSegmentedDisabled(opts, false) // true (неделя отключена → вся группа отключена)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSegmentedClassNames({ disabled, block })" v-bind="getSegmentedAria({ disabled, label })">
+  <div class="lh-segmented__indicator" :style="{ transform: `translateX(${index * 100}%)`, width: `${100 / normalized.length}%` }" />
+  <button
+    v-for="(opt, i) in normalized"
+    :key="String(opt.value)"
+    type="button"
+    class="lh-segmented__item"
+    :class="{ 'lh-segmented__item--active': i === index, 'lh-segmented__item--disabled': opt.disabled }"
+    :tabindex="i === index ? 0 : -1"
+    v-bind="getSegmentedItemAria({ selected: i === index, disabled: opt.disabled })"
+    @click="onSelect(i)"
+    @keydown.left.prevent="onMove(-1)"
+    @keydown.right.prevent="onMove(1)"
+  >
+    {{ opt.label }}
+  </button>
+</div>
+```
+
+```tsx
+// React: indicator скользит через CSS transition; в onMove — onChange(normalized[moveSegmentedIndex(normalized, index, dir)].value)
+```
+
+```ts
+// uniapp: <view> + перебор через <view>; на не-h5 платформах события клавиатуры
+// недоступны, выбор производится касанием
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-segmented` | базовый класс (контейнер со скруглением + внутренние отступы) |
+| `.lh-segmented--disabled` | отключено |
+| `.lh-segmented--block` | занять всю ширину родителя, равная ширина сегментов |
+| `.lh-segmented__indicator` | скользящий блок подсветки (абсолютное позиционирование + transform) |
+| `.lh-segmented__item` | отдельный сегмент |
+| `.lh-segmented__item--active` | выбранный элемент (основной цвет текста) |
+| `.lh-segmented__item--disabled` | отключённый элемент |
+
+Цвет фона контейнера `--lh-fill-color` (светло-серое углубление), indicator — `--lh-bg-color` (белый) + тень, выбранный текст — `--lh-primary-color`.
+
+## Замечания
+
+- **Позиционирование indicator**: UI-слой использует `transform: translateX(index * 100%)` + `width: 100/count%`; count должен быть длиной **после нормализации** (результат `normalizeSegmentedOptions`), иначе при добавлении или удалении вариантов ползунок сместится.
+- **value при строковой и объектной записи**: при строковой записи `value === label`; UI-слой через `v-model` привязан к `value`, а не к label — при смешивании двух способов записи следите за источником значения.
+- **Момент определения отключённости всей группы**: `isSegmentedDisabled` зависит от options, и при динамическом изменении вариантов нужно пересчитывать, иначе состояние отключённости не обновится.
+- **Выбор между segmented и radio**: выбранный блок сегментированного переключателя **визуально скользит**, и анимация зависит от позиционирования indicator через JS; если целевая платформа не поддерживает transform-анимацию (часть мини-программ), надёжнее откатиться к группе radio.
+- **Пустые options**: `normalizeSegmentedOptions([])` возвращает `[]`, а `moveSegmentedIndex` — current; UI-слой должен обработать пустое состояние и не рендерить пустое углубление.
+
+<FnPlayground module="segmented" fn="moveSegmentedIndex" params='{"options": [{"label": "День", "value": "day", "disabled": false}, {"label": "Неделя", "value": "week", "disabled": true}, {"label": "Месяц", "value": "month", "disabled": false}], "current": 0, "direction": 1}' />

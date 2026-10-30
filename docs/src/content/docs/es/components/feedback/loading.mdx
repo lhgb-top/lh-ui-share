@@ -1,0 +1,179 @@
+---
+title: loading —— Máscara de carga
+description: 'resolución del objetivo de montaje con resolveLoadingTarget, parcheo y restauración del posicionamiento con ensurePositioned, semántica de aria-busy'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Una máscara de carga cubre una zona (o una página entera) para indicar que «aquí está ocupado». `core/loading` gestiona la **resolución del objetivo de montaje** y el **parcheo del posicionamiento**: la directiva `v-loading="true"` debe colocar la máscara en posición absoluta sobre el elemento que la dispara, pero un elemento con posicionamiento static no puede servir de ancestro de posicionamiento, y ese parche es tarea de core.
+
+## Cuándo usarlo
+
+- Cada framework implementa la directiva `v-loading` o el componente `<LhLoading>`: envío de formulario, recarga de tabla, carga de página entera.
+- Cuando hay que **cubrir una zona concreta** (no toda la pantalla).
+- **No usarlo para**: retroalimentación puramente textual (usa `message`); tareas en segundo plano de duración incierta (usa `notification` + cancelable); estructuras de esqueleto (usa `skeleton` — loading supone que el layout del contenido no cambia; skeleton supone que sí).
+
+## Importación
+
+```ts
+import {
+  getLoadingClassNames,
+  resolveLoadingTarget,
+  isLoadingFullscreen,
+  ensurePositioned,
+  getLoadingAria,
+} from '@lh-ui/share/core/loading'
+import type { LhLoadingOptions, LhLoadingHandle, LhLoadingState } from '@lh-ui/share/core/loading'
+```
+
+## Intención de diseño
+
+**Los tres estados normalizados por `resolveLoadingTarget`**: nada → `document.body` (pantalla completa); cadena → `querySelector`, **si no encuentra nada, retrocede a body** (un selector mal escrito no rompe, simplemente se convierte en una máscara a pantalla completa); elemento → se devuelve tal cual. Este retroceso es clave: el target que recibe una API imperativa viene de un ref o selector escritos por el usuario, y los datos sucios deben tener un respaldo.
+
+**El «lo que se toma prestado se devuelve» de `ensurePositioned`**: un elemento con posicionamiento static se cambia temporalmente a relative y se devuelve `restore()` para deshacer el cambio al desmontar. **Solo se modifica el position del estilo inline**, sin tocar clases ni otros estilos; al restaurar, el position inline vuelve a su valor original (que puede ser la cadena vacía). Si el elemento ya tenía posicionamiento (relative/absolute/fixed/sticky), no se hace nada y `restore` es una función vacía — el llamador no necesita comprobar nada, puede invocarla incondicionalmente.
+
+**La detección de pantalla completa es «si el objetivo es body»**: `isLoadingFullscreen(target)` en lugar de una flag adicional — si el target es body, se considera pantalla completa y la clase de la máscara añade `--fullscreen` (posicionamiento fixed + un z-index más alto). Guardia SSR: sin `document` devuelve false.
+
+**La doble semántica de `getLoadingAria`**: `aria-busy="true"` marca la zona cubierta (los lectores de pantalla no anuncian su contenido obsoleto hasta que termina la carga); el icono giratorio es un **elemento decorativo** → `aria-hidden` (para evitar que el lector anuncie cosas inútiles como «gráfico giratorio»). Con `busy: false` devuelve un objeto vacío — la capa UI puede hacer `v-bind` incondicional.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `getLoadingClassNames` | `(state: LhLoadingState) => string[]` | clases | pantalla completa / con texto |
+| `resolveLoadingTarget` | `(target: string \| HTMLElement \| undefined) => HTMLElement` | elemento objetivo | si el selector no encuentra nada, retrocede a body |
+| `isLoadingFullscreen` | `(target: HTMLElement) => boolean` | si es pantalla completa | el objetivo es body |
+| `ensurePositioned` | `(target: HTMLElement) => { restore }` | manejador de restauración | static → relative, se restaura al desmontar |
+| `getLoadingAria` | `(busy?: boolean) => LhAriaAttrs` | bolsa de atributos aria | aria-busy + aria-hidden del icono |
+
+## Definiciones de tipos
+
+```ts
+export interface LhLoadingOptions {
+  text?: string                      // texto de la máscara
+  fullscreen?: boolean               // forzar pantalla completa
+  background?: string                // color de fondo de la máscara (sustituye al semitransparente por defecto)
+  spinner?: boolean                  // mostrar el icono giratorio (por defecto true)
+  target?: string | HTMLElement      // objetivo de montaje
+  delay?: number                     // milisegundos de retardo antes de mostrar (anti parpadeo)
+}
+
+export interface LhLoadingHandle {
+  close: () => void                  // cerrar y desmontar la máscara
+  setText: (text: string) => void    // actualizar el texto dinámicamente
+}
+
+export interface LhLoadingState {
+  fullscreen: boolean
+  withText: boolean                  // cuando hay texto, se reserva espacio para el contenedor del texto
+}
+```
+
+## Accesibilidad
+
+```ts
+getLoadingAria(true)   // { 'aria-hidden': true, 'aria-busy': true }
+getLoadingAria(false)  // {} (para un v-bind incondicional)
+```
+
+- `aria-busy="true"` es el marcador estándar de «zona ocupada» de WAI-ARIA: los lectores de pantalla saben así que el contenido va a cambiar y no anuncian el contenido obsoleto actual. Se coloca sobre el **contenedor de contenido cubierto**, no sobre la capa de la máscara.
+- El icono giratorio lleva `aria-hidden`: es retroalimentación puramente visual; el texto (si lo hay) ya lo comunica por vía textual.
+- **El texto debe ser significativo**: «Cargando…» es mejor que «loading»; un progreso con porcentaje («Cargado el 76%») es más amable para los usuarios de lectores de pantalla — cuando el texto de la máscara cambia, el lector de pantalla lo anuncia (el `aria-live` lo decide la capa UI).
+- **Máscara a pantalla completa y foco**: con la máscara a pantalla completa, el contenido sigue siendo enfocable con Tab — si hay que bloquear la interacción, la capa UI debería interceptarla en la máscara o aplicar `inert` a la zona de contenido (sigue el mecanismo inert de `shared/focus-trap`).
+
+## Ejemplos de uso
+
+```ts
+import { resolveLoadingTarget, ensurePositioned, isLoadingFullscreen, getLoadingClassNames } from '@lh-ui/share/core/loading'
+
+resolveLoadingTarget(undefined)              // document.body (pantalla completa)
+resolveLoadingTarget('.table-wrapper')       // el elemento encontrado; si no, → body
+resolveLoadingTarget(elRef)                  // se devuelve tal cual
+
+const el = resolveLoadingTarget(props.target)
+const restore = ensurePositioned(el).restore  // static → relative, se recuerda el valor original
+try {
+  // …renderizar la máscara…
+} finally {
+  restore()                                   // al desmontar, se restaura position
+}
+
+isLoadingFullscreen(document.body)  // true
+isLoadingFullscreen(tableEl)        // false
+```
+
+```ts
+// Servicio imperativo (capa UI): crear / cerrar / contar
+const instances = new Map<HTMLElement, { count: number; restore: () => void; el: HTMLElement }>()
+
+function showLoading(target: HTMLElement, text?: string) {
+  const hit = instances.get(target)
+  if (hit) { hit.count++; return }
+  const { restore } = ensurePositioned(target)
+  const mask = createMask(text, isLoadingFullscreen(target))
+  target.appendChild(mask)
+  instances.set(target, { count: 1, restore, el: mask })
+}
+
+function closeLoading(target: HTMLElement) {
+  const hit = instances.get(target)
+  if (!hit) return
+  hit.count--
+  if (hit.count > 0) return        // conteo de referencias: con varios loading, solo se cierra uno
+  hit.el.remove()
+  hit.restore()                    // se restaura position
+  instances.delete(target)
+}
+```
+
+```vue
+<!-- Vue3: directiva v-loading -->
+<template>
+  <div class="table-wrapper" v-loading="loading">
+    <LhTable :data="rows" />
+  </div>
+</template>
+
+<script setup>
+// Implementación de la directiva: al montar, binding.value decide si se muestra
+const loading = ref(false)
+async function refresh() {
+  loading.value = true
+  try { rows.value = await fetch() } finally { loading.value = false }
+}
+</script>
+```
+
+```tsx
+// React: hook useLoading (ref + useEffect gestionan el montaje de la máscara y restore)
+```
+
+```ts
+// uniapp: la máscara usa <view> + absolute; ensurePositioned solo aplica en h5;
+// en la plataforma de miniprogramas el comportamiento de fixed/absolute es distinto y
+// la capa UI lo adapta según la plataforma
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-loading` | contenedor de la máscara (absolute, cubre el objetivo) |
+| `.lh-loading--fullscreen` | pantalla completa (fixed + z-index más alto) |
+| `.lh-loading--with-text` | con texto (icono + texto en vertical) |
+| `.lh-loading__spinner` | icono giratorio (`LhSpinner`) |
+| `.lh-loading__text` | texto |
+
+Color de fondo de la máscara `--lh-mask-color` (semitransparente, una variante para claro y otra para oscuro); color del texto `--lh-text-primary-regular`; z-index `--lh-z-index-loading`.
+
+## Advertencias
+
+- **`restore()` debe invocarse**: `ensurePositioned` modifica el position inline del objetivo; si no se restaura, queda un «relative» contaminando el layout (sobre todo cuando `position: static` era deliberado). Protégelo con try/finally.
+- **Un selector que no encuentra nada se convierte silenciosamente en pantalla completa**: `resolveLoadingTarget('.typo-selector')` retrocede a body — cuando investigues «por qué la máscara cubre toda la pantalla», revisa primero el selector.
+- **Conteo de referencias**: si en una misma zona hay varios loading simultáneos (dos peticiones a la vez), hay que llevar la cuenta y cerrar la máscara solo cuando termina el último. core no mantiene estado; el conteo lo hace la capa UI.
+- **`delay` contra el parpadeo**: una petición que termina rápido (menos de 200ms) hace que la máscara aparezca y desaparezca en un destello, que parece un bug. La capa UI puede usar delay para retrasar la muestra y cancelarla si la petición termina antes.
+- **Máscaras anidadas**: si dentro de la zona cubierta por la máscara de A hay otra máscara sobre B, la capa UI debe garantizar (con z-index y pointer-events) que la máscara de B solo cubra B — core solo calcula el posicionamiento de un único objetivo.
+- **Guardias SSR**: `isLoadingFullscreen` y `ensurePositioned` tienen guardias de `typeof document/window === 'undefined'`, pero **la máscara de carga es un concepto del lado del cliente**; bajo SSR no se debería llamar al servicio.
+- **La máscara a pantalla completa no bloquea la interacción**: por defecto es solo una cubierta visual y los botones del fondo siguen siendo pulsables (a menos que la capa de la máscara gestione los pointer-events). Si necesitas bloquear de forma forzosa, añade `inert` en la capa UI.
+
+<FnPlayground module="loading" fn="getLoadingAria" params='{"busy": true}' />

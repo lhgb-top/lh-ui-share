@@ -1,0 +1,166 @@
+---
+title: slider —— 滑桿
+description: 'snapToStep 步進吸附、getValueFromPosition 百分比換算、getInitialValue 區間初值、slider 語義屬性包'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+滑桿把數值選擇變成了**空間操作**：拖曳比輸入更直觀，且能一眼看到值在範圍內的位置。`core/slider` 管的是「值 ↔ 位置」的雙向換算、步進吸附、區間（range）模式的兩點初值，以及 APG slider 語義。
+
+## 何時使用
+
+- 各端實作 `LhSlider`：音量、價格區間、透明度調節。
+- 值域連續或步進粒度較粗的場景。
+- **不該用它**：精確數值輸入（用 `input-number`，滑桿無法表達「37」這類非步進值）。
+
+## 匯入方式
+
+```ts
+import {
+  snapToStep,
+  clampAndSnap,
+  getValueFromPosition,
+  getPositionFromValue,
+  getSliderClassNames,
+  getInitialValue,
+  buildMarksList,
+  getSliderThumbAria,
+} from '@lh-ui/share/core/slider'
+import type { LhSliderState, LhSliderMark } from '@lh-ui/share/core/slider'
+```
+
+## 設計意圖
+
+`snapToStep` 在 `step` 非有限或 `<= 0` 時**原值傳回**，而不是傳回 NaN——`step: 0` 會讓取模運算產生 NaN，這裡把「非法步長」當作「不吸附」，把純邊界鉗制留給 `clampAndSnap`。職責分離：吸附與鉗制是兩件獨立的事。
+
+`getPositionFromValue` 的 `max === min` 傳回 0 是避免除零：值域退化為點時，滑桿自然應當在起點。
+
+`getInitialValue` 對區間模式傳回 `[min 鉗制, (min+max)/2 鉗制]`——第二個滑塊預設在**中點**而不是 max，這是視覺考量（兩個滑塊貼在一起看起來像 bug）。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `snapToStep` | `(value: number, min: number, step: number) => number` | 吸附值 | 按 step 對齊最近格點 |
+| `clampAndSnap` | `(value: number, min: number, max: number, step: number) => number` | 規整值 | 先吸附後鉗制 |
+| `getValueFromPosition` | `(pct: number, min: number, max: number, step: number) => number` | 數值 | 百分比 → 值 |
+| `getPositionFromValue` | `(value: number, min: number, max: number) => number` | 百分比 [0,1] | 值 → 位置 |
+| `getSliderClassNames` | `(state: LhSliderState) => string[]` | 類別名 | disabled/range/size |
+| `getInitialValue` | `(state: LhSliderState) => number \| [number, number]` | 初值 | 區間傳回兩點 |
+| `buildMarksList` | `(marks?: Record<number, string>) => LhSliderMark[]` | 刻度陣列 | 按 value 升序 |
+| `getSliderThumbAria` | `(options: { value, min, max, vertical?, disabled?, ariaValueText? }) => LhAriaAttrs` | aria 屬性包 | slider 語義 |
+
+## 類型定義
+
+```ts
+export interface LhSliderMark {
+  label: string
+  value: number
+}
+
+export interface LhSliderState {
+  value: number | [number, number] | null
+  min: number
+  max: number
+  step: number
+  disabled: boolean
+  range: boolean              // 區間模式（兩個滑塊）
+  showInput: boolean          // 配 input-number 聯動
+  size: LhComponentSize
+  marks: Record<number, string> | undefined
+}
+```
+
+## 無障礙
+
+`getSliderThumbAria` 輸出 APG slider 語義。**區間模式必須對兩個滑塊各調一次**：
+
+```ts
+getSliderThumbAria({ value: 30, min: 0, max: 100 })
+// { role: 'slider', 'aria-valuenow': 30, 'aria-valuemin': 0, 'aria-valuemax': 100 }
+
+getSliderThumbAria({ value: 60, min: 0, max: 100, vertical: true, disabled: true })
+// { role: 'slider', 'aria-valuenow': 60, 'aria-valuemin': 0, 'aria-valuemax': 100,
+//   'aria-orientation': 'vertical', 'aria-disabled': true }
+```
+
+- `vertical` 輸出 `aria-orientation: 'vertical'`（水平是預設方向，不宣告）。
+- `ariaValueText` 輸出 `aria-valuetext`——當數值需要語義化表達時用（如「30%」或「慢速」），**優先於 valuenow 播報**。
+- 鍵盤互動（UI 層）：←/→ 或 ↓/↑ 按 step 增減，Home/End 跳到 min/max，PageUp/Down 大步進。
+
+## 使用範例
+
+```ts
+import { getValueFromPosition, getPositionFromValue, snapToStep } from '@lh-ui/share/core/slider'
+
+getValueFromPosition(0.5, 0, 100, 1)   // 50
+getValueFromPosition(0.333, 0, 100, 5) // 35（吸附到 5 的倍數）
+getPositionFromValue(30, 0, 100)       // 0.3
+getPositionFromValue(150, 0, 100)      // 1（鉗制）
+getPositionFromValue(50, 50, 50)       // 0（max===min 避免除零）
+snapToStep(7, 0, 5)                    // 5
+snapToStep(8, 0, 5)                    // 10
+snapToStep(7, 0, 0)                    // 7（非法 step 不吸附）
+buildMarksList({ 0: '低', 100: '高' })  // [{ label: '低', value: 0 }, { label: '高', value: 100 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSliderClassNames({ value, min, max, step, disabled, range, showInput, size, marks })">
+  <div class="lh-slider__track">
+    <div class="lh-slider__bar" :style="{ width: pct + '%' }" />
+    <div
+      class="lh-slider__button-wrapper"
+      :style="{ left: pct + '%' }"
+      v-bind="getSliderThumbAria({ value, min, max, disabled })"
+      @pointerdown="startDrag"
+    >
+      <div class="lh-slider__button" />
+    </div>
+    <template v-if="marks">
+      <div v-for="mark in buildMarksList(marks)" :key="mark.value" class="lh-slider__marks">
+        <span class="lh-slider__mark" :style="{ left: getPositionFromValue(mark.value, min, max) * 100 + '%' }">
+          {{ mark.label }}
+        </span>
+      </div>
+    </template>
+  </div>
+</div>
+```
+
+```tsx
+// React：拖曳用 pointer events + getBoundingClientRect 算百分比
+// const pct = (clientX - rect.left) / rect.width
+// onChange(getValueFromPosition(pct, min, max, step))
+```
+
+```ts
+// uniapp：<slider> 是內置組件（單滑塊），支援 min/max/step/show-value；
+// 區間模式與 marks 需自訂 view 實作，拖曳用 @touchmove
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-slider` | 基礎類 |
+| `.lh-slider--{small\|large}` | 尺寸檔（滑塊大小） |
+| `.lh-slider--disabled` | 停用 |
+| `.lh-slider--range` | 區間模式（兩個滑塊 + 中間高亮段） |
+| `.lh-slider__track` | 軌道 |
+| `.lh-slider__bar` | 已選區間（高亮段） |
+| `.lh-slider__button-wrapper` / `__button` | 滑塊 |
+| `.lh-slider__marks` / `__mark` | 刻度 |
+| `.lh-slider__input` / `__input-text` | 連動輸入框 |
+
+軌道色 `--lh-fill-color`，已選段 `--lh-primary-color`。
+
+## 注意事項
+
+- **`getPositionFromValue` 傳回 [0,1] 的小數**，UI 層拼 `%`；別誤以為傳回百分比。
+- **吸附與刻度的對齊**：`marks` 的 value 應當是 step 的倍數，否則刻度點會落在兩個吸附值之間，使用者拖不到那裡。
+- **區間模式的交叉**：兩個滑塊可以互相穿過（UI 層通常禁止，或自動交換），core 的 `clampAndSnap` 不處理這個語義。
+- **垂直模式**：`vertical` 時軌道高度代替寬度，換算的分母要改；core 的 `getValueFromPosition` 是軸無關的（吃百分比），UI 層負責算 pct。
+- **`showInput` 的連動**：`input-number` 的 min/max/step 應與 slider 一致，否則兩者值域不一致。
+
+<FnPlayground module="slider" fn="getValueFromPosition" params='{"pct": 0.35, "min": 0, "max": 100, "step": 5}' />

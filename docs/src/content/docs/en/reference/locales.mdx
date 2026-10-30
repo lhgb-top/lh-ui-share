@@ -1,6 +1,6 @@
 ---
 title: locales — internationalization
-description: 't / tm / use / add / setLocale / subscribe of the lhlocale singleton, 38 top-level message keys and six languages'
+description: 't / tm / use / add / setLocale / subscribe of the lhlocale singleton, 38 top-level message keys and ten languages'
 ---
 
 import LocaleInspector from '../../../../components/LocaleInspector.astro'
@@ -105,17 +105,19 @@ useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)
 
 | File | Status |
 | --- | --- |
-| `zh-CN.ts` | ✅ default language (`as const`; the derivation source for `LhLocalePath`) |
-| `en-US.ts` | ✅ enabled |
-| `ja-JP.ts` / `ko-KR.ts` / `de-DE.ts` / `fr-FR.ts` | reserved language skeletons, **falling back to English translations**; you can `setLocale` to them directly |
+| `zh-CN.ts` | ✅ default language (`as const`; the derivation source for `LhLocalePath`), the source of truth |
+| `zh-TW.ts` / `en-US.ts` / `ja-JP.ts` / `ko-KR.ts` / `es.ts` / `ar.ts` (RTL) / `fr-FR.ts` / `ru.ts` | ✅ complete (the nine languages, aligned with all docs sites; terminology per the family `docs/i18n/glossary.md`) |
+| `de-DE.ts` | ✅ complete (**runtime extension** pack: provided by the component library runtime only; docs sites have no German content) |
 
-Subpath import: `@lh-ui/share/locales/lang/zh-CN`.
+Subpath import: `@lh-ui/share/locales/lang/zh-CN`. Every language pack mirrors the key
+structure of `zh-CN.ts` exactly (enforced by the mirror case in `tests/unit/locales.spec.ts`);
+you can `setLocale` to any of them directly.
 
 ### The 38 top-level keys
 
 `common` / `input` / `datepicker` / `timepicker` / `cascader` / `tag` / `badge` / `select` / `form` / `switch` / `slider` / `progress` / `avatar` / `descriptions` / `empty` / `alert` / `dialog` / `message` / `breadcrumb` / `pagination` / `tabs` / `steps` / `popconfirm` / `drawer` / `notification` / `loading` / `collapse` / `rate` / `backtop` / `image` / `menu` / `table` / `tree` / `treeSelect` / `transfer` / `upload` / `anchor` / `ariaLabels`
 
-All six language files have the same top-level key count (38 each) and an aligned structure. Among them `ariaLabels` holds the accessibility copy keys (about 40 entries); each component reads from it to generate its aria-label.
+All ten language files share the same top-level key count (38 each) and an aligned structure. Among them `ariaLabels` holds the accessibility copy keys (about 40 entries); each component reads from it to generate its aria-label.
 
 Typical interpolated copy:
 

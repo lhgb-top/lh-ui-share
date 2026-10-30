@@ -1,0 +1,110 @@
+---
+title: types —— 共有ユニオン型
+description: 'LhComponentSize / LhComponentLanguage / LhComponentType / LhPosition。constants の定数から導出される'
+---
+
+core コンポーネントが共用する 4 つのユニオン型です。それらの値は手書きのリテラルユニオンではなく、**`src/constants/` の `as const` 定数から導出**されています——サイズや言語を 1 つ追加するには定数だけを変え、型は自動的に追従します。
+
+## インポート方法
+
+```ts
+import type {
+  LhComponentSize,
+  LhComponentLanguage,
+  LhComponentType,
+  LhPosition,
+} from '@lh-ui/share/core/shared/types'
+```
+
+## 4 つの型
+
+| 型 | 定義 | 実際の値 |
+| --- | --- | --- |
+| `LhComponentSize` | `(typeof LH_SIZE_CONST)[keyof typeof LH_SIZE_CONST]` | `'small' \| 'medium' \| 'large' \| 'mini' \| 'x-large'` |
+| `LhComponentLanguage` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | `'zh-CN' \| 'en-US' \| 'ja-JP' \| 'ko-KR' \| 'de-DE' \| 'fr-FR'` |
+| `LhComponentType` | `(typeof LH_TYPES_CONST)[keyof typeof LH_TYPES_CONST] \| 'default' \| 'primary'` | `'success' \| 'warning' \| 'error' \| 'info' \| 'danger' \| 'default' \| 'primary'` |
+| `LhPosition` | リテラルユニオン | `'top' \| 'top-left' \| 'top-right' \| 'bottom' \| 'bottom-left' \| 'bottom-right' \| 'left' \| 'right'` |
+
+### LhComponentSize の `'x-large'`
+
+これは**高齢者向けサイズ**（大きな文字、大きなタッチエリア）です。定数の中の構造に注意してください：
+
+```ts
+// src/constants/index.ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',
+  large: 'large',
+  mini: 'mini',
+  old: 'x-large',   // キー名は old、値は 'x-large'；// 高齢者向け
+} as const
+```
+
+**キー名と値が一致しない**（`old` ↔ `'x-large'`）ため、型のユニオンに現れるのは**値**のほうの `'x-large'` です。一方、コンポーネントの props で高齢者モードをオンにするスイッチは別の真偽値フィールド `old?: boolean` です（[LhBaseProps](/ja/reference/types) を参照）——サイズの列挙値とスイッチの prop は別物であり、混同しないでください。
+
+### LhComponentType の 2 つのベースカラー
+
+`'default'` / `'primary'` は `LH_TYPES_CONST` の中にはなく（あちらは 5 つの**セマンティクス色**：成功 / 警告 / エラー / 情報 / 危険）、型レベルで `| 'default' | 'primary'` として補われています。これらは「状態のセマンティクス」ではなく、ボタンなどコンポーネントのベースの外観色です。
+
+### LhPosition と LhPlacement は 2 つのモデル
+
+| | `LhPosition` | `LhPlacement`（[popper](/ja/core/popper)） |
+| --- | --- | --- |
+| 用途 | 縁への位置決め（affix / backtop） | 浮遊層の位置決め（tooltip / popover） |
+| 値 | `'top'` / `'top-left'` / `'top-right'` / `'bottom'` / `'bottom-left'` / `'bottom-right'` / `'left'` / `'right'` | `'top'` / `'top-start'` / `'top-end'` / `'bottom'` / `'bottom-start'` / `'bottom-end'` / `'left'` / `'left-start'` / `'left-end'` / `'right'` / `'right-start'` / `'right-end'` |
+| 整列サフィックス | `-left` / `-right`（両端のみ） | `-start` / `-end`（セマンティクス化された整列、RTL 反転をサポート） |
+
+`LhPosition` の `-left` / `-right` は**物理方向**であり、`LhPlacement` の `-start` / `-end` は**論理方向**（RTL レイアウトで自動反転する）です。相互に変換して使わないでください。
+
+## なぜ定数から導出するのか
+
+```ts
+// 反例：手書きのユニオン。言語を追加するとき 2 箇所直す必要がある
+type LhComponentLanguage = 'zh-CN' | 'en-US'  // ← 定数と同期しやすい
+
+// 本リポジトリのやり方：定数が唯一のソース
+type LhComponentLanguage = (typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]
+```
+
+言語を 1 つ追加するには `LH_LANGUAGE_CONST` に 1 行加えるだけで、型、`LhLocaleType`、`setLocale` のパラメータ検証がすべて自動的に更新されます。これは [命名規約](/ja/guide/naming) の「定数 `LH_XXX`、型 `LhXxx`」というレイヤー分けの具体的な着地点です。
+
+## 使用例
+
+### コンポーネントの props
+
+```ts
+import type { LhComponentSize, LhComponentType } from '@lh-ui/share/core/shared/types'
+
+interface LhButtonProps {
+  type?: LhComponentType   // 'primary' | 'success' | … を自動補完
+  size?: LhComponentSize   // 'small' | 'medium' | … を自動補完
+}
+```
+
+### 業務拡張付きのジェネリック版
+
+業務側はしばしば「コンポーネントの型 + 独自のいくつかの型」を必要とします。`src/types/components/base.ts` がジェネリック版を提供しています（[types リファレンス](/ja/reference/types) を参照）：
+
+```ts
+import type { LhTypes } from '@lh-ui/share/types'
+
+type MyButtonType = LhTypes<'brand' | 'dangerous'>
+// → LhComponentType | 'brand' | 'dangerous'
+```
+
+### 実行時の検証
+
+型自体は実行時検証を行いません。コンポーネントの内部では定数を使って値を検証します：
+
+```ts
+import { LH_SIZE_CONST } from '@lh-ui/share/constants'
+
+const isValidSize = (v: string): v is LhComponentSize =>
+  Object.values(LH_SIZE_CONST).includes(v as LhComponentSize)
+```
+
+## 注意事項
+
+- **型だけをエクスポートする**：このモジュールは `import type` で定数を参照し、コンパイル後に実行時のコードを一切生み出しません（定数自体を除く）。純粋な型のインポートはバンドルサイズに影響しません。
+- **`'mini'` と `'x-large'` は拡張段階**：`small / medium / large` は通常の 3 段階；`mini` はインラインのコンパクトなケース（テーブル内の操作ボタン）、`x-large` はアクセシビリティの高齢者向け段階です。すべてのコンポーネントが 5 段階すべてをサポートするわけではなく、各コンポーネントのドキュメントを基準にしてください。
+- **`LhPosition` は `src/types` の公開エクスポート面に含まれない**：これは `core/shared/types` にあり、`@lh-ui/share/core/shared/types` からインポートする必要があります。`@lh-ui/share/types` にはありません。

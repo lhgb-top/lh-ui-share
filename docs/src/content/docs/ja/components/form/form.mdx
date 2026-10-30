@@ -1,0 +1,221 @@
+---
+title: form —— フォーム
+description: 'validateFormField のルールエンジン（非同期はショートサーキットしない）、getFormFieldValue のドットパスによる値取得、getFormFieldAria のエラー紐付け'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+フォームコントロール自体はデータを収集しません——**検証とエラーの紐付け**こそがフォームの中核の価値です。`core/form` は 3 つのものを提供します：ルールエンジン（`validateFormField`）、値取得器（`getFormFieldValue`、ドットパスをサポート）、エラー紐付け用の属性パック群（`getFormFieldAria`）。**フォーム全体のオーケストレーション**（フィールドの登録、送信のタイミング、リセット）は意図的に含めず、それらは UI 層の `LhForm` コンポーネントの責務です。
+
+## いつ使うか
+
+- 各端の `LhForm` / `LhFormItem` の実装：検証が必要なあらゆる入力シーン。
+- 検証エラーをスクリーンリーダーに紐付けたい（`aria-invalid` + `aria-describedby`）シーン。
+- **使うべきでない**：単一フィールドで、フィールド間の依存のない単純な検証（コンポーネント組み込みの `required` で十分なことも）；複雑なフィールド間依存グラフ（「A が x のとき B は必須かつ C は D と等しい」のような）が必要な場合は、`validator` のカスタム関数で表現し、複数の内蔵ルールを組み合わせようとしないでください。
+
+## インポート方法
+
+```ts
+import {
+  getFormFieldValue,
+  isEmptyValue,
+  validateFormField,
+  getFormFieldErrorId,
+  getFormFieldAria,
+} from '@lh-ui/share/core/form'
+import type { LhFormRule, LhFormState } from '@lh-ui/share/core/form'
+```
+
+## 設計意図
+
+**ルールエンジンの 3 つの重要な決定**：
+
+1. **空値は required のみ関心を持つ**——必須ではなく値が空のときは**すべてのルールをスキップ**します。これは主流ライブラリ（Element / Ant Design）の規約と一致します：入力がなければエラーにしません。つまり `type: 'email'` は空文字に対して「メールアドレス形式エラー」を出しません——必須の意図は `required` で表します。
+
+2. **非同期ルールはショートサーキットしない**——これは旧実装との挙動の差であり、本モジュールで最も微妙なポイントです。`validator` は Promise を返せます。旧実装は最初の thenable に遭遇した時点で**以降のすべてのルールをスキップ**し、「非同期のメール重複チェック以降の長さ検証が飲み込まれる」ことがありました。新実装は各ルールを遅延評価関数（`RuleCheck`）で包み、thenable に遭遇したらサスペンドしつつ**後続のルールの評価を続け**、最後にすべてのエラーを同じ Promise にマージします。最初の同期エラーは引き続き即座に返されます（同期エラーはショートサーキットし、非同期ルールはしない）。
+
+3. **同期で例外を投げる validator は検証失敗として扱う**——`error.message` をエラーメッセージとして使い、未キャッチ例外として伝播させません。ユーザーがカスタムバリデータの書き間違い（内部で TypeError を投げたなど）をしたとき、フォームは「該当フィールドの検証失敗」として振る舞い、ページがクラッシュすることはありません。
+
+**required のメッセージの優先順位**：空値のときは「明示的に message が提供された必須ルール」を優先し、なければ最初の必須ルールを採ります。この処理は実際のバグを修正するためのものです——コンポーネント層（form item）は `required` 属性が真のとき、message のない `{ required: true }` ルールを**合成**します。もしこれがユーザーの message 付きルールより前に並んでいると、`find` が合成ルールにヒットして汎用メッセージにフォールバックし、**ユーザーのカスタムメッセージが飲み込まれる**ことになります。
+
+**`getFormFieldValue` のドットパス**：`'user.address.city'` を順に reduce し、途中で非オブジェクト（null / プリミティブ値）に遭遇したら undefined を返し、例外を投げません。これによりフォームフィールドはネストしたモデルに直接バインドでき、UI 層が手動でデータを平坦化する必要がありません。
+
+**`isEmptyValue` の基準**：undefined / null / 空文字 / 空配列を空とみなします；**スペース文字列と空オブジェクトは空とはみなさない**——スペースのセマンティクスはコンポーネント層が必要に応じて渡す前に trim するもので、core が代理でその判断はしません。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getFormFieldValue` | `(model, prop: string) => unknown` | フィールド値 | ドットパス、欠落時は undefined |
+| `isEmptyValue` | `(value: unknown) => boolean` | 空かどうか | 4 種類の空の状態 |
+| `validateFormField` | `(value, rules?, model, requiredMessage?) => string \| undefined \| Promise<string \| undefined>` | エラーメッセージ / undefined | ルールエンジン |
+| `getFormFieldErrorId` | `(prop: string) => string` | 要素 id | aria-describedby と対応 |
+| `getFormFieldAria` | `(options: { prop, error?, required? }) => LhAriaAttrs` | aria 属性パック | invalid + describedby + required |
+
+## 型定義
+
+```ts
+export interface LhFormRule {
+  required?: boolean
+  message?: string
+  trigger?: string  // トリガーのタイミング（blur / change / submit）；core は解釈せず、UI 層がイベントでルールをフィルタする
+  /** 内蔵タイプ検証；空値はスキップ（required と同じ規則） */
+  type?: 'string' | 'number' | 'boolean' | 'array' | 'email' | 'url'
+  pattern?: string | RegExp       // 正規表現（文字列値にのみ有効）
+  min?: number                    // 数値の下限、または string/array の最小長
+  max?: number                    // 数値の上限、または string/array の最大長
+  len?: number                    // 正確な長さ（string/array）
+  /** カスタムバリデータ：エラーメッセージを返し、合格時は何も返さない；非同期をサポート */
+  validator?: (value: unknown, model: Record<string, unknown>) => string | undefined | Promise<string | undefined>
+}
+
+export interface LhFormState {
+  model: Record<string, unknown>
+  rules?: Record<string, LhFormRule[]>
+}
+```
+
+**`min` / `max` の 2 重のセマンティクス**は設計上の利便性です：数値の値は大小で比較し、文字列 / 配列は長さで比較します。代償は型の精度が落ちることですが、ルール設定の簡潔さのメリットのほうが大きいです（`{ min: 6, message: '6 桁以上' }` はパスワードにも人数にも成立します）。
+
+## アクセシビリティ
+
+`getFormFieldAria` はフォームのアクセシビリティの**ラストマイル**です：検証失敗時にエラーメッセージをコントロールに紐付け、スクリーンリーダーが「無効な入力、エラーは……」と読み上げます。
+
+```ts
+getFormFieldAria({ prop: 'username', error: 'ユーザー名は必須です', required: true })
+// { 'aria-invalid': true, 'aria-describedby': 'lh-form-error-username', 'aria-required': true }
+
+getFormFieldAria({ prop: 'username', required: true })
+// { 'aria-required': true }（エラーがないときは空のメッセージ要素には紐付けない）
+
+getFormFieldAria({ prop: 'username' })
+// {}（状態なき場合は空オブジェクト）
+```
+
+対応する規約：
+
+- エラーメッセージ要素は `getFormFieldErrorId(prop)` を id としてレンダリングしなければならない——`aria-describedby` がそれを指します。
+- **`aria-describedby` のタイミング**：error に値があるときのみこの属性を出力します（存在しない空要素を参照するのを避けるため）。属性パックとエラーメッセージは同じフレームで更新しなければなりません。
+- `required` フィールドは `aria-required` を出力し、スクリーンリーダーがコントロールに入った時点で「必須」と読み上げます。
+- `trigger` のアクセシビリティ上の意味：blur でトリガーされる検証はユーザーの入力中に割り込むべきではありません（1 文字打つごとにエラーが出るのは悪い体験です）；change トリガーは「入力即検証」の軽量なシーンに向いています。
+
+## 使用例
+
+```ts
+import { validateFormField, isEmptyValue, getFormFieldValue } from '@lh-ui/share/core/form'
+
+isEmptyValue('')           // true
+isEmptyValue([])           // true
+isEmptyValue('  ')         // false（スペース文字列は空ではない）
+isEmptyValue({})           // false（空オブジェクトは空ではない）
+isEmptyValue(0)            // false（0 は有効な値！）
+
+getFormFieldValue({ user: { name: 'lh' } }, 'user.name')   // 'lh'
+getFormFieldValue({ user: null }, 'user.name')             // undefined（途中で非オブジェクト）
+getFormFieldValue({}, 'missing')                           // undefined
+```
+
+```ts
+// 必須
+validateFormField('', [{ required: true, message: 'ユーザー名は必須です' }], {})
+// 'ユーザー名は必須です'
+
+// 必須ではない空値：すべてのルールをスキップ
+validateFormField('', [{ required: false, type: 'email', message: 'メールアドレス形式エラー' }], {})
+// undefined
+
+// 内蔵タイプ + 長さ
+validateFormField('ab', [{ min: 6, message: '6 文字以上' }], { username: 'ab' })
+// '6 文字以上'
+
+// 正規表現
+validateFormField('123', [{ pattern: /^\d{4}$/, message: '4 桁の数字' }], {})
+// '4 桁の数字'
+
+// カスタム同期バリデータ
+validateFormField('abc', [{
+  validator: (v) => (v as string).includes('@') ? undefined : '@ を含む必要があります',
+}], {})
+// '@ を含む必要があります'
+
+// バリデータが例外を投げる：検証失敗として扱う
+validateFormField('x', [{ validator: () => { throw new Error('バリデータが壊れた') } }], {})
+// 'バリデータが壊れた'
+
+// 非同期バリデータ（ショートサーキットしない：後続の同期ルールも引き続き評価される）
+validateFormField('ab', [
+  { validator: async (v) => await checkUnique(v) ? undefined : '既に使われています', message: 'x' },
+  { min: 6, message: '6 文字以上' },
+], {})
+// Promise<['既に使われています', '6 文字以上'] のうち最初のエラー>
+```
+
+```vue
+<!-- Vue3：form-item の典型的な配線 -->
+<script setup>
+const error = ref('')
+async function validate(trigger: string) {
+  const rules = (props.rules ?? []).filter((r) => !r.trigger || r.trigger === trigger)
+  error.value = (await validateFormField(
+    getFormFieldValue(props.model, props.prop),
+    rules,
+    props.model,
+    t('form.required'),
+  )) ?? ''
+}
+</script>
+
+<template>
+  <div class="lh-form-item" :class="{ 'is-error': error }">
+    <label class="lh-form-item__label" :for="inputId">{{ label }}</label>
+    <div class="lh-form-item__content">
+      <slot :aria-props="getFormFieldAria({ prop, error, required })" />
+      <p
+        v-if="error"
+        :id="getFormFieldErrorId(prop)"
+        class="lh-form-item__error"
+        role="alert"
+      >
+        {{ error }}
+      </p>
+    </div>
+  </div>
+</template>
+```
+
+```tsx
+// React：属性パックをラップしたコントロールにパススルーする
+// <input {...getFormFieldAria({ prop, error, required })} aria-describedby={error ? getFormFieldErrorId(prop) : undefined} />
+```
+
+```ts
+// uniapp：core 層は完全に利用可能；非 h5 端では aria 属性のサポートが限られる点に注意し、エラーメッセージは主に視覚 + role="alert" で伝える
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-form` | フォームコンテナ |
+| `.lh-form--inline` | インラインレイアウト（label とコントロールを同じ行に） |
+| `.lh-form--label-top` / `--label-left` / `--label-right` | label の位置 |
+| `.lh-form-item` | フィールド項目 |
+| `.lh-form-item.is-error` | 検証失敗（コントロールの赤い枠線） |
+| `.lh-form-item__label` | ラベル（必須の星印は `::before` でレンダリング） |
+| `.lh-form-item__content` | コントロール領域 |
+| `.lh-form-item__error` | エラーメッセージ（`role="alert"`） |
+| `.lh-form-item__required` | 必須の星印 |
+
+エラー色は `--lh-danger-color`；必須の星印も同色です。label の幅は `--lh-form-label-width` トークンで制御します（右寄せ時の整列の基準）。
+
+## 注意事項
+
+- **`0` / `false` は空値ではない**：`isEmptyValue(0)` は false を返します。これは最も踏みやすい罠です——「数量 0」は有効な入力であり、`required` はエラーにすべきではありません。同様に `false` も checkbox にとって有効な値です。
+- **`validator` の第 2 パラメータは model 全体**：フィールド間の検証（パスワード確認など）にはこれを使い、クロージャで古い値をキャプチャしないでください。
+- **非同期検証のデバウンス**：`validator` でリクエストを送る場合、UI 層はデバウンス（通常 300ms）を行い、「リクエストが返ってきたときにフィールドの値がすでに変わっている」という競合を処理する必要があります——core 層はこれを管理せず、期限切れのエラーメッセージを返すのは呼び出し側の問題です。
+- **`trigger` は UI 層が解釈する**：core は宣言を保持するだけで消費しません。コンポーネント層がイベント（blur / change / submit）でルールをフィルタしてから `validateFormField` に渡します。
+- **`requiredMessage` は汎用のフォールバックメッセージ**：通常は言語パック（`form.required`）から来て、ルールの `message` が undefined のときのみ使われます；明示的な空文字 `message: ''` もそのまま使われ（欠落とはみなさない）ます。
+- **複数ルールの最初のエラー**：同期ルールはショートサーキットし（最初にヒットした時点で返す）、非同期ルールはすべて評価した上で最初に resolve したエラーを取ります。エラーの表示順はルール配列の順序と一致します。
+- **ネストフィールドの prop**：`'user.name'` は値の取得と error id の生成（`lh-form-error-user.name`）の両方に使われます——id のドットは CSS セレクタ内ではエスケープが必要で、`document.getElementById` や `querySelector` を使う際は注意してください。
+
+<FnPlayground module="form" fn="validateFormField" params='{"value": "ab", "rules": [{"min": 6, "message": "6 文字以上"}], "model": {}}' />

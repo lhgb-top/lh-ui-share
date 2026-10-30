@@ -1,0 +1,178 @@
+---
+title: popover —— Popover
+description: 'Couche flottante pouvant porter du contenu interactif : délai de masquage de 100 ms au survol, role=dialog + aria-labelledby, sémantique du déclencheur aria-haspopup'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Popover est le « tooltip dans lequel on peut mettre des choses » : l'infobulle peut contenir des boutons, un formulaire, un menu, des images. Il ne remplace pas tooltip — qui ne peut contenir que du texte brut et interdit toute interaction ; il ne remplace pas non plus dialog — qui est modal et vole le focus. `core/popover` est aussi mince que tooltip, la différence est entièrement dans le **poids de l'interaction**.
+
+## Quand l'utiliser
+
+- Chaque framework implémente `<LhPopover>` : détails sous forme de carte, panneau de filtres, formulaire en ligne, groupe de boutons d'action.
+- Les situations où l'utilisateur doit **rester dans la couche flottante et interagir**.
+- **À ne pas utiliser pour** : une infobulle d'une seule phrase en texte brut (utilisez `tooltip`, plus léger et plus retenu) ; une confirmation forte qui doit interrompre le flux de l'utilisateur (utilisez `dialog`, modal) ; une confirmation d'opération (utilisez `popconfirm`, plus précis sémantiquement).
+
+## Import
+
+```ts
+import {
+  LH_POPOVER_TRIGGERS,
+  LH_POPOVER_PLACEMENT_DEFAULT,
+  getPopoverClass,
+  getPopoverWidthStyle,
+  getPopoverTriggerAria,
+  getPopoverPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+import type { LhPopoverTrigger, LhPopoverState } from '@lh-ui/share/core/popover'
+```
+
+## Intentions de conception
+
+**La raison d'être du délai de masquage de 100 ms** : tooltip se masque à 0 ms (disparition immédiate à la sortie), popover laisse 100 ms — **pour que le pointeur puisse aller du déclencheur jusqu'à la couche flottante** . Le déplacement de la souris du déclencheur à la couche fait brièvement sortir le pointeur de l'élément déclencheur, et un délai de 0 ms fermerait la couche en cours de route : l'utilisateur n'entrerait jamais. C'est la contrainte directe qu'impose l'interactivité du popover.
+
+**`LH_POPOVER_TRIGGERS` comme constante de validation** : les modes de déclenchement sont une énumération finie (click/hover/focus/manual), exportée en tableau readonly pour la validation des props par la couche UI (validator de Vue, assertion d'exécution de React), et simultanément la contrepartie d'exécution du type TS.
+
+**`role="dialog"` plutôt que `"tooltip"`** : WAI-ARIA impose qu'un tooltip ne contienne pas d'éléments interactifs ; une couche flottante interactive doit avoir la sémantique dialog. Avec `aria-labelledby` pointant vers l'élément de titre, le lecteur d'écran annonce le titre à l'ouverture plutôt que tout le contenu.
+
+**L'interception de `canCloseOnEscape` quand disabled** : Esc ferme par défaut, et `disabled` l'empêche — à l'état désactivé, la couche flottante ne devrait de toute façon pas pouvoir être déclenchée ; cette garde évite qu'une couche déjà ouverte puisse encore être fermée par Esc après que le composant a été désactivé (sémantiquement, disabled signifie généralement « opérations verrouillées »).
+
+**La flèche est optionnelle** : la classe `--arrow` n'est ajoutée que si `arrow !== false` — la flèche exige un calcul de positionnement supplémentaire (`computeArrowOffset` de `shared/popper`), une couche flottante purement informative peut l'éviter.
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | délais | 200 / 100 par défaut |
+| `getPopoverClass` | `(state: { placement, arrow?, popperClass? }) => string[]` | noms de classes | position + flèche + personnalisé |
+| `getPopoverWidthStyle` | `(width?: string \| number) => Record<string, string>` | style en ligne | normalisation de la largeur |
+| `getPopoverTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | paquet aria | aria-expanded/controls/haspopup |
+| `getPopoverPopperAria` | `(id?, titleId?) => LhAriaAttrs` | paquet aria | role=dialog + aria-labelledby |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | autorisé ? | intercepté quand disabled |
+
+Constantes : `LH_POPOVER_TRIGGERS` (4 déclenchements), `LH_POPOVER_PLACEMENT_DEFAULT = 'top'`.
+
+## Définitions de types
+
+```ts
+export type LhPopoverTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopoverState {
+  placement?: LhPlacement        // 12 positions (shared/popper)
+  trigger?: LhPopoverTrigger
+  width?: string | number        // largeur de la couche flottante
+  title?: string
+  visible?: boolean
+  disabled?: boolean
+  arrow?: boolean                // true par défaut
+  showAfter?: number
+  hideAfter?: number
+}
+```
+
+## Accessibilité
+
+```ts
+getPopoverTriggerAria(true, 'pop-1')
+// { 'aria-expanded': true, 'aria-controls': 'pop-1', 'aria-haspopup': 'true' }
+getPopoverTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'true' }
+
+getPopoverPopperAria('pop-1', 'pop-1-title')
+// { role: 'dialog', id: 'pop-1', 'aria-labelledby': 'pop-1-title' }
+```
+
+- **Le trio du déclencheur** : `aria-haspopup` déclare « je vais faire apparaître quelque chose », `aria-expanded` déclare « est-ce ouvert maintenant », `aria-controls` pointe vers « quel élément apparaît ». L'utilisateur au clavier s'appuie sur l'état expanded pour juger la situation.
+- **`aria-controls` exige la présence de la couche** : l'id n'existe que lorsque la couche est rendue par `v-if` ; sans popperId transmis, seuls expanded/haspopup sont produits. **Ne faites pas pointer controls vers un élément démonté** — après fermeture, la couche est retirée et le controls du déclencheur reste suspendu (les lecteurs d'écran le tolèrent, mais une validation stricte signalera une erreur).
+- **Le titre est la vitrine** : `aria-labelledby` pointe vers `<div class="lh-popover__title" :id="titleId">`. Le titre doit exprimer clairement ce qu'est cette couche flottante (« Critères de filtrage », « Détails de la commande »), pas un verbe (« Cliquez ici »).
+- **La gestion du focus est l'affaire de la couche UI** : `role="dialog"` n'embarque pas de piégeage de focus — piéger ou non, et où placer le focus initial, est décidé par la couche UI avec `shared/focus-trap`. Un popover non modal ne piège généralement **pas** le focus (l'utilisateur garde accès au reste de la page), mais un clic à l'extérieur doit fermer.
+- **Ouverture au clavier** : avec le déclenchement click, le déclencheur est un bouton et s'ouvre avec Entrée/Espace ; le déclenchement hover est inaccessible au clavier — **ne proposez pas seulement le survol pour les opérations essentielles**.
+
+## Exemples d'utilisation
+
+```ts
+import {
+  getDefaultDelay, getPopoverClass, getPopoverWidthStyle, canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 100 }
+getDefaultDelay(0, 0)                   // { show: 0, hide: 0 } (immédiat explicite)
+
+getPopoverClass({ placement: 'bottom' })
+// ['lh-popover__popper', 'lh-popover__popper--bottom', 'lh-popover__popper--arrow']
+getPopoverClass({ placement: 'top', arrow: false })
+// ['lh-popover__popper', 'lh-popover__popper--top']
+getPopoverClass({ placement: 'top', popperClass: 'my-pop' })
+// ['lh-popover__popper', '…--top', '…--arrow', 'my-pop']
+
+getPopoverWidthStyle(240)     // { width: '240px' }
+getPopoverWidthStyle('50%')   // { width: '50%' }
+getPopoverWidthStyle(undefined) // {}
+
+canCloseOnEscape({ disabled: false })  // true
+canCloseOnEscape({ disabled: true })   // false
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopover :width="280" trigger="click" title="Critères de filtrage">
+    <template #reference>
+      <LhButton>Filtrer</LhButton>
+    </template>
+    <div class="filter-body">
+      <LhCheckbox v-model="form.active">Actifs uniquement</LhCheckbox>
+      <LhButton type="primary" @click="apply">Appliquer</LhButton>
+    </div>
+  </LhPopover>
+</template>
+```
+
+```ts
+// Fermeture au clic à l'extérieur (couche UI) : document écoute le click et détermine si
+// la cible est à l'extérieur du déclencheur et de la couche
+function onDocumentClick(e: MouseEvent) {
+  if (!triggerEl.value?.contains(e.target as Node) && !popperEl.value?.contains(e.target as Node)) {
+    state.visible = false
+  }
+}
+watch(() => state.visible, (v) => {
+  v ? document.addEventListener('click', onDocumentClick) : document.removeEventListener('click', onDocumentClick)
+})
+```
+
+```tsx
+// React : useRef pour le déclencheur et la couche ; le clic à l'extérieur avec un hook
+// useClickOut custom ; la couche est portail vers document.body pour éviter d'être
+// rognée par un overflow:hidden du parent
+```
+
+```ts
+// uniapp : couche en <view> ; la « fermeture au clic à l'extérieur » est implémentée côté
+// mini-programme avec un masque global catchtouchstart
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-popover__popper` | conteneur de la couche flottante |
+| `.lh-popover__popper--{top\|top-start\|…}` | 12 positions (placement réel après retournement inclus) |
+| `.lh-popover__popper--arrow` | avec flèche |
+| `.lh-popover__title` | titre |
+| `.lh-popover__body` | zone de contenu |
+
+Fond `--lh-bg-color`, bordure `--lh-border-color`, ombre `--lh-box-shadow-popover`, arrondi `--lh-border-radius-base`, z-index `--lh-z-index-popover`.
+
+## Remarques
+
+- **La couche flottante doit être téléportée vers body** : laissée à sa position d'origine dans le DOM, elle se fera piéger par le `overflow: hidden`, le `transform` ou le contexte d'empilement `z-index` de son parent. Après téléportation, les coordonnées de positionnement sont calculées par `computePosition` de `shared/popper` sur la base du viewport.
+- **La classe de position après retournement** : `getPopoverClass` consomme le **placement réellement effectif** (la valeur après le flip du popper), pas la valeur d'origine de la prop — sinon la flèche pointe dans une direction qui ne correspond pas au rendu visuel. La couche UI doit transmettre le placement réel renvoyé par le popper.
+- **`width` et l'adaptation du contenu** : avec une largeur fixe, un contenu étroit sera étiré ; sans largeur, le contenu peut déborder du viewport. Pour un contenu complexe, il est recommandé de transmettre un `min-width` plutôt qu'un `width` (via un style personnalisé popperClass).
+- **Le survol sur mobile** : l'écran tactile n'a pas de survol, un popover au déclenchement hover exige sur mobile un premier tap pour obtenir l'état « survolé », puis un tap ailleurs pour fermer — une très mauvaise expérience. Il est recommandé aux composants multiterminaux de basculer le mode de déclenchement selon la plateforme.
+- **Popover imbriqués** : si la couche de A ouvre la couche de B, fermer A doit fermer B en cascade, sinon B reste suspendu. Soyez attentif lors du partage de l'état du popper.
+- **Le déclenchement `manual`** : entièrement contrôlé par le `v-model:visible` externe — souvent associé à une logique du type « la ligne sélectionnée se déplie », auquel cas la fermeture au clic à l'extérieur est à écrire soi-même (la fermeture au clic à l'extérieur de core est également implémentée par la couche UI).
+- **La réutilisation du code avec tooltip** : les deux partagent `shared/popper` et `shared/delay`, mais **les rôles aria ne sont pas interchangeables** — ne cédez pas à la réutilisation en appliquant le `role="tooltip"` de tooltip à une couche interactive : cela viole ARIA et le comportement des lecteurs d'écran devient imprévisible.
+
+<FnPlayground module="popover" fn="getDefaultDelay" params='{"showAfter": null, "hideAfter": null}' />

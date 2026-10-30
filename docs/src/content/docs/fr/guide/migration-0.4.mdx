@@ -1,0 +1,127 @@
+---
+title: Guide de migration 0.4.0
+description: "La table de correspondance du renommage avec préfixe LH : la liste des remplacements mécaniques des types, constantes et identifiants de préréglages"
+---
+
+# Guide de migration 0.4.0
+
+La version 0.4.0 uniformise les symboles publics non tiers de ce dépôt avec le préfixe `LH`, en alignement avec la
+norme de nommage de la famille définie dans
+`docs/project/development-guide.md` du dépôt plus (le contexte est dans [Conventions de nommage](/fr/guide/naming)).
+
+**Tout est un remplacement mécanique au niveau des identifiants** : le comportement est inchangé, les chemins d'export sont inchangés. Les bibliothèques UI (plus / vue2 / uniapp)
+ont déjà fait le renommage ; les utilisateurs indépendants doivent adapter leurs imports selon la table de correspondance ci-dessous.
+
+## Types / interfaces : `LhXxx`
+
+| Ancien | Nouveau | Appartenance |
+| --- | --- | --- |
+| `ThemePreset` | `LhThemePreset` | `theme` |
+| `ThemePresetName` | `LhThemePresetName` | `theme` |
+| `ThemeVars` | `LhThemeVars` | `theme` |
+| `SxProps` | `LhSxProps` | `core/shared/sx` |
+| `DOMRectLike` | `LhDOMRectLike` | `core/shared/popper` |
+| `ComputePositionOptions` | `LhComputePositionOptions` | `core/shared/popper` |
+| `PopperPosition` | `LhPopperPosition` | `core/shared/popper` |
+| `PtAttrs` | `LhPtAttrs` | `core/shared/pt` |
+| `SanitizeNumberOptions` | `LhSanitizeNumberOptions` | `core/shared/sanitize` |
+| `VirtualRange` | `LhVirtualRange` | `core/shared/virtual` |
+| `AxisRange` | `LhAxisRange` | `core/shared` |
+| `LocalePath` | `LhLocalePath` | `locales` |
+| `Leaves` | `LhLeaves` | `types/locale` |
+| `LocaleOptions` | `LhLocaleOptions` | `types/locale` |
+
+## Constantes : `LH_<module>_<concept>`
+
+| Ancien | Nouveau | Appartenance |
+| --- | --- | --- |
+| `DEFAULT_THEME` | `LH_THEME_DEFAULT` | `core/config` |
+| `DEFAULT_DRAWER_DIRECTION` | `LH_DRAWER_DIRECTION_DEFAULT` | `core/drawer` |
+| `DEFAULT_DRAWER_SIZE` | `LH_DRAWER_SIZE_DEFAULT` | `core/drawer` |
+| `DEFAULT_DROPDOWN_PLACEMENT` | `LH_DROPDOWN_PLACEMENT_DEFAULT` | `core/dropdown` |
+| `DROPDOWN_TRIGGERS` | `LH_DROPDOWN_TRIGGERS` | `core/dropdown` |
+| `DEFAULT_POPCONFIRM_TYPE` | `LH_POPCONFIRM_TYPE_DEFAULT` | `core/popconfirm` |
+| `DEFAULT_POPCONFIRM_PLACEMENT` | `LH_POPCONFIRM_PLACEMENT_DEFAULT` | `core/popconfirm` |
+| `POPOVER_TRIGGERS` | `LH_POPOVER_TRIGGERS` | `core/popover` |
+| `DEFAULT_POPOVER_PLACEMENT` | `LH_POPOVER_PLACEMENT_DEFAULT` | `core/popover` |
+| `THEME_PRESETS` | `LH_THEME_PRESETS` | `theme` |
+| `PRESET_THEME_STYLE_ID` | `LH_PRESET_THEME_STYLE_ID` | `theme` |
+
+Notez que la constante de valeur par défaut suit le schéma **`LH_<module>_<concept>_DEFAULT`** (DEFAULT à la **fin**),
+et non `LH_DEFAULT_<...>`.
+
+## Objets de préréglages de thème : minuscule → `LhXxx`
+
+| Ancien | Nouveau |
+| --- | --- |
+| `cerblue` | `LhCerblue` |
+| `songhua` | `LhSonghua` |
+| `zhusha` | `LhZhusha` |
+| `shuimo` | `LhShuimo` |
+| `golden` | `LhGolden` |
+
+## Ce qui ne change pas (exemptions)
+
+Les symboles suivants **gardent leur nom d'origine**, n'y touchez pas lors de la migration :
+
+| Symbole | Raison |
+| --- | --- |
+| `zhCN` / `enUS` | Nommage locale conventionnel, et réexporté comme API publique par les trois bibliothèques UI |
+| La **valeur chaîne** des noms de préréglages (`name: 'cerblue'`, etc.) | Valeur de configuration que l'utilisateur écrit dans le `theme` du ConfigProvider ; la changer casserait toutes les configurations aval |
+| Les noms de fonctions (`getThemeVars` / `sxToStyle`, etc.) | Cette vague ne converge que les constantes / types / interfaces / classes |
+
+```ts
+// ✅ après migration
+import { LH_THEME_PRESETS, LhCerblue, getThemeVars } from '@lh-ui/share/theme'
+import type { LhThemePreset, LhSxProps } from '@lh-ui/share/core/shared/sx'
+
+const preset: LhThemePreset = LhCerblue
+getThemeVars('cerblue')          // la valeur chaîne ne change pas
+```
+
+## Exemple de remplacement en une passe
+
+```ts
+// avant
+import { THEME_PRESETS, PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+import type { SxProps, ThemeVars } from '@lh-ui/share'
+
+// après
+import { LH_THEME_PRESETS, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+import type { LhSxProps, LhThemeVars } from '@lh-ui/share'
+```
+
+## Autres contenus de cette release
+
+Outre le renommage, 0.4.0 contient les changesets en attente suivants :
+
+- **Liaison locale et gouvernance des styles** (minor) — le mécanisme d'alias en disposition familiale, la mise en place des six vérifications `verify:styles`
+- **Le lot de correctifs de l'audit des trois dépôts** (minor)
+- **Le chantier des jetons de hauteur** (minor) — ajout des jetons `--lh-control-height-*` pour unifier la hauteur extérieure des contrôles,
+  **changement visuellement cassant** : voir « Le changement des hauteurs de contrôles » ci-dessous
+- **Les libellés du divider vertical** (minor) — le séparateur vertical prend en charge les libellés du slot par défaut,
+  `aria-orientation="vertical"` devient ainsi accessible
+- **Le lot de défauts régressifs corrigés sur l'interface graphique** (patch) — priorité des libellés obligatoires du Form (un `message` personnalisé n'est plus
+  englouti par les règles synthétisées), éclaircissement en mode sombre des préréglages à primaire profonde (le bouton principal des préréglages 水墨 (encre de Chine) etc. n'est plus quasi invisible en mode sombre), etc.
+- **Le démantèlement de la dépendance circulaire de date-picker** (patch) — `formatDate` / `parseDate` descendent dans
+  `core/shared/date`, le cercle binaire `logic ↔ adapter` est cassé en un seul sens
+- **Le style de bordure et les tests du divider** (patch)
+- **La correction du centrage des contrôles de formulaire** (patch)
+- **Le retour à la ligne des titres steps** (patch)
+- **L'abrogation de la règle du marqueur hairline** (patch) — uniapp v3 sort les px en direct, les nouvelles bordures 1px n'ont plus besoin
+  du marqueur `/* hairline */` (les 65 marqueurs historiques restent comme commentaires ordinaires)
+- **Le site de documentation** (minor) — c'est-à-dire le site que vous lisez en ce moment
+
+## Le changement des hauteurs de contrôles (cassure visuelle)
+
+Ajout des jetons `--lh-control-height-{mini,small,medium,large,x-large}` (la sémantique est la **hauteur extérieure border-box**
+du contrôle) ; tous les contrôles de formulaire référencent désormais les jetons. Auparavant, la plupart des contrôles ne déclaraient pas
+`box-sizing: border-box` ; après l'alignement uniforme sur la hauteur extérieure, la hauteur de rendu réelle des contrôles suivants **diminue** :
+
+| Contrôle | Changement |
+| --- | --- |
+| input | Dérivé du padding, il passe à une hauteur fixe : mini 28→20, small 32→24, medium 39→32, large 50→40 |
+| Les autres contrôles de formulaire | Alignés sur le même jeu de paliers de hauteur ; le centrage vertical et la ligne de base s'alignent au sein d'un même formulaire |
+
+C'est une cassure au niveau **visuel** (la structure DOM et l'API sont inchangées). Si le projet contient des tests d'instantanés
+sur d'anciennes valeurs en pixels ou des mises en page à hauteur fixe, il faut les vérifier en régression.

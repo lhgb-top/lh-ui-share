@@ -1,0 +1,171 @@
+---
+title: 'steps 步驟條 —— 導航'
+description: 'getStepStatus 的 forced 覆蓋、末項由結構性 :last-child 承擔（SSR 安全）、getStepsLineLastIndices 橫向折行行末探測'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+步驟條是「流程的進度指示器」：購物車的「購物車 → 填資訊 → 付款 → 完成」、精靈式表單。它和 `tabs` 的區別是**順序語義**——步驟有先後，狀態由位置推導（已完成/進行中/待處理）。`core/steps` 管的是狀態推導與一個很容易寫錯的版面配置細節：**橫向步驟條折行時，行末連接線要隱藏**。
+
+## 何時使用
+
+- 各端實作 `<LhSteps>` / `<LhStep>`：訂單流程、精靈表單、任務進度、多步設定。
+- 流程**有明確順序**、且使用者需要知道「走到哪了」。
+- **不該用它**：平級內容切換（用 `tabs`——無順序語義）；簡單進度百分比（用 `progress`）；層級導航（用 `menu` 或 `breadcrumb`）。
+
+## 匯入方式
+
+```ts
+import {
+  getStepStatus,
+  getStepsClassNames,
+  getStepClassNames,
+  getStepsLineLastIndices,
+  getStepAria,
+} from '@lh-ui/share/core/steps'
+import type {
+  LhStepStatus, LhStepsDirection, LhStepStatusState, LhStepClassState,
+} from '@lh-ui/share/core/steps'
+```
+
+## 設計意圖
+
+**狀態由位置推導**：`getStepStatus` 的核心規則是 `index < current → finish`、`=== → process`、`> → wait`。大部分場景只需傳 `current`，狀態自動算——UI 層不必為每一步明確宣告狀態。
+
+**`forced` 是整體覆蓋**：Steps 級的 forced 狀態（如 `error`）讓**所有步驟**都變成該狀態。這是「流程整體失敗」的語義：支付失敗時，不是某一步失敗，而是整條流程不可繼續。注意它優先級最高（早於位置推導傳回）。
+
+**末項不輸出類別名，交給 `:last-child`**：這是本模組最微妙的設計。註解寫了原因：子項在各自的 setup 階段渲染，此時**後續兄弟尚未註冊**，基於註冊總數算出的 isLast 會讓每一項在首屏（含 SSR/SSG）都被誤判為末項。結構性 `:last-child` 選擇器是 CSS 渲染時才求值的，天生正確——代價是連接線樣式必須用結構偽類實作。
+
+**`getStepsLineLastIndices` 解決折行問題**：橫向步驟條定寬折行後，**每一行的最後一項**的連接線會指向行尾空白（下一行行首），視覺斷裂。這個函式按相鄰項的 `offsetTop` 差找折行點：`offsetTops[i+1] > offsetTops[i]` 說明 i+1 換到下一行了，i 就是行末。行末項（含全域末項）由 UI 層據此加 `line-last` 類別隱藏連接線。
+
+**`lineLast` 與 `isLast` 是兩回事**：`isLast`（全域末項）由 `:last-child` 承擔；`lineLast`（行末項）是**測量出來的**，需要 UI 層在渲染後讀 offsetTop 回填——只在橫向折行場景下需要。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getStepStatus` | `(state: LhStepStatusState) => LhStepStatus` | 狀態 | forced 覆蓋 / 位置推導 |
+| `getStepsClassNames` | `(direction: LhStepsDirection) => string[]` | 類別名 | 方向 |
+| `getStepClassNames` | `(state: LhStepClassState) => string[]` | 類別名 | 狀態 + 可點選 + 行末 |
+| `getStepsLineLastIndices` | `(offsetTops: number[]) => number[]` | 行末下標 | 橫向折行探測 |
+| `getStepAria` | `(status: LhStepStatus) => LhAriaAttrs` | aria 包 | aria-current="step" |
+
+## 類型定義
+
+```ts
+export type LhStepStatus = 'wait' | 'process' | 'finish' | 'error'
+export type LhStepsDirection = 'horizontal' | 'vertical'
+
+export interface LhStepStatusState {
+  index: number       // 步驟索引（0 起）
+  current: number     // 目前步驟索引
+  forced?: LhStepStatus  // Steps 級整體覆蓋狀態
+}
+
+export interface LhStepClassState {
+  status: LhStepStatus
+  clickable: boolean
+  lineLast?: boolean  // 是否為目前行的最後一項（橫向折行時由 UI 層測量）
+}
+```
+
+## 無障礙
+
+```ts
+getStepAria('process')  // { 'aria-current': 'step' }
+getStepAria('finish')   // {}
+getStepAria('error')    // {}
+```
+
+- **aria-current="step" 標記目前步驟**：這是 WAI-ARIA 的專門語義，讀屏軟體會播報「目前步驟」——比「進行中」的文字提示更標準。只在 process 狀態輸出。
+- **有序列表語義**：步驟條推薦用 `<ol>` 渲染——順序語義天生內建，讀屏軟體會播報「第 2 項，共 4 項」。若用 `<div>` 實作，需補 `role="list"` 且每項 `role="listitem"`。
+- **狀態用文字而非僅顏色**：finish 的對勾、process 的數字、wait 的灰色——色盲使用者區分不出。每步的標題文字（「填寫資訊」）+ 圖示組合才完整。
+- **error 步驟的播報**：錯誤狀態應在 UI 層用 `aria-invalid` 或在步驟標題後追加「（失敗）」文字，僅靠紅色圖示不足以傳達。
+- **可點選步驟的按鈕語義**：`clickable: true` 時步驟標題應渲染為 `<button>`（可回跳到已完成步驟），鍵盤可達；不可點選時是純文字。
+
+## 使用範例
+
+```ts
+import { getStepStatus, getStepsLineLastIndices } from '@lh-ui/share/core/steps'
+
+getStepStatus({ index: 0, current: 2 })  // 'finish'
+getStepStatus({ index: 2, current: 2 })  // 'process'
+getStepStatus({ index: 3, current: 2 })  // 'wait'
+getStepStatus({ index: 0, current: 2, forced: 'error' })  // 'error'（forced 覆蓋全部）
+getStepStatus({ index: 2, current: 2, forced: 'wait' })   // 'wait'
+
+// 橫向折行（每行 2 項，4 項折成 2 行）：
+getStepsLineLastIndices([10, 10, 60, 60])  // [1, 3]（下標 2 的 offsetTop 更大 → 1 是行末；3 是全域末項）
+getStepsLineLastIndices([10, 10, 10])      // [2]（不折行，只有全域末項）
+getStepsLineLastIndices([])                // []
+```
+
+```ts
+// UI 層：渲染後測量 offsetTop，回填 lineLast 類（僅橫向需要）
+const items = ref<HTMLElement[]>([])
+const lineLastSet = ref<Set<number>>(new Set())
+
+onMounted(() => {
+  const offsetTops = items.value.map((el) => el.offsetTop)
+  lineLastSet.value = new Set(getStepsLineLastIndices(offsetTops))
+})
+// 監聽視窗 resize：折行點會隨寬度變化
+```
+
+```vue
+<!-- Vue3：訂單流程 -->
+<template>
+  <LhSteps :current="1">
+    <LhStep title="购物车" description="已选 3 件商品" />
+    <LhStep title="填写信息" description="收货地址与发票" />
+    <LhStep title="付款" />
+    <LhStep title="完成" />
+  </LhSteps>
+</template>
+```
+
+```vue
+<!-- 整體失敗（支付失敗時整條流程標紅） -->
+<template>
+  <LhSteps :current="2" status="error">
+    <LhStep title="购物车" /><LhStep title="填写信息" />
+    <LhStep title="付款" description="支付超时，请重试" />
+    <LhStep title="完成" />
+  </LhSteps>
+</template>
+```
+
+```tsx
+// React：useLayoutEffect 測量 offsetTop（避免首幀閃爍），加 resize 監聽重算
+```
+
+```ts
+// uniapp：<view> + flex；橫向折行在小程序端用節點查詢 createSelectorQuery 取 top
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-steps` | 根容器（flex） |
+| `.lh-steps--{horizontal\|vertical}` | 方向 |
+| `.lh-steps__item` | 步驟項 |
+| `.lh-steps__item--{wait\|process\|finish\|error}` | 狀態（圓圈色 + 文字色 + 連接線色） |
+| `.lh-steps__item--clickable` | 可點選（hover 高亮 + 指標） |
+| `.lh-steps__item--line-last` | 行末項（隱藏指向行尾空白的連接線） |
+| `.lh-steps__circle` / `__title` / `__description` | 圓圈 / 標題 / 描述 |
+| `.lh-steps__line` | 連接線（透過 `:last-child` 隱藏全域末項的線） |
+
+狀態色：wait `--lh-text-placeholder`、process `--lh-primary-color`、finish `--lh-success-color`、error `--lh-danger-color`；連接線通常用 `--lh-border-color`，已完成段用 finish 色。
+
+## 注意事項
+
+- **`lineLast` 只在橫向折行場景需要**：縱向步驟條每項獨佔一行，連接線天生垂直向下，沒有行末問題。固定寬度的橫向步驟條（不折行）也不需要——只有**定寬 + 允許折行**時才測量。
+- **測量時機**：`offsetTop` 必須在 DOM 渲染後讀（onMounted / useLayoutEffect），且視窗 resize 時重算。首幀可能閃爍（連接線先顯示後隱藏），可接受；嚴格場景用 `visibility` 延遲顯示。
+- **`forced` 是整體覆蓋不是單步**：`status` prop 傳 error 時**所有步驟**變 error，包括已完成的——這是「整條流程失敗」的語義。要只標某一步失敗，給該 LhStep 單獨傳 status（UI 層把單步 status 合併進 forced 的單步版本，或直接覆蓋該項類別名）。
+- **`current` 可以超出範圍**：`current: 5` 而只有 4 步時全部 finish（index 全部 < 5）——用於「流程已完成」的終態展示，不需要特判。
+- **SSR/SSG 的末項陷阱**：這是 `getStepClassNames` 不接受 isLast 參數的原因。任何在 setup 期基於「註冊總數」算末項的實作都會在首屏全項誤判——用 `:last-child`。
+- **可點選回跳的業務約束**：`clickable` 通常只對**已完成**步驟開啟（回查資訊），進行中和待處理步驟不可跳。是否允許跳到任意步由業務決定，core 只出類別名。
+- **description 的空間**：橫向步驟條有描述時高度增加，同行折行的行高由最高項決定——測量 offsetTop 前確保所有項已渲染完。
+
+<FnPlayground module="steps" fn="getStepStatus" params='{"index": 2, "current": 2}' />

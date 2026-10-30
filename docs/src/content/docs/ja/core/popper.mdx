@@ -1,0 +1,180 @@
+---
+title: popper —— ポップアップ層の位置決定エンジン
+description: 'computePosition は 12 方位の配置、主軸反転、交差軸クランプを実装し、rect をそのまま入力できるので直接単体テスト可能'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+tooltip、popover、popconfirm、dropdown、select のドロップダウン、cascader のパネル、
+date-picker のカレンダー——lh-ui の中で「トリガーの隣に浮かぶもの」の位置は、すべてこの
+1 つの関数が算出します。
+
+## なぜ floating-ui / popper.js を使わないのか
+
+ファミリーの 4 端（Vue3 / Vue2 / React / uniapp）がすべてこのパッケージを読み込むため、
+サードパーティ製の位置決定ライブラリのサイズと更新ペースが 4 倍の負担になります。share の
+位置決定エンジンは、ファミリーが実際に使うサブセットだけをカバーします：12 方位、主軸反転、
+交差軸クランプ、矢印オフセットで、約 300 行、ゼロ依存、純関数の入力と出力——**DOM を作らず、
+イベントを購読せず、requestAnimationFrame も回しません**。スケジューリングとレンダリングは
+各 UI 層が自分で決めます（Vue3 は `watchEffect`、React は `useLayoutEffect`、uniapp は
+ページスクロールイベント）。
+
+## インポート方法
+
+```ts
+import {
+  computePosition,
+  parsePlacement,
+  getWindowViewport,
+  type LhPlacement,
+  type LhComputePositionOptions,
+} from '@lh-ui/share/core/shared/popper'
+```
+
+## 型と定数
+
+```ts
+// 12 方位 = 4 方向 × 3 アラインメント（center は接尾辞を省略可能）
+export type LhPlacement =
+  | 'top' | 'top-start' | 'top-end'
+  | 'bottom' | 'bottom-start' | 'bottom-end'
+  | 'left' | 'left-start' | 'left-end'
+  | 'right' | 'right-start' | 'right-end'
+
+export type LhPlacementDir = 'top' | 'bottom' | 'left' | 'right'
+export type LhPlacementAlign = 'start' | 'center' | 'end'
+
+// DOMRect と同構成の最小構造——テスト時はリテラルを直接作る
+export interface LhDOMRectLike {
+  top: number
+  left: number
+  width: number
+  height: number
+  right: number
+  bottom: number
+}
+
+export interface LhComputePositionOptions {
+  placement?: LhPlacement       // デフォルト 'bottom'
+  gap?: number                  // トリガーとの間隔、デフォルト 8
+  padding?: number              // ビューポートの安全マージン、デフォルト 8
+  flip?: boolean                // 主軸オーバーフロー時の反転、デフォルト true
+  shift?: boolean               // 交差軸のクランプ、デフォルト true
+}
+
+export interface LhPopperPosition {
+  top: number
+  left: number
+  placement: LhPlacement        // 反転後に実際に有効な方位
+  arrowOffset: number           // 交差軸上の矢印オフセット（px、ポップアップ層の交差軸起点から）
+}
+```
+
+## 関数表
+
+| 関数 | シグネチャ | 役割 |
+| --- | --- | --- |
+| `parsePlacement` | `(placement: LhPlacement) => { dir, align }` | 方位を「方向 + アラインメント」に分解。不正な方向は `bottom`、不正なアラインメントは `center` にフォールバック |
+| `buildPlacement` | `(dir: LhPlacementDir, align: LhPlacementAlign) => LhPlacement` | 方向とアラインメントから方位を再構築（`center` のときは接尾辞を省略） |
+| `flipDir` | `(dir: LhPlacementDir) => LhPlacementDir` | 主軸反転：top↔bottom、left↔right |
+| `basePosition` | `(dir, align, trigger, popper, gap) => { top, left }` | 方位ごとの基本配置（**ビューポート制約は考慮しない**） |
+| `fitsInViewport` | `(dir, trigger, popper, viewport, gap, padding) => boolean` | 指定方向でポップアップ層がビューポート内に完全に収まるか（主軸判定） |
+| `computePosition` | `(trigger, popper, viewport, options?) => LhPopperPosition` | **メインエントリ**：完全な位置決定計算 |
+| `getWindowViewport` | `() => LhDOMRectLike` | ブラウザウィンドウからビューポート rect を構築；SSR ガード付きで、`window` がないときは幅高 0 |
+| `isOutsideViewport` | `(rect, viewport) => boolean` | rect がビューポートから完全に外れたか（スクロールでトリガーが見えなくなったらポップアップ層を閉じるべき） |
+
+## computePosition の計算フロー
+
+```
+flip（主軸反転）
+  → 反転後の方向に収まるときだけ反転する（反転して余計に悪くなるのを避ける）
+  → 方位に従って配置（basePosition）
+  → shift 交差軸クランプ（padding の安全マージンに沿う）
+  → 主軸クランプ（flip が有効で、かつ両側とも収まらないときのみ、到達できる側に貼る）
+  → 低側クランプのセーフティネット（フォールバック、負の座標を出さない保証）
+```
+
+重要な設計：
+
+- **反転は条件付き**です。「はみ出したら反転」というよくある誤った実装では、トリガーが
+  ビューポート中央にありポップアップ層が高い場合、反転したほうがむしろ収まりません。
+  `computePosition` はまず `fitsInViewport` で「反転すれば収まるか」を問い、収まらなければ
+  反転せず主軸クランプに進みます。
+- **実際に有効な `placement` を返します**。反転後は `placement` フィールドが新しい方位に
+  なり、UI 層はそれに基づいて矢印のクラス名（`is-top` / `is-bottom`）を切り替えます——矢印の
+  方向は実際の方位と一致していなければならず、そうでないと視覚的に矢印がポップアップ層から
+  離れて見えます。
+- **矢印は常にトリガーの中心を指します**。`arrowOffset` は交差軸上のオフセット量で、ポップ
+  アップ層の境界内にクランプされ、上限はポップアップ層の半分です（上下界が逆転して矢印が
+  ポップアップ層の外へ出るのを避けます）。
+
+## 使用例
+
+### 純関数（そのまま単体テスト可能）
+
+```ts
+const trigger = { top: 100, left: 50, width: 80, height: 32, right: 130, bottom: 132 }
+const popper = { top: 0, left: 0, width: 200, height: 120, right: 200, bottom: 120 }
+const viewport = { top: 0, left: 0, width: 375, height: 667, right: 375, bottom: 667 }
+
+computePosition(trigger, popper, viewport, { placement: 'top' })
+// トリガーの上方に収まる：
+// { top: 132 - 8 - 120, left: ..., placement: 'top', arrowOffset: ... }
+```
+
+### Vue3 の配線
+
+```ts
+// ポップアップ層コンポーネント内
+function update() {
+  if (!triggerEl.value || !popperEl.value) return
+  const pos = computePosition(
+    triggerEl.value.getBoundingClientRect(),
+    popperEl.value.getBoundingClientRect(),
+    getWindowViewport(),
+    { placement: placementRef.value, gap: 8 },
+  )
+  popperEl.value.style.top = `${pos.top}px`
+  popperEl.value.style.left = `${pos.left}px`
+  actualPlacement.value = pos.placement
+}
+
+onMounted(() => {
+  watchEffect(update)          // リアクティブ依存が変わったら再計算
+  window.addEventListener('scroll', update, true)
+})
+```
+
+### React の配線
+
+```tsx
+useLayoutEffect(() => {
+  if (!triggerRef.current || !popperRef.current) return
+  const pos = computePosition(/* ... */)
+  setPos(pos)
+}, [open, placement])
+```
+
+### uniapp の配線
+
+uniapp の `getBoundingClientRect` は各端で実装が異なります（ミニプログラムでは
+`uni.createSelectorQuery` が必要）。UI 層が rect を測った後、同じ `computePosition` を
+呼びます。アルゴリズム自体は完全に同一です。
+
+## 注意事項
+
+- **入力はまずフィールド単位でサニタイズ**：非有限のフィールド（NaN / Infinity）は 0 になり、
+  壊れた rect が幾何計算に流れ込むことはありません。
+- **SSR 安全**：`getWindowViewport()` は `window` のない環境で幅高 0 の rect を返します。
+  `computePosition` 自体は DOM に触れないため、サーバー側で位置を 1 回計算できます。
+- **`flip: false` のセマンティクス**：呼び出し側が主軸のオーバーフローを受け入れる場合、
+  主軸は低側クランプのみを保持します（ポップアップ層を負の座標へ押し出しません）。
+  `select` / `cascader` のような「方向固定」のシナリオがこれを使います。
+- **Resize / Scroll の購読は行わない**：スケジューリングは UI 層の仕事で、share は
+  「与えられた入力に対して、出力が確定する」ことだけを保証します。
+- `LhPosition`（`'top-left'` / `'bottom-right'` のセット、[types](/ja/core/types)を参照）とは
+  **2 つの方位モデル**です：`LhPosition` は affix / backtop のような「端に貼り付く」
+  セマンティクスに使い、`-start` / `-end` のアラインメント接尾辞を持ちません。混用しないで
+  ください。
+
+<FnPlayground module="popper" fn="computePosition" params='{"trigger": {"top": 100, "left": 50, "width": 80, "height": 32, "right": 130, "bottom": 132}, "popper": {"top": 0, "left": 0, "width": 200, "height": 120, "right": 200, "bottom": 120}, "viewport": {"top": 0, "left": 0, "width": 375, "height": 667, "right": 375, "bottom": 667}, "options": {"placement": "top"}}' />

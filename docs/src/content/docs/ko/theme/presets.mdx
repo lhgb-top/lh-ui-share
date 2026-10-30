@@ -1,0 +1,158 @@
+---
+title: 테마 프리셋
+description: '青花瓷 (청화백자) / 松花绿 (송화록) / 朱砂 (주사) / 水墨 (수묵) / 藤黄 (등황)의 5개 내장 프리셋과 registerTheme로 커스텀 등록'
+---
+
+import PresetPreview from '../../../../components/PresetPreview.astro'
+
+5개 내장 프리셋은 lh-ui의 기본 미학 주장입니다: 각각 중국의 전통 색채에서 주색 하나를 취하고, 완전한 밝은색 / 어두운색의 두 가지 색 배합을 갖추고 있습니다.
+
+## 프리셋 개요
+
+| 프리셋 | `name` | 식별자 | labelEn | 설명 | 밝은 주색 |
+| --- | --- | --- | --- | --- | --- |
+| 青花瓷 (청화백자) | `'cerblue'` | `LhCerblue` | Ceramic Blue | 釉下彩의 청화 자기, 맑고 단정하다 | 아니요 |
+| 松花绿 (송화록) | `'songhua'` | `LhSonghua` | Pine Green | 대나무 숲이 푸르게 우거지고, 생기가 넘친다 | **예** |
+| 朱砂 (주사) | `'zhusha'` | `LhZhusha` | Vermilion | 전통적인 인영의 주사 홍, 축제적이고 장엄하다 | 아니요 |
+| 水墨 (수묵) | `'shuimo'` | `LhShuimo` | Ink Wash | 수묵화, 소박하고 미니멀하다 | 아니요 |
+| 藤黄 (등황) | `'golden'` | `LhGolden` | Golden Autumn | 늦가을 단풍의 노랑, 따뜻한 황금빛 | **예** |
+
+<PresetPreview />
+
+## 각 프리셋의 vars
+
+### 기본 5개 키(모든 프리셋에 있음)
+
+```ts
+{
+  '--lh-primary-color': '...',
+  '--lh-primary-color-hover': '...',
+  '--lh-primary-color-active': '...',
+  '--lh-primary-color-bg': '...',
+  '--lh-primary-color-border': '...',
+}
+```
+
+### 밝은 주색 프리셋의 필수 추가 키
+
+`songhua`(松花绿)와 `golden`(藤黄)은 **밝은 주색**이라 흰 글자의 대비가 AA에 미달하여, 반드시 두 개의 키를 추가로 주어야 합니다:
+
+| 키 | 역할 |
+| --- | --- |
+| `--lh-color-on-primary` | 주색 버튼 위의 글자색(밝은 주색은 먹글자로 전환) |
+| `--lh-selected-color` | 선택 상태의 글자색(active 색을 마우스오버 바탕에 올린 선택 글자로는 대비가 부족하여 단독으로 더 깊게 함) |
+
+**왜 필수인가**: 밝은 주색 버튼에 흰 글자를 맞추면 대비는 3.x:1에 불과하여, AA의 4.5:1에 미달합니다. `verify:theme` 게이트가 걸러냅니다.
+
+松花绿을 예로 들면, 소스 코드의 주석에 수정 이유가 기록되어 있습니다:
+
+- `--lh-color-on-primary`: 松花는 밝은 주색으로, 흰 글자의 대비는 3.93:1에 불과하여 먹글자로 4.73:1
+- `--lh-selected-color`: active 색을 마우스오버 바탕에 올린 선택 글자는 3.48:1에 불과하여, 선택 상태만 단독으로 더 깊게 함(버튼의 active 바탕색은 영향을 받지 않음)
+- `--lh-primary-color-active`: 원래 `#4B7A4A`는 3.70:1 → `#4F8F4C`로 4.75:1
+
+藤黄도 마찬가지입니다: 흰 글자 3.25:1 → 먹글자 5.31:1; 선택 글자 3.41:1 → `#82600A`까지 더 깊게; active `#9A7208` 3.94:1 → `#A87F0A` 4.70:1.
+
+**새로 밝은 주색 프리셋을 만들 때의 필수 요건**: 반드시 `--lh-color-on-primary`와 `--lh-selected-color`를 주어야 하며, 그렇지 않으면 `verify:theme`의 AA 4.5:1 게이트에 실패합니다.
+
+## 프리셋 사용
+
+### 프리셋 가져오기
+
+```ts
+import { LH_THEME_PRESETS, getThemePreset, getThemeVars } from '@lh-ui/share/theme'
+
+LH_THEME_PRESETS                       // 전체 5개
+getThemePreset('cerblue')              // LhCerblue 객체
+getThemePreset('not-exists')           // undefined
+getThemeVars('cerblue')?.['--lh-primary-color']
+```
+
+### 프리셋 주입(UI 계층)
+
+```ts
+import { buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+function applyPreset(name: LhThemePresetName) {
+  const vars = getThemeVars(name)
+  if (!vars) return
+
+  const text = buildPresetStyleText(vars)
+  let style = document.getElementById(LH_PRESET_THEME_STYLE_ID)
+  if (!style) {
+    style = document.createElement('style')
+    style.id = LH_PRESET_THEME_STYLE_ID
+    document.head.appendChild(style)
+  }
+  style.textContent = text     // 덧붙이는 것이 아니라 바꿔 끼워, 테마 전환 시 옛 커스텀 스타일이 남지 않게 함
+}
+```
+
+**핵심**([테마 개요의 주입 제약](/ko/theme/overview#주입-제약-style만-허용-인라인-style-금지) 참고): `<style>` 요소만 작성할 수 있고, `documentElement`의 인라인 style에 작성하면 안 됩니다. 그렇지 않으면 다크 모드의 색 배합이 왜곡됩니다.
+
+### 각 UI 라이브러리의 ConfigProvider
+
+```vue
+<!-- lh-ui-plus / lh-ui-vue2 -->
+<lh-config-provider theme="cerblue">
+  <App />
+</lh-config-provider>
+```
+
+`theme` prop은 `LhThemePresetName`을 받고, 컴포넌트 내부가 위의 주입 논리를 실행합니다. docs 사이트의 테마 맞춤 설정 페이지와 ThemeStudio는 `LH_THEME_PRESETS`를 순회하여 전체 프리셋을 자동으로 나열합니다 —— **프리셋을 새로 추가해도 각 라이브러리의 문서 페이지를 직접 수정할 필요가 없습니다**.
+
+## 커스텀 프리셋
+
+```ts
+import { registerTheme, getThemePreset } from '@lh-ui/share/theme'
+
+registerTheme({
+  name: 'my-brand',
+  label: '브랜드 색',
+  labelEn: 'Brand',
+  description: '회사 브랜드 주색',
+  vars: {
+    '--lh-primary-color': '#722ED1',
+    '--lh-primary-color-hover': '#9254DE',
+    '--lh-primary-color-active': '#531DAB',
+    '--lh-primary-color-bg': '#F9F0FF',
+    '--lh-primary-color-border': '#D3ADF7',
+    // 밝은 주색인 경우 이 두 개도 필요:
+    // '--lh-color-on-primary': '#101410',
+    // '--lh-selected-color': '#...',
+  },
+})
+
+getThemePreset('my-brand')   // 등록하면 바로 사용 가능
+```
+
+`registerTheme`의 의미:
+
+- **같은 이름이면 덮어씀**: `registerTheme({ name: 'cerblue', ... })`는 **내장 青花瓷을 덮어씁니다** —— 이것은 의도적인 것으로, 사용하는 측이 컴포넌트를 바꾸지 않고 기본 테마를 조정할 수 있게 합니다.
+- **새 이름은 배열 끝에 push**: `LH_THEME_PRESETS`의 순서는 "내장 5개 + 등록된 것"입니다.
+- **등록표는 모듈 수준의 상태**: `import`하면 공유되어, 애플리케이션 전체에 하나뿐입니다.
+
+## 내장 프리셋 추가 흐름
+
+1. `src/theme/themes/index.ts`에 `LhThemePreset` 하나를 추가합니다(최소 5개의 `--lh-primary-*`; 밝은 주색 프리셋은 `--lh-color-on-primary`와 `--lh-selected-color`의 추가가 필수).
+2. `LH_THEME_PRESETS` 배열에 넣고, `src/theme/index.ts`의 re-export에 이름을 보충합니다.
+3. `pnpm test`(`theme.spec`에 프리셋 일치성 회귀가 있음) + `pnpm verify:theme`(AA 4.5:1 게이트).
+4. 체인지셋을 첨부합니다; 각 라이브러리 docs의 테마 맞춤 설정 페이지가 새 프리셋을 자동으로 나열합니다.
+
+**주의**: vars는 JS의 런타임 소비에만 서비스합니다; 컴포넌트 SCSS가 사용하는 주색은 여전히 `styles/theme/common/variables.scss`에 있습니다 —— **내장 테마의 주색을 덮어쓸 때는 양쪽을 함께 바꿔야** 합니다(theme.spec에 회귀가 있음).
+
+## 명명 규칙
+
+프리셋의 **문자열 값**(`name: 'cerblue'`)은 사용자가 ConfigProvider의 `theme`에 작성하는 설정값이며, 바꾸면 모든 하위 설정이 망가집니다 —— 이것은 [명명 예외 등록](/ko/guide/naming#예외-등록)의 한 항목입니다. 대응하는 **TS 식별자**에는 여전히 접두사가 붙습니다(`LhCerblue`).
+
+## 주의 사항
+
+- **미등록 이름은 `undefined`를 반환합니다**: `getThemePreset` / `getThemeVars`는 예외를 던지지 않으므로, UI 계층에서 null 판정을 잊지 마세요.
+- **`--lh-primary-color-active`와 `--lh-selected-color`는 다른 것입니다**: 전자는 버튼을 눌렀을 때의 바탕색, 후자는 리스트 / 선택 항목의 **글자**색입니다. 밝은 주색 프리셋에서는 active 색을 선택 글자에 쓰면 대비가 부족하여, 별도의 `--lh-selected-color`가 필요합니다.
+- **어두운 주색 프리셋은 다크 모드에서 자동으로 밝아집니다**: `buildPresetDarkVars`가 주색과 어두운색 페이지 바탕 `#1A1A2E`의 대비가 3 미만이면 밝게 합니다([테마 시스템 개요](/ko/theme/overview#buildpresetdarkvars의-어두운색-도출) 참고).
+
+## 관련 문서
+
+- [테마 시스템 개요](/ko/theme/overview)
+- [디자인 토큰](/ko/theme/tokens)
+- [런타임 맞춤 설정](/ko/theme/customization)
+- [다크 모드](/ko/theme/dark-mode)

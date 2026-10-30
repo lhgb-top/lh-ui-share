@@ -1,0 +1,195 @@
+---
+title: notification —— التنبيهات
+description: 'groupNotificationsByPosition للتجميع في الأركان الأربعة، computeStackOffsets لإزاحة التراكب، وطبقة تنبيه أثقل من message'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+التنبيه هو «النسخة الأثقل من الرسالة»: يحمل عنواناً، ويلتصق بأركان الشاشة الأربعة، ويبقى أطول، ويمكن النقر عليه للقفز. يُستخدم في **الأحداث على مستوى النظام أو غير المتزامنة**—وصول رسالة جديدة، اكتمال مهمة، نتيجة عملية خلفية. ما يديره `core/notification` هو التجميع في الأركان الأربعة وإزاحات التراكب—وهذا هو الفرق الجوهري بينه وبين `message` (عمود واحد في الأعلى متوسط).
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `LhNotification` (واجهة API خدمية): تنبيهات النظام، نتائج المهام غير المتزامنة، الأحداث التي يُراد مشاهدتها لاحقاً.
+- المحتوى الأطول (عنوان + نص)، والمشاهد التي تتطلب من المستخدم المتابعة بالضغط.
+- **لا ينبغي استخدامه**: تغذية العمليات اللحظية (استخدم `message`، فهو أخف)؛ التأكيدات التي تحتاج معالجة فورية (استخدم `dialog`)؛ التنبيهات الدائمة داخل الصفحة (استخدم `alert`).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  LH_NOTIFICATION_DURATION_DEFAULT,
+  LH_NOTIFICATION_GAP_DEFAULT,
+  getNotificationIconName,
+  getNotificationClassNames,
+  isTopPosition,
+  isRightPosition,
+  groupNotificationsByPosition,
+  computeStackOffsets,
+  getNotificationRole,
+  getNotificationAria,
+} from '@lh-ui/share/core/notification'
+import type {
+  LhNotificationType,
+  LhNotificationPosition,
+  LhNotificationRecord,
+} from '@lh-ui/share/core/notification'
+```
+
+## القصد التصميمي
+
+**التجميع في أركان أربعة لا عمود واحد**: يقسم `groupNotificationsByPosition` الطابور حسب الموضع إلى أربع مجموعات، تعرضها طبقة الخدمة في حاويات الأركان الأربعة. وتُسجّل التعليقات معالجةً احتياطية: الموضع غير المعروف (بيانات قذرة من جهة JS) **يسقط في الموضع الافتراضي top-right**، كيلا ينهار التقسيم بأكمله بسبب سجل قذر واحد.
+
+**اتجاه التراكم في `computeStackOffsets`**: تُعيد إزاحة كل سجل بالنسبة **لحافة إطار العرض**—أول سجل ملتصق بالحافة يكون إزاحته 0، وتُضاف لاحقاً تراكمياً «ارتفاع السجلات السابقة + المسافة». **وعلى المُستدعي نفسه عكس الاتجاه للحاويات الملتصقة بالأسفل**—فـ core لا يعرف في أي جانب تقع الحاوية، بل يحسب فقط «البعد عن الحافة».
+
+**الطول الافتراضي أطول من message**: `LH_NOTIFICATION_DURATION_DEFAULT = 4500` مقابل 3000 لـ message—فالتنبيه بطبيعته «يمكن مشاهدته لاحقاً»، والبقاء أطول أمر منطقي.
+
+**الحكم على السلاسل في `isTopPosition` / `isRightPosition`**: `position.startsWith('top')` / `endsWith('right')`—أي تقسيم الموضع المركّب مثل `'top-left'` إلى علامات دلالية، لتقرر طبقة UI تموضع الحاوية واتجاه حركة الدخول (الملتصقة بالأعلى تنزلق من الأعلى، والملتصقة بالأسفل من الأسفل).
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `getNotificationIconName` | `(type) => LhIconName` | اسم الأيقونة | الدلالات الأربع |
+| `getNotificationClassNames` | `(state: { type, showClose, clickable }) => string[]` | أسماء الأصناف | النوع/قابل للإغلاق/قابل للنقر |
+| `isTopPosition` | `(position) => boolean` | هل هو ملتصق بالأعلى | تموضع الحاوية واتجاه الدخول |
+| `isRightPosition` | `(position) => boolean` | هل هو ملتصق باليمين | تموضع الحاوية |
+| `groupNotificationsByPosition` | `(items) => Record<Position, T[]>` | أربع مجموعات | احتياطي للموضع غير المعروف في top-right |
+| `computeStackOffsets` | `(heights: number[], gap?) => number[]` | مصفوفة الإزاحات | تراكم الارتفاع + المسافة |
+| `getNotificationRole` | `(type) => 'alert' \| 'status'` | دور live | النموذج نفسه لـ message |
+| `getNotificationAria` | `(type) => LhAriaAttrs` | حزمة سمات aria | الدور |
+
+الثوابت: `LH_NOTIFICATION_DURATION_DEFAULT = 4500`، `LH_NOTIFICATION_GAP_DEFAULT = 16`.
+
+## تعريفات الأنواع
+
+```ts
+export type LhNotificationType = 'info' | 'success' | 'warning' | 'danger' | 'error'  // بدون loading
+export type LhNotificationPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left'
+
+export interface LhNotificationRecord {
+  id: number
+  type: LhNotificationType
+  title: string
+  content: string
+  duration: number       // 0 تعني عدم الإغلاق التلقائي
+  position: LhNotificationPosition
+  showClose: boolean
+  sx?: LhSxProps
+  onClick?: () => void
+  onClose?: () => void
+}
+```
+
+## إمكانية الوصول
+
+```ts
+getNotificationAria('danger')   // { role: 'alert' }
+getNotificationAria('success')  // { role: 'status' }
+```
+
+- تعيين الأدوار وفق النموذج نفسه في `message` / `alert`: إعلان فوري لـ warning/danger/error، وفي الطابور لـ info/success.
+- **إعلان العنوان**: التنبيه يحمل عنواناً، ويُستحسَن عرضه على هيئة `<h4>` (أو `role="heading"`)، ليعالجه قارئ الشاشة ضمن المستوى الهرمي للعناوين؛ إذ لا يُعلَن من live region سوى المحتوى، بينما يمر العنوان عبر دلالات DOM.
+- **التنبيهات القابلة للنقر**: في الحالة `clickable` تكون البطاقة بأكملها قابلة للنقر للقفز، فيجب لفّها بـ `<button>` أو `role="link"`—ولا تكتفِ بتعليق onclick على `<div>`، وإلا فلن يتمكن مستخدمو لوحة المفاتيح من تفعيلها.
+- **زر الإغلاق**: يجب أن يحمل الزر الأيقوني `aria-label`.
+
+## أمثلة الاستخدام
+
+```ts
+import {
+  groupNotificationsByPosition, computeStackOffsets, isTopPosition,
+} from '@lh-ui/share/core/notification'
+
+isTopPosition('top-right')   // true
+isTopPosition('bottom-left') // false
+isRightPosition('top-right')  // true
+isRightPosition('top-left')   // false
+
+groupNotificationsByPosition([
+  { position: 'top-right' }, { position: 'bottom-left' }, { position: 'top-right' },
+])
+// { 'top-right': [2 سجلين], 'top-left': [], 'bottom-right': [], 'bottom-left': [1 سجل] }
+
+groupNotificationsByPosition([{ position: 'middle' as never }])
+// موضع غير معروف → سقوط احتياطي في 'top-right'
+
+computeStackOffsets([40, 60, 30])
+// [0, 76, 152]  ← 0, 40+16, 40+16+60+16
+computeStackOffsets([40])  // [0]
+```
+
+```ts
+// طبقة الخدمة: لكل ركن حاوية تحتفظ بطابورها الخاص
+const groups = computed(() => {
+  const byPos = groupNotificationsByPosition(queue.value)
+  return Object.entries(byPos).map(([position, items]) => ({
+    position: position as LhNotificationPosition,
+    items,
+    // إزاحة التراكب: الحاويات السفلية تحتاج عكس الاتجاه (الأول ملتصق بالأسفل، وما يليه يتراكم للأعلى)
+    offsets: computeStackOffsets(items.map((i) => heights.value[i.id] ?? 60)),
+  }))
+})
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <div
+    v-for="group in groups"
+    :key="group.position"
+    class="lh-notification"
+    :class="[`lh-notification--${group.position}`]"
+  >
+    <transition-group :name="isTopPosition(group.position) ? 'lh-notification-slide-top' : 'lh-notification-slide-bottom'" tag="div">
+      <div
+        v-for="(record, i) in group.items"
+        :key="record.id"
+        :class="getNotificationClassNames({ type: record.type, showClose: record.showClose, clickable: !!record.onClick })"
+        :role="getNotificationRole(record.type)"
+        :style="{ transform: `translateY(${(isTopPosition(group.position) ? 1 : -1) * group.offsets[i]}px)` }"
+        @click="record.onClick?.()"
+      >
+        <LhIcon :name="getNotificationIconName(record.type)" />
+        <div class="lh-notification__main">
+          <h4 class="lh-notification__title">{{ record.title }}</h4>
+          <p class="lh-notification__content">{{ record.content }}</p>
+        </div>
+        <button v-if="record.showClose" type="button" aria-label="إغلاق" @click.stop="close(record.id)">✕</button>
+      </div>
+    </transition-group>
+  </div>
+</teleport>
+```
+
+```tsx
+// React: يجب قياس الارتفاع بعد العرض (ref + useCallbackLayoutEffect) قبل حساب إزاحة التراكب؛
+// ولاستخدام ارتفاع مقدَّر في الإطار الأول، ثم تحديثه بعد القياس الدقيق
+```
+
+```ts
+// uniapp: <view> + تحديد fixed في الأركان الأربعة؛ وقياس الارتفاع عبر createSelectorQuery
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-notification` | الحاوية (ثابتة في الأركان الأربعة) |
+| `.lh-notification--{top-right\|top-left\|bottom-right\|bottom-left}` | الموضع |
+| `.lh-notification__item` | بطاقة واحدة |
+| `.lh-notification__item--{info\|success\|warning\|danger\|error}` | النوع الدلالي |
+| `.lh-notification__item--closable` / `--clickable` | قابل للإغلاق / قابل للنقر (تظليل hover + مؤشر) |
+| `.lh-notification__main` / `__title` / `__content` | المنطقة الرئيسية / العنوان / النص |
+
+عرض ثابت (مثل 320~360px)، خلفية `--lh-bg-color` + ظل؛ وتُطبَّق الألوان الدلالية الأربعة على الأيقونة والشريط الجانبي.
+
+## ملاحظات
+
+- **إزاحة التراكب تحتاج الارتفاع الحقيقي**: يستهلك `computeStackOffsets` مصفوفة heights، فعلى طبقة UI قياس ارتفاع كل سجل بعده. واستخدام ارتفاع مقدَّر في الإطار الأول يسبّب قفزة—تُحدَّث الحالة مرة واحدة بعد القياس الدقيق.
+- **عكس الاتجاه للحاويات السفلية**: ما يُعيده `computeStackOffsets` هو «البعد عن الحافة»، ويجب ضربه في -1 للحاوية bottom (الموجب نحو الأسفل). وهو مسؤولية المُستدعي، فـ core لا يدرك جهة الحاوية.
+- **تنبيه `duration: 0`**: لا يُغلق تلقائياً، ويناسب ما يحتاج من المستخدم إزالته بنفسه (مثل «الرسائل غير المقروءة»)—مع `showClose: true` أو الإغلاق بعد النقر.
+- **تعارض حدثَي `onClick` و`showClose`**: يجب أن يحمل زر الإغلاق `@click.stop` على البطاقة القابلة للنقر، وإلا فإن الضغط على الإغلاق سيُطلق قفزة البطاقة في الوقت نفسه.
+- **عدد الحاويات عند خلط المواضع**: تبقى حاويات الأركان الأربعة في DOM حتى لو كانت فارغة (لأن transition-group يحتاجها)، وسيؤدي `v-if` إلى إفساد الحركة.
+- **الحد الفاصل مع message**: التنبيه أثقل (يشغل ركناً، ويحمل عنواناً، ويبقى أطول)، وتكفي message لتغذية العمل. ويمكن للاثنين التعايش (نجاح العملية يُظهر message، وتنبيهات النظام تمر عبر notification).
+- **صرامة نوع `position`**: يحجب TS تمرير موضع خاطئ، ولكن قد يتمكن مُستدعي JS من تمرير شيء مثل `'topCenter'`—السقوط الاحتياطي في top-right يضمن عدم الانهيار، غير أن الموضع لن يكون كما هو متوقع، فعليك فحص ذلك بنفسك.
+
+<FnPlayground module="notification" fn="groupNotificationsByPosition" params='{"items": [{"position": "top-right"}, {"position": "bottom-left"}, {"position": "top-right"}]}' />

@@ -1,0 +1,155 @@
+---
+title: select —— المُحدِّد المنسدل
+description: 'findSelectOption للمطابقة الدقيقة، و getSelectOptionId لمعرّف حتمي، وحزم سمات إمكانية الوصول الثلاث combobox/listbox/option'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+المُحدِّد المنسدل هو أبسط صورة لنمط «مُطلِق + قائمة عائمة». ويتولّى `core/select` أمرين: البحث في الخيارات، وتوليد معرّف خيار حتمي، إضافة إلى حزم سمات إمكانية الوصول الثلاث لنمط combobox وفق APG. أما **حساب التموضع فليس هنا** — فإحداثيات الطبقة العائمة من مسؤولية `core/shared/popper` (انظر [popper](/ar/core/popper)).
+
+## متى يُستخدم
+
+- تُنجزه الأطراف على هيئة `LhSelect`.
+- سيناريوهات الاختيار الفردي؛ أما الاختيار المتعدد فبالربط المتسلسل أو checkbox-group.
+- **لا ينبغي استخدامه**: إذا احتاجت الخيارات تسلسلاً شجرياً (استخدم `cascader`)، أو إذا تجاوزت مئات الخيارات (اعتبر التحويل الافتراضي `virtual-list`).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  findSelectOption,
+  getNextEnabledIndex,
+  getSelectOptionId,
+  getSelectTriggerAria,
+  getSelectListboxAria,
+  getSelectOptionAria,
+} from '@lh-ui/share/core/select'
+import type { LhSelectOption, LhSelectState } from '@lh-ui/share/core/select'
+```
+
+## القصد التصميمي
+
+«الحتمية» في `getSelectOptionId(listboxId, index)` هي شرط عمل نمط combobox وفق APG: يشير المُطلِق عبر `aria-activedescendant` إلى العنصر المُبرَز الحالي، ولا بد أن يشير إلى **نفس معرّف DOM**. وبدل ترك طبقة UI تولِّد المعرّفات جزافاً ثم تحاول مزامنتها، يحدِّد core القاعدة `${listboxId}-option-${index}`، فيأخذ الطرفان القيم وفق هذه القاعدة.
+
+ولا يقل حراسها أهمية: عندما يكون `listboxId` فارغاً، أو أن index ليس عدداً صحيحاً، أو أن `index < 0` (حيث يعني -1 عدم وجود إبراز) تُعادة **undefined** — والخاصيات ذات القيمة undefined يُهمِلها الربط v-bind في الأطر، فلا ينتج `aria-activedescendant` يشير إلى عنصر غير موجود.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `findSelectOption` | `(options: LhSelectOption[], value: unknown) => LhSelectOption \| undefined` | خيار | مطابقة دقيقة للقيمة value باستخدام `Object.is` |
+| `getNextEnabledIndex` | `(options: LhSelectOption[], currentIndex: number, direction: 1 \| -1) => number` | فهرس | **@deprecated**، تُحوِّل إلى `shared/keyboard.getNextListIndex` |
+| `getSelectOptionId` | `(listboxId: string \| undefined, index: number) => string \| undefined` | معرّف | وصل حتمي، ومدخل غير صحيح يُعيد undefined |
+| `getSelectTriggerAria` | `(options: { visible: boolean; listboxId?: string; highlightedIndex: number }) => LhAriaAttrs` | حزمة سمات aria | مُطلِق combobox |
+| `getSelectListboxAria` | `(id?: string) => LhAriaAttrs` | حزمة سمات aria | حاوية listbox |
+| `getSelectOptionAria` | `(options: { listboxId?: string; index: number; selected: boolean; disabled?: boolean }) => LhAriaAttrs` | حزمة سمات aria | خيار واحد |
+
+## تعريفات الأنواع
+
+```ts
+export interface LhSelectOption {
+  label: string
+  value: unknown
+  disabled?: boolean
+}
+
+export interface LhSelectState {
+  options: LhSelectOption[]
+  highlightedIndex: number
+}
+```
+
+## إمكانية الوصول
+
+تشكِّل حزم السمات الثلاث نمط combobox كاملاً:
+
+```ts
+// المُطلِق: aria-haspopup="listbox" + aria-expanded + aria-controls
+getSelectTriggerAria({ visible: true, listboxId: 'my-listbox', highlightedIndex: 2 })
+// { role: 'combobox', 'aria-expanded': true, 'aria-controls': 'my-listbox',
+//   'aria-haspopup': 'listbox', 'aria-activedescendant': 'my-listbox-option-2' }
+
+// الطبقة العائمة: role="listbox" + id (يقابل aria-controls لدى المُطلِق)
+getSelectListboxAria('my-listbox')  // { role: 'listbox', id: 'my-listbox' }
+
+// الخيار: role="option" + id + aria-selected
+getSelectOptionAria({ listboxId: 'my-listbox', index: 2, selected: true })
+// { role: 'option', id: 'my-listbox-option-2', 'aria-selected': true }
+```
+
+حلقة تفاعل لوحة المفاتيح الكاملة (تُنفَّذ في طبقة UI، بينما يقدم core الخوارزميات): ينقل ArrowDown/Up قيمة `highlightedIndex` (بواسطة `shared/keyboard.getNextListIndex`، مع التدوير بين الطرفين وتجاوز disabled)، و Enter يحدد، و Esc يغلق. **ويجب أن يتشارك الإبراز البصري المصدر نفسه مع `highlightedIndex`**، وإلا وقع «يشير aria إلى A، والعين ترى B».
+
+## أمثلة الاستخدام
+
+```ts
+import { findSelectOption, getSelectOptionId, getSelectTriggerAria } from '@lh-ui/share/core/select'
+
+const options = [
+  { label: 'الخزف الأزرق', value: 'cerblue' },
+  { label: 'رسم الحبر', value: 'shuimo', disabled: true },
+]
+findSelectOption(options, 'cerblue')   // { label: 'الخزف الأزرق', value: 'cerblue' }
+findSelectOption(options, 'nope')      // undefined
+getSelectOptionId('lb', 0)             // 'lb-option-0'
+getSelectOptionId('lb', -1)            // undefined (بلا إبراز)
+getSelectOptionId(undefined, 0)        // undefined
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-select', `lh-select--${size}`, { 'lh-select--open': visible, 'lh-select--disabled': disabled }]">
+  <button
+    class="lh-select__trigger"
+    v-bind="getSelectTriggerAria({ visible, listboxId, highlightedIndex })"
+    @click="toggle"
+  >
+    <span class="lh-select__value" :class="{ 'lh-select__value--placeholder': !selected }">
+      {{ selected ? selected.label : placeholder }}
+    </span>
+    <LhIcon class="lh-select__arrow" name="more" :size="12" />
+  </button>
+  <div v-if="visible" :id="listboxId" class="lh-select__dropdown" v-bind="getSelectListboxAria(listboxId)">
+    <div
+      v-for="(opt, i) in options"
+      :key="i"
+      class="lh-select__option"
+      :class="{ 'lh-select__option--highlighted': i === highlightedIndex, 'lh-select__option--selected': i === selectedIdx, 'lh-select__option--disabled': opt.disabled }"
+      v-bind="getSelectOptionAria({ listboxId, index: i, selected: i === selectedIdx, disabled: opt.disabled })"
+      @click="choose(opt)"
+    >{{ opt.label }}</div>
+  </div>
+</div>
+```
+
+```tsx
+// React: حالة visible + useRef تحتفظ بـ listboxId (يُولَّد معرّف مستقر بواسطة useId)
+```
+
+```ts
+// uniapp: تتموضع الطبقة العائمة بـ view مطلق؛ و aria-activedescendant غير مدعوم خارج h5،
+// فيتراجع تنقّل لوحة المفاتيح إلى تحريك التركيز فقط (عنصر focus)،
+// ويعتمد قارئ الشاشة على حدث focus في الإعلان
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-select` | الصنف الأساسي |
+| `.lh-select--{small\|large}` / `--disabled` / `--open` | مُعدِّلات الحالة |
+| `.lh-select__trigger` | زر المُطلِق |
+| `.lh-select__value` / `--placeholder` | القيمة المعروضة / حالة العنصر النائب |
+| `.lh-select__arrow` / `__clear` / `__actions` | السهم / المسح / منطقة العمليات |
+| `.lh-select__dropdown` / `--teleported` | الطبقة العائمة (teleported تعني النقل إلى body) |
+| `.lh-select__option` / `--highlighted` / `--selected` / `--disabled` | حالات الخيار الأربع |
+| `.lh-select__empty` | عنصر نائب عند غياب الخيارات |
+| `.lh-select-fade-*` | انتقالات دخول وخروج الطبقة العائمة (أسماء أصناف Vue3، وتحاذيها Vue2 عبر mixin) |
+
+## ملاحظات
+
+- **`Object.is` بدلاً من `===`**: يستخدم `findSelectOption` الدالة `Object.is` فيعالج بشكل صحيح الحدود مثل `NaN` و `-0` (وإن كانت قيم الخيارات الفعلية نادراً ما تستخدمها).
+- **`getNextEnabledIndex` مهجورة**: اعتُمد التنفيذ إلى `shared/keyboard.getNextListIndex`، وهذه الدالة مجرَّد تحويل فقط يحتفظ بالتوقيع القديم؛ وللكود الجديد استدعِ النواة مباشرة.
+- **استقرار المعرّف**: يجب ألّا يتغيّر `listboxId` خلال دورة حياة المكوّن (وإلّا أشير `aria-activedescendant` إلى معرّف قديم)، ويُولَّد بمعرّفات مستقرة في كل طرف.
+- **بوابة النقل (teleport)**: عند نقل الطبقة العائمة إلى body يبقى `aria-controls` صالحاً (ضمن المستند نفسه)، لكن انتبه إلى **إدارة التركيز** — فبعد النقر على خيار ينبغي عودة التركيز إلى المُطلِق.
+
+<FnPlayground module="select" fn="findSelectOption" params='{"options": [{"label": "青花瓷", "value": "cerblue"}, {"label": "水墨", "value": "shuimo"}], "value": "cerblue"}' />

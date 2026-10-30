@@ -1,0 +1,93 @@
+---
+title: delay —— 표시/숨김 지연 정규화
+description: 'resolveDelay가 undefined를 컴포넌트 기본 표시/숨김 리듬으로 되돌림, tooltip / popover / popconfirm이 공유'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+tooltip은 "마우스를 올리면 바로 표시, 치운 후 잠시 기다렸다가 사라짐"이 필요합니다(스쳐 지나갈 때 깜빡임 방지); popconfirm은 "클릭하면 바로 나타남"이 필요합니다. 각 플로팅 층 컴포넌트마다 자체적인 표시/숨김 리듬이 있지만, "사용자가 전달하지 않았을 때 어떤 기본값을 쓸까"는 공통 사항입니다.
+
+## 사용 시기
+
+- tooltip / popover / popconfirm 등 호버형 플로팅 층, props로 `show-delay` / `hide-delay` 노출.
+- "사용자가 덮어쓸 수 있지만 합리적인 기본값이 있는" 시퀀스 매개변수.
+
+**사용하면 안 되는 경우**: 고정된 시퀀스의 상황(message의 3초 자동 닫기)은 상수를 직접 작성하고, 정규화를 거칠 필요가 없습니다.
+
+## 가져오기
+
+```ts
+import { resolveDelay, type LhDefaultDelay } from '@lh-ui/share/core/shared/delay'
+```
+
+## 타입과 함수
+
+```ts
+export interface LhDefaultDelay {
+  show: number
+  hide: number
+}
+```
+
+| 함수 | 시그니처 | 역할 |
+| --- | --- | --- |
+| `resolveDelay` | `(showDelay: number \| undefined, hideDelay: number \| undefined, defaults: LhDefaultDelay) => LhDefaultDelay` | 표시/숨김 지연 정규화 |
+
+```ts
+resolveDelay(undefined, undefined, { show: 0, hide: 150 })
+// { show: 0, hide: 150 }   —— 사용자가 전달하지 않아 컴포넌트 기본값 사용
+
+resolveDelay(200, undefined, { show: 0, hide: 150 })
+// { show: 200, hide: 150 } —— show만 덮어씀
+```
+
+구현은 `??` 두 개입니다: `showDelay ?? defaults.show`, `hideDelay ?? defaults.hide`. `null`도 같은 경로를 따릅니다(`??`는 `null`과 `undefined`를 모두 처리).
+
+## 왜 단독 함수로 뽑아냈는가
+
+세 컴포넌트의 기본값은 다르지만 정규화 로직은 같습니다:
+
+| 컴포넌트 | 기본 show | 기본 hide | 이유 |
+| --- | --- | --- | --- |
+| tooltip | 0 | 150 | 바로 나타나 "스쳐도 반응 없음"을 방지; 사라짐을 지연시켜 타깃으로 옮겨갈 때 깜빡임 방지 |
+| popover | 0 | 150 | 동일하지만 콘텐츠가 상호작용 가능하므로 hide를 더 길게(UI 계층이 정함) |
+| popconfirm | 0 | 0 | 클릭으로 트리거, 호버 의미 없음 |
+
+뽑아낸 덕분에, 새 플로팅 층 컴포넌트는 자신의 `defaults`만 전달하면 되고 "undefined 되돌리기"를 다시 작성하지 않아도 됩니다.
+
+## debounce와의 차이
+
+헷갈리기 쉬운 두 가지:
+
+| | `resolveDelay` | `debounce`(utils) |
+| --- | --- | --- |
+| 의미 | "이번 표시 / 숨김 전에 얼마나 기다릴까"라는 **매개변수 정규화** | 고빈도 호출을 **한 번의 실행으로 수렴**시키는 쓰로틀 도구 |
+| 용도 | 지연값 계산 | 지연값으로 실제 타이머를 감쌈 |
+
+전형적인 연결은 직렬입니다: `const { hide } = resolveDelay(props.hideDelay, undefined, DEFAULTS)` → `hideTimer = debounce(actualHide, hide)`.
+
+## 사용 예시
+
+```ts
+// popover 컴포넌트 내부
+const DEFAULT_DELAY: LhDefaultDelay = { show: 0, hide: 150 }
+
+const delay = computed(() =>
+  resolveDelay(props.showDelay, props.hideDelay, DEFAULT_DELAY),
+)
+
+function onShow() {
+  setTimeout(open, delay.value.show)
+}
+function onHide() {
+  setTimeout(close, delay.value.hide)
+}
+```
+
+## 주의 사항
+
+- **되돌리기만 할 뿐 클램프하지 않음**: 음수 지연을 전달하면 그대로 반환됩니다. 각 UI 계층이 "지연은 반드시 음수가 아니어야 한다"고 필요로 한다면 `setTimeout(fn, Math.max(0, ms))` 지점에서 직접 처리하세요(`setTimeout`은 음수를 0으로 처리하므로 실제로 문제가 되지는 않습니다).
+- **`show` / `hide`는 독립적**: 정규화 뒤에도 여전히 두 개의 독립적인 숫자이며, 컴포넌트는 두 개의 타이머에 각각 사용해야 합니다.
+- **새 객체 반환**: 호출마다 새로운 `{ show, hide }`를 반환하므로 반응형 래핑이 안전합니다.
+
+<FnPlayground module="delay" fn="resolveDelay" params='{"showDelay": null, "hideDelay": 300, "defaults": {"show": 0, "hide": 150}}' />

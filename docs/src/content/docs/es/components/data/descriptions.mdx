@@ -1,0 +1,178 @@
+---
+title: descriptions —— Lista de descripciones
+description: 'buildDescriptionRows normaliza la estructura de filas por span (respaldo de valores ilegales, limitación de anchos excesivos, relleno de la última fila)'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La lista de descripciones es una «tabla de solo lectura»: muestra varios campos de un registro (etiqueta + valor), sin ordenación, ni filtrado, ni paginación. Su dificultad está muy concentrada: **el cálculo del ajuste de línea cuando un elemento ocupa varias columnas**. ¿Qué pasa si un elemento tiene `span: 2` pero solo queda el ancho de 1 columna en la fila? ¿Y si la última fila solo tiene 2 elementos pero la fila tiene 4 columnas, hay que rellenar? `buildDescriptionRows` responde a estas preguntas.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhDescriptions`: páginas de detalle (detalle de pedido, perfil de usuario), resúmenes de configuración, presentación de información del flujo de aprobación.
+- Exhibición agrupada de «etiqueta-valor» en solo lectura, cuando cada fila debe alojar varios campos.
+- **No usarlo para**: tablas que necesitan ordenación, filtrado o acciones por fila (usa `table`); la exhibición de un único campo (basta con label + texto); cuando se necesita edición (usa `form`).
+
+## Importación
+
+```ts
+import {
+  getDescriptionsClassNames,
+  buildDescriptionRows,
+} from '@lh-ui/share/core/descriptions'
+import type { LhDescriptionsItem, LhDescriptionsState } from '@lh-ui/share/core/descriptions'
+```
+
+## Intención de diseño
+
+Las cuatro reglas de `buildDescriptionRows` son todas defensivas, y cada una corresponde a un tipo de entrada real:
+
+1. **El span ilegal se repliega a 1**: `span <= 0`, NaN, y los no numéricos (`Number('宽')` = NaN) se tratan siempre como 1. La configuración suele provenir de props que pasa el usuario, y un valor sucio no debería romper el layout hasta 0 columnas.
+2. **La limitación al ancho restante de la fila**: cuando `used + span > column`, se limita al ancho restante (mínimo 1 columna). Si se cambiara directamente de línea, la fila actual dejaría un hueco, con aspecto de bug.
+3. **Un span que supera toda la fila se limita a la fila completa**: si con `column: 3` se pasa un elemento con `span: 5`, ocupa toda la fila, en lugar de desbordarse.
+4. **El relleno de la última fila**: cuando la última fila no alcanza `column`, el campo `filler` indica a la capa de renderizado cuántas celdas de marcador de posición hay que añadir: con el estilo de bordes, si no se rellena, faltaría un borde.
+
+El valor devuelto es una «matriz de filas», cada una con `cells` (elementos + el span real) y `filler` (el número de marcadores a rellenar). La capa UI solo necesita dos niveles de `v-for`.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `getDescriptionsClassNames` | `(state: LhDescriptionsState) => string[]` | nombres de clase | modificadores border |
+| `buildDescriptionRows` | `(items: LhDescriptionsItem[], column: number) => Row[]` | estructura de filas | ajuste de línea + relleno |
+
+```ts
+type Row = {
+  cells: { item: LhDescriptionsItem; span: number }[]
+  filler: number
+}
+```
+
+## Definiciones de tipos
+
+```ts
+export interface LhDescriptionsItem {
+  label: string
+  value?: string | number    // también se puede pasar con un slot de ámbito
+  span?: number              // número de columnas que ocupa; por defecto 1; si supera column se limita
+}
+
+export interface LhDescriptionsState {
+  column: number    // número de columnas que se muestran por fila
+  border: boolean   // si se muestran los bordes (layout de tabla)
+}
+```
+
+## Accesibilidad
+
+`descriptions` es un componente **de exhibición**, sin requisitos de roles de APG. La estructura de DOM recomendada es la semántica de lista de definiciones:
+
+```html
+<dl>
+  <dt>Nombre de usuario</dt><dd>lhgb</dd>
+  <dt>Correo</dt><dd>i@lhgb.top</dd>
+</dl>
+```
+
+Esto se corresponde de forma natural con el modelo de datos «etiqueta-valor», y el lector de pantalla puede anunciar correctamente «Nombre de usuario: lhgb». Si se implementa con `<table>` (habitual con el estilo de bordes), añade `role="presentation"` o conserva la semántica de la cabecera: no uses un verdadero `<th scope="row">` sin un summary, o el lector de pantalla creerá que se trata de una tabla interactiva.
+
+Cuando hay bordes, las celdas de relleno del `filler` deberían llevar `aria-hidden="true"`, para evitar que el lector de pantalla anuncie celdas vacías.
+
+## Ejemplos de uso
+
+```ts
+import { buildDescriptionRows } from '@lh-ui/share/core/descriptions'
+
+// column 3: el tercer elemento tiene span 2, pero solo queda ancho de 1 columna → se limita a 1
+buildDescriptionRows([
+  { label: 'Nombre de usuario', value: 'lhgb' },
+  { label: 'Correo', value: 'i@lhgb.top' },
+  { label: 'Firma', value: 'Escribo código', span: 2 },
+], 3)
+// [{ cells: [Nombre de usuario(1), Correo(1), Firma(1)], filler: 0 }]  ← tras la limitación, la fila queda justa
+
+// Atención: la implementación **limita al ancho restante** en lugar de cambiar de línea:
+// cuando el span no cabe en la fila actual, no se empuja a la siguiente
+buildDescriptionRows([
+  { label: 'Nombre de usuario', value: 'lhgb' },
+  { label: 'Firma', value: 'Escribo código', span: 2 },
+  { label: 'Correo', value: 'i@lhgb.top' },
+], 2)
+// [
+//   { cells: [Nombre de usuario(1), Firma(2→1 limitado)], filler: 0 },  ← la fila queda completa
+//   { cells: [Correo(1)], filler: 1 },                    ← la última fila se rellena con 1 marcador
+// ]
+
+// Un elemento cuyo span supera el número de columnas de la fila: también se limita al ancho restante (aquí, toda la fila)
+buildDescriptionRows([{ label: 'A', span: 1 }, { label: 'B', span: 5 }], 2)
+// [{ cells: [A(1), B(5→1 limitado)], filler: 0 }]  ← B entra en la 1 columna que resta de la primera fila
+
+// Solo cuando hay un único elemento B y su span supera toda la fila, ocupa la fila completa
+buildDescriptionRows([{ label: 'B', span: 5 }], 2)
+// [{ cells: [B(5→2 limitado)], filler: 0 }]
+
+// El span ilegal se repliega
+buildDescriptionRows([{ label: 'A', span: 0 }, { label: 'B', span: NaN }, { label: 'C', span: -1 }], 3)
+// [{ cells: [A(span 1), B(span 1), C(span 1)], filler: 0 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getDescriptionsClassNames({ column, border })">
+  <div v-for="(row, ri) in rows" :key="ri" class="lh-descriptions__row">
+    <template v-for="(cell, ci) in row.cells" :key="ci">
+      <div class="lh-descriptions__label" :style="{ gridColumn: `span ${cell.span}` }">
+        {{ cell.item.label }}
+      </div>
+      <div class="lh-descriptions__value" :style="{ gridColumn: `span ${cell.span}` }">
+        <slot :name="cell.item.label" :item="cell.item">{{ cell.item.value }}</slot>
+      </div>
+    </template>
+    <div
+      v-for="f in row.filler"
+      :key="`filler-${f}`"
+      class="lh-descriptions__filler"
+      aria-hidden="true"
+    />
+  </div>
+</div>
+```
+
+```ts
+const rows = computed(() => buildDescriptionRows(props.items, props.column))
+```
+
+```tsx
+// React: usa gridColumn: `span ${cell.span}` de CSS grid;
+// atención: label y value ocupan cada uno span columnas, de modo que un «column 3»
+// son en realidad 6 celdas de la cuadrícula
+```
+
+```ts
+// uniapp: <view> + proporción flex (span / column * 100%);
+// con border, las líneas de tabla de un layout flex se simulan con pseudoelementos o box-shadow
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-descriptions` | clase base |
+| `.lh-descriptions--border` | con bordes (la etiqueta se distingue por el color de fondo) |
+| `.lh-descriptions__row` | una fila |
+| `.lh-descriptions__label` | casilla de la etiqueta |
+| `.lh-descriptions__value` | casilla del valor |
+| `.lh-descriptions__filler` | marcador de la última fila (`aria-hidden`) |
+
+Los dos modos del ancho de la etiqueta: con `border`, etiqueta y valor comparten columna con el mismo ancho; sin bordes, el ancho de la etiqueta lo decide el contenido (se puede sobrescribir con `--lh-descriptions-label-width`). El texto de la etiqueta usa `--lh-text-color-secondary` y el valor, `--lh-text-color-primary`.
+
+## Notas
+
+- **La relación entre column y las celdas de la cuadrícula**: `span` es una unidad de «número de elementos», pero al renderizar, la etiqueta y el valor ocupan cada uno una porción de ancho. Si con CSS grid se trata a label y value como celdas independientes, un `column: 3` necesita en realidad una cuadrícula de 6 columnas: la definición del número de columnas de la capa UI debe coincidir con el criterio de `column` del core (un elemento = una unidad de span).
+- **column responsivo**: en pantallas estrechas reduce `column` (por ejemplo, de 3 a 1) y `buildDescriptionRows` recalcula. core no observa el ancho de la pantalla; la capa UI conmuta con media queries o container queries.
+- **La key del slot de ámbito**: la capa UI suele usar `item.label` como nombre del slot; si la etiqueta contiene caracteres especiales (espacios, caracteres chinos), la compatibilidad de los frameworks es aceptable, pero con `/` o con etiquetas duplicadas habrá conflictos: se recomienda que la capa UI ofrezca un alias de campo `slot` (este tipo aún no lo proporciona; cada plataforma puede extenderlo por su cuenta).
+- **`filler` solo es obligatorio en el modo border**: sin bordes, las celdas de relleno son invisibles, pero conservarlas no añade coste de renderizado y renderizarlas siempre resulta más simple.
+- **items vacíos**: `buildDescriptionRows([], 3)` devuelve `[]` y la capa UI renderiza un contenedor vacío: recuerda ofrecer un estado vacío (el componente `empty` o un texto de aviso).
+- **La exhibición por defecto del valor**: lo que se muestra cuando `value` es undefined lo decide la capa UI (normalmente `—`); core no interviene en los textos.
+
+<FnPlayground module="descriptions" fn="buildDescriptionRows" params='{"items": [{"label": "Nombre de usuario", "value": "lhgb"}, {"label": "Correo", "value": "i@lhgb.top"}, {"label": "Firma", "value": "Escribo código", "span": 2}], "column": 2}' />

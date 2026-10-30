@@ -1,0 +1,146 @@
+---
+title: input —— Champ de saisie
+description: 'getWordCount, le décompte de caractères ; clampString, la troncature ; getInputAria, paquet d’attributs ; le style en ligne des tailles mappées par palier'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Le champ de saisie est la pierre angulaire du formulaire. `core/input` gère quatre choses : l'affichage et le calcul du décompte de caractères, la troncature des saisies trop longues, les styles en ligne par palier de taille, et le paquet d'attributs d'accessibilité du champ de saisie. Il ne touche **volontairement** ni à la validation (c'est la responsabilité de `core/form`) ni à l'anti-rebond (c'est l'affaire de la réactivité de la couche UI).
+
+## Quand l'utiliser
+
+- Chaque framework implémente `LhInput` (avec la variante textarea : le modificateur `--textarea`).
+- Besoin de réutiliser le même décompte de caractères et les attributs aria sur un contrôle de saisie personnalisé.
+- **À ne pas utiliser pour** : une saisie numérique, utilisez `core/input-number` (avec pas à pas et clamping) ; l'heure, `core/time-picker` ; la date, `core/date-picker`.
+
+## Import
+
+```ts
+import {
+  getWordCount,
+  shouldShowWordLimit,
+  clampString,
+  getInputStyle,
+  getInputAria,
+} from '@lh-ui/share/core/input'
+import type { LhInputState } from '@lh-ui/share/core/input'
+```
+
+## Intentions de conception
+
+Les deux bornes de `getWordCount` viennent d'écarts réels entre plateformes :
+
+- Quand `value` est undefined, le décompte vaut 0 par repli — React/uniapp peuvent, avant le montage, avoir une valeur contrôlée brièvement undefined, et `undefined.length` planterait directement.
+- Quand `maxlength` est undefined, la limite affiche `∞` plutôt que `'undefined'`. Ce symbole rend « aucune limite fixée » visuellement explicite plutôt que d'avoir l'air d'un bug.
+
+Les styles de taille de `getInputStyle` sont **en ligne** et non des classes : les champs de saisie de lh-ui gèrent la taille globale du ConfigProvider, or le changement de taille globale n'a pas besoin de recalculer les classes — le style en ligne est recalculé avec les props. Notez que ce mapping de tailles diffère de celui des boutons (les boutons passent par les classes) : c'est le résultat de l'évolution historique de chaque composant.
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getWordCount` | `(state: Pick<LhInputState, 'value' \| 'maxlength'>) => string` | `"utilisé/limite"` | chaîne du décompte |
+| `shouldShowWordLimit` | `(state: Pick<LhInputState, 'maxlength' \| 'minlength'>) => boolean` | booléen | afficher le décompte si maxlength ou minlength est fixé |
+| `clampString` | `(value: string, maxlength?: number) => string` | chaîne | troncature en cas de dépassement |
+| `getInputStyle` | `(size: string) => Record<string, string>` | style en ligne | mapping padding/taille de police par palier |
+| `getInputAria` | `(options: { label?: string; describedby?: string; invalid?: boolean; required?: boolean }) => LhAriaAttrs` | paquet d'attributs aria | restitue les quatre attributs au besoin |
+
+Le mapping des paliers de `getInputStyle` : `mini` padding `4px 8px` / taille de police 12, `small` `6px 10px` / 12, `medium` `8px 12px` / 14, `large` `12px 16px` / 16 ; taille inconnue : repli `medium`.
+
+## Définitions de types
+
+```ts
+export interface LhInputState {
+  value: string
+  size: LhComponentSize
+  maxlength: number | undefined
+  minlength: number | undefined
+}
+```
+
+## Accessibilité
+
+Les quatre attributs de `getInputAria` sont tous **montés au besoin** (valeur de vérité seulement, les fausses ne produisent pas de clé) :
+
+```ts
+getInputAria({ label: 'Nom d’utilisateur', required: true })
+// { 'aria-label': 'Nom d’utilisateur', 'aria-required': true }
+
+getInputAria({ invalid: true, describedby: 'lh-form-error-username' })
+// { 'aria-invalid': true, 'aria-describedby': 'lh-form-error-username' }
+```
+
+L'articulation avec `core/form` est un usage clé : `LhFormItem` rend l'élément de message d'erreur (son id est généré par `getFormFieldErrorId(prop)`), et transmettre cet id via `describedby` fait que le lecteur d'écran annonce « saisie invalide, l'erreur est… ». Voir [form](/fr/components/form/form).
+
+## Exemples d'utilisation
+
+```ts
+import { getWordCount, clampString, getInputAria } from '@lh-ui/share/core/input'
+
+getWordCount({ value: 'hello', maxlength: 10 })   // '5/10'
+getWordCount({ value: 'hello', maxlength: undefined })  // '5/∞'
+getWordCount({ value: undefined, maxlength: 10 })       // '0/10'
+clampString('abcdef', 3)   // 'abc'
+clampString('abcdef')      // 'abcdef' (sans limite : renvoyé tel quel)
+getInputAria({ label: 'Rechercher' })  // { 'aria-label': 'Rechercher' }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-input', `lh-input--${size}`, { 'lh-input--textarea': type === 'textarea' }]">
+  <div class="lh-input__wrapper">
+    <input
+      class="lh-input__inner"
+      :style="getInputStyle(size)"
+      v-bind="getInputAria({ label, describedby, invalid: !!error, required })"
+    />
+  </div>
+  <span v-if="shouldShowWordLimit({ maxlength, minlength })" class="lh-input__count">
+    {{ getWordCount({ value, maxlength }) }}
+  </span>
+</div>
+```
+
+```tsx
+// React
+const aria = getInputAria({ label, describedby, invalid: !!error, required })
+return (
+  <div className={`lh-input lh-input--${size}`}>
+    <div className="lh-input__wrapper">
+      <input className="lh-input__inner" style={getInputStyle(size)} {...aria} />
+    </div>
+  </div>
+)
+```
+
+```ts
+// uniapp : <input> est un composant natif, les bindings class et style sont gérés ; le
+// textarea utilise le composant <textarea>, et le décompte de caractères hors h5 est
+// pris en charge par la propriété count du composant
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-input` | classe de base |
+| `.lh-input--{mini\|small\|medium\|large}` | paliers de taille |
+| `.lh-input--textarea` | variante textarea |
+| `.lh-input--disabled` / `.lh-input--prefix` / `.lh-input--suffix` | états et slots |
+| `.lh-input__wrapper` | enveloppe (bordure, état de focus) |
+| `.lh-input__wrapper--focused` / `--disabled` / `--has-label` | états de l'enveloppe |
+| `.lh-input__inner` | élément de saisie natif |
+| `.lh-input__label` / `--float` | label flottant (style material) |
+| `.lh-input__prefix` / `__suffix` | slots avant/arrière (icônes, boutons) |
+| `.lh-input__clear` / `__count` | bouton d'effacement / décompte de caractères |
+
+La couleur de la bordure de focus utilise `var(--lh-primary-color)`, et l'état d'erreur `var(--lh-danger-color)`.
+
+## Remarques
+
+- **Le padding asymétrique de `--has-label`** : avec un label flottant, `padding-top` est de 16px (pour laisser de la place au label), les autres paliers sont symétriques. C'est un point en attente d'unification consigné dans le « sujet spécial des jetons de hauteur ».
+- **Les hauteurs de contrôle ne sont pas unifiées** : input 37px / select 32px / cascader 27→32px, etc. ; la cause racine est l'absence du jeton `--lh-control-height-*` dans `var.scss` (même sujet, en attente d'un changeset).
+- La sémantique des « caractères » de `maxlength` : `clampString` utilise `slice` et compte en unités de code UTF-16 ; les caractères des plans supplémentaires d'emoji comptent double. Si la couche UI doit compter en points de code, qu'elle le gère elle-même.
+- N'écrasez pas la valeur de retour de `getInputStyle` avec `sx` — la priorité de sx est plus élevée, les deux doivent être fusionnés et non écrasés.
+
+<FnPlayground module="input" fn="getWordCount" params='{"state": {"value": "青花瓷", "maxlength": 10}}' />

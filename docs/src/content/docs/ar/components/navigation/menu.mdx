@@ -1,0 +1,203 @@
+---
+title: menu قائمة —— تنقل
+description: 'toggleMenuOpen في وضعين: أكورديون وعادي، وربط aria-expanded للقوائم الفرعية، وmoveMenuFocus متقادم @deprecated وقد تجمّع في shared/keyboard'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+القائمة هي الهيكل العظمي لتنقّل المواقع: قائمة عليا أفقية، وقائمة جانبية عمودية، وقائمة
+أيقونات قابلة للطي. وفرقها عن `dropdown` هو **الثبات والتسلسل الهرمي**——فالقائمة دائمة في
+الصفحة، وتعشّش المستويات الفرعية بلا حدّ؛ أما القائمة المنسدلة فقائمة عمليات منبثقة مؤقتة.
+وما يديره `core/menu` هو حساب حالات التوسيع ودلالات إمكانية الوصول، أما التخطيط وتحديد
+الموضع فكله في SCSS.
+
+## متى تُستخدم
+
+- لتطبيق `<LhMenu>` / `<LhSubMenu>` / `<LhMenuItem>`: التنقّل الرئيسي للموقع، والشريط الجانبي
+  للوحة الإدارة، ودليل موقع التوثيق.
+- التنقّل الذي يحتاج **أكثر من مستويين**.
+- **لا ينبغي استخدامها**: صف من أزرار العمليات المتراصّة (استخدم `space` + `button`)؛ قائمة
+  العمليات المنبثقة المؤقتة (استخدم `dropdown`)؛ تبديل المحتوى على شكل علامات تبويب (استخدم
+  `tabs`).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getMenuClassNames,
+  getMenuItemClassNames,
+  getSubMenuClassNames,
+  getMenuItemGroupClassNames,
+  toggleMenuOpen,
+  isMenuOpen,
+  moveMenuFocus,
+  getMenuAria,
+  getMenuItemAria,
+  getSubMenuAria,
+} from '@lh-ui/share/core/menu'
+import type { LhMenuMode } from '@lh-ui/share/core/menu'
+```
+
+## نية التصميم
+
+**الوضع الأكورديون يسمح بصفر مفتوح**: عند `uniqueOpened: true` يُرجع `toggleMenuOpen` عند
+النقر على عنصر مفتوح مصفوفة فارغة `[]` (طي الكل)، وعند النقر على عنصر غير مفتوح يُرجع `[key]`
+(يحتفظ به وحده). ولاحظ أنها ليست «الإبقاء على عنصر مفتوح واحد على الأقل»——صفر مفتوح مسموح
+به، مما يجعل «طي الكل» حالة قابلة للتفاعل.
+
+**الوضع العادي يحذف ويضيف لا يستبدل**: تُرجع مصفوفة جديدة (تحذف عبر `filter` / تضيف)، مع
+إبقاء بقية العناصر المفتوحة كما هي——ففي القوائم متعددة المستويات فتح عدة قوائم فرعية في
+الوقت نفسه حاجة شائعة.
+
+**`moveMenuFocus` غلاف @deprecated**: انتقلت خوارزمية التنقّل الدوري إلى
+`getNextListIndex` في `core/shared/keyboard`، واحتفظت هذه الدالة بالتوقيع القديم (يستقبل مصفوفة
+عناصر DOM) للاستدعاءات القائمة في الأسفل. وما تفعله: تصفية `tabIndex === -1` (تكافئ العناصر
+المعطّلة في النواة)، والرجوع إلى العنصر الأول عندما لا يكون العنصر الحالي في القائمة. **استخدم
+`getNextListIndex` مباشرة في الأكواد الجديدة**.
+
+**ثلاثية aria**: الحاوية `role="menu"`، والعنصر الورقي `role="menuitem"`، وعنوان القائمة الفرعية
+`role="menuitem"` + `aria-expanded` + `aria-controls`. ولاحظ أن **عنوان القائمة الفرعية ليس
+دورًا فرعيًا من menuitem**——ففي بنية قائمة APG، يبقى العنصر القابل للتوسيع menuitem، ويُعبَّر
+عن حالة التوسيع بـ aria-expanded.
+
+**فصل أسماء الأصناف عن الحالات**: `--active` / `--disabled` / `--opened` كلها أصناف منطقية
+مستقلة، تجمع SCSS منها الأنماط. أما `--collapse` (حالة الطي) فاسم صنف على مستوى الحاوية، يؤثر
+في طريقة تصيير كل العناصر (قائمة الأيقونات تعرض الأيقونات فقط، ويكمّل tooltip النصوص).
+
+## جدول الدوال
+
+| الدالة | التوقيع | الناتج | الدور |
+| --- | --- | --- | --- |
+| `getMenuClassNames` | `(state: { mode, collapse }) => string[]` | أسماء الأصناف | نمط التخطيط + حالة الطي |
+| `getMenuItemClassNames` | `(state: { active, disabled }) => string[]` | أسماء الأصناف | العنصر الورقي |
+| `getSubMenuClassNames` | `(state: { active, disabled, opened }) => string[]` | أسماء الأصناف | القائمة الفرعية |
+| `getMenuItemGroupClassNames` | `() => string[]` | أسماء الأصناف | حاوية المجموعة |
+| `toggleMenuOpen` | `(openeds, key, uniqueOpened) => string[]` | مصفوفة جديدة | توسيع/طي (غير مُتغيِّر) |
+| `isMenuOpen` | `(openeds, key) => boolean` | هل هو مفتوح | استعلام includes |
+| `moveMenuFocus` ⚠️ | `(items, currentEl, direction) => HTMLElement \| null` | العنصر الهدف | نقل التركيز ↑/↓ |
+| `getMenuAria` | `(id?) => LhAriaAttrs` | حزمة aria | role=menu |
+| `getMenuItemAria` | `(state: { disabled? }) => LhAriaAttrs` | حزمة aria | menuitem |
+| `getSubMenuAria` | `(options: { opened, disabled?, menuId? }) => LhAriaAttrs` | حزمة aria | menuitem + expanded |
+
+⚠️ غلاف توافق `@deprecated`، والأكواد الجديدة تستخدم `getNextListIndex` من `shared/keyboard`.
+
+## تعريفات الأنواع
+
+```ts
+export type LhMenuMode = 'horizontal' | 'vertical'
+```
+
+## إمكانية الوصول
+
+```ts
+getMenuAria('menu-1')            // { role: 'menu', id: 'menu-1' }
+getMenuItemAria({ disabled: true })  // { role: 'menuitem', 'aria-disabled': true }
+getSubMenuAria({ opened: true, menuId: 'menu-1' })
+// { role: 'menuitem', 'aria-expanded': true, 'aria-controls': 'menu-1' }
+getSubMenuAria({ opened: false })
+// { role: 'menuitem', 'aria-expanded': false }
+```
+
+- **القيمة الكاذبة لـ aria-expanded تُخرج أيضًا**: `{ 'aria-expanded': false }` ذات معنى——فهي تخبر
+  قارئ الشاشة صراحةً «هذه القائمة الفرعية مطوية». وهذا يتبع اصطلاح `shared/a11y`: لا يُحذف إلا
+  undefined (غير مُمرَّر)، أما false فقيمة حالة مشروعة.
+- **اختلاف نمط التنقّل بلوحة المفاتيح**: القوائم الأفقية تستخدم ←/→، والقوائم العمودية ↑/↓،
+  وهذا اصطلاح نمط القوائم في APG. وينتظر مستخدم قارئ الشاشة السلوك المقابل عند الضغط على
+  مفاتيح الأسهم——`moveMenuFocus` يوفّر الاتجاه العمودي 1/-1 فقط، وتُعدَّل ←/→ للقوائم الأفقية
+  في طبقة واجهة المستخدم وتُستدعى الدالة نفسها.
+- **aria-current لتمييز الصفحة الحالية**: يُستحسن للعنصر النشط، إضافةً إلى صنف `--active`، أن
+  تضيف طبقة واجهة المستخدم `aria-current="page"` (دلالة موافقة للعنصر الأخير في `breadcrumb`)
+  لينطق قارئ الشاشة «الصفحة الحالية».
+- **تعويض النصوص في القوائم المطوية**: في وضع `collapse` لا تُعرض إلا الأيقونات، فيجب وضع نص
+  عنصر القائمة في `aria-label` أو tooltip عند التحويم——وإلا فسيكون زر الأيقونة بلا اسم أمام
+  قارئ الشاشة.
+- **تخطّي العناصر المعطّلة**: العناصر ذات `--disabled` لا تستجيب للنقر (يعترضها المستخدم
+  طبقة)، لكنها تبقى في DOM. ويجب على التنقّل بلوحة المفاتيح تخطّيها (تصفية tabIndex في
+  `moveMenuFocus`).
+
+## أمثلة الاستخدام
+
+```ts
+import { toggleMenuOpen, isMenuOpen } from '@lh-ui/share/core/menu'
+
+toggleMenuOpen(['a', 'b'], 'b', false)  // ['a'] (الوضع العادي يطوي b)
+toggleMenuOpen(['a'], 'b', false)       // ['a', 'b'] (يفتح b)
+toggleMenuOpen(['a'], 'a', true)        // [] (أكورديون: النقر ثانية يطوي، صفر مفتوح مسموح)
+toggleMenuOpen(['a'], 'b', true)        // ['b'] (أكورديون: يُحتفظ بـ b وحده)
+
+isMenuOpen(['a', 'b'], 'a')  // true
+isMenuOpen(['a'], 'c')       // false
+```
+
+```ts
+// حالة التوسيع المُتحكَّم بها (طبقة واجهة المستخدم): openeds مصفوفة لا Set،
+// لتسهيل التسلسل وv-model
+const openeds = ref<string[]>([])
+function onSubMenuClick(key: string) {
+  openeds.value = toggleMenuOpen(openeds.value, key, props.uniqueOpened)
+}
+```
+
+```vue
+<!-- Vue3: قائمة جانبية عمودية -->
+<template>
+  <LhMenu mode="vertical" :collapse="collapsed" :unique-opened="true">
+    <LhSubMenu index="1">
+      <template #title><LhIcon name="settings" /><span>إعدادات النظام</span></template>
+      <LhMenuItem index="1-1" @click="go('/users')">إدارة المستخدمين</LhMenuItem>
+      <LhMenuItem index="1-2" disabled>إدارة الصلاحيات</LhMenuItem>
+    </LhSubMenu>
+    <LhMenuItem index="2" @click="go('/profile')">الملف الشخصي</LhMenuItem>
+  </LhMenu>
+</template>
+```
+
+```tsx
+// React: openeds عبر useState<string[]>؛ ونقر عناصر القائمة ينفّذ navigate؛
+// وحالة الطي تُمرَّر إلى القوائم الفرعية عبر context (بدلاً من تمرير الخصائص في كل مستوى)
+```
+
+```ts
+// uniapp: <view> + catchtap؛ ويستخدم وضع الطي في جانب التطبيقات المصغّرة
+// رسم موضع للعرض بعرض px ثابت
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-menu` | الحاوية |
+| `.lh-menu--{horizontal\|vertical}` | نمط التخطيط |
+| `.lh-menu--collapse` | حالة الطي (أيقونات فقط) |
+| `.lh-menu-item` | العنصر الورقي |
+| `.lh-menu-item--active` / `--disabled` | تنشيط / تعطيل |
+| `.lh-sub-menu` / `--active` / `--disabled` / `--opened` | عنوان القائمة الفرعية |
+| `.lh-sub-menu__popup` | القائمة الفرعية المنبثقة (القوائم الأفقية) |
+| `.lh-menu-item-group` | مجموعة (بعنوان مجموعة) |
+
+خلفية العنصر النشط `--lh-menu-item-active-background`، ولون النص `--lh-menu-item-color` (يجب
+قلب الرموز في --lh-menu-item-color صراحةً في الوضع الداكن، انظر فخ الوضع الداكن في
+AGENTS.md الجذر)؛ ورمز الارتفاع `--lh-menu-item-height`.
+
+## ملاحظات
+
+- **openeds مصفوفة لا كائن**: الترتيب غير مهم لكن يجب إزالة التكرار؛ ويضمن `toggleMenuOpen`
+  الوحاد. والمصفوفة أبسط حدسيًا عند تسلسلها في query التوجيه أو localStorage.
+- **الأكورديون يتحكم في المستوى نفسه فقط**: يجعل `uniqueOpened` القوائم الفرعية المباشرة
+  **ضمن القائمة نفسها** حصرية متبادلة؛ أما القوائم الفرعية من المستوى الثالث فلا تتأثر (يحتفظ
+  كل منها بـ openeds الخاص به).
+- **أبناء القائمة الأفقية منبثقون**: المستوى الأول يُصفّ أفقيًا، والمستوى الثاني ينبثق نحو
+  الأسفل (الصنف `lh-sub-menu__popup`، وتحديد الموضع عبر `shared/popper`)؛ أما أبناء القائمة
+  العمودية فيتمددون داخليًا (يزاحون المحتوى الأسفل). وتختلف بنية DOM بين النمطين، ويحركها mode.
+- **`--active` يحتاج إلى مزامنة التوجيه**: تتبع حالة التنشيط في القائمة عادةً التوجيه الحالي،
+  فتستمع طبقة واجهة المستخدم لتغيّر التوجيه وتحدّث active index——ولا تمس core التوجيه.
+- **tooltip في حالة الطي**: عند `collapse: true` يتبقّى من عنصر القائمة الأيقونة فقط، ويجب أن
+  يُكمَّل النص عبر `tooltip` (يُعرض عند التحويم). وهذه نقطة تعاون بين مكوّنين.
+- **اعتماد `moveMenuFocus` على DOM**: يستقبل `HTMLElement[]`، فلا يُستدعى إلا في المتصفح (يُتجاوز
+  في SSR)؛ ويصفّي tabIndex لا يقرأ صنف disabled——فعلى طبقة واجهة المستخدم ضمان أن tabIndex
+  للعناصر المعطّلة هو -1.
+- **menu وdropdown الدور نفسه لكن الاستعمال مختلف**: كلاهما يستخدم `role="menu"`. menu تنقّل
+  دائم، وdropdown قائمة عمليات مؤقتة——لا تنتحل التنقّل بالموقع عبر dropdown (يختفي عند
+  التحديث، ولا يدعم الروابط العميقة).
+
+<FnPlayground module="menu" fn="toggleMenuOpen" params='{"openeds": ["a"], "key": "b", "uniqueOpened": true}' />

@@ -1,0 +1,124 @@
+---
+title: button —— ボタン
+description: 'isClickable がクリック可否を判定、getSize が有効サイズを解決、getClassNames がタイプ / サイズ / 形状モディファイアクラスを計算'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ボタンはコンポーネントライブラリの中で最も改変される回数が多いコンポーネントの 1 つです：タイプ、サイズ、形状、読み込み中、無効、ブロック幅が組み合わさって大量のバリアントを生み出します。`core/button` はこれらのバリアントの**計算**を純関数として抽出します——UI 層は props を渡し、クラス名配列をルート要素にバインドするだけです。
+
+## いつ使うか
+
+- 各端が `LhButton` を実装する際：クラス名は完全に `getClassNames` が産出し、UI 層は自力で文字列を継ぎ接ぎしません。
+- ボタンの外（`LhDropdown` のトリガー、`LhBackTop` など）で同じ「タイプ + サイズ」のセマンティクスを再利用したい場合、クラス名をコピーするのではなく直接 core の関数を呼ぶ。
+- **使うべきでない**：フォーム送信ロジック、スロットリング。core は「今どのように見えるべきか」だけを計算し、「クリックされたら何をするか」は計算しません。
+
+## インポート方法
+
+```ts
+import { isClickable, getSize, getClassNames } from '@lh-ui/share/core/button'
+import type { LhButtonState } from '@lh-ui/share/core/button'
+```
+
+## 設計意図
+
+ボタンの状態モデルは意図的に狭くしてあります：`LhButtonState` は**クラス名に影響する**フィールドしか持ちません。`loading` と `disabled` はどちらもクラス名計算に参加します（`--disabled`）が、「クリックに応答するか」はインタラクションのセマンティクスであり視覚のセマンティクスではないため、`isClickable` として切り出されています——読み込み中のボタンは見た目は正常でもクリックできず、この判定はクラス名計算と独立していなければなりません。そうでないと「disabled クラスは付いたがイベントがブロックされていない」という抜けが生じやすくなります。
+
+サイズは 2 段階のフォールバック（コンポーネント props → `LH_SIZE_DEFAULT`）で進みますが、`getClassNames` は内部でサイズ**を local size しか受け取らない**（第 2 引数は `undefined` で固定）ことに注意してください：クラス名内のサイズの段階は ConfigProvider のグローバルサイズを継承しません。グローバルサイズはインラインスタイルや下流の独自決定にのみ作用します。これは意図的なものです——クラス名は視覚契約であり、グローバル設定が変えるのは「デフォルト値」であって「上書き」ではありません。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `isClickable` | `(state: { loading?: boolean; disabled?: boolean }) => boolean` | 真偽値 | loading か disabled のどちらかが true なら false、両方省略なら true |
+| `getSize` | `(localSize: string \| undefined, globalSize: string \| undefined) => string` | サイズ識別子 | 2 段階フォールバック、最終的に `'medium'` でフォールバック |
+| `getClassNames` | `(state: LhButtonState) => string[]` | クラス名配列 | `lh-button` と全モディファイアクラスを計算 |
+| `getStyle` | `() => Record<string, string>` | `{}` | テーマ変数プレースホルダ、常に空（下記参照） |
+
+`getStyle` が常に空オブジェクトを返す点は説明に値します：ボタンの色は完全に `:root` のトークン（`--lh-primary-*` など）で駆動され、ConfigProvider の themeVars は親の CSS 変数を経てボタンにカスケードするため、ボタン要素でもう一度宣言し直すのは**不要**です。この関数を残しているのは「インラインのテーマ変数を持つ可能性がある」他のコンポーネントとの対称性のためで、呼び出し側は何も考えず `v-bind` できます。
+
+## 型定義
+
+```ts
+export interface LhButtonState {
+  type: LhComponentType       // 'primary' | 'success' | ... | 'default'
+  size: LhComponentSize       // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  loading: boolean
+  disabled: boolean
+  plain: boolean              // 朴素：塗りではなく枠線
+  block: boolean              // ブロック：親コンテナの幅を占有
+  round: boolean              // 角丸
+  circle: boolean             // 正円（通常はアイコンと組み合わせる）
+}
+```
+
+## アクセシビリティ
+
+`core/button` は aria 属性パックを出力しません：ボタンのセマンティクスは UI 層がネイティブ `<button>` 要素で担い、`disabled` は直接ネイティブ属性に任せ、スクリーンリーダーが自然に認識します。これは「ネイティブなセマンティクスで足りるなら車輪を再発明しない」という原則の現れです——ネイティブで表現できないもの（spinbutton、treeitem、progressbar など）に限って core は `getXxxAria` を提供します。
+
+UI 層が唯一注意すべき点：`loading` 状態のボタンはフォーカス可能ですが `isClickable` は false を返します。このときボタンに `aria-busy="true"` を付けて、スクリーンリーダーに「操作が進行中である」こと（「ボタンが壊れた」ではないこと）を知らせるべきです。
+
+## 使用例
+
+```ts
+import { getClassNames, isClickable } from '@lh-ui/share/core/button'
+
+getClassNames({ type: 'primary', size: 'large', loading: false, disabled: false, plain: false, block: false, round: true, circle: false })
+// ['lh-button', 'lh-button--primary', 'lh-button--large', 'lh-button--round']
+
+isClickable({ loading: true, disabled: false })  // false
+isClickable({})                                   // true
+```
+
+各端の接着はどれも「props → state → バインド」という一つのパターンです：
+
+```vue
+<!-- Vue3 -->
+<button
+  :class="getClassNames({ type, size, loading, disabled, plain, block, round, circle })"
+  :disabled="disabled"
+  :aria-busy="loading"
+  @click="isClickable({ loading, disabled }) && emit('click', $event)"
+>
+  <LhSpinner v-if="loading" :size="14" />
+  <slot />
+</button>
+```
+
+```tsx
+// React
+const cls = getClassNames({ type, size, loading, disabled, plain, block, round, circle })
+return <button className={cls.join(' ')} disabled={disabled} aria-busy={loading} onClick={onClick} />
+```
+
+```ts
+// uniapp：クラス名も同様に class バインドに入る。loading アイコンには LhSpinner を使用（uniapp 端の svg は画像でフォールバック）
+```
+
+## スタイルとトークン
+
+`styles/button/index.scss` の BEM 構造：
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-button` | ベースクラス：レイアウト、文字サイズ、遷移 |
+| `.lh-button--{primary\|success\|warning\|danger\|error\|info\|default}` | セマンティクスタイプ |
+| `.lh-button--{mini\|small\|medium\|large\|x-large}` | サイズの段階（高さ、padding、文字サイズ） |
+| `.lh-button--plain` | 朴素スタイル：透明な背景 + 枠線 |
+| `.lh-button--block` | ブロック幅 |
+| `.lh-button--round` / `.lh-button--circle` | 角丸 / 正円 |
+| `.lh-button--disabled` | 無効状態（ポインタ、透明度） |
+| `.lh-button--blank` | 空白ボタン（枠も背景もなく、hover で初めて姿を現す） |
+| `.lh-button__icon` / `.lh-button__text` | アイコンスロットとテキスト |
+| `.lh-button__loading` / `.lh-button__spinner` / `.lh-button__path` | 読み込み图形 |
+
+色はすべて `var(--lh-primary-*)` / `var(--lh-success-*)` などのトークンで進み、ダークモードでは `var-dark.scss` が自動的に反転させます。
+
+## 注意事項
+
+- `getClassNames` のサイズは**グローバル設定を継承しない**（「設計意図」を参照）。あなたの端がグローバルサイズをボタンに反映したい場合、UI 層で先に `getSize(local, global)` を呼んでから渡す必要があります。
+- `loading` と `disabled` はクラス名上は等価（どちらも `--disabled` の視覚を産出する）ですが、インタラクション判定は `isClickable` で行われます——クラス名の有無でクリック可否を推測しないでください。
+- `circle` はスタイル上で正方形 + 正円を強制するため、テキストボタンに `circle` を付けると奇妙な圧縮になります。
+- `plain` と `type: 'default'` の組み合わせはほとんど見えなくなりますが、これらは素朴なスタイルの期待される挙動です。
+
+<FnPlayground module="button" fn="getClassNames" params='{"state": {"type": "primary", "size": "large", "loading": false, "disabled": false, "plain": false, "block": true, "round": false, "circle": false}}' />

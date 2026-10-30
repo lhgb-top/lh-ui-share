@@ -1,0 +1,151 @@
+---
+title: types —— общие типы
+description: 'LhLocaleType / LhLeaves / LhBaseProps / обобщённые типы LhTypes и ambient-объявления глобальной области'
+---
+
+Каталог `src/types/` — это слой публичных типов, открытых наружу. В отличие от [core/shared/types](/ru/core/types) (объединённые типы внутри core), здесь — **базовые формы, которые используют Props компонентов UI-библиотек**.
+
+## Способ импорта
+
+```ts
+import type {
+  LhLocaleType,
+  LhLocaleMessages,
+  LhLocaleMessageValue,
+  LhLeaves,
+  LhBaseProps,
+  LhTypes,
+  LhSizes,
+  LhLanguages,
+} from '@lh-ui/share/types'
+```
+
+## Структура экспорта
+
+```ts
+// src/types/index.ts
+export * from './locale'           // Типы языковых пакетов
+export * from './components/base'  // Базовые свойства компонентов
+```
+
+`global.d.ts`, `theme.ts`, `scss.d.ts` — ambient-объявления; они участвуют в компиляции через `include` tsconfig и **явным образом не экспортируются**.
+
+## Типы, связанные с locale
+
+| Тип | Определение | Назначение |
+| --- | --- | --- |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | Объединение кодов шести языков |
+| `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | Листовой узел языкового пакета (рекурсивно только для чтения) |
+| `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | Языковой пакет целиком |
+| `LhLeaves<T, Prefix extends string = ''>` | Рекурсивный отображаемый тип | Выводит объединение точечных путей всех «строковых листьев» |
+| `LhLocaleOptions` | `{ locale: LhLocaleType; messages: LhLocaleMessages }` | Форма аргумента `lhlocale.use()` |
+
+### Поведение LhLeaves
+
+```ts
+type ZhLeaves = LhLeaves<typeof zhCN>
+// 'common.loading' | 'input.placeholder' | 'input.password' | 'pagination.total' | …
+```
+
+- **Строковый лист** → полный путь (`'input.placeholder'`).
+- **Ключ-массив** (например, `datepicker.months`) → `never`. Массивы не адресуются по ключам, `t()` по ним не попадает; получить их можно только через `tm()`.
+- **Объект** → рекурсивный обход дочерних ключей.
+
+`LhLocalePath = LhLeaves<typeof zhCN>` даёт `lhlocale.t()` автодополнение литералов и проверку орфографии.
+
+## Базовые свойства компонентов
+
+Три объединённых обобщённых типа (позволяют стороне бизнеса расширять собственными значениями):
+
+```ts
+export type LhTypes<T extends string | undefined = undefined> =
+  T extends string ? LhComponentType | T : LhComponentType
+
+export type LhSizes<T extends string | undefined = undefined> =
+  T extends string ? LhComponentSize | T : LhComponentSize
+
+export type LhLanguages<T extends string | undefined = undefined> =
+  T extends string ? LhComponentLanguage | T : LhComponentLanguage
+```
+
+Использование:
+
+```ts
+type MyType = LhTypes<'brand' | 'dangerous'>
+// LhComponentType | 'brand' | 'dangerous'
+```
+
+### LhBaseProps —— базовая форма Props компонентов
+
+```ts
+export interface LhBaseProps<
+  T extends string | undefined = undefined,
+  S extends string | undefined = undefined,
+  L extends string | undefined = undefined,
+> {
+  type?: T extends string ? LhTypes<T> : LhTypes
+  size?: S extends string ? LhSizes<S> : LhSizes
+  disabled?: boolean
+  loading?: boolean
+  plain?: boolean
+  block?: boolean
+  icon?: string
+  nativeType?: string
+  href?: string
+  target?: string
+  title?: string
+  alt?: string
+  lang?: L extends string ? LhLanguages<L> : LhLanguages
+  langPath?: string
+  old?: boolean      // режим для пожилых пользователей
+}
+```
+
+Props компонентов UI-библиотек `extends LhBaseProps` и автоматически получают набор общих полей `type` / `size` / `disabled` / `lang` — это гарантирует, что имена общих пропов едины для компонентов всего семейства (пользователям не нужно запоминать, что «в одной библиотеке проп называется `disabled`, а в другой — нет»).
+
+| Поле | Семантика |
+| --- | --- |
+| `type` | Семантический цвет (`LhTypes`) |
+| `size` | Размерный шаг (`LhSizes`) |
+| `disabled` | Отключён |
+| `loading` | Состояние загрузки |
+| `plain` | Обычное оформление (вариант с рамкой, без цвета фона) |
+| `block` | Блочная ширина 100% |
+| `icon` | Имя иконки (встроенный набор; см. раздел об иконках на странице [иконки](/ru/theme/tokens)) |
+| `nativeType` | Собственный `type` кнопки (`submit` / `reset` / `button`) |
+| `href` / `target` | Ссылки при рендере как `<a>` |
+| `title` / `alt` | Заголовок и альтернативный текст (доступность) |
+| `lang` | Покрытие языка на уровне компонента |
+| `langPath` | Префикс пути пользовательских текстовых ключей |
+| `old` | Переключатель режима для пожилых (используется с `size="x-large"`; см. [constants](/ru/reference/constants)) |
+
+## Ambient-объявления глобальной области
+
+Действуют через `include` tsconfig, импортировать не нужно:
+
+```ts
+// src/types/global.d.ts
+interface CSSVariable { [key: string]: string }
+
+interface LhUIConfig {
+  prefix?: string
+  theme?: Record<string, string>
+  locale?: string
+}
+
+interface InstallOptions {
+  prefix?: string
+  theme?: Record<string, string>
+  locale?: string
+  components?: any[]
+}
+```
+
+Это ambient-типы для глобальных настроек конфигурации вида «`app.use(LhUI, { prefix: 'x' })`». `theme.ts` сейчас — пустое место-заглушка (типы темы находятся в `src/theme/types.ts`); `scss.d.ts` объявляет модули `.scss`.
+
+## Примечания
+
+- **`LhBaseProps` состоит из необязательных полей**: все поля могут отсутствовать; компонент extends его и сужает по необходимости (например, `type` в button обязателен).
+- **Отношение `lang` и глобального языка**: `lang` — это переопределение на уровне компонента (`<lh-button lang="en-US">`), которое не вызывает `lhlocale.setLocale`; язык выбирается внутри компонента.
+- **Подводный камень со значением обобщённого типа по умолчанию**: `LhTypes<undefined>` сводится к `LhComponentType` — передача `undefined` в качестве аргумента типа и передача строкового литерала дают разные результаты; это сделано осознанно (ветвление `extends string ? ... : ...`).
+- **`LH_LANGUAGE_CONST` не входит в публичную поверхность экспорта types**: `types/locale.ts` импортирует его внутри для вывода, но `types/index.ts` экспортирует только `./locale` и `./components/base`; чтобы воспользоваться константой, импортируйте её из `@lh-ui/share/constants`.

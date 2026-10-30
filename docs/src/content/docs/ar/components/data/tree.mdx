@@ -1,0 +1,251 @@
+---
+title: tree —— شجرة
+description: 'flattenTree يُسطِّح، وgetNodeCheckState ثلاثي الحالات، وtoggleCheckKeys يتسلسل ويُرجع إلى الأجداد، والدمج في التحميل الكسول، ودلالة tree/treeitem'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الشجرة هي الحاوية العامة للبيانات الهرمية: أدلة الملفات، وهياكل المؤسسات، وأشجار الصلاحيات، والقوائم المتسلسلة. ووعورتها في **إدارة حالة البنية العودية** — فالتوسيع والتحديد والتحميل الكسول كلها عمليات على شجرة فرعية بأكملها، مع التعامل مع البيانات ذات المراجع الدائرية، والعُقد المعطَّلة، والحالة النصفية. وقد جمع `core/tree` هذه الخوارزميات بالدوال الصرفة + التحديث غير القابل للتغيير.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhTree`: تصفُّح الأدلة، وتوزيع الصلاحيات، وعرض الهيكل التنظيمي، وتصفية التصنيفات.
+- البيانات الهرمية التي تحتاج إلى توسيع/طي، وتحديد (يشمل ربط الأب بالأبناء)، وتحميل كسول.
+- **لا يجب استخدامه**: التصنيفات المسطَّحة بمستويين كحد أقصى (الاختيار المتسلسل أو المتحكم المجزَّأ أوفر جهدًا)؛ والقوائم الخطية (استخدم `virtual-list`).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  isTreeNodeLeaf,
+  flattenTree,
+  getDescendantKeys,
+  findTreeNode,
+  getNodeCheckState,
+  collectLeafKeys,
+  toggleCheckKeys,
+  findParentNode,
+  moveTreeFocus,
+  mergeLoadedChildren,
+  isNodeLoadable,
+  getTreeClassNames,
+  getTreeNodeClassNames,
+  getTreeAria,
+  getTreeNodeAria,
+} from '@lh-ui/share/core/tree'
+import type {
+  LhTreeNode,
+  LhFlatTreeNode,
+  LhTreeCheckState,
+} from '@lh-ui/share/core/tree'
+```
+
+## نية التصميم
+
+**التصيير هو التسطيح**: الشجرة في الواجهة في جوهرها **قائمة بمستويات إزاحة داخلية**. يجتاز `flattenTree` أولًا بالعمق، ولا يُوسِّع سوى الأشجار الفرعية التي يصيبها `expandedKeys`، ويُخرِج مصفوفة مسطَّحة (يحمل كل عنصر `level` / `parentKey` / `ancestorKeys`).فيقوم طرف العرض بـ v-for على مصفوفة أحادية البعد — وهو أبسط بكثير من المكوّن العودي، ومتوافق بطبيعته مع التمرير الافتراضي.
+
+**الحكم بالتكرار عبر سلسلة الأجداد مقابل الحكم العام**: تستخدم الدوال العودية في هذه الوحدة عمومًا **seen بسلسلة الأجداد** (`ancestors` / `nextSeen` تُمرَّر طبقةً تلو الأخرى) لا Set عامًّا. وثمن ذلك أن الحماية نافذة فقط داخل الاستدعاء الواحد، لكن فائدتها أن **الأشجار الفرعية المشتركة قانونًا في DAG لا يُخطَأ تخطيها**، ولا يوجد تسريب حالة عبر النسخ. ولاحظ أن هذا يختلف عن مفاضلة `flattenLeafColumns` في `table` (الذي يستخدم seen عامًّا) — فمشاركة DAG في الجدول يجب أن تُنبَثق مرة واحدة فقط (لمحاذاة عدد الأعمدة)، بينما مشاركة DAG في الشجرة يجب أن تُحسَب مرة لكل مسار مختلف.
+
+**العُقدة المعطَّلة لا تدخل مقام التحديد الكامل**: تتخطى `collectCheckableLeafKeys` الأشجار الفرعية المعطَّلة — وإلا فبعد تحديد الأب سيبقى **في حالة indeterminate دائمًا** لأن الأبناء المعطَّلين ناقصون، ولن يصبح محددًا بالكامل أبدًا. وهذا نوع حقيقي من أخطاء التجربة.
+
+**العُقدة غير الورقية غير المُحمَّلة**: عندما يكون `isLeaf !== true` ولا توجد `children`، تُرجِع `collectCheckableLeafKeys` مصفوفة فارغة، لكن `toggleCheckKeys` يكتب **مفتاحها نفسه** في `checkedKeys` — ففي سيناريو التحميل الكسول يمكن للمستخدم تحديد عُقدة لم تُحمَّل أبناؤها بعد، ثم يُترَك الأمر لطرف العرض بعد التحميل في أن يُسلسل أو لا.
+
+**`moveTreeFocus` مهمل @deprecated**: التقت خوارزمية التنقل في `core/shared/keyboard.getNextListIndex`، ويحتفظ هذا الغلاف بالتوقيع القديم والدلالة القائمة «الرجوع إلى العنصر الأول عند بطلان القيمة الحالية».
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `isTreeNodeLeaf` | `(node) => boolean` | هل هي ورقة | الأولوية لـ `isLeaf`، وإلا يُستنتَج من children |
+| `flattenTree` | `(nodes, expandedKeys, …) => LhFlatTreeNode[]` | قائمة مسطَّحة | لا يُوسِّع سوى الأشجار المصابة |
+| `getDescendantKeys` | `(node, seen?) => string[]` | مفاتيح الأحفاد | حكم سلسلة الأجداد |
+| `findTreeNode` | `(nodes, key, seen?) => LhTreeNode \| null` | العُقدة | بحث بالعمق |
+| `getNodeCheckState` | `(node, checkedKeys, checkStrictly?) => LhTreeCheckState` | ثلاثي الحالات | الشجرة الفرعية المعطَّلة لا تُحتسَب في المقام |
+| `collectLeafKeys` | `(node, seen?) => string[]` | مفاتيح الأوراق القابلة للتحديد | يتخطى المعطَّل |
+| `toggleCheckKeys` | `(roots, checkedKeys, key, options?) => string[]` | المفاتيح المحدَّدة الجديدة | تسلسل + رجوع إلى الأجداد |
+| `findParentNode` | `(nodes, key, …) => LhTreeNode \| null` | العُقدة الأب | تُرجع null في المستوى الأعلى |
+| `moveTreeFocus` | `(flat, currentKey, direction) => string \| null` | المفتاح الهدف | **@deprecated** |
+| `mergeLoadedChildren` | `(nodes, loadedMap, seen?) => LhTreeNode[]` | شجرة جديدة | دمج غير قابل للتغيير في التحميل الكسول |
+| `isNodeLoadable` | `(node, lazy, loadedKeys) => boolean` | هل يُحمَّل | غير مُصرَّح بكونه ورقة وغير محمَّل |
+| `getTreeClassNames` | `(state: { showCheckbox }) => string[]` | أسماء الأصناف | وضع التحديد |
+| `getTreeNodeClassNames` | `(state) => string[]` | أسماء الأصناف | توسيع / تحديد / تعطيل / ورقة |
+| `getTreeAria` | `(id?) => LhAriaAttrs` | حِزَمة سمات aria | role=tree |
+| `getTreeNodeAria` | `(options) => LhAriaAttrs` | حِزَمة سمات aria | دلالات treeitem الكاملة |
+
+## تعريف الأنواع
+
+```ts
+export interface LhTreeNode {
+  key: string
+  label: string
+  children?: LhTreeNode[]
+  disabled?: boolean
+  isLeaf?: boolean       // إن لم يُمرَّر يُستنتَج من children
+}
+
+export interface LhFlatTreeNode {
+  node: LhTreeNode
+  key: string
+  level: number                 // بدءًا من 0
+  parentKey: string | null
+  ancestorKeys: string[]        // سلسلة الأجداد (لا تشمل العُقدة نفسها)
+  isLeaf: boolean
+}
+
+export type LhTreeCheckState = 'checked' | 'indeterminate' | 'unchecked'
+```
+
+## إمكانية الوصول
+
+تُخرِج `getTreeAria` / `getTreeNodeAria` الدلالات الكاملة لنمط treeview في APG:
+
+```ts
+getTreeAria('lh-tree-1')  // { role: 'tree', id: 'lh-tree-1' }
+
+getTreeNodeAria({ level: 2, expanded: true, selected: true, checked: 'indeterminate' })
+// { role: 'treeitem', 'aria-level': 2, 'aria-expanded': true,
+//   'aria-selected': true, 'aria-checked': 'indeterminate' }
+
+getTreeNodeAria({ level: 1, leaf: true })
+// { role: 'treeitem', 'aria-level': 1 }  ← العُقدة الورقية لا تُخرِج aria-expanded
+```
+
+- يبدأ `aria-level` من 1 (لاحظ أن `level` في `flattenTree` يبدأ من 0، فعند تمريره إلى aria **زِدْه 1**).
+- **العُقدة الورقية لا تُخرِج `aria-expanded`** — تجنبًا لقيمة `aria-expanded="false"` بلا معنى، وهذا ما تنص عليه APG صراحةً.
+- القيم الثلاث لـ `aria-checked`: `true` / `false` / `'indeterminate'` (سلسلة نصية).
+- التفاعل بلوحة المفاتيح (treeview في APG): ↑/↓ للتنقل بين العُقد المرئية، و→ للتوسيع/الدخول إلى العُقدة الابنة، و← للطي/الرجوع إلى العُقدة الأب، وHome/End للوصول إلى الأولى والأخيرة، وEnter لتشغيل التحديد.
+- **مصدر `aria-level` بعد التسطيح**: هو `level + 1` من `flattenTree`، فلا تستنتجه من عمق الإزاحة في DOM.
+
+## أمثلة الاستخدام
+
+```ts
+import { flattenTree, toggleCheckKeys, getNodeCheckState } from '@lh-ui/share/core/tree'
+
+const tree = [
+  { key: '1', label: 'قسم البحث والتطوير', children: [
+    { key: '1-1', label: 'فريق الواجهة الأمامية', children: [{ key: '1-1-1', label: 'lh-ui' }] },
+    { key: '1-2', label: 'فريق الواجهة الخلفية' },
+  ]},
+  { key: '2', label: 'قسم المنتج' },
+]
+
+flattenTree(tree, ['1'])
+// [قسم البحث والتطوير(l0), فريق الواجهة الأمامية(l1), فريق الواجهة الخلفية(l1), قسم المنتج(l0)]
+// لاحظ غياب 1-1-1: لأن '1-1' ليست ضمن expandedKeys
+
+flattenTree(tree, ['1', '1-1'])
+// [قسم البحث والتطوير, فريق الواجهة الأمامية, lh-ui(l2), فريق الواجهة الخلفية, قسم المنتج]
+
+toggleCheckKeys(tree, [], '1')
+// ['1', '1-1', '1-1-1', '1-2'] (تحديد كل الأحفاد تسلسليًّا، مع العُقدة نفسها)
+
+toggleCheckKeys(tree, ['1', '1-1', '1-1-1', '1-2'], '1-1-1')
+// ['1-2']  —— بعد إلغاء '1-1-1' يرجع التسلسل: '1-1' لم تعد محدَّدة بالكامل فتُحذَف،
+// و'1' لم تعد محدَّدة بالكامل أيضًا فتُحذَف (الرجوع يمتد إلى الجذر)
+
+toggleCheckKeys(tree, ['1-1'], '1-2')
+// ['1-1', '1-2']  —— رجوع إلى الأجداد فقط، دون باقي الفروع
+
+getNodeCheckState(tree[0], ['1', '1-1', '1-1-1', '1-2'])  // 'checked' (جميع الأوراق القابلة للتحديد محدَّدة)
+getNodeCheckState(tree[0], ['1-1-1'])                      // 'indeterminate' (واحدة من أصل ورقتين قابلتين للتحديد)
+getNodeCheckState(tree[0], ['1-1'])                        // 'unchecked' ('1-1' ليست ورقة، فلا تُحتسَب)
+getNodeCheckState(tree[0], [])                             // 'unchecked'
+```
+
+```vue
+<!-- Vue3: تصيير مسطَّح وودود للتمرير الافتراضي -->
+<div :class="getTreeClassNames({ showCheckbox })" v-bind="getTreeAria(treeId)">
+  <div
+    v-for="item in flatNodes"
+    :key="item.key"
+    class="lh-tree-node-row"
+    :style="{ paddingLeft: item.level * 18 + 'px' }"
+  >
+    <div
+      :class="getTreeNodeClassNames({
+        expanded: expandedKeys.includes(item.key),
+        selected: selectedKey === item.key,
+        disabled: item.node.disabled,
+        leaf: item.isLeaf,
+      })"
+      role="treeitem"
+      :aria-level="item.level + 1"
+      :aria-expanded="item.isLeaf ? undefined : expandedKeys.includes(item.key)"
+      @click="onSelect(item)"
+    >
+      <span v-if="!item.isLeaf" class="lh-tree-node__arrow" @click.stop="onToggle(item)">
+        {{ expandedKeys.includes(item.key) ? '▾' : '▸' }}
+      </span>
+      <input
+        v-if="showCheckbox"
+        type="checkbox"
+        :checked="checkState(item) === 'checked'"
+        :indeterminate.prop="checkState(item) === 'indeterminate'"
+        :disabled="item.node.disabled"
+        @change="onCheck(item)"
+      />
+      <span class="lh-tree-node__label">{{ item.node.label }}</span>
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// توصيل التحديد
+function onCheck(item: LhFlatTreeNode) {
+  checkedKeys.value = toggleCheckKeys(props.data, checkedKeys.value, item.key, { checkStrictly })
+}
+function checkState(item: LhFlatTreeNode) {
+  return getNodeCheckState(item.node, checkedKeys.value, checkStrictly)
+}
+```
+
+```ts
+// التحميل الكسول
+async function onLoad(item: LhFlatTreeNode) {
+  if (!isNodeLoadable(item.node, lazy, loadedKeys.value)) return
+  loadingKeys.value = [...loadingKeys.value, item.key]
+  const children = await fetchChildren(item.key)
+  loadedMap.value = { ...loadedMap.value, [item.key]: children }
+  loadedKeys.value = [...loadedKeys.value, item.key]
+  // دمج غير قابل للتغيير ثم إعادة التسطيح
+}
+const merged = computed(() => mergeLoadedChildren(props.data, loadedMap.value))
+```
+
+```tsx
+// React: expandedKeys / checkedKeys / selectedKey كلها حالات مُتحكَّم بها؛
+// flatNodes = useMemo(() => flattenTree(merged, expandedKeys), [merged, expandedKeys])
+```
+
+```ts
+// uniapp: <view> + إزاحة داخلية padding؛ وجميع دوال core محايدة للطرف، تُستخدم كما هي
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-tree` | الصنف الأساسي |
+| `.lh-tree--checkbox` | وضع التحديد (حشو داخلي للعُقدة يفسح مكانًا لخانة الاختيار) |
+| `.lh-tree-node` | العُقدة |
+| `.lh-tree-node--expanded` | موسَّعة (يدور السهم) |
+| `.lh-tree-node--selected` | محدَّدة (خلفية باللون الأساسي) |
+| `.lh-tree-node--disabled` | معطَّلة |
+| `.lh-tree-node--leaf` | ورقة (يُطوى مكان السهم) |
+| `.lh-tree-node__arrow` / `__label` | سهم التوسيع / النص |
+
+تتحقق الإزاحة الداخلية في طرف العرض عبر `paddingLeft: level * 18px` (لا يتدخل core في البكسلات)، وخلفية التحديد `--lh-primary-color-light`، والسهم `--lh-text-color-secondary`.
+
+## ملاحظات
+
+- **`level` يبدأ من 0 و`aria-level` يبدأ من 1** — وهذا أكثر موضع يسهو فيه المستخدم في هذه الوحدة، فلا بد من `+1` عند ربط `aria-level`.
+- **نطاق نفاذ حكم سلسلة الأجداد**: الحماية نافذة فقط داخل الاستدعاء الواحد. فاستدعاءان مستقلان لـ `findTreeNode` على الشجرة نفسها يحكمان كلٌّ منهما على حدة، ويُجتاز الشجرة الفرعية المشتركة مرتين — وهذا مقصود (مشاركة DAG قانونية)، وليس خطأً.
+- **`checkStrictly` (لا ربط بين الأب والأبناء)**: تصبح `getNodeCheckState` ثنائية الحالات، ولا يُغيِّر `toggleCheckKeys` سوى مفتاح العُقدة نفسه، دون رجوع إلى الأجداد. وشائعة الاستخدام في سيناريوهات توزيع الصلاحيات.
+- **الثابت المتعلق بتسلسل العُقد المعطَّلة**: يتخطى رجوع الأجداد في `toggleCheckKeys` الأب المعطَّل — فلا يُعاد كتابة مفتاحه بالتسلسل. وإن احتاج العمل إلى «تحديد أب معطَّل برمجيًّا»، فليُعامَل `checkedKeys` مباشرة بدلًا من استخدام هذه الدالة.
+- **`isLeaf` له الأولوية على `children`**: العُقدة المُصرَّح لها بـ `isLeaf: true` تُعالَج كورقة حتى لو كان لها `children` (شائع في التحميل الكسول: التصريح بالورقة يمنع التوسيع).
+- **عدم قابلية التغيير في `mergeLoadedChildren`**: تُرجِع شجرة جديدة ولا تُعدِّل `nodes` المُمرَّرة — فـ props.data يملكه المستخدم، والتعديل المباشر يكسر تدفق البيانات في اتجاه واحد.
+- **أداء `flattenTree`**: إعادة حساب كاملة في كل مرة تتغير فيها expandedKeys. فعند المستويات العميقة + البيانات الضخمة فكِّر في memo للأشجار الفرعية (تخزين مؤقت في طرف العرض مجمَّع بحسب parentKey).
+- **البيانات ذات المراجع الدائرية**: جميع الدوال العودية محميَّة بحكم سلسلة الأجداد فلا تدور في حلقة لا نهائية — ولكن **وجود حلقة في البيانات نفسها خطأٌ في حد ذاته**، والحكم يمنع انهيارها فحسب.
+
+<FnPlayground module="tree" fn="getNodeCheckState" params='{"node": {"key": "1", "label": "قسم البحث والتطوير", "children": [{"key": "1-1", "label": "فريق الواجهة الأمامية"}, {"key": "1-2", "label": "فريق الواجهة الخلفية"}]}, "checkedKeys": ["1-1"], "checkStrictly": false}' />

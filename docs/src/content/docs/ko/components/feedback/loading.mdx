@@ -1,0 +1,178 @@
+---
+title: loading —— 로딩 마스크
+description: 'resolveLoadingTarget 마운트 대상 해석, ensurePositioned 위치 지정 보수와 복원, aria-busy 의미'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+로딩 마스크는 한 영역 (또는 페이지 전체)을 덮어 "여기가 바쁩니다"를 나타냅니다. `core/loading`이 관리하는 것은 **마운트 대상 해석**과 **위치 지정 보수**입니다——명령형 `v-loading="true"`는 마스크를 트리거 요소에 absolute해야 하지만, static 위치 지정의 요소는 위치 지정 조상이 될 수 없고, 이 보수가 core의 일입니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `v-loading` 디렉티브 또는 `<LhLoading>` 컴포넌트: 버튼 제출, 표 새로고침, 페이지 전체 로딩.
+- 한 블록 영역을 **명확하게 덮을** 필요가 있을 때 (전체 화면이 아님).
+- **사용하면 안 되는 경우**: 순수 텍스트 피드백 (`message` 사용); 시간을 알 수 없는 백그라운드 작업 (`notification` + 취소 가능 사용); 골격 구조 (`skeleton` 사용——loading은 콘텐츠 레이아웃이 변하지 않는다고 가정하고, skeleton은 변한다고 가정합니다).
+
+## 임포트 방법
+
+```ts
+import {
+  getLoadingClassNames,
+  resolveLoadingTarget,
+  isLoadingFullscreen,
+  ensurePositioned,
+  getLoadingAria,
+} from '@lh-ui/share/core/loading'
+import type { LhLoadingOptions, LhLoadingHandle, LhLoadingState } from '@lh-ui/share/core/loading'
+```
+
+## 설계 의도
+
+**`resolveLoadingTarget`의 세 가지 상태 정규화**: 전달하지 않으면 → `document.body` (전체 화면); 문자열 → `querySelector`, **미접속 시 body로 폴백** (셀렉터 오타가 깨지지 않고 전체 화면 마스크로 될 뿐); 요소는 그대로 반환합니다. 이 폴백이 중요합니다: 명령형 API가 받는 target은 사용자가 작성한 ref/셀렉터에서 오며, 오염된 데이터는 반드시 처리되어야 합니다.
+
+**`ensurePositioned`의 "빌리면 갚는다"**: static 위치 지정 요소를 임시로 relative로 바꾸고, 언마운트 시 복원하기 위한 `restore()`를 반환합니다. **인라인 스타일의 position만 변경**하고, 클래스나 다른 스타일은 건드리지 않습니다——복원 시 인라인 position을 원래 값(빈 문자열일 수 있음)으로 되돌립니다. 요소가 이미 위치 지정을 가지고 있다면 (relative/absolute/fixed/sticky) 아무것도 하지 않고, `restore`는 빈 함수입니다——호출자는 판단할 필요 없이 무조건 호출하면 됩니다.
+
+**전체 화면의 판정은 "대상이 body인지"입니다**: `isLoadingFullscreen(target)`이지 별도의 flag를 전달하는 것이 아닙니다——target이 body이면 전체 화면으로 간주하고, 마스크 클래스명에 `--fullscreen`을 추가합니다 (fixed 위치 지정 + 더 높은 z-index). SSR 가드: `document`가 없으면 false를 반환합니다.
+
+**`getLoadingAria`의 이중 의미**: `aria-busy="true"`로 덮인 영역을 표시하고 (스크린 리더는 로딩이 완료되기 전까지 오래된 콘텐츠를 읽어주지 않습니다), 회전 아이콘은 **장식 그래픽** → `aria-hidden` (스크린 리더가 "회전 그래픽" 같은 쓸데없는 말을 읽지 않도록). `busy: false`는 빈 객체를 반환합니다——UI 계층은 무조건 `v-bind`할 수 있습니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getLoadingClassNames` | `(state: LhLoadingState) => string[]` | 클래스명 | 전체 화면 / 텍스트 포함 |
+| `resolveLoadingTarget` | `(target: string \| HTMLElement \| undefined) => HTMLElement` | 대상 요소 | 문자열 셀렉터 미접속 시 body로 폴백 |
+| `isLoadingFullscreen` | `(target: HTMLElement) => boolean` | 전체 화면 여부 | 대상이 body이면 전체 화면 |
+| `ensurePositioned` | `(target: HTMLElement) => { restore }` | 복원 핸들 | static → relative, 언마운트 시 복원 |
+| `getLoadingAria` | `(busy?: boolean) => LhAriaAttrs` | aria 속성 팩 | aria-busy + 아이콘 aria-hidden |
+
+## 타입 정의
+
+```ts
+export interface LhLoadingOptions {
+  text?: string                      // 마스크 문구
+  fullscreen?: boolean               // 전체 화면 강제
+  background?: string                // 마스크 배경색 (기본 반투명 덮어쓰기)
+  spinner?: boolean                  // 회전 아이콘 표시 (기본값 true)
+  target?: string | HTMLElement      // 마운트 대상
+  delay?: number                     // 표시 지연 밀리초 (깜빡임 방지)
+}
+
+export interface LhLoadingHandle {
+  close: () => void                  // 닫고 마스크 언마운트
+  setText: (text: string) => void    // 문구 동적 업데이트
+}
+
+export interface LhLoadingState {
+  fullscreen: boolean
+  withText: boolean                  // 문구가 있을 때 문구 컨테이너에 자리 확보
+}
+```
+
+## 접근성
+
+```ts
+getLoadingAria(true)   // { 'aria-hidden': true, 'aria-busy': true }
+getLoadingAria(false)  // {} (무조건 v-bind 용)
+```
+
+- `aria-busy="true"`는 WAI-ARIA의 표준 "사용 중인 영역" 표시로, 스크린 리더는 이를 통해 콘텐츠가 곧 바뀔 것을 알고 현재 오래된 콘텐츠를 잠시 읽지 않습니다. 마스크 레이어 자체가 아니라 **덮인 콘텐츠 컨테이너**에 지정합니다.
+- 회전 아이콘의 `aria-hidden`: 이것은 순수 시각 피드백이며, 문구가 (있다면) 이미 텍스트로 전달됩니다.
+- **문구는 의미가 있어야 합니다**: "로딩 중…"이 "loading"보다 낫습니다; 퍼센트가 있는 진행률 ("76% 로딩됨")은 스크린 리더 사용자에게 더 친절합니다——마스크 문구가 바뀌면 스크린 리더가 읽어줍니다 (`aria-live` 연결은 UI 계층이 결정).
+- **전체 화면 마스크와 포커스**: 전체 화면 마스크 중에도 콘텐츠는 여전히 Tab으로 포커스 가능합니다——조작을 막아야 한다면 UI 계층이 마스크에서 가로채거나 콘텐츠 영역에 `inert`를 추가해야 합니다 (`shared/focus-trap`의 inert 메커니즘 참고).
+
+## 사용 예시
+
+```ts
+import { resolveLoadingTarget, ensurePositioned, isLoadingFullscreen, getLoadingClassNames } from '@lh-ui/share/core/loading'
+
+resolveLoadingTarget(undefined)              // document.body (전체 화면)
+resolveLoadingTarget('.table-wrapper')       // 접속된 요소; 미접속 → body
+resolveLoadingTarget(elRef)                  // 그대로 반환
+
+const el = resolveLoadingTarget(props.target)
+const restore = ensurePositioned(el).restore  // static → relative, 원래 값 기록
+try {
+  // …마스크 렌더링…
+} finally {
+  restore()                                   // 언마운트 시 position 복원
+}
+
+isLoadingFullscreen(document.body)  // true
+isLoadingFullscreen(tableEl)        // false
+```
+
+```ts
+// 명령형 서비스 (UI 계층): 생성 / 닫기 / 카운팅
+const instances = new Map<HTMLElement, { count: number; restore: () => void; el: HTMLElement }>()
+
+function showLoading(target: HTMLElement, text?: string) {
+  const hit = instances.get(target)
+  if (hit) { hit.count++; return }
+  const { restore } = ensurePositioned(target)
+  const mask = createMask(text, isLoadingFullscreen(target))
+  target.appendChild(mask)
+  instances.set(target, { count: 1, restore, el: mask })
+}
+
+function closeLoading(target: HTMLElement) {
+  const hit = instances.get(target)
+  if (!hit) return
+  hit.count--
+  if (hit.count > 0) return        // 참조 카운팅: 여러 loading 중 하나만 닫기
+  hit.el.remove()
+  hit.restore()                    // position 복원
+  instances.delete(target)
+}
+```
+
+```vue
+<!-- Vue3: v-loading 디렉티브 -->
+<template>
+  <div class="table-wrapper" v-loading="loading">
+    <LhTable :data="rows" />
+  </div>
+</template>
+
+<script setup>
+// 디렉티브 구현: mounted 시 binding.value에 따라 표시/숨김 결정
+const loading = ref(false)
+async function refresh() {
+  loading.value = true
+  try { rows.value = await fetch() } finally { loading.value = false }
+}
+</script>
+```
+
+```tsx
+// React: useLoading 훅 (ref + useEffect로 마스크 마운트와 restore 관리)
+```
+
+```ts
+// uniapp: 마스크는 <view> + absolute; ensurePositioned는 h5가 아닌 말단에서는 h5에만 유효,
+// 미니 프로그램 말단은 fixed/absolute 동작이 달라 UI 계층이 말단별로 적응
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-loading` | 마스크 컨테이너 (absolute로 대상 덮기) |
+| `.lh-loading--fullscreen` | 전체 화면 (fixed + 더 높은 z-index) |
+| `.lh-loading--with-text` | 문구 포함 (세로 배치 아이콘 + 텍스트) |
+| `.lh-loading__spinner` | 회전 아이콘 (`LhSpinner`) |
+| `.lh-loading__text` | 문구 |
+
+마스크 바탕색 `--lh-mask-color` (반투명, 라이트/다크 각 한 벌); 문구 색 `--lh-text-primary-regular`; z-index `--lh-z-index-loading`.
+
+## 주의사항
+
+- **`restore()`는 반드시 호출**: `ensurePositioned`가 대상 요소의 인라인 position을 변경했으므로, 복원하지 않으면 "relative"가 레이아웃을 오염시킵니다 (특히 `position: static`이 의도적인 상황). try/finally로 보장하세요.
+- **셀렉터 미접속이 조용히 전체 화면으로**: `resolveLoadingTarget('.typo-selector')`은 body로 폴백합니다——"마스크가 왜 화면 전체를 덮는지"를 조사할 때 먼저 셀렉터를 확인하세요.
+- **참조 카운팅**: 같은 영역에 여러 로딩이 동시에 (두 요청을 동시에 보낼 때) 있으면 카운팅해야 하고, 마지막 하나가 완료되어야 마스크를 닫습니다. core는 상태를 가지지 않고 UI 계층이 기록합니다.
+- **`delay`로 깜빡임 방지**: 빠르게 완료되는 요청(200ms 미만)은 마스크가 스쳐 지나가 오히려 버그처럼 보입니다. UI 계층은 delay로 표시를 늦출 수 있고, 요청이 먼저 완료되면 표시를 취소합니다.
+- **중첩 마스크**: A 영역 마스크 안에 B 영역 마스크가 있을 때, z-index와 pointer-events는 UI 계층이 B의 마스크가 B만 덮도록 보장해야 합니다——core는 단일 대상의 위치 지정만 계산합니다.
+- **SSR 가드**: `isLoadingFullscreen`와 `ensurePositioned` 모두 `typeof document/window === 'undefined'` 가드가 있지만, **로딩 마스크 자체는 클라이언트 개념**이며 SSR에서는 서비스 레이어를 호출하지 않아야 합니다.
+- **전체 화면 마스크는 조작을 막지 않습니다**: 기본적으로 시각적 마스크일 뿐, 배경 버튼은 여전히 클릭 가능합니다 (마스크 레이어가 pointer-events를 처리하지 않는 한). 강제로 막아야 할 때는 UI 계층에서 `inert`를 추가하세요.
+
+<FnPlayground module="loading" fn="getLoadingAria" params='{"busy": true}' />

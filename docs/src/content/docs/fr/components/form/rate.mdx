@@ -1,0 +1,147 @@
+---
+title: rate —— Évaluation
+description: 'clampRate le bornage, stepRate le pas demi-étoile, getStarFill les niveaux de remplissage étoile par étoile, paquet d’attributs sémantiques slider'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+L'évaluation transforme le « fait de noter » en **une sélection discrète d'étoiles** : l'utilisateur allume des étoiles plutôt que de saisir un nombre. `core/rate` gère les niveaux de remplissage étoile par étoile (pleine / demi / vide), le pas demi-étoile et l'accumulation en virgule flottante, ainsi que la sémantique APG slider — du point de vue de l'accessibilité, le contrôle d'évaluation est un curseur, pas un groupe de boutons radio.
+
+## Quand l'utiliser
+
+- Chaque framework implémente `LhRate` : évaluation de produit / service, indication de difficulté, enquête de satisfaction.
+- Les cas où le domaine de valeurs est constitué d'entiers de 1 à N (ou d'un pas de 0,5 si les demi-étoiles sont autorisées).
+- **À ne pas utiliser pour** : les valeurs continues nécessitant des décimales précises ou une plage arbitraire (utilisez `slider` ou `input-number`) ; en affichage seul sans interaction, rate reste utilisable, mais il faut basculer dans l'état `readonly`.
+
+## Import
+
+```ts
+import {
+  LH_RATE_MAX_DEFAULT,
+  clampRate,
+  stepRate,
+  getStarFill,
+  getRateAriaText,
+  getRateClassNames,
+  getRateAria,
+} from '@lh-ui/share/core/rate'
+import type { LhRateState } from '@lh-ui/share/core/rate'
+```
+
+## Intentions de conception
+
+`stepRate` applique `Math.round(next * 10) / 10` après l'incrémentation ou la décrémentation — ce n'est pas superflu, c'est une **défense contre l'accumulation en virgule flottante** : un pas de 0,5 donne bien `0.5 → 1.0 → 1.5` en JS, mais le piège du type `0.1 + 0.2 !== 0.3` survient avec d'autres valeurs de pas ; arrondir systématiquement à une décimale ramène le résultat à un nombre propre. L'ordre des tests de `getStarFill` est `full → half → empty` : on teste d'abord l'étoile pleine, puis la demi, de sorte que pour `value=2.5` la 3e étoile soit `half` et non `empty`.
+
+`getRateAriaText` utilise l'interpolation `formatMessage` sur `{n}`, le modèle de texte venant du paquet de langues (`rate.ariaText`), et la valeur subit le même arrondi avant d'être convertie en chaîne — le texte aria et le remplissage visuel doivent reposer sur la même valeur normalisée.
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `clampRate` | `(value: number \| undefined, max: number) => number` | valeur bornée | les non-nombres deviennent 0, la limite haute est donnée par max |
+| `stepRate` | `(value, direction: 1 \| -1, allowHalf, max) => number` | valeur pas-à-pas | pas de 0,5 en demi-étoile, une décimale |
+| `getStarFill` | `(value, index, allowHalf) => 'full' \| 'half' \| 'empty'` | niveau de remplissage | index-ème étoile (à partir de 1) |
+| `getRateAriaText` | `(value, template: string) => string` | texte aria | interpolation de `{n}` étoiles |
+| `getRateClassNames` | `(state: LhRateState & { readonly, disabled }) => string[]` | classes | modificateurs lecture seule / désactivé |
+| `getRateAria` | `(options: { value, max, disabled?, ariaValueText? }) => LhAriaAttrs` | paquet d'attributs aria | sémantique slider |
+
+## Définitions de types
+
+```ts
+export interface LhRateState {
+  max: number
+  value: number
+  allowHalf: boolean
+}
+
+export const LH_RATE_MAX_DEFAULT = 5
+```
+
+## Accessibilité
+
+`getRateAria` restitue la **sémantique slider** (pas radiogroup) : la valeur d'une évaluation est réglable de façon continue (surtout en mode demi-étoile), et le pattern rating de l'APG est souvent implémenté sous forme de slider. L'interaction clavier suit la convention du slider : ← / ↓ diminue d'un pas, → / ↑ augmente d'un pas.
+
+```ts
+getRateAria({ value: 4.5, max: 5 })
+// { role: 'slider', 'aria-valuenow': 4.5, 'aria-valuemin': 0, 'aria-valuemax': 5 }
+
+getRateAria({ value: 0, max: 5, disabled: true, ariaValueText: '0 étoile' })
+// { role: 'slider', 'aria-valuenow': 0, 'aria-valuemin': 0, 'aria-valuemax': 5,
+//   'aria-disabled': true, 'aria-valuetext': '0 étoile' }
+```
+
+`aria-valuetext` **est annoncé en priorité par rapport à valuenow** — le lecteur d'écran dira « 4 étoiles et demie » plutôt que « 4,5 ». Chaque bouton-étoile nécessite en outre un `aria-label` (généré côté UI par `getRateAriaText(value, t('rate.ariaText'))`).
+
+## Exemples d'utilisation
+
+```ts
+import { getStarFill, stepRate, clampRate } from '@lh-ui/share/core/rate'
+
+getStarFill(3.5, 3, true)   // 'full'
+getStarFill(3.5, 4, true)   // 'half'
+getStarFill(3.5, 4, false)  // 'empty' (en mode étoiles entières, la 4e de 3.5 est vide)
+getStarFill(3.5, 5, true)   // 'empty'
+stepRate(3, 1, true, 5)     // 3.5
+stepRate(3.5, 1, true, 5)   // 4
+stepRate(0, -1, true, 5)    // 0 (bornage)
+clampRate(undefined, 5)     // 0
+clampRate(9, 5)             // 5
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getRateClassNames({ max, value, allowHalf, readonly, disabled })">
+  <div
+    class="lh-rate__star-list"
+    v-bind="getRateAria({ value, max, disabled, ariaValueText: getRateAriaText(value, t('rate.ariaText')) })"
+    tabindex="0"
+    @keydown.left="onStep(-1)"
+    @keydown.right="onStep(1)"
+  >
+    <button
+      v-for="i in max"
+      :key="i"
+      type="button"
+      class="lh-rate__star"
+      :class="`lh-rate__star--${getStarFill(value, i, allowHalf)}`"
+      @click="onSelect(i)"
+    >
+      <LhIcon :name="getStarFill(value, i, allowHalf) === 'empty' ? 'star' : 'star-fill'" />
+    </button>
+  </div>
+</div>
+```
+
+```tsx
+// React : en mode demi-étoile, l'état hover décide de la value ; sur mobile, on clique l'étoile entière
+// Pas à pas : const next = stepRate(value, dir, allowHalf, max); onChange(clampRate(next, max))
+```
+
+```ts
+// uniapp : un <view> itère sur max étoiles ; sur les autres cibles que h5, la prise en charge
+// d'aria est limitée, les propriétés undefined de getRateAria seront ignorées
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-rate` | classe de base |
+| `.lh-rate--readonly` | lecture seule (désactive la surbrillance au survol et le pointeur) |
+| `.lh-rate--disabled` | désactivé |
+| `.lh-rate__star-list` | conteneur du groupe d'étoiles (tabindex et événements clavier ici) |
+| `.lh-rate__star` | bouton d'une étoile |
+| `.lh-rate__star--full` / `--half` / `--empty` | niveaux de remplissage (la demi-étoile par superposition masquée à moitié) |
+| `.lh-rate__text` | texte du score (par exemple « 3,5 points ») |
+
+La couleur des étoiles est `--lh-warning-color` (jaune), les étoiles vides `--lh-fill-color` / `--lh-border-color`.
+
+## Remarques
+
+- **L'index de `getStarFill` démarre à 1** : l'itération se fait avec `v-for="i in max"` (max inclus) et non `v-for="i in max - 1"`.
+- **Cohérence demi-étoile / étoile entière** : après un changement de `allowHalf`, `stepRate` et `getStarFill` doivent recevoir la même valeur, sinon les niveaux du clic et du pas-à-pas clavier ne correspondent plus.
+- **La sémantique de l'état lecture seule** : `readonly` ne change que les classes (l'interaction visuelle est désactivée), `getRateAria` n'émet pas `aria-disabled` — une évaluation en lecture seule doit rester compréhensible pour le lecteur d'écran (grâce à `aria-valuetext`), ce qui la distingue de disabled.
+- **Les limites de `max`** : `LH_RATE_MAX_DEFAULT` vaut 5 ; la couche UI permet de modifier max, mais un nombre d'étoiles trop grand (par exemple 20) déborde sur les écrans étroits, il faut alors gérer le renvoi à la ligne.
+- **value décimal avec allowHalf à false** : core ne valide pas cette combinaison, `getStarFill` traite 3,5 comme « 3 étoiles full + la 4e empty » — c'est une erreur de configuration côté appelant, qui se traduit visuellement par une troncature.
+
+<FnPlayground module="rate" fn="getStarFill" params='{"value": 3.5, "index": 4, "allowHalf": true}' />

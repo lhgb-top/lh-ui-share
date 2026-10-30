@@ -1,0 +1,148 @@
+---
+title: rate —— Рейтинг
+description: 'кламп clampRate, шаг в половину звезды stepRate, градации заполнения каждой звезды getStarFill, пакет семантических атрибутов slider'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Рейтинг превращает «оценку» в **дискретный выбор звёзд**: пользователь зажигает звёзды, а не вводит числа. `core/rate` занимается градациями заполнения звёзд (полная / половина / пустая), шагом в половину звезды и накоплением погрешности float, а также семантикой APG slider — с точки зрения доступности рейтинг является слайдером, а не группой радиокнопок.
+
+## Когда использовать
+
+- В каждой платформе реализован `LhRate`: оценка товаров и услуг, отметка сложности, исследование удовлетворённости.
+- Сценарии со значениями от 1 до N (целыми числами или с шагом 0.5, если разрешены половинные звезды).
+- **Не использовать для**: точных дробных значений или непрерывных величин в произвольном диапазоне (используйте `slider` или `input-number`); для вывода только для чтения без взаимодействия рейтинг всё же допустим, но следует переключить его в состояние `readonly`.
+
+## Импорт
+
+```ts
+import {
+  LH_RATE_MAX_DEFAULT,
+  clampRate,
+  stepRate,
+  getStarFill,
+  getRateAriaText,
+  getRateClassNames,
+  getRateAria,
+} from '@lh-ui/share/core/rate'
+import type { LhRateState } from '@lh-ui/share/core/rate'
+```
+
+## Замысел дизайна
+
+После сложения/вычитания в `stepRate` выполняется `Math.round(next * 10) / 10` — это не избыточно, а **защита от накопления погрешности float**: для шага 0.5 в JS последовательность `0.5 → 1.0 → 1.5` не создаёт проблем, но ловушки вроде `0.1 + 0.2 !== 0.3` возникнут при других значениях шага, и универсальное округление до одного знака после запятой возвращает результат к чистому десятичному виду. Порядок проверок в `getStarFill` — `full → half → empty`: сначала проверяется полная звезда, затем половина, что гарантирует для `value=2.5` статус `half`, а не `empty` у третьей звезды.
+
+В `getRateAriaText` интерполяция `{n}` делается через `formatMessage`, шаблон текста берётся из языкового пакета (`rate.ariaText`), а число сначала проходит такое же округление и только потом приводится к строке — aria-текст и визуальное заполнение должны строиться на одном и том же нормализованном значении.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `clampRate` | `(value: number \| undefined, max: number) => number` | значение после клампа | нечисловое приводится к 0, верхняя граница — max |
+| `stepRate` | `(value, direction: 1 \| -1, allowHalf, max) => number` | шаговое значение | шаг 0.5 для половины звезды, один знак после запятой |
+| `getStarFill` | `(value, index, allowHalf) => 'full' \| 'half' \| 'empty'` | градация заполнения | звезда с номером index (отсчёт с 1) |
+| `getRateAriaText` | `(value, template: string) => string` | aria-текст | интерполяция `{n}` звёзд |
+| `getRateClassNames` | `(state: LhRateState & { readonly, disabled }) => string[]` | имена классов | модификаторы «только чтение» / «отключено» |
+| `getRateAria` | `(options: { value, max, disabled?, ariaValueText? }) => LhAriaAttrs` | пакет aria-атрибутов | семантика slider |
+
+## Определения типов
+
+```ts
+export interface LhRateState {
+  max: number
+  value: number
+  allowHalf: boolean
+}
+
+export const LH_RATE_MAX_DEFAULT = 5
+```
+
+## Доступность
+
+`getRateAria` выводит **семантику slider** (не radiogroup): значение рейтинга непрерывно регулируемо (особенно в режиме половины звезды), и паттерн rating в APG часто реализуется через slider. Взаимодействие с клавиатурой подчиняется соглашениям slider: ←/→ уменьшает/увеличивает на один шаг.
+
+```ts
+getRateAria({ value: 4.5, max: 5 })
+// { role: 'slider', 'aria-valuenow': 4.5, 'aria-valuemin': 0, 'aria-valuemax': 5 }
+
+getRateAria({ value: 0, max: 5, disabled: true, ariaValueText: '0 звёзд' })
+// { role: 'slider', 'aria-valuenow': 0, 'aria-valuemin': 0, 'aria-valuemax': 5,
+//   'aria-disabled': true, 'aria-valuetext': '0 звёзд' }
+```
+
+`aria-valuetext` **зачитывается вместо valuenow** — программа чтения экрана произнесёт «4 с половиной звезды», а не «4.5». Каждой звезде-кнопке дополнительно нужен `aria-label` (на UI-слое генерируется через `getRateAriaText(value, t('rate.ariaText'))`).
+
+## Примеры использования
+
+```ts
+import { getStarFill, stepRate, clampRate } from '@lh-ui/share/core/rate'
+
+getStarFill(3.5, 3, true)   // 'full'
+getStarFill(3.5, 4, true)   // 'half'
+getStarFill(3.5, 4, false)  // 'empty' (в режиме целых звёзд у значения 3.5 четвёртая звезда пустая)
+getStarFill(3.5, 5, true)   // 'empty'
+stepRate(3, 1, true, 5)     // 3.5
+stepRate(3.5, 1, true, 5)   // 4
+stepRate(0, -1, true, 5)    // 0 (кламп)
+clampRate(undefined, 5)     // 0
+clampRate(9, 5)             // 5
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getRateClassNames({ max, value, allowHalf, readonly, disabled })">
+  <div
+    class="lh-rate__star-list"
+    v-bind="getRateAria({ value, max, disabled, ariaValueText: getRateAriaText(value, t('rate.ariaText')) })"
+    tabindex="0"
+    @keydown.left="onStep(-1)"
+    @keydown.right="onStep(1)"
+  >
+    <button
+      v-for="i in max"
+      :key="i"
+      type="button"
+      class="lh-rate__star"
+      :class="`lh-rate__star--${getStarFill(value, i, allowHalf)}`"
+      @click="onSelect(i)"
+    >
+      <LhIcon :name="getStarFill(value, i, allowHalf) === 'empty' ? 'star' : 'star-fill'" />
+    </button>
+  </div>
+</div>
+```
+
+```tsx
+// React: в режиме половины звезды value определяется состоянием hover,
+// на мобильных — кликом по целой звезде
+// Шаг: const next = stepRate(value, dir, allowHalf, max); onChange(clampRate(next, max))
+```
+
+```ts
+// uniapp: звёзды выводятся через <view>; на не-h5 платформах поддержка aria
+// ограничена, а undefined-атрибуты из getRateAria игнорируются
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-rate` | базовый класс |
+| `.lh-rate--readonly` | только чтение (скрывает подсветку при наведении, отключает указатель) |
+| `.lh-rate--disabled` | отключено |
+| `.lh-rate__star-list` | контейнер группы звёзд (tabindex и события клавиатуры здесь) |
+| `.lh-rate__star` | кнопка одной звезды |
+| `.lh-rate__star--full` / `--half` / `--empty` | градации заполнения (половина звезды — через наложение с частичным перекрытием) |
+| `.lh-rate__text` | текст оценки (например, «3.5 балла») |
+
+Цвет звёзд `--lh-warning-color` (жёлтый), пустые звезды — `--lh-fill-color` / `--lh-border-color`.
+
+## Замечания
+
+- **Отсчёт index в `getStarFill` ведётся с 1**, поэтому перебор делается через `v-for="i in max"` (включая max), а не `v-for="i in max - 1"`.
+- **Согласованность половины звезды и целых звёзд**: после изменения `allowHalf` в `stepRate` и `getStarFill` нужно передавать одно и то же значение, иначе градации при клике и шаге с клавиатуры не совпадут.
+- **Семантика состояния «только чтение»**: `readonly` только переключает имя класса (визуально отключает взаимодействие), а `getRateAria` не выводит `aria-disabled` — рейтинг только для чтения всё равно должен распознаваться программой чтения экрана как понятное значение оценки (через `aria-valuetext`), и это отличается от disabled.
+- **Границы `max`**: `LH_RATE_MAX_DEFAULT` равен 5; UI-слой может изменять max, но слишком много звёзд (например, 20) на узком экране переполнят его, и перенос строк нужно делать самостоятельно.
+- **value дробное, а allowHalf равно false**: core не проверяет эту комбинацию, и `getStarFill` трактует 3.5 как «3 звезды full + четвёртая empty» — это ошибка конфигурации на стороне вызывающего, а визуально выглядит как усечение.
+
+<FnPlayground module="rate" fn="getStarFill" params='{"value": 3.5, "index": 4, "allowHalf": true}' />

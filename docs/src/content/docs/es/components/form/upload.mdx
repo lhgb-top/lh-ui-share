@@ -1,0 +1,232 @@
+---
+title: upload —— Carga de archivos
+description: 'identificador único con createUploadUid, validación de tres tipos de reglas accept con isFileRejected, función de petición externalizada LhUploadRequest, máquina de estados de cuatro estados'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La carga es el único control de una biblioteca de UI que **debe entregar los efectos secundarios a quien la llama**: la transferencia de archivos depende de un cliente HTTP, y la capa core no puede depender de una implementación concreta de axios o fetch. Por eso el diseño de `core/upload` es muy puro — gestiona la validación, la máquina de estados y la actualización inmutable de la lista de archivos, y **deja el «cómo se sube» como una interfaz** (`LhUploadRequest`), implementada por cada extremo o por cada proyecto.
+
+## Cuándo usarlo
+
+- Todos los extremos implementan `LhUpload`: carga de avatar, carga de adjuntos, carga por lotes de imágenes, carga por arrastre.
+- Escenarios que necesitan mostrar el progreso, el estado de éxito/fallo y posibilidad de reintento.
+- **No usarlo**: si solo se trata de que el usuario elija una ruta de archivo (usa el input nativo); cuando se necesita lógica compleja como carga por fragmentos o reanudación de subida, la máquina de estados del core sigue siendo válida, pero la función de petición debes escribirla tú.
+
+## Importación
+
+```ts
+import {
+  LH_UPLOAD_MAX_SIZE,
+  createUploadUid,
+  formatFileSize,
+  createUploadFile,
+  exceedsMaxSize,
+  exceedsMaxCount,
+  normalizeUploadAccept,
+  isFileRejected,
+  patchUploadFile,
+  removeUploadFile,
+  getUploadClassNames,
+  getUploadFileClassNames,
+  getUploadFileAria,
+  getUploadDropzoneAria,
+} from '@lh-ui/share/core/upload'
+import type {
+  LhUploadFile,
+  LhUploadFileStatus,
+  LhUploadRequest,
+} from '@lh-ui/share/core/upload'
+```
+
+## Intención de diseño
+
+**Por qué `createUploadUid` no usa una semilla autoincremental**: las primeras implementaciones usaban un contador a nivel de módulo + `Date.now()`, pero share se empaqueta por separado en cada una de las tres bibliotecas de UI, y **instancias de bibliotecas distintas dentro del mismo milisegundo generarían uid idénticos** (la misma marca de tiempo + la semilla empezando en 0 en cada una). Se cambió a `crypto.randomUUID()`, con respaldo a marca de tiempo + número aleatorio en los entornos sin esa API (ciertos tiempos de ejecución de uniapp). Esta es la solución de un bug real de conflicto de concurrencia.
+
+**Las tres reglas accept de `isFileRejected`**: la extensión `.png` se compara con el **nombre del archivo**, el comodín `image/*` se compara con el **MIME real** (`file.type`), y el MIME concreto `image/png` se compara con `file.type`. Los comentarios dejan escrita una restricción clave: **el `accept` nativo de `<input>` es solo un filtrado orientativo** (el usuario puede cambiar a «Todos los archivos» en el selector), de modo que la validación de la capa core es la última línea de defensa y no puede dejar pasar siempre las reglas con comodín — si no, un `.exe` que el usuario haya colado sorteando el selector sería tratado como una imagen.
+
+**La guardia `Number.isFinite` de `exceedsMaxSize`**: cuando `maxSize` no es un número finito se considera sin límite y se devuelve false. Así, «sin límite de tamaño» se puede expresar con `Infinity`, sin recurrir a valores centinela como 0 o -1, que se confunden fácilmente con «valores legítimos».
+
+**Actualización inmutable**: `patchUploadFile` / `removeUploadFile` devuelven un nuevo array, que se pasa directamente al estado reactivo, evitando los problemas de mutabilidad que traería un splice manual.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `createUploadUid` | `(prefix?) => string` | uid | prioridad a crypto.randomUUID |
+| `formatFileSize` | `(bytes: number) => string` | `'1.5 MB'` | tamaño legible para humanos |
+| `createUploadFile` | `(file: File, uid?) => LhUploadFile` | elemento de carga | status ready / percent 0 |
+| `exceedsMaxSize` | `(file: File, maxSize: number) => boolean` | si supera el límite | un valor no finito se considera sin límite |
+| `exceedsMaxCount` | `(current: number, limit: number) => boolean` | si supera la cantidad | limit ≤ 0 significa sin límite |
+| `normalizeUploadAccept` | `(accept?: string \| string[] \| null) => string[]` | matriz de reglas | parte las cadenas por comas |
+| `isFileRejected` | `(file: { name, type }, accept: string[]) => boolean` | si se rechaza | tres tipos de reglas |
+| `patchUploadFile` | `(files, uid, patch) => LhUploadFile[]` | nuevo array | actualización inmutable |
+| `removeUploadFile` | `(files, uid) => LhUploadFile[]` | nuevo array | eliminación inmutable |
+| `getUploadClassNames` | `(state: { dragOver, disabled }) => string[]` | clases | arrastre en suspención / deshabilitado |
+| `getUploadFileClassNames` | `(status) => string[]` | clases | modificadores de los cuatro estados |
+| `getUploadFileAria` | `(statusId?) => LhAriaAttrs` | bolsa de atributos aria | aria-describedby |
+| `getUploadDropzoneAria` | `(disabled?) => LhAriaAttrs` | bolsa de atributos aria | role=button |
+
+## Definiciones de tipos
+
+```ts
+export type LhUploadFileStatus = 'ready' | 'uploading' | 'success' | 'fail'
+
+export interface LhUploadFile {
+  uid: string
+  name: string
+  size: number
+  status: LhUploadFileStatus
+  percent: number        // 0-100
+  url?: string           // lo devuelve el servidor en caso de éxito
+  error?: string         // motivo del fallo
+  raw?: File             // el objeto File original
+}
+
+export const LH_UPLOAD_MAX_SIZE = 5 * 1024 * 1024  // 5 MB por defecto
+
+/** Firma de la función de petición de carga (la proporciona quien la usa; la biblioteca no integra un cliente HTTP) */
+export type LhUploadRequest = (options: {
+  file: File
+  onProgress: (percent: number) => void
+}) => Promise<{ url?: string }>
+```
+
+## Accesibilidad
+
+```ts
+getUploadFileAria('lh-upload-status-1')
+// { 'aria-describedby': 'lh-upload-status-1' }
+
+getUploadDropzoneAria(false)
+// { role: 'button' }
+
+getUploadDropzoneAria(true)
+// { role: 'button', 'aria-disabled': true }
+```
+
+- El elemento de archivo se asocia al elemento de descripción de estado mediante `aria-describedby` («Subiendo 45 %», «Error de carga: tiempo de espera de red»), de modo que el lector de pantalla anuncia el estado asíncrono — este es el medio central de accesibilidad de los controles asíncronos.
+- La zona de arrastre es `role="button"` (admite clic para abrir el selector de archivos y también soltar archivos dentro); con el teclado, Enter/Barra espaciadora lo acciona.
+- **Anuncio del progreso**: una barra de progreso puramente visual es invisible para el lector de pantalla; el elemento de texto al que apunta `aria-describedby` debe actualizar su texto cuando cambia percent (con limitación de frecuencia en la capa UI, para no anunciar cada 1 %).
+- Los botones de reintentar y eliminar de los elementos fallidos deben llevar `aria-label` (los botones de icono no tienen texto).
+
+## Ejemplos de uso
+
+```ts
+import {
+  createUploadFile, exceedsMaxSize, isFileRejected, normalizeUploadAccept, patchUploadFile,
+} from '@lh-ui/share/core/upload'
+
+normalizeUploadAccept('image/png, .jpg , image/gif')
+// ['image/png', '.jpg', 'image/gif']
+normalizeUploadAccept(['.pdf'])      // ['.pdf']
+normalizeUploadAccept(null)          // []
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['.png'])          // false
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['image/*'])       // false
+isFileRejected({ name: 'a.png', type: 'image/png' }, ['image/gif'])     // true
+isFileRejected({ name: 'a.exe', type: '' }, ['image/*'])                // true (sin MIME, no pasa)
+isFileRejected({ name: 'a.png', type: 'image/png' }, [])                // false (reglas vacías, sin límite)
+exceedsMaxSize(new File([], 'a.png'), 1024)       // false (un archivo vacío tiene size 0, no supera 1024)
+exceedsMaxSize(file, Infinity)                    // false
+formatFileSize(512)       // '512 B'
+formatFileSize(1536)      // '1.5 KB'
+formatFileSize(5 * 1024 * 1024)  // '5.0 MB'
+```
+
+```ts
+// Cadena de validación (la capa UI la ejecuta en orden dentro de onBeforeUpload)
+function validate(file: File, accept: string, maxSize: number): string | undefined {
+  const rules = normalizeUploadAccept(accept)
+  if (isFileRejected(file, rules)) return 'Tipo de archivo no permitido'
+  if (exceedsMaxSize(file, maxSize)) return `El archivo no puede superar ${formatFileSize(maxSize)}`
+}
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getUploadClassNames({ dragOver, disabled })">
+  <div
+    class="lh-upload__dropzone"
+    v-bind="getUploadDropzoneAria(disabled)"
+    tabindex="0"
+    @click="openPicker"
+    @dragover.prevent="dragOver = true"
+    @dragleave.prevent="dragOver = false"
+    @drop.prevent="onDrop"
+  >
+    <input ref="inputRef" type="file" :accept="accept" multiple hidden @change="onChange" />
+    <span class="lh-upload__hint">Pulsa o arrastra archivos aquí para subirlos</span>
+  </div>
+  <ul class="lh-upload__file-list">
+    <li
+      v-for="f in files"
+      :key="f.uid"
+      :class="getUploadFileClassNames(f.status)"
+      v-bind="getUploadFileAria(`lh-upload-status-${f.uid}`)"
+    >
+      <span class="lh-upload__file-name">{{ f.name }}</span>
+      <span class="lh-upload__file-size">{{ formatFileSize(f.size) }}</span>
+      <div class="lh-upload__progress"><div :style="{ width: f.percent + '%' }" /></div>
+      <span :id="`lh-upload-status-${f.uid}`" class="lh-upload__status">
+        {{ statusText(f) }}
+      </span>
+      <button v-if="f.status === 'fail'" type="button" aria-label="Reintentar" @click="retry(f)">↻</button>
+      <button type="button" aria-label="Eliminar" @click="files = removeUploadFile(files, f.uid)">✕</button>
+    </li>
+  </ul>
+</div>
+```
+
+```ts
+// Ejecución de la carga (la función de petición la proporciona el proyecto)
+async function run(file: LhUploadFile) {
+  files = patchUploadFile(files, file.uid, { status: 'uploading', percent: 0 })
+  try {
+    const { url } = await httpRequest({
+      file: file.raw!,
+      onProgress: (percent) => { files = patchUploadFile(files, file.uid, { percent }) },
+    })
+    files = patchUploadFile(files, file.uid, { status: 'success', percent: 100, url })
+  } catch (error) {
+    files = patchUploadFile(files, file.uid, { status: 'fail', error: String(error) })
+  }
+}
+```
+
+```tsx
+// React: files con useState; el valor devuelto por patchUploadFile se pasa directamente a setFiles
+```
+
+```ts
+// uniapp: <button open-type="chooseFile"> o uni.chooseImage;
+// la validación y la máquina de estados del core se usan tal cual;
+// el HTTP usa uni.uploadFile (con onProgressUpdate)
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-upload` | clase base |
+| `.lh-upload--dragover` | arrastre en suspención (borde resaltado) |
+| `.lh-upload--disabled` | deshabilitado |
+| `.lh-upload__dropzone` | zona de arrastre o clic |
+| `.lh-upload__hint` | texto de guía |
+| `.lh-upload__file-list` / `__file` | lista de archivos / elemento de archivo |
+| `.lh-upload__file--{ready\|uploading\|success\|fail}` | modificadores de los cuatro estados |
+| `.lh-upload__file-name` / `__file-size` / `__status` | información del archivo |
+| `.lh-upload__progress` | pista de la barra de progreso (el div interior es el relleno) |
+
+Color de éxito `--lh-success-color`, fallo `--lh-danger-color`, relleno del progreso `--lh-primary-color`.
+
+## Advertencias
+
+- **Las reglas accept con comodín dependen del MIME real**: `file.type` lo deduce el navegador a partir de la extensión, y **en ciertos entornos puede ser una cadena vacía** (extensiones no estándar). Ante un archivo con MIME vacío, `isFileRejected` **lo rechaza** bajo una regla con comodín (no lo deja pasar); es una decisión de seguridad deliberada — mejor rechazar por error que admitir por error. Si tu negocio solo acepta extensiones, usa reglas del tipo `.png` por tu cuenta.
+- **El límite de `exceedsMaxCount`**: la comprobación es `current >= limit`, y limit ≤ 0 significa sin límite — ten en cuenta que lo que se pasa es «la cantidad que ya hay», no «cuántos se pueden subir todavía».
+- **El uid de las cargas concurrentes**: un mismo archivo no puede iniciar dos cargas a la vez; bloquea el botón de reintentar con `status === 'uploading'`; el uid se garantiza único entre bibliotecas gracias a `createUploadUid()`.
+- **La conservación de raw para la retransmisión**: `createUploadFile` guarda `raw`, de modo que el reintento tras un fallo puede simplemente volver a llamar a la función de petición con `raw`; si el negocio no necesita conservar el objeto File (sensibilidad de memoria), puedes no guardarlo.
+- **El valor de retorno de `LhUploadRequest`**: solo se acuerda `{ url? }`; si el servidor devuelve otra estructura (como `{ data: { url } }`), transfórmala dentro de la función de petición antes de hacer resolve — no dejes que el core se adapte a cada formato de backend.
+- **La limitación de frecuencia del texto de progreso**: `onProgress` puede dispararse con mucha frecuencia (un archivo grande, una vez por fragmento); la actualización del texto al que apunta `aria-describedby` debe limitarse (por ejemplo, cada 10 %), o el lector de pantalla se verá desbordado.
+- **Limpiar el value del input**: si se elige el mismo archivo dos veces seguidas, el evento `change` no se dispara la segunda vez — tras la selección, reinicia con `input.value = ''`.
+
+<FnPlayground module="upload" fn="isFileRejected" params='{"file": {"name": "photo.png", "type": "image/png"}, "accept": ["image/*", ".pdf"]}' />

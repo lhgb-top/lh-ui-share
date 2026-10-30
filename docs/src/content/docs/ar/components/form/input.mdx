@@ -1,0 +1,145 @@
+---
+title: input —— حقل الإدخال
+description: 'getWordCount لعدّ الأحرف، clampString للقطع، getInputAria لحزمة السمات، وأنماط الحجم المضمّنة وفق الدرجة'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+حقل الإدخال هو حجر أساس النماذج. يدير `core/input` أربعة أمور: عرض عدد الأحرف وحسابه، وقطع الإدخال الزائد عن الحد، والأنماط المضمّنة وفق درجة الحجم، وحزمة سمات إمكانية الوصول لحقل الإدخال. ويتعمّد **عدم المساس** بالتحقق (فهو مسؤولية `core/form`) وبالعزل الزمني (debounce) (فهو من شأن responsiveness في طبقة UI).
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `LhInput` (شامل المتغيّر textarea: الصنف المُعدِّل `--textarea`).
+- الحاجة لإعادة استخدام مجموعة عدّ الأحرف وسمات aria نفسها في عنصر إدخال مخصّص.
+- **لا ينبغي استخدامه**: لإدخال الأرقام استخدم `core/input-number` (فيه خطو وحدود)، وللوقت استخدم `core/time-picker`، وللتواريخ استخدم `core/date-picker`.
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getWordCount,
+  shouldShowWordLimit,
+  clampString,
+  getInputStyle,
+  getInputAria,
+} from '@lh-ui/share/core/input'
+import type { LhInputState } from '@lh-ui/share/core/input'
+```
+
+## القصد التصميمي
+
+لحدّا `getWordCount` كلاهما نابعان من اختلافات فعلية بين الأطراف:
+
+- عندما يكون `value` مساوياً undefined يتراجع العدّ إلى 0—ففي React/uniapp قد تكون القيمة المتحكَّم بها undefined لفترة وجيزة قبل التركيب، و`undefined.length` ستنهار مباشرة.
+- عندما يكون `maxlength` مساوياً undefined يُعرض الحد الأعلى `∞` بدلاً من `'undefined'`. وهذا الرمز يجعل «عدم ضبط حد أعلى» واضحاً بصرياً، بدلاً من أن يبدو وكأنه علة.
+
+أنماط حجم `getInputStyle` **مضمّنة** لا أسماء أصناف: حقول إدخال lh-ui تدعم الحجم العام عبر ConfigProvider، وتبديل الحجم العام لا يحتاج إلى إعادة حساب أسماء الأصناف—تكفي إعادة حساب الأنماط المضمّنة مع تغيّر props. ولاحظ أن تعيين الحجم هنا يختلف عن الأزرار (التي تذهب عبر أسماء الأصناف)، وهو نتيجة التطور التاريخي لكل مكوّن.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `getWordCount` | `(state: Pick<LhInputState, 'value' \| 'maxlength'>) => string` | `"المُستخدَم/الحد الأعلى"` | سلسلة عدّ الأحرف |
+| `shouldShowWordLimit` | `(state: Pick<LhInputState, 'maxlength' \| 'minlength'>) => boolean` | قيمة منطقية | ضبط maxlength أو minlength يُظهر العدّ |
+| `clampString` | `(value: string, maxlength?: number) => string` | سلسلة | قطع ما تجاوز الحد |
+| `getInputStyle` | `(size: string) => Record<string, string>` | أنماط مضمّنة | تعيين padding/حجم الخط وفق درجة الحجم |
+| `getInputAria` | `(options: { label?: string; describedby?: string; invalid?: boolean; required?: boolean }) => LhAriaAttrs` | حزمة سمات aria | إخراج أربع سمات حسب الحاجة |
+
+تعيين درجات `getInputStyle`: `mini` هامش `4px 8px` / حجم الخط 12، `small` `6px 10px` / 12، `medium` `8px 12px` / 14، `large` `12px 16px` / 16؛ والحجم غير المعروف يتراجع إلى `medium`.
+
+## تعريفات الأنواع
+
+```ts
+export interface LhInputState {
+  value: string
+  size: LhComponentSize
+  maxlength: number | undefined
+  minlength: number | undefined
+}
+```
+
+## إمكانية الوصول
+
+السمات الأربع في `getInputAria` كلها **مُحمَّلة حسب الحاجة** (تُخرَج عند القيمة الصحيحة، ولا يظهر المفتاح عند القيمة الكاذبة):
+
+```ts
+getInputAria({ label: 'اسم المستخدم', required: true })
+// { 'aria-label': 'اسم المستخدم', 'aria-required': true }
+
+getInputAria({ invalid: true, describedby: 'lh-form-error-username' })
+// { 'aria-invalid': true, 'aria-describedby': 'lh-form-error-username' }
+```
+
+الارتباط مع `core/form` هو الاستخدام الأساسي: يعرض `LhFormItem` عنصر تنبيه الخطأ (id يُولَّد بواسطة `getFormFieldErrorId(prop)`)، ويمرّر هذا id عبر `describedby`، فيُعلن قارئ الشاشة «إدخال غير صالح، الخطأ هو…». انظر [form](/ar/components/form/form).
+
+## أمثلة الاستخدام
+
+```ts
+import { getWordCount, clampString, getInputAria } from '@lh-ui/share/core/input'
+
+getWordCount({ value: 'hello', maxlength: 10 })   // '5/10'
+getWordCount({ value: 'hello', maxlength: undefined })  // '5/∞'
+getWordCount({ value: undefined, maxlength: 10 })       // '0/10'
+clampString('abcdef', 3)   // 'abc'
+clampString('abcdef')      // 'abcdef' (بلا حد أعلى يُعاد كما هو)
+getInputAria({ label: 'بحث' })  // { 'aria-label': 'بحث' }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-input', `lh-input--${size}`, { 'lh-input--textarea': type === 'textarea' }]">
+  <div class="lh-input__wrapper">
+    <input
+      class="lh-input__inner"
+      :style="getInputStyle(size)"
+      v-bind="getInputAria({ label, describedby, invalid: !!error, required })"
+    />
+  </div>
+  <span v-if="shouldShowWordLimit({ maxlength, minlength })" class="lh-input__count">
+    {{ getWordCount({ value, maxlength }) }}
+  </span>
+</div>
+```
+
+```tsx
+// React
+const aria = getInputAria({ label, describedby, invalid: !!error, required })
+return (
+  <div className={`lh-input lh-input--${size}`}>
+    <div className="lh-input__wrapper">
+      <input className="lh-input__inner" style={getInputStyle(size)} {...aria} />
+    </div>
+  </div>
+)
+```
+
+```ts
+// uniapp: <input> مكوّن مدمج، يدعم ربط class وstyle؛
+// أما textarea فبالمكوّن <textarea>، وعدّ الأحرف على غير h5 مُوكول إلى الخاصية count التي يحملها المكوّن
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-input` | الصنف الأساسي |
+| `.lh-input--{mini\|small\|medium\|large}` | درجة الحجم |
+| `.lh-input--textarea` | متغيّر textarea |
+| `.lh-input--disabled` / `.lh-input--prefix` / `.lh-input--suffix` | الحالات والفتحات |
+| `.lh-input__wrapper` | الطبقة المغلفة (الإطار، حالة التركيز) |
+| `.lh-input__wrapper--focused` / `--disabled` / `--has-label` | حالات الطبقة المغلفة |
+| `.lh-input__inner` | عنصر الإدخال الأصلي |
+| `.lh-input__label` / `--float` | الوسم العائم (نمط material) |
+| `.lh-input__prefix` / `__suffix` | الفتحتان الأمامية والخلفية (أيقونات، أزرار) |
+| `.lh-input__clear` / `__count` | زر المسح / عدّ الأحرف |
+
+لون إطار التركيز `var(--lh-primary-color)`، وحالة الخطأ `var(--lh-danger-color)`.
+
+## ملاحظات
+
+- **الهامش غير المتماثل في `--has-label`**: عند وجود وسم عائم يكون `padding-top` بقيمة 16px (لحجز مكان الوسم)، بينما بقية الدرجات متماثلة. وهذا بند مُدرَج في «مشروع رموز الارتفاع» كي يُوحَّد لاحقاً.
+- **عدم اتساد ارتفاع عناصر التحكم**: input 37px / select 32px / cascader 27→32px وغيرها، والسبب الجذري هو غياب الرموز `--lh-control-height-*` في `var.scss` (كما سبق، في انتظار changeset لاحق).
+- دلالة «الحرف» في `maxlength`: يستخدم `clampString` الدالة `slice`، فيعدّ وفق وحدات UTF-16؛ والحروف الإيموجيّة في المستوى المكمِّل تُحسَب اثنين. وعلى طبقة UI المعالجة بنفسها عند الحاجة للعدّ وفق نقاط الرمز (code points).
+- لا تستخدم القيمة المُعادة من `getInputStyle` لتجاوز `sx`—فأولوية sx أعلى، ويجب دمجهما لا تجاوز أحدهما للآخر.
+
+<FnPlayground module="input" fn="getWordCount" params='{"state": {"value": "青花瓷", "maxlength": 10}}' />

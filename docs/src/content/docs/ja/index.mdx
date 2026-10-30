@@ -1,0 +1,60 @@
+---
+title: '@lh-ui/share'
+description: lh-ui ファミリー唯一のフレームワーク非依存共有層 —— core 純関数 / theme / スタイルソース
+template: splash
+hero:
+  title: '@lh-ui/share'
+  tagline: lh-ui ファミリー唯一の<b>フレームワーク非依存共有層</b> —— 56 個の core コンポーネント純関数、12 個の共有コア、中華風テーマシステム、純 emitter の国際化、58 セットのコンポーネントスタイルソース。ひとつのロジックで、Vue3 / Vue2 / React / uniapp の全 UI ライブラリを支えます。
+  actions:
+    - text: クイックスタート
+      link: /lhui/share/ja/guide/getting-started
+      icon: right-arrow
+      variant: primary
+    - text: テーマプリセット
+      link: /lhui/share/ja/theme/presets
+      icon: sun
+    - text: GitHub
+      link: https://github.com/lhgb-top/lh-ui-share
+      icon: github
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid cols={3}>
+  <Card title="Core 純関数" icon="code-branch">
+    56 個のコンポーネントのクラス名計算・ステートマシン・アクセシビリティ属性パックは、すべてゼロ依存の純関数です。フレームワーク層は配線だけを担い、ロジックは単一ソース、単体テストも唯一のコピーです。
+  </Card>
+  <Card title="共有コア" icon="puzzle">
+    popper 位置決定エンジン、仮想スクロール、フォーカストラップ、キーボードナビゲーション、sx スタイル props、数値サニタイズ——12 個のモジュールが各端からそのまま再利用されます。
+  </Card>
+  <Card title="中華風テーマ" icon="pencil">
+    5 つの内蔵プリセット（青花瓷（せいがじ）/ 松花绿（しょうかりょく）/ 朱砂（しゅしゃ）/ 水墨（すいぼく）/ 藤黄（とうおう））、CSS 変数 + ダークモード + 紋様システムを備え、AA コントラストスクリプトが見張っています。
+  </Card>
+  <Card title="純 emitter 国際化" icon="translate">
+    LhLocale は純粋なイベントエミッターで、フレームワークのリアクティビティを一切持ちません。各端は独自のシグナル機構で version を購読します。
+  </Card>
+  <Card title="スタイルの唯一ソース" icon="open-book">
+    `styles/` はファミリー全体のコンポーネント BEM スタイルの唯一ソースです。トランジションのクラス名は 3 つの mixin が Vue2 / Vue3 / React の差異を統合します。
+  </Card>
+  <Card title="フレームワーク依存ゼロ" icon="padlock">
+    `external: []` による完全ゼロ依存バンドル。`verify:dts` ゲートにより、成果物にフレームワークのインポートが一切現れないことが保証されます。
+  </Card>
+</CardGrid>
+
+## このドキュメントの読者
+
+- **各端 UI ライブラリの開発者**（lh-ui-plus / lh-ui-vue2 / lh-ui-react / lh-ui-uniapp）：各純関数のシグネチャ、戻り値、境界条件、そしてスタイルトークンの上書き方法を調べるため。
+- **share を直接使う独立開発者**：プロジェクトにアクセシビリティのベースラインと中華風テーマのトークンだけが欲しく、UI ライブラリは一切導入しない場合。
+- **コントリビューター**：ディレクトリの責務、レッドライン、検証とリリースの流れを把握するため。
+
+## 5 分でわかるこのパッケージ
+
+```md
+- `src/core/<コンポーネント>/` —— 純関数ロジック（logic.ts / types.ts）、フレームワークインポートなし
+- `src/core/shared/`           —— コンポーネント横断の共有コア（popper / virtual / sx / keyboard …）
+- `src/theme/`                 —— テーマ TS 側：型 + 5 つのプリセット + ランタイムプリミティブ
+- `styles/`                    —— コンポーネント BEM スタイルの唯一ソース + theme/common/*.scss トークン
+- `src/{constants,locales,types,utils}/` —— 定数 / 言語パック / 型 / ユーティリティ
+```
+
+次のステップ：[クイックスタート](/ja/guide/getting-started) でパッケージをインストールしスタイルを読み込む。または[パッケージエントリとサブパス](/ja/guide/exports)を直接見て、オンデマンドインポートの方法を把握しましょう。

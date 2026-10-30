@@ -1,0 +1,170 @@
+---
+title: 'dropdown ドロップダウンメニュー —— ナビゲーション'
+description: 'LH_DROPDOWN_PLACEMENT_DEFAULT=b-bottom-start、getDropdownMenuStyle の maxHeight スクロール、haspopup:"menu" と popover の "true" の区別'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ドロップダウンメニューは「ボタンをクリックして飛び出す操作リスト」です：ユーザー行の「編集 / 削除 / 無効化」、テーブル列の「その他の操作」。`popover` との違いは**セマンティクスとコンテンツの形**です——dropdown は**メニューセマンティクス**（role=menu + menuitem のリスト）で、popover は**ダイアログセマンティクス**（role=dialog、任意のコンテンツを置ける）です。`menu` との違いは**持続性**です——dropdown は一時的に飛び出し、クリックすれば消える操作の入り口です。
+
+## いつ使うか
+
+- 各端の `<LhDropdown>` / `<LhDropdownItem>` 実装：行操作メニュー、「もっと見る」ボタン、一括操作、命令型のクイックメニュー。
+- **操作項目が同階層で、数が適度（3～10 項目）で、複雑なフォームを必要としない**。
+- **使うべきでない**：フォームやリッチなコンテンツを含むポップアップレイヤー（`popover` を使います）；確認が必要な危険操作（dropdown に削除ボタンを直接置くと二次確認がなく危険です、`popconfirm` を使います）；メインナビゲーション（`menu` を使います——dropdown はリロードで消えます）。
+
+## インポート方法
+
+```ts
+import {
+  LH_DROPDOWN_PLACEMENT_DEFAULT,
+  LH_DROPDOWN_TRIGGERS,
+  getDropdownClass,
+  getDropdownItemClass,
+  getDropdownMenuStyle,
+  getDropdownTriggerAria,
+  getDropdownMenuAria,
+  getDropdownItemAria,
+} from '@lh-ui/share/core/dropdown'
+import type { LhDropdownTrigger, LhDropdownState, LhDropdownItemState } from '@lh-ui/share/core/dropdown'
+```
+
+## 設計意図
+
+**デフォルトの方位は `top` ではなく `bottom-start`**：`LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'`——ドロップダウンメニューは**ボタンの左下から下へ展開**し、「ドロップダウン（下に落ちる）」のメンタルモデルに合います。対照的に `popover` / `popconfirm` のデフォルトは `top`（情報レイヤーは上に浮き、下のコンテンツを隠さない）：ドロップダウンは操作の入り口で、下へ展開するほうが自然であり、かつ `bottom-start`（中央揃えではなく左揃え）により長いメニューが横向きにビューポートをはみ出さないことを保証します。
+
+**トリガー方式に focus はない**：`LH_DROPDOWN_TRIGGERS` は `hover / click / contextmenu` です——**focus はありません**。対照的に `popover` は `click / hover / focus / manual` です。理由：ドロップダウンメニューのトリガーは通常ボタンで、focus トリガーにすると Tab が通り過ぎるたびにメニューが誤って飛び出し、キーボードの流れを妨げます。`contextmenu` は右クリックメニューのシーンです（ブラウザのデフォルト右クリックメニューを置き換える）。
+
+**`hideOnClick` のセマンティクスは UI 層にある**：state に `hideOnClick` フィールドはありますが core はそれを消費しません——「メニュー項目をクリックした後に閉じるかどうか」の判定は UI 層にあります（item をクリックしたときに設定に従って閉じるかどうかを決める）。core は宣言だけを保持し、データ構造が完全な意図を表現できるようにします（`form` の `trigger` フィールドと同じ発想です）。
+
+**`getDropdownMenuStyle` は `overflow: auto` を内蔵**：maxHeight を設定すれば自動的にスクロールが加わります。ドロップダウンメニューの項目が多くてもビューポートを突き破りません——これは `popover` との微妙な差異です（popover の幅のスタイルはスクロールを含まず、コンテンツのはみ出しは呼び出し側が管理します）。
+
+**`haspopup: 'menu'` であって `'true'` ではない**：トリガーの aria-haspopup の値は **`'menu'`** です——飛び出すのがメニューであることを正確に宣言します。対照的に `popover` は `'true'`（汎用的なポップアップで、dialog / menu / listbox の一般化に等しい）です。スクリーンリーダーはこれに基づいて飛び出すコンテンツのインタラクションモデルを予測します（メニューは方向キーでのナビゲーションをサポートする）。
+
+## 関数表
+
+| 関数 / 定数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getDropdownClass` | `(state: { placement, popperClass? }) => string[]` | クラス名 | 方位 + カスタム |
+| `getDropdownItemClass` | `(state: { disabled?, divided? }) => string[]` | クラス名 | 無効 + セパレーター |
+| `getDropdownMenuStyle` | `(maxHeight?: string \| number) => Record<string, string>` | インラインスタイル | maxHeight + overflow |
+| `getDropdownTriggerAria` | `(visible, menuId?) => LhAriaAttrs` | aria パック | haspopup="menu" |
+| `getDropdownMenuAria` | `(id?) => LhAriaAttrs` | aria パック | role=menu |
+| `getDropdownItemAria` | `(state: { disabled? }) => LhAriaAttrs` | aria パック | role=menuitem |
+
+定数：`LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'`、`LH_DROPDOWN_TRIGGERS`（hover / click / contextmenu）。
+
+## 型定義
+
+```ts
+export type LhDropdownTrigger = 'hover' | 'click' | 'contextmenu'
+
+export interface LhDropdownState {
+  trigger?: LhDropdownTrigger
+  placement?: LhPlacement          // 12 方位（shared/popper）
+  visible?: boolean
+  disabled?: boolean
+  hideOnClick?: boolean            // メニュー項目クリック後に閉じるかどうか（UI 層が消費）
+}
+
+export interface LhDropdownItemState {
+  command?: string | number        // メニュー項目の識別子、command イベントとして投げられる
+  disabled?: boolean
+  divided?: boolean                // 頂部のセパレーター
+}
+```
+
+## アクセシビリティ
+
+```ts
+getDropdownTriggerAria(true, 'dd-menu-1')
+// { 'aria-expanded': true, 'aria-controls': 'dd-menu-1', 'aria-haspopup': 'menu' }
+getDropdownTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'menu' }
+
+getDropdownMenuAria('dd-menu-1')  // { role: 'menu', id: 'dd-menu-1' }
+getDropdownItemAria({ disabled: true })
+// { role: 'menuitem', 'aria-disabled': true }
+```
+
+- **`aria-haspopup="menu"` のスクリーンリーダーの予測**：スクリーンリーダーはこれに出会うと飛び出すのがメニューだと分かり、メニューモードとして扱います（方向キーでのナビゲーション、Enter で活性化）。汎化された `"true"` より正確です——これが dropdown と popover で異なる値を使う理由です。
+- **メニューのキーボードの規約**（APG menu パターン）：トリガーは Enter / Space で開く；開いた後、フォーカスは**最初の利用可能なメニュー項目**に置かれる；↑/↓ で移動；Enter / Space で活性化；Esc で閉じ、**フォーカスはトリガーに戻る**。方向キーのナビゲーションアルゴリズムには `shared/keyboard.getNextListIndex` を使います（menu / tabs と同源です）。
+- **`command` のイベント契約**：メニュー項目の `command` フィールドはクリックイベントとともに投げられ（`@command="cmd => ..."`）、各 item に独立した handler を書くものではありません——これがドロップダウンメニューの標準的な API の形です。UI 層は switch でディスパッチします。
+- **無効な項目には disabled 属性ではなく aria-disabled**：`aria-disabled` は要素をアクセシビリティツリーで無効とマークしつつフォーカス可能なままにします（スクリーンリーダーはその存在と無効の理由を読み上げられる）；ネイティブの `disabled` はそれをフォーカス順序から外し、キーボードのユーザーは理由も知らずにそれを「スキップ」してしまいます。
+- **セパレーターは純粋な装飾**：`divided` は単なる CSS のボーダーで、セマンティクスはありません——「危険操作のグループ化」をこれで表さないでください。危険なグループ化には `popconfirm` か視覚的な色（danger の文字色）を使います。
+- **右クリックメニュー（contextmenu）**：トリガーは `@contextmenu.prevent` でブラウザのデフォルトメニューを阻止し、トリガー要素をインタラクティブとマークします——右クリックメニューはキーボードのユーザーには完全に到達不可能であり、**等価なボタンの入り口を必ず提供しなければなりません**（アクセシビリティの硬い要件です）。
+
+## 使用例
+
+```ts
+import {
+  getDropdownClass, getDropdownItemClass, getDropdownMenuStyle, LH_DROPDOWN_PLACEMENT_DEFAULT,
+} from '@lh-ui/share/core/dropdown'
+
+LH_DROPDOWN_PLACEMENT_DEFAULT  // 'bottom-start'
+
+getDropdownClass({ placement: 'bottom-start' })
+// ['lh-dropdown__menu', 'lh-dropdown__menu--bottom-start']
+getDropdownItemClass({ disabled: true, divided: true })
+// ['lh-dropdown__item', 'lh-dropdown__item--disabled', 'lh-dropdown__item--divided']
+
+getDropdownMenuStyle(200)     // { maxHeight: '200px', overflow: 'auto' }
+getDropdownMenuStyle('30vh')  // { maxHeight: '30vh', overflow: 'auto' }
+getDropdownMenuStyle(undefined)  // {}
+```
+
+```vue
+<!-- Vue3：行操作メニュー -->
+<template>
+  <LhDropdown @command="onCommand">
+    <template #default>
+      <LhButton size="small">その他<LhIcon name="arrow-down" /></LhButton>
+    </template>
+    <template #menu>
+      <LhDropdownItem :command="'edit'">編集</LhDropdownItem>
+      <LhDropdownItem :command="'copy'">コピー</LhDropdownItem>
+      <LhDropdownItem :command="'delete'" divided danger>削除</LhDropdownItem>
+    </template>
+  </LhDropdown>
+</template>
+
+<script setup>
+function onCommand(command: string | number) {
+  if (command === 'delete') visible.value = true  // 削除は popconfirm で二次確認
+  else if (command === 'edit') router.push(`/edit/${id}`)
+}
+</script>
+```
+
+```tsx
+// React：メニュー項目を配列化してレンダリング + onCommand でディスパッチ；制御付き visible は外部クリックでの关闭と組み合わせる
+```
+
+```ts
+// uniapp：<view> のメニュー + catchtap；右クリックメニューは非 h5 端でサポートされず、click トリガーのみ残す
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-dropdown__menu` | メニューコンテナ（popper） |
+| `.lh-dropdown__menu--{bottom-start\|top\|…}` | 方位（flip 後の実際の値） |
+| `.lh-dropdown__item` | メニュー項目 |
+| `.lh-dropdown__item--disabled` | 無効（グレー + 非応答） |
+| `.lh-dropdown__item--divided` | 頂部のセパレーター |
+| `.lh-dropdown__item--danger` | 危険操作（文字が赤、UI 層の決め事） |
+
+底色は `--lh-bg-color`、影は `--lh-box-shadow-dropdown`、角丸は `--lh-border-radius-base`、項目の内側の余白は `--lh-dropdown-item-padding`、z-index は `--lh-z-index-dropdown` です。
+
+## 注意事項
+
+- **危険操作は必ず二次確認を**：dropdown に「削除」を直接置いてワンクリックで実行すると、誤操作のコストが高いです。標準的なやり方は dropdown が `popconfirm` をトリガーすることです（「削除後は元に戻せません。よろしいですか？」）——これは 2 つのコンポーネントの協調チェーンです。
+- **メニュー項目が多すぎる場合はスクロール**：10 項目を超える場合は `maxHeight` によるスクロールを検討するか、`select`（選択のセマンティクス）やドロワーに切り替えます。長いメニューのキーボードナビゲーション体験は悪いです（方向キーを何度も押す必要があります）。
+- **`hover` トリガーのモバイルの問題**：タッチスクリーンに hover はありません。`popover` / `tooltip` と同じです。クロスプラットフォームではデフォルトで click を使います。
+- **`hideOnClick: false` のシーン**：メニュー項目が「チェック型」のスイッチ（「列 X を表示」など）のとき、クリック後も開いたままにして連続してチェックさせます——これがこのフィールドが存在する理由です。
+- **ネストした dropdown**：サブメニュー（dropdown の中に dropdown）の位置決めとフォーカス管理は非常に複雑です（親子のポップアップレイヤーの Esc がそれぞれどちらを閉じるか）。lh-ui はサブメニューを内蔵していません——階層ナビゲーションが必要なら `menu` を使います。
+- **`placement` は flip 後の実際の値を渡す**：`popover` と同様に、`getDropdownClass` が受け取るのは popper が返す実際の方位でなければなりません。さもなくば矢印 / 整列のクラス名と視覚が一致しなくなります。
+- **`menu` との境界**：dropdown は**一時的な操作の入り口**（リロードで消える）で、menu は**永続するナビゲーション**（ディープリンク可能、リロードで状態を保持）です。dropdown でメインナビゲーションを装うと、ユーザーが第 2 階層のページに戻れなくなります。
+- **最初の項目にフォーカス**：メニューを開くとき、フォーカスはトリガーではなく最初の利用可能な項目に置かれます（`shared/keyboard` の first のセマンティクス）——これは APG の要件で、キーボードのユーザーは開いた後すぐに操作できるべきです。
+
+<FnPlayground module="dropdown" fn="getDropdownMenuStyle" params='{"maxHeight": 200}' />

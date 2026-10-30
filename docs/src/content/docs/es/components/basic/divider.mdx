@@ -1,0 +1,153 @@
+---
+title: divider —— Divisor
+description: 'getDividerRole distingue la semántica separator/presentation, needsAriaOrientation decide la declaración de dirección vertical, borderStyle prevalece sobre dashed'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El divisor es el componente más «fino», pero su semántica de accesibilidad es justamente la que más merece atención: una línea que separa dos regiones, ¿es una **estructura útil** para el lector de pantalla o es **ruido**? `core/divider` hace explícita la decisión con `getDividerRole`: un divisor con texto es un verdadero `separator`; una línea puramente decorativa es `presentation` (se saca del árbol de accesibilidad).
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhDivider`: nombres de clase, rol semántico y declaración de dirección los calcula core.
+- Separación de formularios, agrupación del contenido de una tarjeta, separación de párrafos de un artículo.
+- **No usarlo para**: crear espaciado de layout. El espaciado es responsabilidad de `LhSpace` o del padding; el divisor es un elemento **semántico**.
+
+## Importación
+
+```ts
+import {
+  getDividerClassNames,
+  getDividerRole,
+  needsAriaOrientation,
+} from '@lh-ui/share/core/divider'
+import type {
+  LhDividerState,
+  LhDividerDirection,
+  LhDividerLabelPosition,
+  LhDividerRole,
+} from '@lh-ui/share/core/divider'
+```
+
+## Intención de diseño
+
+El divisor tiene dos formas de expresar «línea de puntos»: el viejo prop booleano `dashed` y el nuevo campo de texto `borderStyle`. La prioridad de `getDividerClassNames` es **`borderStyle` explícito no vacío > `dashed`**, y solo `'dashed'` / `'dotted'` tienen clases de estilo correspondientes: pasar `'solid'` o cualquier valor ilegal no produce clases sucias y se renderiza con la línea continua por defecto. Es un diseño de migración gradual: el código antiguo que pasa `dashed` sigue funcionando, y el código nuevo puede usar `borderStyle` para expresar estilos de borde más ricos.
+
+La condición de `needsAriaOrientation` es `hasContent && direction === 'vertical'`, y ambas son necesarias:
+
+- La horizontal es la **dirección por defecto** de un separator en APG; declarar `aria-orientation="horizontal"` es información redundante.
+- Sin texto, el rol es `presentation` y el elemento ya está fuera del árbol de accesibilidad: una declaración de dirección no tiene a quién dirigirse.
+
+La dirección vertical admite texto igual que la horizontal (el texto vertical se disponen arriba y abajo del tramo), de modo que «con texto y vertical» es un estado alcanzable; `labelPosition` es una semántica de la dirección horizontal, el texto vertical siempre está centrado, y `getDividerClassNames` no produce modificadores `--label-*` para la dirección vertical.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `getDividerClassNames` | `(state: LhDividerState) => string[]` | matriz de nombres de clase | dirección, discontinuidad, modificadores de texto |
+| `getDividerRole` | `(hasContent: boolean) => LhDividerRole` | `'separator'` / `'presentation'` | rol semántico |
+| `needsAriaOrientation` | `(direction: 'horizontal' \| 'vertical', hasContent: boolean) => boolean` | booleano | si se debe declarar aria-orientation |
+
+Salida de ejemplo:
+
+```ts
+getDividerClassNames({ direction: 'horizontal', dashed: false, hasContent: true, labelPosition: 'center', borderStyle: null })
+// ['lh-divider', 'lh-divider--horizontal', 'lh-divider--with-text', 'lh-divider--label-center']
+
+getDividerRole(true)   // 'separator'
+getDividerRole(false)  // 'presentation'
+needsAriaOrientation('vertical', true)   // true
+needsAriaOrientation('vertical', false)  // false
+```
+
+## Definiciones de tipos
+
+```ts
+export type LhDividerDirection = 'horizontal' | 'vertical'
+export type LhDividerLabelPosition = 'left' | 'center' | 'right'
+export type LhDividerRole = 'separator' | 'presentation'
+
+export interface LhDividerState {
+  direction: LhDividerDirection
+  dashed: boolean
+  hasContent: boolean
+  labelPosition: LhDividerLabelPosition
+  borderStyle?: string        // cuando se especifica, prevalece sobre dashed
+}
+```
+
+## Accesibilidad
+
+La accesibilidad del divisor se compone de tres partes, que la capa UI debe usar tal cual:
+
+```ts
+const role = getDividerRole(hasContent)              // 'separator' | 'presentation'
+const orientation = needsAriaOrientation(direction, hasContent)
+const aria = { role, ...(orientation ? { 'aria-orientation': 'vertical' } : {}) }
+```
+
+- **Divisor con texto**: `role="separator"`; el lector de pantalla anuncia «separador» y es consciente de que divide el contenido en dos partes.
+- **Línea puramente decorativa**: `role="presentation"`, se elimina del árbol de accesibilidad.
+- **Vertical + con texto**: además `aria-orientation="vertical"`, ya que la vertical no es la dirección por defecto.
+
+## Ejemplos de uso
+
+```ts
+import { getDividerClassNames, getDividerRole } from '@lh-ui/share/core/divider'
+
+getDividerClassNames({ direction: 'vertical', dashed: true, hasContent: false, labelPosition: 'left', borderStyle: null })
+// ['lh-divider', 'lh-divider--vertical', 'lh-divider--dashed']
+```
+
+```vue
+<!-- Vue3 -->
+<div
+  :class="getDividerClassNames({ direction, dashed, hasContent: !!slots.default, labelPosition, borderStyle })"
+  :role="getDividerRole(!!slots.default)"
+  :aria-orientation="needsAriaOrientation(direction, !!slots.default) ? 'vertical' : undefined"
+>
+  <span v-if="slots.default" class="lh-divider__label"><slot /></span>
+</div>
+```
+
+```tsx
+// React
+const hasContent = !!children
+const cls = getDividerClassNames({ direction, dashed, hasContent, labelPosition, borderStyle })
+return (
+  <div
+    className={cls.join(' ')}
+    role={getDividerRole(hasContent)}
+    aria-orientation={needsAriaOrientation(direction, hasContent) ? 'vertical' : undefined}
+  >
+    {hasContent && <span className="lh-divider__label">{children}</span>}
+  </div>
+)
+```
+
+```ts
+// uniapp: role/aria tienen soporte limitado fuera de h5, se puede degradar a renderizar solo las clases
+// (prioridad a la coherencia visual)
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-divider` | clase base: posicionamiento, color del borde |
+| `.lh-divider--horizontal` / `.lh-divider--vertical` | dirección (decide en qué lado está el borde) |
+| `.lh-divider--dashed` | línea de puntos (compatible con el viejo prop dashed) |
+| `.lh-divider--with-text` | con texto: el borde deja espacio libre en el centro |
+| `.lh-divider--label-{left\|center\|right}` | posición de alineación del texto |
+| `.lh-divider__label` | nodo de texto (con espaciado a ambos lados y fondo que cubre el borde) |
+
+El color del borde usa `var(--lh-border-color)` y se invierte automáticamente en modo oscuro.
+
+## Notas
+
+- `borderStyle` prevalece sobre `dashed` y solo `'dashed'` / `'dotted'` son válidos: es una restricción deliberada, para no exponer cualquier valor de border-style de CSS como prop.
+- Un divisor vertical necesita que el contenedor padre tenga una altura definida (normalmente una fila flex), o su altura colapsará a 0.
+- `role="presentation"` y `role="none"` son equivalentes en APG; este componente usa `presentation` (mejor compatibilidad histórica).
+- Al evaluar `hasContent`, cuida el caso de «un slot que solo renderiza espacios en blanco»; en Vue es más seguro usar `!!slots.default?.()`.
+
+<FnPlayground module="divider" fn="getDividerClassNames" params='{"state": {"direction": "horizontal", "dashed": false, "hasContent": true, "labelPosition": "center", "borderStyle": null}}' />

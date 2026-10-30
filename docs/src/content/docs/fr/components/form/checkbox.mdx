@@ -1,0 +1,149 @@
+---
+title: checkbox —— Case à cocher
+description: 'isCheckboxChecked, détermination avec Object.is ; toggleCheckboxValue, bascule immuable'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La case à cocher est la plus petite machine à états d'un formulaire : une valeur est-elle ou non dans un tableau. `core/checkbox` n'a que deux fonctions, parce qu'il a abstrait « cocher » en **une opération ensembliste** — la valeur d'un groupe de cases à cocher est un tableau, cocher c'est ajouter un élément, décocher c'est en retirer un.
+
+## Quand l'utiliser
+
+- Chaque framework implémente `LhCheckbox` et `LhCheckboxGroup` (le groupe détient le tableau de valeurs, l'item en déduit son propre état coché).
+- Les scénarios de sélection multiple ; pour un commutateur à deux états, `switch` est plus approprié.
+- **À ne pas utiliser pour** : une sélection unique, utilisez `radio` ; pour la sémantique mi-sélection (nœud père partiellement coché), utilisez la cascade de cochage de `tree`.
+
+## Import
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+import type { LhCheckboxState } from '@lh-ui/share/core/checkbox'
+```
+
+## Intentions de conception
+
+Si `Object.is` est utilisé pour la détermination plutôt que l'équivalence implicite d'`includes`, c'est parce que la valeur d'une case à cocher peut être de n'importe quel type (chaîne, nombre, voire référence d'objet). `includes` renvoie false pour NaN, alors que `Object.is(NaN, NaN)` renvoie true — même si le cas concret est rare, la sémantique ensembliste doit être cohérente.
+
+`toggleCheckboxValue` est **immuable** : on filtre d'abord les éléments de même valeur (dédoublonnage), puis on décide d'ajouter ou non selon `checked`. Cet ordre garantit l'**idempotence** — des appels répétés avec la même valeur et la même direction donnent un résultat identique, sans jamais produire de doublons dans le tableau.
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `isCheckboxChecked` | `(values: unknown[], value: unknown) => boolean` | booléen | la valeur est-elle dans le tableau |
+| `toggleCheckboxValue` | `(values: unknown[], value: unknown, checked: boolean) => unknown[]` | nouveau tableau | bascule immuable |
+
+## Définitions de types
+
+```ts
+export interface LhCheckboxState {
+  values: unknown[]
+  value: unknown
+  checked: boolean
+}
+```
+
+## Accessibilité
+
+`core/checkbox` ne produit pas de paquet d'attributs aria — **il est fortement recommandé à chaque framework d'utiliser le `<input type="checkbox">` natif** : l'élément natif embarque `aria-checked`, gère le clavier et la sémantique de soumission de formulaire, ce qu'aucune implémentation équivalente de contrôle personnalisé ne parvient à reproduire complètement.
+
+L'état `indeterminate` (mi-sélection) d'une case à cocher native **ne peut se régler qu'en JS** (aucun attribut HTML ne lui correspond) — c'est le seul point spécial que la couche UI doit traiter dans les scénarios de groupe :
+
+```ts
+// État mi-sélection de la case à cocher père (comme la case « tout sélectionner »)
+input.indeterminate = checkedCount > 0 && checkedCount < total
+```
+
+## Exemples d'utilisation
+
+```ts
+import { isCheckboxChecked, toggleCheckboxValue } from '@lh-ui/share/core/checkbox'
+
+isCheckboxChecked(['a', 'b'], 'b')   // true
+isCheckboxChecked(['a', 'b'], 'c')   // false
+
+toggleCheckboxValue(['a', 'b'], 'c', true)   // ['a', 'b', 'c']
+toggleCheckboxValue(['a', 'b', 'c'], 'b', false)  // ['a', 'c']
+toggleCheckboxValue(['a', 'b'], 'b', false)       // ['a']
+toggleCheckboxValue(['a'], 'a', true)             // ['a'] (déjà présent, idempotent)
+```
+
+```vue
+<!-- Vue3 : LhCheckboxGroup -->
+<script setup>
+const model = defineModel<Array<string>>({ default: [] })
+const toggle = (value: string, checked: boolean) => {
+  model.value = toggleCheckboxValue(model.value, value, checked)
+}
+</script>
+
+<template>
+  <div class="lh-checkbox-group" :class="`lh-checkbox-group--${size}`">
+    <label
+      v-for="opt in options"
+      :key="String(opt.value)"
+      class="lh-checkbox"
+      :class="{
+        'lh-checkbox--checked': isCheckboxChecked(model, opt.value),
+        'lh-checkbox--disabled': disabled || opt.disabled,
+      }"
+    >
+      <span class="lh-checkbox__box">
+        <input
+          class="lh-checkbox__input"
+          type="checkbox"
+          :checked="isCheckboxChecked(model, opt.value)"
+          :disabled="disabled || opt.disabled"
+          @change="toggle(opt.value, ($event.target as HTMLInputElement).checked)"
+        />
+      </span>
+      <span class="lh-checkbox__label">{{ opt.label }}</span>
+    </label>
+  </div>
+</template>
+```
+
+```tsx
+// React
+const [values, setValues] = useState<string[]>([])
+return options.map((opt) => (
+  <label key={opt.value} className="lh-checkbox">
+    <input
+      type="checkbox"
+      checked={isCheckboxChecked(values, opt.value)}
+      onChange={(e) => setValues(toggleCheckboxValue(values, opt.value, e.target.checked))}
+    />
+    <span className="lh-checkbox__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp : <checkbox-group> + <checkbox> sont des composants natifs, l'événement change
+// donne directement le tableau de valeurs ; pour un style de cochage personnalisé, on
+// utilise .lh-checkbox__box pour recouvrir l'apparence par défaut (hors h5, attention à
+// la réactivité de :checked)
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-checkbox` | classe de base (enveloppée dans un label) |
+| `.lh-checkbox--checked` / `--indeterminate` / `--disabled` | trois états |
+| `.lh-checkbox--{small\|large}` | tailles |
+| `.lh-checkbox__box` | case à cocher personnalisée (recouvre l'apparence native) |
+| `.lh-checkbox__input` | input natif (visuellement masqué, sémantique conservée) |
+| `.lh-checkbox__label` | texte |
+| `.lh-checkbox-group` / `--{small\|large}` | conteneur du groupe et taille du groupe |
+
+Le positionnement de la coche est fixé à `top: 2px / left: 5px` — **correct uniquement pour une boîte de 16px** ; c'est un point en attente d'unification consigné dans le « sujet spécial des jetons de hauteur » (devrait devenir un centrage à 50%).
+
+## Remarques
+
+- **La cohérence du type des valeurs** : `toggleCheckboxValue(['1'], 1, true)` donnera `['1', 1]` — la chaîne `'1'` et le nombre `1` sont deux valeurs différentes. Le type des id fournis par le backend doit être harmonisé côté UI.
+- **La sémantique du tableau vide** : `values: []` signifie « rien de sélectionné », ce qui est différent de `values: undefined` ; la valeur par défaut du groupe devrait être `[]`.
+- **La direction du paramètre `checked`** : c'est l'« état cible » et non l'« état actuel » ; `toggleCheckboxValue(v, x, false)` retire toujours x, qu'il y soit ou non présent à l'origine.
+- En cas d'un grand nombre d'options, envisagez `virtual-list` ; le groupe lui-même ne fait pas de virtualisation.
+
+<FnPlayground module="checkbox" fn="toggleCheckboxValue" params='{"values": ["a", "b"], "value": "c", "checked": true}' />

@@ -1,0 +1,145 @@
+---
+title: alert —— 경고 알림
+description: '페이지 내 상주 알림 바: getAlertRole의 alert/status 이중 역할 매핑, closable/showIcon/plain 네 상태 클래스명'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Alert은 '페이지에 고정된 알림'입니다: 저장 실패의 원인, 계정 만료 임박, 현재 읽기 전용 모드. `message`와의 차이는 **상주성**입니다 — message는 몇 초면 사라지지만 alert은 계속 그 자리에 있어 사용자가 언제든 읽을 수 있습니다. `core/alert`은 매우 얇고, 핵심은 **의미에서 live region 역할로의 매핑**입니다.
+
+## 언제 사용할까
+
+- 각 단말이 `<LhAlert>`을 구현할 때: 폼 검증 요약, 페이지 수준 공지, 조작 결과 상주 알림, 안내성 설명.
+- 내용이 **사용자의 능동적 읽기를 필요**로 하고 시간에 따라 사라지지 않는 장면.
+- **사용하면 안 되는 곳**: 순간적인 조작 피드백(`message` 사용, 자동으로 사라지는 편이 절제됨); 시스템 수준 비동기 알림(`notification` 사용, 모서리에 붙어 문서 흐름을 차지하지 않음); 사용자 확인이 필요한 조작(`popconfirm` / `dialog`).
+
+## 가져오기
+
+```ts
+import {
+  getAlertClassNames,
+  getAlertRole,
+  getAlertIconName,
+} from '@lh-ui/share/core/alert'
+import type { LhAlertType, LhAlertState, LhAlertRole } from '@lh-ui/share/core/alert'
+```
+
+## 설계 의도
+
+**이중 역할 매핑**: `warning` / `danger` → `role="alert"`(즉시 끊고 읽어 줌), `info` / `success` → `role="status"`(대기열에 넣어 부드럽게 읽어 줌). 이 이분에는 근거가 있습니다: APG(ARIA Authoring Practices)는 alert을 '중요하고 시간에 민감한' 내용에 쓰도록 명확히 정합니다. 오류 알림을 사용자가 5초 늦게 보면 이미 조작을 반복했을 수 있지만, 성공 알림이 몇 초 늦는 것은 무해합니다.
+
+**네 개의 불리언 상태가 각자 클래스명이 됨**: `closable` / `showIcon` / `plain` / `withTitle`이 각각 하나의 수식 클래스를 가집니다 — 이들이 영향을 주는 것은 **레이아웃**(아이콘이 있으면 그 자리를 확보, 제목이 있면 안쪽 여백을 키움, 닫기 버튼이 있으면 오른쪽 공간 확보)이지 단순한 색상 변화가 아니기 때문입니다. 독립 클래스명으로 나누면 SCSS가 조합별로 레이아웃을 작성할 수 있습니다.
+
+**`plain`은 담백 모드**: 배경색과 테두리를 없애고 아이콘 색과 글자 색만 남깁니다 — '너무 눈에 띄고 싶지는 않지만 상주는 필요한' 장면(예: 페이지 상단의 회색 안내 문구 한 줄)에 씁니다. 기본 모드와의 차이는 시각적 무게일 뿐 의미가 아닙니다.
+
+**아이콘 매핑은 기존 아이콘 세트를 소비**: success → `check`(`success`가 아님 — 아이콘 라이브러리에 success 아이콘이 없으므로 체크 표시로 성공을 표현), danger → `error`. 이것이 '의미 → 구체 아이콘'의 한 계층 매핑이며, UI 계층은 아이콘 라이브러리에 무엇이 있는지 신경 쓸 필요가 없습니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getAlertClassNames` | `(state: LhAlertState) => string[]` | 클래스명 | 유형 + 4 불리언 |
+| `getAlertRole` | `(type: LhAlertType) => LhAlertRole` | 'alert' \| 'status' | live region 역할 |
+| `getAlertIconName` | `(type: LhAlertType) => string` | 아이콘명 | 네 가지 의미 아이콘 |
+
+## 타입 정의
+
+```ts
+export type LhAlertType = 'info' | 'success' | 'warning' | 'danger'
+export type LhAlertRole = 'alert' | 'status'
+
+export interface LhAlertState {
+  type: LhAlertType
+  closable: boolean      // 닫기 버튼 표시
+  showIcon: boolean      // 의미 아이콘 표시
+  plain: boolean         // 담백 모드(배경색/테두리 없음)
+  withTitle: boolean     // 제목 있음(제목 + 설명 이단 구성)
+}
+```
+
+## 접근성
+
+```ts
+getAlertRole('info')     // 'status'
+getAlertRole('success')  // 'status'
+getAlertRole('warning')  // 'alert'
+getAlertRole('danger')   // 'alert'
+```
+
+- **role은 alert 뿌리 요소에**: `<div class="lh-alert lh-alert--danger" role="alert">`. 페이지 로드 시 이미 존재하는 alert은 즉시 읽어 줍니다; 동적으로 삽입되는 alert은 `aria-live`를 함께 쓰는 것이 더 안정적입니다(일부 스크린 리더는 동적 삽입된 role=alert에 대한 반응이 일관되지 않음).
+- **아이콘은 aria-hidden**: 의미는 이미 글자로 전달되며 '경고'를 거듭 읽어 주는 것은 소음입니다. 아이콘이 글자에 없는 정보를 담을 때만 노출시키세요.
+- **닫기 버튼의 접근성**: `aria-label="닫기"`, 클릭 후 alert은 DOM에서 제거됩니다 — 제거 자체는 추가 알림이 필요 없습니다(사용자가 능동적으로 조작한 직접 결과).
+- **제목과 설명의 위계**: 제목이 있을 때 제목은 `<div class="lh-alert__title" role="heading">`(또는 그냥 `<h4>`)을 쓰고 설명은 별도 단락으로 만듭니다. 스크린 리더는 문서 흐름대로 처리합니다.
+- **alert을 폼 검증 오류 알림으로 쓰지 마세요**: 필드 수준 오류는 필드 옆에 붙여야 합니다(`form`의 `aria-describedby` + `aria-invalid`), alert은 폼 전체의 요약 알림에 씁니다.
+
+## 사용 예
+
+```ts
+import { getAlertClassNames, getAlertRole, getAlertIconName } from '@lh-ui/share/core/alert'
+
+getAlertClassNames({ type: 'warning', closable: true, showIcon: true, plain: false, withTitle: false })
+// ['lh-alert', 'lh-alert--warning', 'lh-alert--closable', 'lh-alert--show-icon']
+
+getAlertRole('danger')     // 'alert'
+getAlertIconName('success')  // 'check'
+```
+
+```vue
+<!-- Vue3: 기본 사용법 -->
+<template>
+  <LhAlert type="warning" :closable="true" show-icon title="주의">
+    현재 유지 보수 창 구간이며 일부 기능을 사용할 수 없습니다.
+  </LhAlert>
+</template>
+```
+
+```vue
+<!-- 폼 검증 요약: failedRules가 비어 있지 않을 때만 렌더링 -->
+<template>
+  <LhAlert
+    v-if="failedRules.length"
+    type="danger"
+    show-icon
+    :closable="false"
+    title="폼에 N곳의 수정이 필요합니다"
+  >
+    <ul>
+      <li v-for="rule in failedRules" :key="rule.field">{{ rule.message }}</li>
+    </ul>
+  </LhAlert>
+</template>
+```
+
+```tsx
+// React: 제어형 표시/숨김(visible state + 닫기 버튼 onClick으로 false 설정);
+// alert 내용은 DOM에 남겨 두는 편이 SEO와 폴백에 유리하므로 언마운트 대신 CSS display로 전환
+```
+
+```ts
+// uniapp: <view> + 의미 아이콘은 <image> 또는 폰트 아이콘 사용; closable는 미니 프로그램 단말에서 catchtap
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-alert` | 뿌리 컨테이너 |
+| `.lh-alert--{info\|success\|warning\|danger}` | 의미 유형(배경색 + 테두리 + 아이콘 색) |
+| `.lh-alert--closable` | 닫기 버튼 있음(오른쪽 자리 확보) |
+| `.lh-alert--show-icon` | 아이콘 있음(왼쪽 자리 확보) |
+| `.lh-alert--plain` | 담백 모드(투명 배경, 테두리 없음) |
+| `.lh-alert--with-title` | 이단 구성(세로 여백 확대) |
+| `.lh-alert__icon` / `__title` / `__content` / `__close` | 아이콘 / 제목 / 설명 / 닫기 버튼 |
+
+의미 색: `--lh-info-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`; 밝은 배경색은 의미 색의 낮은 투명도 혼합(라이트/다크 각 한 벌); 모서리 둥글기 `--lh-border-radius-base`.
+
+## 주의사항
+
+- **alert은 문서 흐름의 일부**: 레이아웃 공간을 차지하고 내용을 밀어냅니다. 페이지 상단에 상주하는 alert은 내용 전체를 아래로 내립니다 — 위치 고정(`position: sticky`)은 UI 계층이 결정하고 core은 관여하지 않습니다.
+- **`role="alert"`의 끊김성은 양날검**: 페이지에 danger alert이 여러 개 있으면 연달아 읽기를 끊어 경험이 매우 나빠집니다. 오류 요약 장면에서는 alert 하나에 모든 문제를 나열하는 편을 권장합니다, 오류마다 alert을 하나씩 만들지 말고.
+- **동적으로 삽입되는 alert**: role=alert은 요소가 **이미 DOM에 존재할 때** 읽어 줄 것을 요구합니다; JS로 나중에 삽입하는 경우 `aria-live="assertive"`(alert) 또는 `"polite"`(status)을 덧붙여 보완하세요. 이것은 UI 계층의 일입니다.
+- **`closable`과 상태 지속성**: 사용자가 닫은 alert은 새로고침하면 되살아납니다. '닫은 뒤 다시 표시하지 않음'(예: 공지 읽음)이 필요하면 비즈니스 계층에서 localStorage에 지속시켜야 합니다.
+- **`plain` 모드의 의미는 변하지 않음**: 담백은 시각만 바꿀 뿐 `type`이 결정하는 role과 아이콘 색은 그대로입니다 — '눈에 띄지 않게' 하려고 danger을 info로 내리지 마세요, 그것은 의미의 강등입니다.
+- **alert 안에 상호작용 버튼을 넣지 마세요**: '재시도' '상세 보기'가 필요할 때 버튼을 `__content`에 두는 것은 괜찮습니다(alert의 role이 상호작용을 금하지 않음), 하지만 **alert으로 대화상자를 흉내 내지는 마세요**.
+
+<FnPlayground module="alert" fn="getAlertRole" params='{"type": "warning"}' />

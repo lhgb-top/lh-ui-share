@@ -53,8 +53,8 @@ The `:root { --lh-*: ... }` text exported by the docs theme-customization page a
 ```css
 /* Project entry */
 :root {
-  --lh-primary-color: #2B5FA6;
-  --lh-primary-color-hover: #3D72BC;
+  --lh-primary-color: #2B4C7C;
+  --lh-primary-color-hover: #3D649E;
   /* ... */
 }
 ```

@@ -1,0 +1,140 @@
+---
+title: card —— بطاقة
+description: 'يميّز getCardInteractivity بين دلالتي interactive/static، ويحكم isCardInteractive على قابلية التفاعل، مع ثلاث درجات لمعدّلات الظل'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+البطاقة «حاوية محتوى»، لكن بطاقات مكتبات المكوّنات الحديثة كثيرًا ما تكون **قابلة للنقر بالكامل**. وحينها لم تعد مجرد `<div>` عادية — فهي تحتاج إلى دلالة الزر، وقابلية تركيز بلوحة المفاتيح، وإطلاق عبر Enter/Space. يجعل `core/card` قرار «هل هي زر» صريحًا عبر `getCardInteractivity`، ليعلّق الطرف البصري بناءً عليه ما يلزم من tabindex وrole.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhCard`: تُحسَب أسماء الأصناف ودلالة التفاعل عبر core.
+- عرض تجميع للمعلومات: غلاف + عنوان + وصف + منطقة إجراءات.
+- **لا يجب استخدامه**: المشاهد التي تتطلب عناصر تحكم بنموذج، أو تفاعلًا متداخلًا معقدًا. يُسمح بوضع أزرار داخل البطاقة (منطقة الإجراءات)، لكن **بطاقة قابلة للنقر بالكامل وتحتوي بداخلها على زر** يخلق مشكلة تفاعل متداخل في إمكانية الوصول، فيجب تجنُّبه.
+
+## طريقة الاستيراد
+
+```ts
+import { getCardClassNames, isCardInteractive, getCardInteractivity } from '@lh-ui/share/core/card'
+import type { LhCardState, LhCardShadow, LhCardInteractivity } from '@lh-ui/share/core/card'
+```
+
+## نية التصميم
+
+حكم `isCardInteractive` هو `clickable && !loading`: البطاقة أثناء التحميل غير قابلة للتفاعل. يبدو هذا الرابط `&&` بديهيًا، لكنه يحلّ مشكلة حقيقية — تُظهر البطاقة أثناء التحميل عادةً هيكلًا عظميًا، وحينها يجب ابتلاع النقر بدلًا من إطلاق عملية لم تجهز بعد.
+
+يُعيد `getCardInteractivity` القيمتين `'interactive'` / `'static'` بدلًا من قيمة منطقية، لكي يُقرأ كود الطرف البصري وكأنه يعالج **عنصرين** مختلفين:
+
+- `interactive`: يُعلَّق عند العرض `role="button"` و`tabindex="0"`، ويُستمع إلى الزرّين Enter/Space من لوحة المفاتيح، ويُعلَّق `@click`.
+- `static`: لا يُعلَّق شيء من الدلالات، إنها مجرد حاوية.
+
+هذا التقسيم ضروري: فلو تُرك للطرف البصري كتابة `v-if="clickable"` مباشرةً لتبخّر كلٌّ من role وtabindex وأحداث لوحة المفاتيح في ثلاثة فروع تتطوّر كلٌّ منها على حدة، وهو مظنة السهو.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getCardClassNames` | `(state: LhCardState) => string[]` | مصفوفة أسماء الأصناف | معدّلات درجة الظل، والقابلية للنقر، والتحميل |
+| `isCardInteractive` | `(state: LhCardState) => boolean` | قيمة منطقية | `clickable && !loading` |
+| `getCardInteractivity` | `(state: LhCardState) => LhCardInteractivity` | `'interactive'` / `'static'` | قرار الدور الدلالي |
+
+مثال على المُخرجات:
+
+```ts
+getCardClassNames({ shadow: 'hover', clickable: true, loading: false })
+// ['lh-card', 'lh-card--shadow-hover', 'lh-card--clickable']
+
+getCardInteractivity({ shadow: 'hover', clickable: true, loading: false })  // 'interactive'
+getCardInteractivity({ shadow: 'always', clickable: false, loading: false }) // 'static'
+```
+
+## تعريف الأنواع
+
+```ts
+export type LhCardShadow = 'always' | 'hover' | 'never'
+export type LhCardInteractivity = 'interactive' | 'static'
+
+export interface LhCardState {
+  shadow: LhCardShadow
+  clickable: boolean
+  loading: boolean
+}
+```
+
+## إمكانية الوصول
+
+هذا هو صمام المكوّن. عندما تكون البطاقة قابلة للنقر بالكامل يجب تطبيق نمط الزر في APG، وهذه الأمور الثلاثة في الطرف البصري لا يُستغنى عن أيٍّ منها:
+
+```vue
+<div
+  :class="getCardClassNames({ shadow, clickable, loading })"
+  :role="interactivity === 'interactive' ? 'button' : undefined"
+  :tabindex="interactivity === 'interactive' ? 0 : undefined"
+  @click="interactivity === 'interactive' && emit('click')"
+  @keydown.enter="interactivity === 'interactive' && emit('click')"
+  @keydown.space.prevent="interactivity === 'interactive' && emit('click')"
+>
+```
+
+انتبه إلى `.prevent` الخاص بمفتاح Space: فالزر الأصلي يمنع سلوك التمرير الافتراضي لمفتاح Space، وعند المحاكاة بـ div يجب منعه يدويًا، وإلا ستتمر البطاحة وتُطلق في آن واحد.
+
+**لا** تُسَوِّلنّ لك النفس تحويل البطاقة القابلة للنقر إلى `<button>` اختصارًا: تناقض الأنماط الافتراضية لـ button (مضمّنة، ونص مُوسَّط) تخطيطَ البطاقة، ووضع محتوى مستوى الكتلة داخل button يثير مشاكل في المتصفحات القديمة. أما div + role فهي التنفيذ المكافئ المعتمد من APG.
+
+## أمثلة الاستخدام
+
+```ts
+import { getCardClassNames, getCardInteractivity } from '@lh-ui/share/core/card'
+
+getCardClassNames({ shadow: 'never', clickable: false, loading: true })
+// ['lh-card', 'lh-card--shadow-never', 'lh-card--loading']
+```
+
+```tsx
+// React
+const interactivity = getCardInteractivity({ shadow, clickable, loading })
+const interactive = interactivity === 'interactive'
+return (
+  <div
+    className={getCardClassNames({ shadow, clickable, loading }).join(' ')}
+    role={interactive ? 'button' : undefined}
+    tabIndex={interactive ? 0 : undefined}
+    onClick={interactive ? onClick : undefined}
+    onKeyDown={interactive ? (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() }
+    } : undefined}
+  >
+    {loading ? <Skeleton /> : children}
+  </div>
+)
+```
+
+```ts
+// uniapp: يدعم view الخاصية hover-class، فيمكن محاكاة ظل التمرير عبر :hover-class؛
+// وأحداث لوحة المفاتيح تعمل على طرف h5 فقط، وعلى الأطراف الأخرى يستجيب للنقر فقط
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- | --- |
+| `.lh-card` | الصنف الأساسي: استدارة، حدّ، خلفية، انتقال |
+| `.lh-card--shadow-{always\|hover\|never}` | ظل بثلاث درجات: دائم / عند التمرير / أبدًا |
+| `.lh-card--clickable` | قابل للنقر: ارتفاع عند التمرير + مؤشر + ضغط عند active |
+| `.lh-card--loading` | حالة التحميل: تُغطّى منطقة المحتوى بهيكل عظمي |
+| `.lh-card__header` / `.lh-card__title` / `.lh-card__extra` | الترويسة: العنوان + موضع الإجراءات على الجانب الآخر |
+| `.lh-card__cover` | منطقة صورة الغلاف (اتصال الاستدارة بعرض الصف بالكامل) |
+| `.lh-card__body` | منطقة المحتوى الرئيسية |
+| `.lh-card__footer` | منطقة الإجراءات السفلية |
+| `.lh-card__loading-line` / `--narrow` / `--wide` | صفوف الهيكل العظمي الاحتياطية |
+
+يسير الظل والاستدارة عبر الرموز `--lh-shadow-*` / `--lh-radius-*`، ويمكن لـ ConfigProvider استبدالها.
+
+## ملاحظات
+
+- **فخّ التفاعل المتداخل**: عندما تكون البطاقة بالكامل `role="button"`، فإن الأزرار/الروابط داخلها تصبح عناصر سليل لـ button، وسيتخطاها قارئ الشاشة (لا يُسمح بالمحتوى التفاعلي داخل button). فإن لم يكن بدّ من وجودهما معًا، فاستسلم عن قابلية النقر بالكامل، وضيّق منطقة النقر إلى عنصر محدّد.
+- `shadow` بلا قيمة افتراضية احتياطية: النوع يتطلب تمريرها، وعادةً ما تعطي props في الطرف البصري القيمة `'hover'`.
+- يتحقق الهيكل العظمي لحالة التحميل في طبقة الأنماط عبر `.lh-card__loading-line`، ولا يُخرج core سوى الصنف `--loading`.
+- `clickable` صحيح دون ربط حدث click أمر مشروع (يبدو فقط قابلًا للنقر بصريًا)، وهذه مشكلة المستدعي لا مشكلة core.
+
+<FnPlayground module="card" fn="getCardClassNames" params='{"state": {"shadow": "hover", "clickable": true, "loading": false}}' />

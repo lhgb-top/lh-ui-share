@@ -1,0 +1,176 @@
+---
+title: descriptions —— 描述列表
+description: 'buildDescriptionRows 按 span 歸一化行結構（非法值兜底、超寬鉗制、末行補位）'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+描述列表是「唯讀的表格」：展示一筆記錄的若干欄位（標籤 + 值），不需要排序、篩選、分頁。它的難點很集中——**條目佔據多列時的換行計算**：某個條目 `span: 2`，但本列只剩 1 行寬，怎麼辦？末列只有 2 個條目但共 4 行，要不要補位？`buildDescriptionRows` 就是在回答這些問題。
+
+## 何時使用
+
+- 各端實作 `LhDescriptions`：詳情頁（訂單詳情、使用者資料）、設定摘要、審批流資訊展示。
+- 唯讀的「標籤-值」成組展示，且需要每列容納多個欄位。
+- **不該用它**：需要排序/篩選/列操作的表格（用 `table`）；單欄位展示（直接 label + 文字即可）；需要編輯（用 `form`）。
+
+## 匯入方式
+
+```ts
+import {
+  getDescriptionsClassNames,
+  buildDescriptionRows,
+} from '@lh-ui/share/core/descriptions'
+import type { LhDescriptionsItem, LhDescriptionsState } from '@lh-ui/share/core/descriptions'
+```
+
+## 設計意圖
+
+`buildDescriptionRows` 的四條規則都是防禦性的，每條對應一類真實輸入：
+
+1. **非法 span 兜底為 1**：`span <= 0`、NaN、非數字（`Number('寬')` = NaN）一律按 1 處理。設定常來自使用者傳的 props，髒值不該讓版面崩成 0 行。
+2. **超本列剩餘寬度鉗制**：`used + span > column` 時鉗到剩餘寬度（至少 1 行）。若直接換列，當前列會留下一個空洞，視覺上像 bug。
+3. **單條 span 超整列鉗到整列**：`column: 3` 時傳 `span: 5` 的條目佔滿整列，而不是溢出。
+4. **末列補位**：最後一列不足 `column` 時，`filler` 欄位告知渲染層要補幾個佔位儲存格——帶邊框樣式下不補位會缺一條邊框。
+
+傳回值是「列的陣列」，每列含 `cells`（條目 + 實際 span）和 `filler`（要補的佔位數）。UI 層只需兩層 `v-for`。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getDescriptionsClassNames` | `(state: LhDescriptionsState) => string[]` | 類別名 | border 修飾 |
+| `buildDescriptionRows` | `(items: LhDescriptionsItem[], column: number) => Row[]` | 列結構 | 換列 + 補位 |
+
+```ts
+type Row = {
+  cells: { item: LhDescriptionsItem; span: number }[]
+  filler: number
+}
+```
+
+## 類型定義
+
+```ts
+export interface LhDescriptionsItem {
+  label: string
+  value?: string | number    // 也可用作用域插槽傳入
+  span?: number              // 佔據行數，預設 1，超出 column 會被鉗制
+}
+
+export interface LhDescriptionsState {
+  column: number    // 每列展示的行數
+  border: boolean   // 是否展示邊框（表格版面配置）
+}
+```
+
+## 無障礙
+
+`descriptions` 是**展示性元件**，沒有 APG 角色要求。推薦的 DOM 結構是定義列表語義：
+
+```html
+<dl>
+  <dt>用户名</dt><dd>lhgb</dd>
+  <dt>邮箱</dt><dd>i@lhgb.top</dd>
+</dl>
+```
+
+這與「標籤-值」的資料模型天然對應，讀屏軟體能正確播報「使用者名稱：lhgb」。若用 `<table>` 實作（帶邊框樣式時常見），加 `role="presentation"` 或保留表頭語義——不要用真正的 `<th scope="row">` 又不給 summary，那會讓讀屏軟體以為這是個可互動表格。
+
+帶邊框時 `filler` 補位的佔位儲存格應加 `aria-hidden="true"`，避免讀屏軟體播報空儲存格。
+
+## 使用範例
+
+```ts
+import { buildDescriptionRows } from '@lh-ui/share/core/descriptions'
+
+// column 3：第三個條目 span 2，但本行只剩 1 列寬 → 鉗到 1
+buildDescriptionRows([
+  { label: '用户名', value: 'lhgb' },
+  { label: '邮箱', value: 'i@lhgb.top' },
+  { label: '签名', value: '写代码的', span: 2 },
+], 3)
+// [{ cells: [使用者名(1), 電子郵件信箱(1), 簽名(1)], filler: 0 }]  ← 鉗制後恰好滿行
+
+// 注意：實作是**鉗制到剩餘寬度**而非換行——span 放不進本行時不會頂到下一行
+buildDescriptionRows([
+  { label: '用户名', value: 'lhgb' },
+  { label: '签名', value: '写代码的', span: 2 },
+  { label: '邮箱', value: 'i@lhgb.top' },
+], 2)
+// [
+//   { cells: [使用者名(1), 簽名(2→1 鉗制)], filler: 0 },  ← 滿行
+//   { cells: [電子郵件信箱(1)], filler: 1 },                    ← 末行補 1 個佔位
+// ]
+
+// 單條 span 超過整行列數：同樣被鉗到剩餘寬度（此處即整行）
+buildDescriptionRows([{ label: 'A', span: 1 }, { label: 'B', span: 5 }], 2)
+// [{ cells: [A(1), B(5→1 鉗制)], filler: 0 }]  ← B 放進第一行剩餘的 1 列
+
+// 只有 B 一條、且 span 超過整行時才佔滿整行
+buildDescriptionRows([{ label: 'B', span: 5 }], 2)
+// [{ cells: [B(5→2 鉗制)], filler: 0 }]
+
+// 非法 span 兜底
+buildDescriptionRows([{ label: 'A', span: 0 }, { label: 'B', span: NaN }, { label: 'C', span: -1 }], 3)
+// [{ cells: [A(span 1), B(span 1), C(span 1)], filler: 0 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getDescriptionsClassNames({ column, border })">
+  <div v-for="(row, ri) in rows" :key="ri" class="lh-descriptions__row">
+    <template v-for="(cell, ci) in row.cells" :key="ci">
+      <div class="lh-descriptions__label" :style="{ gridColumn: `span ${cell.span}` }">
+        {{ cell.item.label }}
+      </div>
+      <div class="lh-descriptions__value" :style="{ gridColumn: `span ${cell.span}` }">
+        <slot :name="cell.item.label" :item="cell.item">{{ cell.item.value }}</slot>
+      </div>
+    </template>
+    <div
+      v-for="f in row.filler"
+      :key="`filler-${f}`"
+      class="lh-descriptions__filler"
+      aria-hidden="true"
+    />
+  </div>
+</div>
+```
+
+```ts
+const rows = computed(() => buildDescriptionRows(props.items, props.column))
+```
+
+```tsx
+// React：用 CSS grid 的 gridColumn: `span ${cell.span}`；
+// 注意 label 與 value 各佔 span 列，所以「column 3」實際是 6 個網格單元
+```
+
+```ts
+// uniapp：<view> + flex 比例（span / column * 100%）；
+// 帶 border 時 flex 佈局的邊框需要用偽元素或 box-shadow 模擬表格線
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-descriptions` | 基礎類 |
+| `.lh-descriptions--border` | 帶邊框（標籤底色區分） |
+| `.lh-descriptions__row` | 一列 |
+| `.lh-descriptions__label` | 標籤格 |
+| `.lh-descriptions__value` | 值格 |
+| `.lh-descriptions__filler` | 末列佔位（`aria-hidden`） |
+
+標籤寬度的兩種模式：`border` 下標籤與值同列等寬；無邊框時標籤寬度由內容決定（`--lh-descriptions-label-width` 可覆蓋）。標籤文字 `--lh-text-color-secondary`，值 `--lh-text-color-primary`。
+
+## 注意事項
+
+- **column 與網格單元的關係**：`span` 是「條目數」單位，但渲染時標籤和值各佔一份寬度。用 CSS grid 時若把 label/value 各當一個網格單元，`column: 3` 實際需要 6 行網格——UI 層的行數定義要與 core 的 `column` 口徑一致（一個條目 = 一個 span 單位）。
+- **響應式 column**：窄螢幕把 `column` 調小（如 3 → 1），`buildDescriptionRows` 重算即可。core 不監聽螢幕寬度，UI 層用媒體查詢或容器查詢切換。
+- **作用域插槽的 key**：UI 層通常用 `item.label` 作插槽名，標籤含特殊字元（空格、中文）時框架相容性 OK，但含 `/` 或重複標籤會衝突——建議 UI 層提供 `slot` 欄位別名（本型暫未提供，各端可自行擴充）。
+- **`filler` 只在 border 模式下必需**：無邊框時補位儲存格不可見，但保留它們不佔額外渲染成本，統一渲染更簡單。
+- **空 items**：`buildDescriptionRows([], 3)` 傳回 `[]`，UI 層渲染空容器——記得給空態（`empty` 元件或提示文案）。
+- **值的預設顯示**：`value` 為 undefined 時顯示什麼由 UI 層定（通常 `—`），core 不插手文案。
+
+<FnPlayground module="descriptions" fn="buildDescriptionRows" params='{"items": [{"label": "用户名", "value": "lhgb"}, {"label": "邮箱", "value": "i@lhgb.top"}, {"label": "签名", "value": "写代码的", "span": 2}], "column": 2}' />

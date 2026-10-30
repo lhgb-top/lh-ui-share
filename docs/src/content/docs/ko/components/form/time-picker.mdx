@@ -1,0 +1,223 @@
+---
+title: time-picker —— 시간 선택
+description: 'parseTime/formatTime 고정 폭 토큰 파싱, generateTimeColumn 스텝 열, wrapTimeValueInRange 되돌이, dialog 의미'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+시간 선택은 **세 열의 롤러** (시/분/초) 상호작용입니다: 사용자는 하나의 입력란에 숫자를 두드리는 것이 아니라 각 열을 돌립니다. `core/time-picker`가 관리하는 것은 고정 폭 형식 문자열의 파싱과 역파싱, 스텝별 열 생성, 선택 가능 값역의 필터링과 되돌이, 그리고 APG dialog + listbox 의미입니다. `time` (순수 시간)과 `date-time` (날짜 + 시간) 두 가지 모드를 지원합니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhTimePicker`: 예약 시간, 예정 작업, 영업 시간 설정.
+- 값이 "어느 순간"이고 단위가 분 또는 초인 상황.
+- **사용하면 안 되는 경우**: 날짜만 필요하고 시간은 필요 없을 때 (`date-picker` 사용); 시간 범위 (두 개의 time-picker 또는 구간 모드 `isRange` 사용).
+
+## 임포트 방법
+
+```ts
+import {
+  padNumber,
+  formatTime,
+  parseTime,
+  extractTime,
+  generateTimeColumn,
+  createDateTime,
+  isValidTime,
+  formatDateToTimeString,
+  getHourStep,
+  getMinuteStep,
+  getSecondStep,
+  getDisabledHours,
+  getDisabledMinutes,
+  getDisabledSeconds,
+  getHourRange,
+  filterTimeColumnByRange,
+  wrapTimeValueInRange,
+  clampTimeValue,
+  getTimePickerClassNames,
+  getTimePickerTriggerAria,
+  getTimePickerPanelAria,
+  getTimePickerColumnAria,
+} from '@lh-ui/share/core/time-picker'
+import type {
+  LhTimeData,
+  LhTimeColumn,
+  LhTimePickerState,
+  LhTimePickerOptions,
+  LhTimeColumnType,
+  LhTimePickerMode,
+  LhTimeSelectEventData,
+} from '@lh-ui/share/core/time-picker'
+```
+
+## 설계 의도
+
+`parseTime` / `formatTime`이 범용 날짜 라이브러리가 아닌 **고정 폭 토큰** (`HH` / `mm` / `ss`가 각각 2자리)을 사용하는 것은 의도된 트레이드오프입니다: 시간은 세 개의 성분밖에 없으며, `substring(idx, idx+2)`의 위치 기반 파싱이 정규식이나 moment보다 훨씬 가볍고 `formatTime`과 엄격하게 대칭입니다——쓴 것을 그대로 다시 파싱할 수 있습니다. 파싱 실패는 일률적으로 null을 반환하며, 일부만 더러운 데이터를 돌려주지 않습니다.
+
+`generateTimeColumn`의 `step`에는 방어가 있습니다: 양수가 아닌 값은 1로 정규화하고 (`step: 0`은 `for` 루프를 무한 반복시킵니다), 소수는 내립니다 (`step: 2.5`가 2가 됩니다). `wrapTimeValueInRange`는 **범위가 전체 값역을 덮을 때 원래 값을 반환**합니다——이것은 예전 동작과의 호환입니다: 예를 들어 시간 열의 범위가 [0,23]이면 굴려서 벗어날 때 다른 쪽 끝으로 되돌아가는 것이 아니라 경계에 멈춰야 합니다; 명시적으로 하위 구간 (예: [9, 18])을 정했을 때만 되돌이합니다. `clampTimeValue`는 반대로 항상 구간 안으로 집어넣으며, 이미 선택된 값을 합법적인 구간으로 수렴시키는 데 사용합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `padNumber` | `(n: number) => string` | `'09'` | 두 자리 0 채우기 |
+| `formatTime` | `(hours, minutes, seconds, format?) => string` | `'09:30:00'` | format에 맞춰 이음 |
+| `parseTime` | `(timeStr, format?) => LhTimeData \| null` | 시간 데이터 \| null | 위치 기반 파싱 |
+| `extractTime` | `(date: Date) => LhTimeData` | 시분초 | Date에서 추출 |
+| `generateTimeColumn` | `(type, step?, disabledValues?) => LhTimeColumn[]` | 열 옵션 | isDisabled 포함 |
+| `createDateTime` | `(baseDate, hours, minutes, seconds) => Date` | 새 Date | 날짜를 유지한 채 시간 교체 |
+| `isValidTime` | `(hours, minutes, seconds) => boolean` | 합법 여부 | 값역 검증 |
+| `formatDateToTimeString` | `(date: Date, format: string) => string` | 문자열 | Date → 표시 텍스트 |
+| `getHourStep` / `getMinuteStep` / `getSecondStep` | `(options?) => number` | 스텝 | 기본 폴백 1 |
+| `getDisabledHours` / `getDisabledMinutes` / `getDisabledSeconds` | `(options?, …) => number[]` | 비활성값 | 호출자 콜백 |
+| `getHourRange` | `(start, end) => { start, end }` | 수렴 구간 | [0,23]으로 클램프 |
+| `filterTimeColumnByRange` | `(columns, start, end) => LhTimeColumn[]` | 필터링된 열 | 구간 내만 남김 |
+| `wrapTimeValueInRange` | `(value, start, end) => number` | 되돌이값 | 벗어나면 되돌이 |
+| `clampTimeValue` | `(value, start, end) => number` | 클램프값 | 벗어나면 경계로 클램프 |
+| `getTimePickerClassNames` | `(state: { size, disabled, visible }) => string[]` | 클래스명 | 크기/비활성/펼침 |
+| `getTimePickerTriggerAria` | `(visible, panelId?) => LhAriaAttrs` | aria 속성 팩 | haspopup dialog |
+| `getTimePickerPanelAria` | `(id?) => LhAriaAttrs` | aria 속성 팩 | role=dialog |
+| `getTimePickerColumnAria` | `(label?) => LhAriaAttrs` | aria 속성 팩 | role=listbox |
+
+## 타입 정의
+
+```ts
+export type LhTimePickerMode = 'time' | 'date-time'
+export type LhTimeColumnType = 'hour' | 'minute' | 'second'
+
+export interface LhTimeData {
+  hours: number
+  minutes: number
+  seconds: number
+}
+
+export interface LhTimeColumn {
+  value: number
+  text: string
+  isSelected: boolean
+  isDisabled: boolean
+}
+
+export interface LhTimePickerOptions {
+  hours?:   { step?: number; disabledHours?:   () => number[] }
+  minutes?: { step?: number; disabledMinutes?: (hour: number) => number[] }
+  seconds?: { step?: number; disabledSeconds?: (hour: number, minute: number) => number[] }
+}
+
+export interface LhTimeSelectEventData {
+  column: LhTimeColumnType
+  value: number
+}
+```
+
+## 접근성
+
+시간 패널은 **dialog**로 팝업되고 (트리거는 `aria-haspopup="dialog"`), 패널 안의 세 열은 각각 **listbox**입니다. 이 의미 체계는 공유 커널의 `getPopupTriggerAria`에서 옵니다:
+
+```ts
+getTimePickerTriggerAria(true, 'lh-time-panel')
+// { 'aria-expanded': true, 'aria-haspopup': 'dialog', 'aria-controls': 'lh-time-panel' }
+
+getTimePickerPanelAria('lh-time-panel')
+// { role: 'dialog', id: 'lh-time-panel' }
+
+getTimePickerColumnAria('시간')
+// { role: 'listbox', 'aria-label': '시간' }
+```
+
+- 열 안의 옵션에는 `role="option"` + `aria-selected` (UI 계층이 `LhTimeColumn.isSelected`를 렌더링) + `aria-disabled` (`isDisabled`)가 있어야 합니다.
+- 키보드: 열에 포커스를 둔 뒤 ↑/↓로 **비활성화되지 않은** 옵션 사이를 이동하며 선택; Esc로 패널 닫기.
+- dialog 의미는 패널이 펼쳐졌을 때 포커스를 가두어야 함을 뜻합니다 (`core/shared/focus-trap`), 포커스가 패널 밖으로 나가게 하지 마세요.
+
+## 사용 예시
+
+```ts
+import {
+  parseTime, formatTime, generateTimeColumn, isValidTime, createDateTime,
+} from '@lh-ui/share/core/time-picker'
+
+formatTime(9, 30, 5)                    // '09:30:05'
+formatTime(9, 30, 5, 'HH:mm')           // '09:30'
+parseTime('09:30:05')                   // { hours: 9, minutes: 30, seconds: 5 }
+parseTime('09:30:05', 'HH:mm')          // { hours: 9, minutes: 30, seconds: 0 } (ss 누락은 0 보충)
+parseTime('99:99:99')                   // null (값역 비합법)
+parseTime('abc', 'HH:mm:ss')            // null (NaN)
+parseTime('09:30', 'YYYY-MM-DD')        // null (format에 시간 토큰 없음)
+generateTimeColumn('hour', 1)           // 24개 항목: 00..23
+generateTimeColumn('minute', 15)        // 4개 항목: 00 15 30 45
+generateTimeColumn('minute', 0)         // 60개 항목 (step 0은 1로 정규화)
+generateTimeColumn('hour', 1, [0, 1, 2])// 앞의 세 항목 isDisabled: true
+isValidTime(23, 59, 59)                 // true
+isValidTime(24, 0, 0)                   // false
+createDateTime(new Date('2026-10-12'), 9, 30, 0)  // 2026-10-12 09:30:00
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTimePickerClassNames({ size, disabled, visible })">
+  <input
+    class="lh-time-picker__input"
+    :value="formatDateToTimeString(value, format)"
+    v-bind="getTimePickerTriggerAria(visible, panelId)"
+    @click="open"
+  />
+  <div v-if="visible" class="lh-time-picker__panel" v-bind="getTimePickerPanelAria(panelId)">
+    <div
+      v-for="col in columns"
+      :key="col.type"
+      class="lh-time-picker__column"
+      v-bind="getTimePickerColumnAria(col.label)"
+    >
+      <div
+        v-for="opt in col.items"
+        :key="opt.value"
+        class="lh-time-picker__option"
+        :class="{ 'is-selected': opt.isSelected, 'is-disabled': opt.isDisabled }"
+        role="option"
+        :aria-selected="opt.isSelected"
+        @click="onSelect(col.type, opt.value)"
+      >
+        {{ opt.text }}
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+```tsx
+// React: 열 생성
+// const hours = generateTimeColumn('hour', getHourStep(options), getDisabledHours(options))
+// 분 열은 선택된 시간에 의존: getDisabledMinutes(options, selectedHour)
+```
+
+```ts
+// uniapp: <picker mode="time">는 내장 컴포넌트 (values 형식 'HH:mm'),
+// 커스텀 롤러 열은 <picker-view> + <picker-view-column>이 필요; core의 열 생성 함수는 그대로 사용
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-time-picker` | 기본 클래스 |
+| `.lh-time-picker--{small\|large}` | 크기 단계 |
+| `.lh-time-picker--disabled` | 비활성 |
+| `.lh-time-picker__input` | 트리거 입력란 |
+| `.lh-time-picker__panel` | 팝업 패널 |
+| `.lh-time-picker__column` | 단일 롤러 열 |
+| `.lh-time-picker__option` | 열 안의 옵션 |
+| `.lh-time-picker__footer` | 확인/취소 줄 (date-time 모드) |
+
+알려진 문제 ("높이 토큰 특별 조사"에 기록): time-picker 관련 컨트롤의 높이가 33px로, input (37) / select (32)와 통일되지 않으며, 근본 원인은 `--lh-control-height-*` 토큰이 없는 것입니다.
+
+## 주의사항
+
+- **format의 토큰 순서는 임의일 수 있습니다**: `formatTime`과 `parseTime` 모두 format 안에서 토큰의 위치로 값을 가져오며, `'mm:HH'`도 올바르게 왕복합니다. 단 토큰이 아닌 문자를 섞으면 (예: `'HH时mm分'`) `parseTime`은 여전히 고정 2자리 폭으로 잘라내며, 중국어는 영향을 주지 않지만 (토큰이 아님) **숫자 구분자가 어긋납니다**——`'09点30'`에서 `mm` 위치가 잘라내는 것은 `'点3'`이 되어 NaN으로 파싱되어 null을 반환합니다. format에는 토큰과 숫자가 아닌 구분자만 포함하세요.
+- **`parseTime`의 내결함성**: 예외를 던지는 대신 null을 반환하며, UI 계층은 입력란의 포커스가 벗어날 때 null을 처리해야 합니다 (보통 원래 값을 유지하고 알립니다).
+- **스텝과 비활성화의 상호작용**: `disabledValues`는 비활성화로 표시만 할 뿐 필터링하지 않습니다——UI 계층의 키보드 탐색이 `isDisabled` 항목을 직접 건너뛰어야 합니다.
+- **`date-time` 모드**: 날짜 부분은 `date-picker`가 담당하고 시간 부분은 이 모듈을 재사용합니다; 패널은 보통 먼저 날짜를 고른 뒤 시간을 고르며, `createDateTime(baseDate, …)`가 양쪽을 합칩니다. `baseDate`가 null일 때 **현재 순간**의 날짜를 가져온다는 점에 주의하세요.
+- **구간 모드 `isRange`**: `rangeStart` / `rangeEnd`는 두 개의 `LhTimeData`이며, 두 번째 열의 비활성화 값은 첫 번째 열의 선택에 의존하고 (예: 종료 시간은 시작보다 늦어야 함) UI 계층이 `getDisabledMinutes` 등의 콜백으로 동적으로 계산합니다.
+- **`SS` 대문자는 초가 아님**: 소문자 `ss`만 초이며, `HH` 대문자, `mm`/`ss` 소문자가 고정된 작성법으로 day.js 등의 라이브러리 관행과 일치합니다.
+
+<FnPlayground module="time-picker" fn="generateTimeColumn" params='{"type": "minute", "step": 15}' />

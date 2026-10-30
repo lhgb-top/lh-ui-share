@@ -1,0 +1,140 @@
+---
+title: card —— 카드
+description: 'getCardInteractivity가 interactive/static 의미를 구분, isCardInteractive가 상호작용 가능성을 판정, shadow 3단계 수정자 클래스'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+카드는 '콘텐츠 컨테이너'이지만, 현대 컴포넌트 라이브러리의 카드는 종종 **카드 전체가 클릭 가능**합니다. 이때 카드는 더 이상 평범한 `<div>`가 아닙니다. 버튼의 의미, 키보드 포커스 가능, Enter/Space 트리거가 필요합니다. `core/card`는 `getCardInteractivity`로 이 '버튼인지 아닌지'의 결정을 명시화하여, UI 계층이 이에 따라 tabindex와 role을 붙이게 합니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhCard`를 구현할 때: 클래스명과 상호작용 의미는 core가 계산합니다.
+- 정보 집약 표시: 표지 + 제목 + 설명 + 작업 영역.
+- **사용하면 안 되는 곳**: 폼 컨트롤이 필요한 경우, 복잡하게 중첩된 상호작용이 필요한 경우. 카드 안에 버튼을 다시 넣는 것은 허용되지만(작업 영역), **카드 전체 클릭 가능 + 카드 안에 또 버튼**은 중첩 상호작용의 접근성 문제를 만들므로 피해야 합니다.
+
+## 가져오기
+
+```ts
+import { getCardClassNames, isCardInteractive, getCardInteractivity } from '@lh-ui/share/core/card'
+import type { LhCardState, LhCardShadow, LhCardInteractivity } from '@lh-ui/share/core/card'
+```
+
+## 설계 의도
+
+`isCardInteractive`의 판정은 `clickable && !loading`입니다: 로딩 중인 카드는 상호작용할 수 없습니다. 이 `&&`는 당연해 보이지만 실제 문제를 해결합니다. 카드가 로딩 중일 때 보통 스켈레톤을 표시하며, 이때 클릭은 아직 준비되지 않은 작업을 발생시키는 대신 무시되어야 합니다.
+
+`getCardInteractivity`가 불리언이 아니라 `'interactive'` / `'static'`을 반환하는 것은, UI 계층의 코드가 두 가지 다른 **요소**를 다루는 것처럼 읽히게 하기 위해서입니다:
+
+- `interactive`: 렌더링 시 `role="button"`, `tabindex="0"`을 붙이고, 키보드 Enter/Space를 감시하고, `@click`을 겁니다.
+- `static`: 아무 의미도 붙이지 않고, 그냥 컨테이너입니다.
+
+이런 계층화가 필요한 이유: UI 계층이 직접 `v-if="clickable"`을 쓰게 두면 role/tabindex/키보드 이벤트 세 곳의 분기가 각자 진화하여 누락이 생기기 쉽습니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getCardClassNames` | `(state: LhCardState) => string[]` | 클래스명 배열 | shadow 단계, 클릭 가능, 로딩 수정자 클래스 |
+| `isCardInteractive` | `(state: LhCardState) => boolean` | 불리언 | `clickable && !loading` |
+| `getCardInteractivity` | `(state: LhCardState) => LhCardInteractivity` | `'interactive'` / `'static'` | 의미 역할 결정 |
+
+출력 예:
+
+```ts
+getCardClassNames({ shadow: 'hover', clickable: true, loading: false })
+// ['lh-card', 'lh-card--shadow-hover', 'lh-card--clickable']
+
+getCardInteractivity({ shadow: 'hover', clickable: true, loading: false })  // 'interactive'
+getCardInteractivity({ shadow: 'always', clickable: false, loading: false }) // 'static'
+```
+
+## 타입 정의
+
+```ts
+export type LhCardShadow = 'always' | 'hover' | 'never'
+export type LhCardInteractivity = 'interactive' | 'static'
+
+export interface LhCardState {
+  shadow: LhCardShadow
+  clickable: boolean
+  loading: boolean
+}
+```
+
+## 접근성
+
+이 컴포넌트의 핵심입니다. 카드 전체가 클릭 가능할 때 반드시 APG button pattern에 따라 구현해야 하며, UI 계층의 세 가지는 어느 하나도 빠질 수 없습니다:
+
+```vue
+<div
+  :class="getCardClassNames({ shadow, clickable, loading })"
+  :role="interactivity === 'interactive' ? 'button' : undefined"
+  :tabindex="interactivity === 'interactive' ? 0 : undefined"
+  @click="interactivity === 'interactive' && emit('click')"
+  @keydown.enter="interactivity === 'interactive' && emit('click')"
+  @keydown.space.prevent="interactivity === 'interactive' && emit('click')"
+>
+```
+
+Space 키의 `.prevent`에 주의하세요: 네이티브 button은 Space의 기본 스크롤 동작을 막지만, div로 흉내 낼 때는 직접 막아야 합니다. 그렇지 않으면 카드가 스크롤되면서 동시에 트리거됩니다.
+
+**편의를 위해** 클릭 가능한 카드를 `<button>`으로 렌더링하지 마세요: button의 기본 스타일(inline, 텍스트 가운데 정렬)은 카드 레이아웃과 충돌하고, button 내부에 블록 콘텐츠를 넣는 것은 오래된 브라우저에서 문제가 있습니다. div + role은 APG가 인정하는 동등한 구현입니다.
+
+## 사용 예
+
+```ts
+import { getCardClassNames, getCardInteractivity } from '@lh-ui/share/core/card'
+
+getCardClassNames({ shadow: 'never', clickable: false, loading: true })
+// ['lh-card', 'lh-card--shadow-never', 'lh-card--loading']
+```
+
+```tsx
+// React
+const interactivity = getCardInteractivity({ shadow, clickable, loading })
+const interactive = interactivity === 'interactive'
+return (
+  <div
+    className={getCardClassNames({ shadow, clickable, loading }).join(' ')}
+    role={interactive ? 'button' : undefined}
+    tabIndex={interactive ? 0 : undefined}
+    onClick={interactive ? onClick : undefined}
+    onKeyDown={interactive ? (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() }
+    } : undefined}
+  >
+    {loading ? <Skeleton /> : children}
+  </div>
+)
+```
+
+```ts
+// uniapp: view는 hover-class를 지원하므로 :hover-class로 hover 그림자를 흉내 낼 수 있습니다;
+// 키보드 이벤트는 h5 단말에서만 유효, h5가 아닌 단말에서는 tap에만 반응
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-card` | 기본 클래스: 둥근 모서리, 테두리, 배경, 전환 |
+| `.lh-card--shadow-{always\|hover\|never}` | 그림자 3단계: 항상 표시 / hover에서만 / 표시하지 않음 |
+| `.lh-card--clickable` | 클릭 가능: hover에서 떠오름 + 포인터 커서 + active에서 눌림 |
+| `.lh-card--loading` | 로딩 상태: 콘텐츠 영역이 스켈레톤으로 덮임 |
+| `.lh-card__header` / `.lh-card__title` / `.lh-card__extra` | 머리글: 제목 + 오른쪽 작업 자리 |
+| `.lh-card__cover` | 표지 이미지 영역(전체 너비 둥근 모서리 연결) |
+| `.lh-card__body` | 본문 콘텐츠 영역 |
+| `.lh-card__footer` | 바닥글 작업 영역 |
+| `.lh-card__loading-line` / `--narrow` / `--wide` | 스켈레톤 자리표시자 줄 |
+
+그림자와 둥근 모서리는 `--lh-shadow-*` / `--lh-radius-*` 토큰을 따르며, ConfigProvider로 덮어쓸 수 있습니다.
+
+## 주의사항
+
+- **중첩 상호작용 함정**: 카드 전체가 `role="button"`일 때, 카드 안의 버튼/링크는 button의 자손이 되어 스크린 리더가 건너뜁니다(button 내부에 상호작용 콘텐츠가 허용되지 않음). 둘 다 존재해야 한다면 카드 전체 클릭을 포기하고, 클릭 영역을 명확한 요소로 좁히세요.
+- `shadow`는 기본값 폴백이 없습니다: 타입이 필수 전달을 요구하며, UI 계층의 props 기본값은 보통 `'hover'`를 줍니다.
+- 로딩 상태의 스켈레톤은 `.lh-card__loading-line`이 스타일 계층에서 구현하고, core는 `--loading` 클래스만 출력합니다.
+- `clickable`이 true이지만 click 이벤트를 연결하지 않은 것도 유효합니다(단지 시각적으로 클릭 가능해 보일 뿐). 이것은 호출 쪽의 문제이지 core의 문제가 아닙니다.
+
+<FnPlayground module="card" fn="getCardClassNames" params='{"state": {"shadow": "hover", "clickable": true, "loading": false}}' />

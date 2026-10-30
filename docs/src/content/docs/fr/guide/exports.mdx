@@ -1,0 +1,120 @@
+---
+title: Entrées du package et sous-chemins
+description: "La table complète des 77 clés exports de @lh-ui/share et la pratique de l'import à la demande"
+---
+
+# Entrées du package et sous-chemins
+
+Le champ `exports` du `package.json` définit **les seuls chemins d'import légaux** — tout chemin non listé
+(par exemple `@lh-ui/share/es/core/button/logic.js` en direct) est rejeté par Node / les bundlers. Ce package compte
+**77 clés**.
+
+## La liste des clés racines
+
+| Clé | Pointe vers | Usage |
+| --- | --- | --- |
+| `.` | `es/index.js` / `lib/index.js` | Import brut complet |
+| `./package.json` | `./package.json` | Outils lisant le numéro de version |
+| `./core` | `es/core/index.js` | Agrégat de toutes les fonctions pures core |
+| `./core/<composant>/*` | `es/core/<composant>/*` | **56 composants**, un par un, à la demande |
+| `./core/shared/*` | `es/core/shared/*` | 12 modules du noyau partagé |
+| `./constants` | `es/constants/index.js` | Les constantes `LH_*` |
+| `./locales` | `es/locales/index.js` | lhlocale + zhCN / enUS |
+| `./locales/lang/*` | `es/locales/lang/*` | 6 paquets de langues importables séparément |
+| `./theme` | `es/theme/index.js` | Primitives d'exécution du thème + préréglages |
+| `./types` | `es/types/index.d.ts` | **Types uniquement**, sans implémentation |
+| `./types/components/*` | `es/types/components/*.d.ts` | Types des Props des composants (types uniquement) |
+| `./utils` | `es/utils/index.js` | createNamespace / deepMerge et autres utilitaires purs |
+| `./utils/*` | `es/utils/*` | Utilitaires importés par fichier |
+| `./theme.css` | `dist/theme/index.css` | Jetons clairs |
+| `./theme-dark.css` | `dist/theme/index-dark.css` | Surcharge sombre |
+| `./styles.css` | `dist/styles/index.css` | Jetons + tous les styles de composants |
+| `./dist/*` | `dist/*` | Accès direct aux artefacts dist |
+| `./styles/*` | `styles/<name>/index.scss` | **Source SCSS d'un seul composant** |
+| `./styles/index.scss` | `styles/index.scss` | Agrégat SCSS complet |
+| `./styles/theme/index.scss` | `styles/theme/index.scss` | Agrégat SCSS du thème |
+| `./styles/theme/common/*` | `styles/theme/common/*.scss` | Jetons / motifs / mixins de transition |
+
+## Les exports à trois conditions
+
+À l'exception du pur CSS / SCSS et des clés `types`, chaque clé JS expose simultanément trois conditions :
+
+```json
+"./core/button/*": {
+  "types": "./es/core/button/*.d.ts",
+  "import": "./es/core/button/*.js",
+  "require": "./lib/core/button/*.js"
+}
+```
+
+- `import` — artefact ESM (`es/`), preserveModules reflétant la structure des sources ; l'import à la demande n'embarque que ce fichier.
+- `require` — artefact CJS (`lib/`), pour Node en direct / jest, etc.
+- `types` — les `.d.ts`, utilisés par `import type`, à coût d'exécution nul.
+
+## Les 56 sous-chemins core
+
+```
+affix · alert · anchor · avatar · backtop · badge · breadcrumb · button ·
+calendar · card · cascader · checkbox · collapse · config · date-picker ·
+descriptions · dialog · divider · drawer · dropdown · empty · form · grid ·
+icon · image · input · input-number · loading · menu · message ·
+notification · pagination · popconfirm · popover · progress · radio · rate ·
+segmented · select · skeleton · slider · space · spinner · statistic ·
+steps · switch · table · tabs · tag · time-picker · timeline · tooltip ·
+transfer · tree · upload · virtual-list
+```
+
+La surface exportée de chaque sous-chemin fait foi dans la « table des fonctions » de la page du composant, consultable page par page (voir « API des composants » dans la navigation de gauche).
+
+## Les 12 sous-chemins du noyau partagé
+
+```
+core/shared/a11y · date · delay · focus-trap · format · keyboard ·
+popper · pt · sanitize · sx · types · virtual
+```
+
+C'est la couche la plus référencée par les bibliothèques UI de chaque plateforme. La documentation de chaque module est dans « Noyau partagé » à gauche.
+
+## tree-shaking et sideEffects
+
+```json
+"sideEffects": ["**/*.css", "**/*.scss"]
+```
+
+Seuls les fichiers de styles ont des effets de bord. Les sous-chemins JS purs sont éligibles au tree-shaking en toute sécurité :
+
+- ✅ `import { getButtonClasses } from '@lh-ui/share/core/button'` n'embarque que button.
+- ✅ `import type { LhSxProps } from '@lh-ui/share/core/shared/sx'` est effacé à la compilation.
+- ⚠️ `import '@lh-ui/share/styles.css'` est **complet** et ne peut pas être tree-shaké —
+  pour les styles, compilez plutôt la source SCSS via `./styles/<name>`, ou utilisez les artefacts à la demande de chaque bibliothèque UI.
+
+## Les deux formes des sous-chemins styles
+
+`./styles/*` pointe vers la **source SCSS** (`styles/<name>/index.scss`), pas vers un artefact compilé :
+
+```scss
+@use '@lh-ui/share/styles/button';   // ✅ le bundler compile le SCSS
+```
+
+```ts
+import '@lh-ui/share/styles/button'   // ❌ l'extension .scss est requise et le bundler ne la reconnaît pas
+```
+
+Si vous ne voulez pas compiler de SCSS dans votre projet, importez `./styles.css` (complet) ou utilisez les artefacts déjà construits par chaque bibliothèque UI :
+`es/<name>/style/index.css` (lh-ui-plus) / `es/components/<name>/style/index.css`
+(lh-ui-vue2).
+
+## La liaison locale (développement en interne à la famille)
+
+En interne à la famille, les bibliothèques UI ne dépendent pas de npm : les configurations dev / test aliasent `@lh-ui/share/**`
+vers les sources de `lh-ui-share/` au même niveau, **avec un garde d'existence** :
+
+| Import | Pointe vers, en disposition familiale |
+| --- | --- |
+| `@lh-ui/share/styles/**` | `lh-ui-share/styles/**` (source SCSS, compilation à la volée par vite) |
+| `@lh-ui/share/core/**` | `lh-ui-share/src/core/**` |
+| `@lh-ui/share/{utils,constants,theme,locales,types}/**` | `lh-ui-share/src/$1/**` |
+| `@lh-ui/share` (brut) | `lh-ui-share/src/index.ts` |
+
+Quand le dépôt share frère n'existe pas, le garde renvoie un tableau vide et l'on retombe automatiquement sur le paquet npm installé — **un clone à dépôt unique comme la disposition familiale fonctionnent tous les deux**. La même règle vaut pour les releases : si share ajoute un fichier profond sans lancer `pnpm build`
+(qui inclut sync-exports), il n'y a pas de clé exports côté npm, et l'aval obtiendra un MODULE_NOT_FOUND après son `pnpm up`.

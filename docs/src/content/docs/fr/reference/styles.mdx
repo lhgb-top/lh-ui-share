@@ -1,0 +1,116 @@
+---
+title: "styles —— la source des styles"
+description: "La structure du répertoire styles/, les conventions BEM, les trois couches de jetons (var.scss clair / var-dark.scss sombre / variables.scss variables SCSS)"
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+`styles/` est l'**unique source** des styles BEM des composants de toute la famille ([ligne rouge 2](/fr/development/contribution#les-six-lignes-rouges)) : 58 répertoires de composants + la couche de jetons `theme/common/`. Aucune bibliothèque UI n'a le droit d'en copier les styles pour les modifier.
+
+## La structure du répertoire
+
+```
+styles/
+├── index.scss                  # L'agrégat complet (jetons + tous les composants), importé en une ligne
+├── theme/
+│   ├── common/
+│   │   ├── var.scss            # Les jetons clairs (:root, 185 variables CSS)
+│   │   ├── var-dark.scss       # La surcharge sombre ([data-theme='dark'], .dark, 118 entrées)
+│   │   ├── variables.scss      # La couche de variables SCSS (183 $lh-*, des constantes de compilation)
+│   │   ├── patterns.scss       # Le système de motifs style chinois (6 textures)
+│   │   ├── transition.scss     # La source unique des classes de transition (3 mixins)
+│   │   └── …                   # La couche commune de mixins / functions
+│   └── index.scss              # L'entrée de l'agrégat du thème
+├── button/index.scss           # Les styles d'un composant (58 répertoires)
+├── dialog/index.scss
+└── …
+```
+
+**Chaque répertoire de composant est un simple `index.scss`**, importé par `@lh-ui/share/styles/<name>` (vite résout le répertoire vers index).
+
+## Comment importer
+
+```ts
+// Les quatre façons (voir le guide de démarrage)
+import '@lh-ui/share/styles/button'        // Un seul composant
+import '@lh-ui/share/styles'                // Tout (styles/index.scss)
+import '@lh-ui/share/styles/theme'          // Uniquement les jetons du thème
+import '@lh-ui/share/styles/theme/common/var-dark'  // Jusqu'au fichier précis
+```
+
+Les stratégies d'injection diffèrent selon la bibliothèque UI : plus injecte tout à l'entrée de la bibliothèque, vue2 laisse l'utilisateur importer à la demande (voir [Stratégies d'injection](/fr/guide/injection)).
+
+## Les conventions BEM
+
+Les noms de classes portent toujours le préfixe `lh-` et suivent les trois couches BEM :
+
+```scss
+.lh-button {                    // Block
+  &__text { }                   // Element
+  &--primary { }                // Modifier
+  &__text--disabled { }         // Element + Modifier
+  &.is-loading { }              // Classe d'état (préfixe is-, sans espace de noms)
+}
+```
+
+- Le nommage est généré par [createNamespace](/fr/reference/utils#createnamespace--lespace-de-noms-bem), garantissant la cohérence de toute la famille.
+- **Les classes d'état portent le préfixe `is-`** (`is-loading` / `is-disabled` / `is-open`), ce ne sont pas des modificateurs BEM.
+- Tout ajout de classe doit aussi mettre à jour `docs/src/data/classes.json` (généré par `scripts/gen-docs-data.mjs` en scannant `styles/*/index.scss`).
+
+## Les trois couches de jetons
+
+| Couche | Fichier | Quantité | Caractéristique |
+| --- | --- | --- | --- |
+| Variables CSS (clair) | `var.scss` | 185 entrées | `:root { --lh-*: ... }`, surchargeable à l'exécution |
+| Variables CSS (sombre) | `var-dark.scss` | 118 entrées | Surcharge du clair via `[data-theme='dark'], .dark { ... }` |
+| Variables SCSS | `variables.scss` | 183 variables | Les `$lh-*`, **figées à la compilation** |
+
+### Les composants ne peuvent consommer que des variables CSS
+
+```scss
+// ✅ Correct : repli en chaîne par var(), évalué à l'exécution
+.lh-button--primary {
+  color: var(--lh-color-on-primary, #fff);
+  background: var(--lh-primary-color, #1677ff);
+}
+
+// ❌ Faux : référence directe à une variable SCSS, ne se retourne pas en mode sombre
+.lh-button--primary {
+  background: #{$lh-primary-color};
+}
+```
+
+### Le piège de la cuisson à la compilation
+
+Dans `var.scss`, les jetons dont la valeur est de la forme `#{$lh-foo}` sont **remplacés, à la compilation, par la valeur claire concrète** ; ils ne se retournent pas automatiquement en mode sombre. De tels jetons doivent être explicitement redirigés, dans `var-dark.scss`, vers un jeton sémantique sombre :
+
+```scss
+// var-dark.scss
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);   // ← redirigé explicitement
+}
+```
+
+Une telle lacune a déjà fait que, en mode sombre, les textes des menus / tableaux / timelines conservaient la valeur claire et devenaient invisibles. La vérification 7 de `pnpm verify:styles` (l'accessibilité du mode sombre) veille précisément là-dessus. À l'inverse, le **repli en chaîne** `var(--lh-foo, var(--lh-bar, #x))` dans un composant est **évalué à l'exécution** : dès qu'un jeton de la chaîne possède une surcharge sombre, il est sûr, sans déclaration redondante. Voir [Mode sombre](/fr/theme/dark-mode).
+
+## `styles/index.scss` est un objet généré
+
+Le fichier d'agrégat complet est **généré par `scripts/build-styles.mjs` en scannant les répertoires de composants** ; `verify:styles` en vérifie la cohérence — **à ne pas modifier à la main**. Un nouveau répertoire de composant est automatiquement couvert par l'agrégat.
+
+## Le marqueur hairline est abrogé
+
+~~Toute déclaration de bordure fine 1px doit porter le marqueur en ligne `/* hairline */`~~ — cette ligne rouge est **abrogée** (uniapp v3 sort les px en direct, ne traduit plus les rpx, le marqueur a perdu son utilité ; voir `docs/bugfix-log.md` D-02). Les 65 marqueurs historiques de `styles/` sont conservés comme des commentaires ordinaires, **les nouvelles bordures 1px n'ont plus besoin d'être marquées**. Les bordures structurelles (2px / 3px) ne l'ont jamais été.
+
+## La table complète des jetons du thème
+
+<TokenTable />
+
+(Les données des jetons sont générées par `scripts/gen-docs-data.mjs` en analysant `var.scss` / `var-dark.scss` / `variables.scss`, avec des assertions de quantité.)
+
+## Points d'attention
+
+- **Les styles ne se modifient que dans ce dépôt** : aucune bibliothèque UI ne doit conserver de copie des scss des composants. Les différences de classes de transition entre plateformes sont fédérées par le [transition mixin](/fr/reference/transition-mixins).
+- **Les couleurs sont toujours en `var(--lh-*, fallback)`**, pas de nouvelle valeur codée en dur (la vérification var fallback de verify:styles veille).
+- **Tout nouveau composant doit avoir son `styles/<name>/index.scss`**, sans quoi il n'aura pas d'artefact de styles sur une plateforme (le script de build l'ignore silencieusement, sans erreur).
+- **L'exhaustivité du mode sombre est une exigence impérative** : tous les composants prennent en charge le clair et le sombre par défaut ; les lacunes sombres sont interceptées par la vérification 7 de verify:styles.

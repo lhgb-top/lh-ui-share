@@ -1,0 +1,156 @@
+---
+title: date —— 日付プリミティブ
+description: 'getDaysInMonth / isDateDisabled / formatDate / parseDate。date-picker とカレンダー区間演算の共通コア'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+日付計算は date-picker のアルゴリズム本体であり、calendar の区間選択の共通コアでもあります。
+ネイティブ `Date` にはいくつかの古典的な罠（2 桁年、`new Date(2023, 1, 30)` のロール
+オーバー）があり、このモジュールが一括で処理します。
+
+## 約束
+
+**month は一律 0 始まり**で、ネイティブ `Date` と一致します（`0` = 1 月、`11` = 12 月）。
+これは本モジュールで最も多い誤用の源です——呼び出し側は UI から得た「3 月」を `2` として
+渡さなければなりません。
+
+**日付部分だけを比較**：`isSameDay` / `compareDate` は時分秒を見ず、「ある日を選択する」
+セマンティクスに合致します。
+
+## インポート方法
+
+```ts
+import {
+  getDaysInMonth,
+  getFirstDayOfMonth,
+  isSameDay,
+  isSameMonth,
+  compareDate,
+  isDateDisabled,
+  formatDate,
+  parseDate,
+} from '@lh-ui/share/core/shared/date'
+```
+
+## 関数表
+
+| 関数 | シグネチャ | 役割 |
+| --- | --- | --- |
+| `getDaysInMonth` | `(year: number, month: number) => number` | 月の日数（`month` は 0 始まり） |
+| `getFirstDayOfMonth` | `(year: number, month: number) => number` | 月初の曜日（`0` = 日曜） |
+| `isSameDay` | `(a: Date, b: Date) => boolean` | 同じ日かどうか |
+| `isSameMonth` | `(a: Date, b: Date) => boolean` | 同じ年月かどうか |
+| `compareDate` | `(a: Date, b: Date) => number` | 日付部分を比較し、ミリ秒差を返す |
+| `isDateDisabled` | `(date, minDate, maxDate, disabledDate) => boolean` | 無効かどうか |
+| `formatDate` | `(date: Date, format: string) => string` | 日付をフォーマットする |
+| `parseDate` | `(str: string, format: string) => Date \| null` | 日付文字列を解析する |
+
+## 2 桁年の正規化
+
+`getDaysInMonth` と `getFirstDayOfMonth` は内部で `year ∈ [0, 99]` を正規化します
+（`+1900`）。**なぜか**：JS では `new Date(99, 0, 1)` が **1999-01-01** として扱われ
+（`Date` コンストラクタの 0〜99 年に対する特殊挙動）、正規化しなければ月初の曜日を誤って
+算出します。通常の 4 桁年は影響を受けません。
+
+## isDateDisabled の判定順
+
+```
+disabledDate?.(date) が真を返す        →  true
+date が minDate より早い（minDate が null でない）  →  true
+date が maxDate より遅い（maxDate が null でない）  →  true
+それ以外                               →  false
+```
+
+`minDate` / `maxDate` / `disabledDate` が `null` のときはその条件をスキップします——
+「上限だけ設定」「カスタム判定だけ設定」も正常に動作します。順序は意図的です：
+**カスタム判定が優先**され、`disabledDate` のセマンティクスは「区間がどうであれ、これらの
+日付は選択不可」（祝日、在庫が 0 の日）になります。
+
+## formatDate / parseDate のトークン
+
+対応する固定幅トークン：`yyyy` / `MM` / `dd` / `HH` / `mm` / `ss`。
+
+- **任意の順序**：`'MM/dd/yyyy'`、`'yyyy-MM-dd HH:mm'` のどちらも可。
+- **複数出現はすべて置換**：`'yyyy-MM-dd'` の 2 つの `dd` は同じ値で置換されます。
+- **年は 4 桁までゼロ埋め**：`formatDate(new Date(23, 0, 1), 'yyyy')` → `'0023'`。
+- **2 関数は対称**：`parseDate(formatDate(d, fmt), fmt)` は同じ日（同年同月同日、時分秒は
+  トークン次第）を復元するはずです。
+
+```ts
+formatDate(new Date(2026, 9, 12), 'yyyy-MM-dd')   // '2026-10-12'
+formatDate(new Date(2026, 9, 12, 14, 5), 'yyyy-MM-dd HH:mm')  // '2026-10-12 14:05'
+parseDate('2026-10-12', 'yyyy-MM-dd')             // Date(2026, 9, 12)
+parseDate('不正な値', 'yyyy-MM-dd')                // null
+```
+
+### parseDate が null を返す 2 つのケース
+
+1. **文字列とフォーマットが対応しない**：`parseInt` が `NaN` になる。
+2. **値が不正**：`2023-02-30` はネイティブ `Date` に静かに 3 月 2 日へロールされます——
+   関数は構築後に**読み戻して検証**し、ロールしていれば不正と判定して `null` を返します。
+   これは date-picker の入力欄検証の鍵です：ユーザーが存在しない日付を打ち込むと、
+   コンポーネントがそれを識別できます。
+
+欠落トークンのデフォルト値：年 = 現在の年、月 = `0`、日 = `1`、時 / 分 / 秒 = `0`。したがって
+`parseDate('10-12', 'MM-dd')` は「今年の 10 月 12 日 00:00:00」になります。
+
+## 使用例
+
+### カレンダーパネルのレンダリング
+
+```ts
+// 現在のビューの年月
+const year = 2026
+const month = 9   // 0 始まり = 10 月
+
+const days = getDaysInMonth(year, month)          // 31
+const firstDay = getFirstDayOfMonth(year, month)  // 4 = 木曜 → 先頭に空白セルを 4 つ補う
+```
+
+### 区間の無効化
+
+```ts
+const min = new Date(2026, 0, 1)
+const max = new Date(2026, 11, 31)
+
+isDateDisabled(new Date(2026, 5, 1), min, max, null)          // false
+isDateDisabled(new Date(2025, 5, 1), min, max, null)          // true（min より早い）
+isDateDisabled(new Date(2026, 5, 1), null, null, (d) =>       // true（カスタム判定）
+  d.getDay() === 0)                                           // 日曜は選択不可
+```
+
+### コンポーネントとの連携
+
+```ts
+// date-picker コンポーネント内部
+function isDisabled(date: Date) {
+  return isDateDisabled(date, props.minDate, props.maxDate, props.disabledDate)
+}
+
+function onInput(value: string) {
+  const parsed = parseDate(value, props.format)
+  if (parsed === null) {
+    errorMessage.value = '日付の形式が正しくありません'
+    return
+  }
+  modelValue.value = parsed
+}
+```
+
+## 注意事項
+
+- **month は 0 始まり**：UI 層で「10 月」を表示するときは `9` を渡します。date-picker の
+  パネル状態は内部で一律 0 始まりを使い、レンダリング時にだけ `+1` します。
+- **`year >= 10000` は非対応**：固定幅トークンの表現力を超えるため、`formatDate` は予期しない
+  結果を出力します。これは実際上の制約ではありません（`input[type=date]` も 9999 までしか
+  対応していません）。
+- **`compareDate` はミリ秒差を返す**：`Date.UTC(...)` の差分で、正数は `a` が後を意味します。
+  比較するのは日付部分だけで、時刻は含みません。
+- **`isDateDisabled` の `disabledDate` はレンダリングのたびにセルごとに呼ばれる**：
+  カレンダー 42 セル × ビュー変化のたびなので、ここで重い計算をしないでください。キャッシュ
+  は UI 層の責任です。
+- **タイムゾーン**：すべてローカルタイムゾーンの `Date` を基準とし、UTC 変換は行いません。
+  タイムゾーンをまたぐアプリケーションは UI 層が渡す前に統一してください。
+
+<FnPlayground module="date" fn="getDaysInMonth" params='{"year": 2026, "month": 9}' />

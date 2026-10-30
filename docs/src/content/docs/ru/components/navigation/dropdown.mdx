@@ -1,0 +1,172 @@
+---
+title: 'dropdown выпадающее меню —— Навигация'
+description: 'LH_DROPDOWN_PLACEMENT_DEFAULT=b-bottom-start, getDropdownMenuStyle: прокрутка при maxHeight, отличие haspopup:"menu" от "true" в popover'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Выпадающее меню — это «список действий, всплывающий по клику на кнопке»: «Изменить / Удалить / Отключить» для строки данных, «Дополнительные действия» для столбца таблицы. Отличие от `popover` — в **семантике и форме содержимого**: dropdown несёт **семантику меню** (role=menu + список menuitem), popover — **семантику диалога** (role=dialog, любое содержимое). Отличие от `menu` — в **постоянстве**: dropdown это временно всплывающий, исчезающий по клику вход к действиям.
+
+## Когда использовать
+
+- Реализация `<LhDropdown>` / `<LhDropdownItem>` на всех концах: меню действий строки, кнопка «Ещё», пакетные операции, быстрое командное меню.
+- **Действия одноранговые, их немного (3~10), не требуют сложных форм**.
+- **Не следует использовать**: всплывающие слои с формами или богатым содержимым (используйте `popover`); опасные операции, требующие подтверждения (кнопка удаления прямо в dropdown без повторного подтверждения опасна — используйте `popconfirm`); основная навигация (используйте `menu` — dropdown исчезает при обновлении).
+
+## Импорт
+
+```ts
+import {
+  LH_DROPDOWN_PLACEMENT_DEFAULT,
+  LH_DROPDOWN_TRIGGERS,
+  getDropdownClass,
+  getDropdownItemClass,
+  getDropdownMenuStyle,
+  getDropdownTriggerAria,
+  getDropdownMenuAria,
+  getDropdownItemAria,
+} from '@lh-ui/share/core/dropdown'
+import type { LhDropdownTrigger, LhDropdownState, LhDropdownItemState } from '@lh-ui/share/core/dropdown'
+```
+
+## Замысел
+
+**Размещение по умолчанию — `bottom-start`, а не `top`**: `LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'` — выпадающее меню **разворачивается вниз от левого нижнего угла кнопки**, что соответствует ментальной модели «выпадения». Для сравнения: у `popover` / `popconfirm` по умолчанию `top` (информационный слой всплывает вверх, не перекрывая содержимое ниже). Выпадение — вход к действиям, разворачиваться вниз естественнее, а `bottom-start` (выравнивание по левому краю, а не по центру) гарантирует, что длинное меню не выйдет за горизонтальные границы вьюпорта.
+
+**Среди способов триггера нет focus**: `LH_DROPDOWN_TRIGGERS` — это `hover / click / contextmenu`, **focus отсутствует**. Для сравнения: у `popover` — `click / hover / focus / manual`. Причина: триггер выпадающего меню обычно кнопка, и срабатывание по focus привело бы к случайному открытию меню при проходе Tab, мешая клавиатурному потоку. `contextmenu` — сценарий контекстного меню (замещает стандартное меню правой кнопки браузера).
+
+**Семантика `hideOnClick` lives в UI-слое**: в state есть поле `hideOnClick`, но core его не обрабатывает — решение «закрывать ли меню после клика по элементу» принимает UI-слой (при клике по item решает согласно настройке). core лишь несёт объявление, сохраняя в структуре данных возможность выразить полный замысел (тот же подход, что у поля `trigger` в `form`).
+
+**`getDropdownMenuStyle` содержит `overflow: auto`**: при заданном maxHeight автоматически добавляется прокрутка. Если пунктов много, меню не разрывает вьюпорт — это тонкое отличие от `popover` (стили ширины popover не содержат прокрутки, переполнение содержимого лежит на вызывающей стороне).
+
+**`haspopup: 'menu'`, а не `'true'`**: значение aria-haspopup у триггера — **`'menu'`**, точно объявляющее, что всплывает именно меню. Для сравнения: у `popover` — `'true'` (обобщённое всплывание, эквивалент.dialog/menu/listbox в общем виде). Скринридер по этому признаку предугадывает интерактивный режим всплывающего содержимого (меню поддерживает навигацию стрелками).
+
+## Таблица функций
+
+| Функция / константа | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getDropdownClass` | `(state: { placement, popperClass? }) => string[]` | классы | размещение + пользовательское |
+| `getDropdownItemClass` | `(state: { disabled?, divided? }) => string[]` | классы | отключение + разделитель |
+| `getDropdownMenuStyle` | `(maxHeight?: string \| number) => Record<string, string>` | инлайновые стили | maxHeight + overflow |
+| `getDropdownTriggerAria` | `(visible, menuId?) => LhAriaAttrs` | aria-пакет | haspopup="menu" |
+| `getDropdownMenuAria` | `(id?) => LhAriaAttrs` | aria-пакет | role=menu |
+| `getDropdownItemAria` | `(state: { disabled? }) => LhAriaAttrs` | aria-пакет | role=menuitem |
+
+Константы: `LH_DROPDOWN_PLACEMENT_DEFAULT = 'bottom-start'`, `LH_DROPDOWN_TRIGGERS` (hover / click / contextmenu).
+
+## Определения типов
+
+```ts
+export type LhDropdownTrigger = 'hover' | 'click' | 'contextmenu'
+
+export interface LhDropdownState {
+  trigger?: LhDropdownTrigger
+  placement?: LhPlacement          // 12 размещений (shared/popper)
+  visible?: boolean
+  disabled?: boolean
+  hideOnClick?: boolean            // закрывать ли после клика по элементу меню (обрабатывает UI-слой)
+}
+
+export interface LhDropdownItemState {
+  command?: string | number        // идентификатор элемента меню, выбрасывается с событием command
+  disabled?: boolean
+  divided?: boolean                // разделительная линия сверху
+}
+```
+
+## Доступность
+
+```ts
+getDropdownTriggerAria(true, 'dd-menu-1')
+// { 'aria-expanded': true, 'aria-controls': 'dd-menu-1', 'aria-haspopup': 'menu' }
+getDropdownTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'menu' }
+
+getDropdownMenuAria('dd-menu-1')  // { role: 'menu', id: 'dd-menu-1' }
+getDropdownItemAria({ disabled: true })
+// { role: 'menuitem', 'aria-disabled': true }
+```
+
+- **Предугадывание скринридера по `aria-haspopup="menu"`**: скринридер, встретив этот признак, знает, что всплывает меню, и обрабатывает его в режиме меню (навигация стрелками, активация Enter). Это точнее, чем обобщённое `"true"` — именно поэтому dropdown и popover используют разные значения.
+- **Клавиатурные соглашения меню** (шаблон menu из APG): триггер открывается Enter/Space; после открытия фокус попадает на **первый доступный элемент меню**; перемещение ↑/↓; активация Enter/Space; Esc закрывает и **возвращает фокус на триггер**. Алгоритм навигации стрелками использует `shared/keyboard.getNextListIndex` (общий с menu / tabs).
+- **Контракт событий `command`**: поле `command` элемента меню выбрасывается с событием клика (`@command="cmd => ..."`), а не на каждый item пишется отдельный обработчик — это стандартная форма API выпадающего меню. UI-слой dispatchируется через switch.
+- **aria-disabled вместо атрибута disabled для отключённых элементов**: `aria-disabled` помечает элемент отключённым в accessibility-дереве, но оставляет его доступным для фокуса (скринридер может озвучить его наличие и причину отключения); нативный `disabled` убирает его из последовательности фокуса, и клавиатурный пользователь «перепрыгивает» его, не зная почему.
+- **Разделитель — чистая декорация**: `divided` это просто CSS-граница, без семантики — не используйте её для выражения «группы опасных действий»; для опасных действий применяйте `popconfirm` или визуальный цвет (текст цвета danger).
+- **Контекстное меню (contextmenu)**: триггеру нужен `@contextmenu.prevent`, подавляющий стандартное меню браузера, а триггерный элемент нужно пометить как интерактивный. Контекстное меню полностью недоступно для клавиатурных пользователей — **обязательно предоставляйте эквивалентный вход через кнопку** (жёсткое требование доступности).
+
+## Примеры использования
+
+```ts
+import {
+  getDropdownClass, getDropdownItemClass, getDropdownMenuStyle, LH_DROPDOWN_PLACEMENT_DEFAULT,
+} from '@lh-ui/share/core/dropdown'
+
+LH_DROPDOWN_PLACEMENT_DEFAULT  // 'bottom-start'
+
+getDropdownClass({ placement: 'bottom-start' })
+// ['lh-dropdown__menu', 'lh-dropdown__menu--bottom-start']
+getDropdownItemClass({ disabled: true, divided: true })
+// ['lh-dropdown__item', 'lh-dropdown__item--disabled', 'lh-dropdown__item--divided']
+
+getDropdownMenuStyle(200)     // { maxHeight: '200px', overflow: 'auto' }
+getDropdownMenuStyle('30vh')  // { maxHeight: '30vh', overflow: 'auto' }
+getDropdownMenuStyle(undefined)  // {}
+```
+
+```vue
+<!-- Vue3: меню действий строки -->
+<template>
+  <LhDropdown @command="onCommand">
+    <template #default>
+      <LhButton size="small">Ещё<LhIcon name="arrow-down" /></LhButton>
+    </template>
+    <template #menu>
+      <LhDropdownItem :command="'edit'">Изменить</LhDropdownItem>
+      <LhDropdownItem :command="'copy'">Копировать</LhDropdownItem>
+      <LhDropdownItem :command="'delete'" divided danger>Удалить</LhDropdownItem>
+    </template>
+  </LhDropdown>
+</template>
+
+<script setup>
+function onCommand(command: string | number) {
+  if (command === 'delete') visible.value = true  // удаление идёт через повторное подтверждение popconfirm
+  else if (command === 'edit') router.push(`/edit/${id}`)
+}
+</script>
+```
+
+```tsx
+// React: рендер массива элементов меню + диспетчеризация onCommand;
+// управляемый visible в сочетании с закрытием по клику вне меню
+```
+
+```ts
+// uniapp: <view> меню + catchtap; контекстное меню на концах, отличных от h5,
+// не поддерживается — остаётся только триггер click
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-dropdown__menu` | контейнер меню (popper) |
+| `.lh-dropdown__menu--{bottom-start\|top\|…}` | размещение (фактическое значение после flip) |
+| `.lh-dropdown__item` | элемент меню |
+| `.lh-dropdown__item--disabled` | отключено (серый + без отклика) |
+| `.lh-dropdown__item--divided` | разделительная линия сверху |
+| `.lh-dropdown__item--danger` | опасное действие (красный текст, соглашение UI-слоя) |
+
+Цвет фона `--lh-bg-color`, тень `--lh-box-shadow-dropdown`, скругление `--lh-border-radius-base`, отступ внутри элемента `--lh-dropdown-item-padding`, z-index `--lh-z-index-dropdown`.
+
+## Замечания
+
+- **Опасные действия требуют повторного подтверждения**: размещённая в dropdown «Удалить» срабатывает по одному клику, а цена ошибки высока. Стандартный подход — dropdown запускает `popconfirm` («После удаления восстановление невозможно, продолжить?») — это цепочка из двух компонентов.
+- **Прокрутка при большом числе элементов меню**: свыше 10 пунктов задумайтесь о `maxHeight` с прокруткой или переходе на `select` (семантика выбора) либо drawer. Длинное меню плохое для клавиатурной навигации (много нажатий стрелок).
+- **Проблема триггера `hover` на мобильных**: на сенсорных экранах нет hover — та же ситуация, что у `popover`/`tooltip`. По умолчанию на всех концах используйте click.
+- **Сценарий `hideOnClick: false`**: когда элементы меню — «отмечаемые» переключатели (например, «Показывать столбец X»), после клика меню остаётся открытым, чтобы пользователь мог отметить несколько пунктов — для этого поле и существует.
+- **Вложенные dropdown**: позиционирование и управление фокусом в подменю (dropdown внутри dropdown) очень сложны (какой из родительского и дочернего плавающих слоёв закрывает Esc). lh-ui не содержит встроенных подменю — для иерархической навигации используйте `menu`.
+- **В `placement` нужно передавать фактическое значение после flip**: как и в `popover`, `getDropdownClass` принимает фактическое размещение, возвращаемое popper, иначе классы стрелки/выравнивания не совпадут с визуалом.
+- **Граница с `menu`**: dropdown — **временный вход к действиям** (исчезает при обновлении); menu — **постоянная навигация** (поддерживает глубокие ссылки и сохранение состояния при обновлении). Подмена основной навигации dropdown-ом лишит пользователя возможности вернуться на страницы второго уровня.
+- **Фокус на первом элементе**: при открытии меню фокус попадает на первый доступный элемент (семантика first из `shared/keyboard`), а не остаётся на триггере — это требование APG: клавиатурный пользователь после открытия должен иметь возможность сразу действовать.
+
+<FnPlayground module="dropdown" fn="getDropdownMenuStyle" params='{"maxHeight": 200}' />

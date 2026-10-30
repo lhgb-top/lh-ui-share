@@ -1,0 +1,133 @@
+---
+title: radio —— 라디오
+description: 'isRadioChecked는 Object.is로 modelValue와 value를 판정, getRadioClassNames는 타입 수식 클래스 출력'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+라디오의 의미는 "한 그룹에서 단 하나만 유효"입니다. `core/radio`는 이것을 가장 단순한 판정으로 추상화합니다: **현재 그룹 값 `modelValue`가 내 `value`와 같은가**. checkbox의 집합 연산과 달리 radio는 단일 값 비교입니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhRadio`와 `LhRadioGroup` (group이 `modelValue`를 가지고, item이 자신의 선택 상태를 판정).
+- 배타적 선택: 성별, 결제 수단, 탭 형태의 폼 분기.
+- **사용하면 안 되는 경우**: 다중 선택은 `checkbox`; 토글은 `switch`; 세그먼트 전환은 `segmented` (시각적으로 더 가벼움).
+
+## 임포트 방법
+
+```ts
+import { isRadioChecked, getRadioClassNames } from '@lh-ui/share/core/radio'
+import type { LhRadioState } from '@lh-ui/share/core/radio'
+```
+
+## 설계 의도
+
+`isRadioChecked`는 `===`가 아니라 `Object.is(modelValue, value)`를 사용하며, checkbox와 같은 이유입니다: NaN / -0의 집합 의미 일관성, 그리고 "모든 타입의 값이 단일 선택 키가 될 수 있다"는 점입니다.
+
+radio에는 토글 함수가 필요 없습니다——선택이 곧 **값 할당** (`modelValue = value`)이며, 이것이 단일 선택과 다중 선택의 수학적 차이입니다 (하나의 변수 할당 vs 하나의 집합의 추가/삭제).
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `isRadioChecked` | `(state: LhRadioState) => boolean` | 불리언 | `Object.is(modelValue, value)` |
+| `getRadioClassNames` | `(type: string) => string[]` | 클래스명 배열 | `lh-radio` + 타입 수식 |
+
+```ts
+getRadioClassNames('primary')  // ['lh-radio', 'lh-radio--primary']
+getRadioClassNames('')         // ['lh-radio']
+```
+
+## 타입 정의
+
+```ts
+export interface LhRadioState {
+  modelValue: unknown   // 그룹의 현재 값
+  value: unknown        // 이 radio의 값
+  checked: boolean
+}
+```
+
+## 접근성
+
+checkbox와 마찬가지입니다: **네이티브 `<input type="radio">`를 사용**하면 의미, 키보드, 폼 제출이 모두 무료로 따라옵니다. radio의 name 속성이 핵심입니다——같은 그룹의 radio는 반드시 name을 공유해야 하며, 브라우저의 방향키 탐색 (같은 그룹 내 이동)이 그것에 의존합니다.
+
+```ts
+// 스크린 리더가 읽는 것은 label 텍스트 + "선택됨/선택되지 않음" 상태이며, 네이티브 radio가 모두 커버
+```
+
+## 사용 예시
+
+```ts
+import { isRadioChecked, getRadioClassNames } from '@lh-ui/share/core/radio'
+
+isRadioChecked({ modelValue: 'b', value: 'b', checked: false })  // true
+isRadioChecked({ modelValue: 'b', value: 'a', checked: false })  // false
+```
+
+```vue
+<!-- Vue3 -->
+<div class="lh-radio-group" :class="`lh-radio-group--${size}`">
+  <label
+    v-for="opt in options"
+    :key="String(opt.value)"
+    :class="getRadioClassNames(type)"
+    :class-mod="{ 'lh-radio--checked': isRadioChecked({ modelValue, value: opt.value, checked: false }) }"
+  >
+    <span class="lh-radio__box">
+      <input
+        class="lh-radio__input"
+        type="radio"
+        :name="groupName"
+        :checked="modelValue === opt.value"
+        @change="emit('update:modelValue', opt.value)"
+      />
+    </span>
+    <span class="lh-radio__label">{{ opt.label }}</span>
+  </label>
+</div>
+```
+
+```tsx
+// React
+const [value, setValue] = useState('a')
+return options.map((opt) => (
+  <label key={opt.value} className="lh-radio">
+    <input
+      type="radio"
+      name={groupName}
+      checked={value === opt.value}
+      onChange={() => setValue(opt.value)}
+    />
+    <span className="lh-radio__label">{opt.label}</span>
+  </label>
+))
+```
+
+```ts
+// uniapp: <radio-group> + <radio>는 내장 컴포넌트이며, change 이벤트가 선택 항목의 value를 직접 제공;
+// uniapp의 radio value는 문자열만 지원한다는 점에 주의
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-radio` | 기본 클래스 |
+| `.lh-radio--checked` / `--disabled` | 상태 |
+| `.lh-radio--{small\|large}` | 크기 단계 |
+| `.lh-radio__box` | 커스텀 라디오 원 (네이티브 외형 덮어쓰기) |
+| `.lh-radio__input` | 네이티브 input (시각적으로 숨김, 의미는 유지) |
+| `.lh-radio__label` | 문구 |
+| `.lh-radio-group` / `--{small\|large}` | 그룹 컨테이너 |
+
+선택 상태의 안쪽 점은 `var(--lh-primary-color)`, 비활성 상태는 `--lh-text-disabled`를 사용합니다.
+
+## 주의사항
+
+- **`type` 매개변수와 checkbox-group의 크기는 다른 문제**: radio의 `getRadioClassNames(type)`가 출력하는 것은 **타입** 수식 (예: primary)이며, 크기 수식은 group에 있습니다 (`lh-radio-group--{size}`).
+- **name은 같은 그룹 내에서 일치해야 함**: 그렇지 않으면 브라우저의 키보드 탐색 (같은 그룹 내 화살표 이동)이 작동하지 않고, 폼 제출 시 여러 값이 제출됩니다.
+- **`modelValue`의 초깃값**: 어떤 option의 value이거나 `undefined` (아무것도 선택하지 않음)여야 합니다. 옵션에 없는 값을 주면 모든 radio가 선택되지 않은 상태가 되며, UI로 복구할 수 없습니다.
+- radio와 segmented 모두 배타적 전환에 사용할 수 있습니다: radio는 "폼 컨트롤" 의미 (네이티브, 제출 가능), segmented는 "뷰 전환" 의미 (더 가볍고, 버튼 그룹에 가까움)입니다.
+
+<FnPlayground module="radio" fn="getRadioClassNames" params='{"type": "primary"}' />

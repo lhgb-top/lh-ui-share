@@ -1,0 +1,137 @@
+---
+title: 貢獻指南
+description: '六條紅線、命名規範、提交資訊約定與提 PR 前的自我檢查清單'
+---
+
+歡迎給 @lh-ui/share 提交改動。本文是參與協作的**硬約束**——大部分約定不是風格偏好，而是跨四個 UI 庫能正常工作的前提。
+
+## 六條紅線
+
+### 1. `src/` 禁止任何框架依賴
+
+```ts
+// ❌ 絕對禁止
+import { ref } from 'vue'
+import { useState } from 'react'
+import { ... } from '@dcloudio/uniapp'
+
+// ✅ 只允許純函式與類型
+export function computeSomething(input: Foo): Bar { ... }
+```
+
+**為什麼**：share 是家族**唯一的框架無關共享層**。一處 `import 'vue'`，React 版與 uniapp 版就廢了。CI 有 grep 門禁。
+
+響應式接線屬於各 UI 層（`ref()` / `useState()` / `useSyncExternalStore()`），core 只輸出純資料。參考 [lhlocale 的設計](/reference/locales#各端怎麼訂閱-version)：一個純事件發射器，各端自己轉成重渲染信號。
+
+### 2. `styles/` 是元件樣式唯一源
+
+- 禁止把樣式拷貝到任何 UI 庫手改。
+- **一切樣式改動只在本倉庫發生**。
+
+跨端過渡類別名差異由 [三個 transition mixin](/reference/transition-mixins) 收編，**元件樣式禁止再手寫雙份類別名**，一律 `@include`。需要把狀態掛在後代節點上時傳第二個參數。
+
+### 3. core 單測唯一一份
+
+`tests/unit/` 是**三庫共享**的測試結果。UI 庫不得複製本倉的 core 單測。
+
+### 4. ~~1px 細邊框必須帶 `/* hairline */` 標記~~ —— **已廢止**
+
+uniapp v3 px 直出，不再轉譯 rpx，hairline 標記失去用途（見 `docs/bugfix-log.md` D-02）。`styles/` 內既有的 65 處歷史標記保留為普通註解，**新增 1px 邊框無需標記**。結構性邊框（2px / 3px）原本就不標記。
+
+### 5. 版本發布順序：share 先，UI 庫後
+
+share 改動 → changeset → 發版 → 各庫 `pnpm up @lh-ui/share` 回歸。**不能跳過**——UI 庫的發版依賴已發布的 share tarball。
+
+### 6. 自研符號必須帶 LH 前綴
+
+新增常數 / 類型 / 介面時**即遵守**，不要留到事後統一改（歷史改名見 `lh-prefix-naming` changeset）。
+
+## 命名規範
+
+與 plus 倉 `docs/project/development-guide.md` 對齊，全家族統一：
+
+| 層 | 規範 | 範例 |
+| --- | --- | --- |
+| 反域名根 | `top.lhgb`（反寫 `www.lhgb.top`） | 家族所有倉的命名根；`package.json` 的 homepage / repository / author 用 `lhgb.top` |
+| JS / npm 套件名 | `@lh-ui/*` scope | npm 套件名不允許點號，反域名落元資訊層 |
+| 常數 | `LH_XXX`，`LH_<模組>_<概念>` | `LH_SIZE_DEFAULT`、`LH_THEME_PRESETS` |
+| 預設值常數 | `DEFAULT` 後綴 | `LH_DRAWER_DIRECTION_DEFAULT` |
+| 類型 / 介面 | `LhXxx` | `LhThemePreset`、`LhSxProps` |
+| 模組級單例 / 小寫物件 | `lhXxx` | `lhlocale` |
+| BEM 類別名 | `lh-xxx` | `lh-button__text--disabled` |
+| 元件 name | `LhXxx` | `name: 'LhButton'` |
+
+### 豁免登記
+
+約定俗成、不強制加前綴的（改動前在此登記理由）：
+
+- **語言包匯出 `zhCN` / `enUS`** —— 標準 locale 命名，且被三個 UI 庫作為公開 API 再匯出，改名破壞面過大。
+- **主題預設名的字串值**（`name: 'cerblue'` 等）—— 這是使用者在 ConfigProvider `theme` 裡寫的設定值，改了破壞所有下游使用者設定；對應的 **TS 識別字仍加前綴**（`LhCerblue`）。
+- **第三方依賴的匯出符號** 不強制。
+
+## 目錄職責
+
+| 目錄 | 職責 |
+| --- | --- |
+| `src/core/<name>/` | 元件純函式邏輯（`logic.ts` / `types.ts` / `index.ts`），零框架匯入 |
+| `src/core/shared/` | 跨元件共享核心（12 個模組，見 [總覽](/core/overview)） |
+| `src/theme/` | theme TS 側（類型 + 五個預設） |
+| `src/constants/` / `src/locales/` / `src/types/` / `src/utils/` | 常數 / 語言包 / 類型 / 純工具 |
+| `styles/` | 元件 BEM 樣式唯一源（`<name>/index.scss` + `theme/common/*.scss`） |
+| `tests/unit/` | core 單測唯一一份 |
+| `scripts/` | 構建與驗證腳本 |
+| `docs/` | 文件站（Astro Starlight），**不進 npm 產物** |
+
+## 提交資訊約定
+
+- **註解與提交資訊用中文**。
+- **提交資訊寫 markdown 原始碼且非常詳細**：標題行 + 範圍說明 + 新增 / 修改檔案清單 + 設計要點表格 + 驗證狀態。
+- Prettier 設定：單引號、無分號、2 空格、printWidth 100。`pnpm format` 只覆蓋設定檔，其餘手寫對齊。
+
+## 新增 core 元件清單
+
+1. `src/core/<name>/{logic,types,index}.ts` 三件套
+2. `tests/unit/core/<name>.spec.ts`
+3. `src/core/index.ts` 加匯出
+4. `styles/<name>/index.scss`（否則某端無樣式產物，靜默跳過）
+5. changeset（minor）
+
+然後跑：
+
+```bash
+pnpm test && pnpm lint && pnpm typecheck
+pnpm build                    # sync:exports 生成新的 exports 鍵
+pnpm verify:dts && pnpm verify:styles
+```
+
+## 提 PR 前的自我檢查清單
+
+- [ ] `src/` 內沒有任何 `import 'vue' | 'react' | '@dcloudio/*'`（紅線 1）
+- [ ] 樣式改動只在 `styles/`（紅線 2）
+- [ ] 顏色一律 `var(--lh-*, fallback)`，無新增硬編碼色值
+- [ ] 新增過渡類別名用 mixin，不裸寫 `-enter-from` / `-leave-from`
+- [ ] 新增令牌在 `var.scss`；若值是 `#{$lh-*}` 內插，`var-dark.scss` 有對應覆蓋
+- [ ] 新增符號帶 `LH` / `Lh` 前綴（紅線 6）
+- [ ] `pnpm test` / `pnpm lint` / `pnpm typecheck` 通過
+- [ ] `pnpm build` 後 `pnpm verify:dts` / `pnpm verify:styles` 通過
+- [ ] 有 changeset，級別正確
+- [ ] 新元件有 `styles/<name>/index.scss` 且 `tests/unit/core/<name>.spec.ts` 存在（紅線 3）
+- [ ] 若改了令牌 / 類別名 / 圖示，跑了 `pnpm docs:data` 重新整理文件資料
+
+## 已知待辦（記錄為後續 changeset，歡迎認領）
+
+「高度令牌專項」：
+
+1. 各控制項高度不統一（input 37 / select 32 / cascader 27→32 / date-time 33 / input-number 32），根因是 `var.scss` 無 `--lh-control-height-*` 令牌
+2. input `--has-label` 的非對稱 `padding-top: 16px`
+3. spinner 與 icon 同名尺寸檔位不一致（small 16 vs 14）
+4. checkbox 打勾固定 `top:2/left:5` 非 50% 置中（16px 盒下正確，改尺寸即偏）
+5. switch 的 `translate(-50%,-50%)` 在 base 與 keyframes 重複硬編碼
+
+## 相關文件
+
+- [專案介紹](/guide/introduction) —— share 在家族裡的位置
+- [命名約定](/guide/naming) —— 命名規範的完整版
+- [各端樣式注入策略](/guide/injection) —— 紅線 2 的落地機制
+- [驗證體系](/development/verification) —— PR 前要跑的驗證
+- [發布流程](/development/release) —— 紅線 5 的完整流程

@@ -1,0 +1,161 @@
+---
+title: timeline —— محور زمني
+description: 'تبادل بين الجانبين عبر getTimelineSide، وأربعة أنواع دلالية للعقد، وتخطيط ذو عمودين في alternate'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+يُصوِّر المحور الزمني «الأحداث المرتبة زمنيًا»: خطٌّ عمودي يربط عدة عقد، لكل عقد وقت وعنوان ومحتوى. وهو شائع في مسارات الشحن، وسجلات العمليات، وتاريخ التحديثات. و`core/timeline` خفيف — عمله الرئيسي حساب التبادل بين الجانبين في التخطيط وتجميع أسماء الأصناف.
+
+## متى يُستخدم
+
+- عندما يُطبّق كل طرف `LhTimeline`: مسارات الشحن، وسجلات الاعتماد، وسجلات تحديث الإصدارات، وتدفقات تدقيق العمليات.
+- المشاهد التي تكون فيها الأحداث **مرتبة زمنيًا**، ويُراد إبراز الإحساس بالمحور الزمني.
+- **لا يجب استخدامه**: الخطوات بلا بعد زمني (استخدم `steps` الذي يؤكد التقدم لا الزمن)؛ والأحداث التي تحتاج إلى تصفية/بحث (استخدم قائمة + تصفية).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getTimelineItemClassNames,
+  getTimelineClassNames,
+  getTimelineSide,
+} from '@lh-ui/share/core/timeline'
+import type { LhTimelineMode, LhTimelineType, LhTimelineItemState } from '@lh-ui/share/core/timeline'
+```
+
+## نية التصميم
+
+**نمطا التخطيط**:
+
+- `left` (افتراضي): الخط العمودي على جانب البداية، ويُصف جميع المحتوى في عمود واحد على الجانب الآخر. بسيط وكثيف بالمعلومات.
+- `alternate`: الخط العمودي في المنتصف، والمحتوى **يتناوب على الجانبين** — ويقرر `getTimelineSide(index)` الجانب عبر `index % 2` (الزوجي على اليسار، والفردي على اليمين — مع انعكاس المراكز تحت RTL). وهذا النمط أكثر تناظرًا بصريًا، ويناسب المحتوى الكبير عندما يكون المحور الزمني جسم الصفحة الرئيسي.
+
+**لماذا `getTimelineSide` في core لا في الأنماط**: الجانب لا يحدد اسم صنف CSS فحسب، بل يحدد أيضًا **ترتيب العناصر الفرعية للمحتوى** (فعندما تكون الطابع الزمني في العمود الأول يجب أن تسبق المحتوى، وعندما تكون في العمود الثاني يجب أن تتبعه). وبحسابها دالة صافة، يتسق منطق العرض بين الأطراف، فلا يحدث اختلاف «Vue يبدّل يمينًا ويسارًا بينما React يضع كل شيء على اليسار».
+
+**أربعة أنواع دلالية**: `primary` / `success` / `warning` / `danger`، تقابل ألوان نقطة العقدة. ويحدد المستدعي الدلالة وفق طبيعة الحدث (عملية ناجحة success، وإنذار warning)، ولا يفعل core سوى تعيين أسماء الأصناف دون تفسير المعنى العملي.
+
+**استخدامات `isLast`**: **لا يُرسم الخط العمودي** للعقدة الأخيرة (يزيل الصنف `--last` مقطع الخط عبر `::before`)، وإلا سيمتد المحور إلى ما بعد العقدة الأخيرة بمقطع زائد.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getTimelineItemClassNames` | `(state: LhTimelineItemState) => string[]` | أسماء الأصناف | النوع/أجوف/الجانب/العنصر الأخير |
+| `getTimelineClassNames` | `(mode: LhTimelineMode) => string[]` | أسماء الأصناف | معدّل alternate |
+| `getTimelineSide` | `(index: number) => 'left' \| 'right'` | الجانب | زوجي/فردي |
+
+## تعريف الأنواع
+
+```ts
+export type LhTimelineMode = 'left' | 'alternate'
+export type LhTimelineType = 'primary' | 'success' | 'warning' | 'danger'
+
+export interface LhTimelineItemState {
+  type: LhTimelineType | undefined
+  hollow: boolean       // عقدة أجوفة (حدّ فقط، للأحداث «غير الواصلة بعد»)
+  side: 'left' | 'right'  // الجانب في وضع alternate
+  isLast: boolean
+}
+```
+
+## إمكانية الوصول
+
+timeline **مكوّن عرضي صرف**، ليس له أدوار تفاعل في APG. والمحتوى نفسه يحمل دلالة قائمة مرتبة، ويُوصى بتغليفه بـ `<ol>`:
+
+```html
+<ol class="lh-timeline">
+  <li class="lh-timeline__item">
+    <time datetime="2026-10-12T10:00">10:00</time> وقع استلام الطلب
+  </li>
+</ol>
+```
+
+- يتيح عنصر `<time>` لقارئ الشاشة ومحركات البحث التعرّف على الوقت؛ وتستخدم خاصية `datetime` صيغة ISO 8601.
+- نقطة العقدة زخرفية صرفة، فتحمل `aria-hidden="true"` أو تُحقق بعنصر زائف (والعناصر الزائفة خارج شجرة إمكانية الوصول بطبيعتها).
+- إن كان المحور الزمني يعبر عن **تقدم** (مثل «نحن حاليًا في الخطوة 3»)، فكر في استخدام `steps` مع `aria-current` بدلًا منه.
+
+## أمثلة الاستخدام
+
+```ts
+import { getTimelineSide, getTimelineClassNames } from '@lh-ui/share/core/timeline'
+
+getTimelineSide(0)  // 'left'
+getTimelineSide(1)  // 'right'
+getTimelineSide(2)  // 'left'
+getTimelineClassNames('alternate')  // ['lh-timeline', 'lh-timeline--alternate']
+getTimelineClassNames('left')       // ['lh-timeline']
+```
+
+```vue
+<!-- Vue3: وضع alternate -->
+<ol :class="getTimelineClassNames(mode)">
+  <li
+    v-for="(item, index) in items"
+    :key="item.id"
+    :class="getTimelineItemClassNames({
+      type: item.type,
+      hollow: item.hollow,
+      side: getTimelineSide(index),
+      isLast: index === items.length - 1,
+    })"
+  >
+    <template v-if="mode === 'alternate'">
+      <!-- العمود الأول -->
+      <div v-if="getTimelineSide(index) === 'left'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+        <p class="lh-timeline__desc">{{ item.desc }}</p>
+      </div>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <!-- العمود الثاني -->
+      <div v-if="getTimelineSide(index) === 'right'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+    <template v-else>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <div class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+  </li>
+</ol>
+```
+
+```tsx
+// React: في وضع alternate يحدد الجانب ترتيب العرض، ويتفرَّع عبر getTimelineSide(index)
+```
+
+```ts
+// uniapp: تكرار <view>؛ وعمودا alternate يستخدمان التموضع المطلق + تخطيط 50% على الجانبين
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-timeline` | الصنف الأساسي (إعادة ضبط `<ol>`) |
+| `.lh-timeline--alternate` | نمط التبادل (المحور في المنتصف) |
+| `.lh-timeline__item` | عنصر عقدة واحد |
+| `.lh-timeline__item--{primary\|success\|warning\|danger}` | النوع الدلالي (لون النقطة) |
+| `.lh-timeline__item--hollow` | نقطة أجوفة (لم يصل بعد) |
+| `.lh-timeline__item--right` | العمود الثاني في alternate |
+| `.lh-timeline__item--last` | العنصر الأخير (لا يرسم مقطع المحور التالي) |
+| `.lh-timeline__dot` | النقطة (ترسم خط المحور عبر `::before`) |
+| `.lh-timeline__content` / `__time` / `__title` / `__desc` | منطقة المحتوى |
+
+لون خط المحور `--lh-border-color`؛ ولون النقاط الأربعة `--lh-primary-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color` على التوالي؛ والعقدة الأجوفة بحدّ + خلفية شفافة.
+
+## ملاحظات
+
+- **يجب تمرير `isLast`**: فبدونه سيمتد المحور إلى ما بعد العقدة الأخيرة، فيبدو وكأنه شريط تقدم مقطوع.
+- **ترتيب البيانات في وضع `alternate`**: التبادل بين الجانبين **حسب index**، وهو يتسق مع الترتيب الزمني للبيانات — فلا تحسب side بعد إعادة الترتيب في الطرف البصري، وإلا ستخطئ الجوانب.
+- **دلالة العقدة الأجوفة `hollow`**: تعني «هذا الحدث لم يصل بعد» (مثل «بانتظار الاستلام» في الشحن). وهي مستقلة عن `type`: أجوفة + warning تعني «لم يصل بعد وفيه مخاطرة».
+- **تجاوز المحتوى**: في وضع alternate لا يأخذ كل عمود سوى نصف العرض، فيلتف النص الطويل مرات كثيرة؛ فعند كثرة المحتوى استخدم نمط `left` أو اضبط للمحتوى `max-height` + توسيع.
+- **تنسيق الوقت**: لا ينسق core الوقت، بل الطرف البصري يستخدم `core/shared/date.formatDate` أو يعالجه بنفسه؛ ويجب أن يكون `<time datetime>` بصيغة ISO كي تقرأه الآلة.
+- **المحور الزمني المعكوس**: بعض المشاهد تريد أحدث الأحداث في الأعلى — يكفي عمل reverse في طبقة البيانات، فلا يدرك core الاتجاه.
+
+<FnPlayground module="timeline" fn="getTimelineSide" params='{"index": 3}' />

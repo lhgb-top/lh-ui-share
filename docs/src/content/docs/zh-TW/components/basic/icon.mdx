@@ -1,0 +1,131 @@
+---
+title: icon —— 圖示
+description: 'getIconSize 尺寸換算、getIconSvg 取內建 SVG path、getIconAria 裝飾/語義雙模無障礙屬性包'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`core/icon` 內建一套 33 個國風極簡 SVG 圖示，並負責把「尺寸檔」換算成 SVG 的 `width/height`、把「裝飾 or 語義」決策落成 aria 屬性包。圖示元件本身沒有 props 狀態機——它是一個**渲染函式的參數集**。
+
+## 何時使用
+
+- 各端實作 `LhIcon`：`name` → path，`size` → 像素，`color` → 內聯 `color`。
+- 任何需要在文字旁放圖示的地方。**絕大多數圖示應當是裝飾性的**（`decorative: true`，預設值），讀屏軟體不播報它。
+- 需要圖示承載語義時（如「刪除」按鈕裡沒有文字只有圖示），必須傳 `decorative: false` + `label`，否則讀屏軟體讀到的是一個沉默的圖形。
+
+## 匯入方式
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+import type { LhIconState, LhIconName } from '@lh-ui/share/core/icon'
+import { LH_ICON_SVGS_CONST } from '@lh-ui/share/core/icon'
+```
+
+## 設計意圖
+
+圖示的尺寸有兩條來源：**預設檔**（`'small'` / `'medium'` …）與**任意數字**。`getIconSize` 把兩者統一成 `number`，因為 SVG 的 `width`/`height` 屬性只吃數字（單位由屬性本身決定），UI 層不需要再判斷「是檔位還是像素」。
+
+無障礙採用 APG 的「裝飾 vs 語義」二分：
+
+- 裝飾圖示（預設）：`aria-hidden="true"`，移出無障礙樹。與文字並排的圖示永遠走這條。
+- 語義圖示：`role="img"` + `aria-label`，成為可播報的圖形。
+- 第三種情形：`decorative: false` 但沒給 `label`——既不隱藏也不賦予語義，傳回空物件。這是留給「圖示按鈕的 label 由外層 aria-label 提供」的場景，避免重複播報。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getIconSize` | `(size: string \| number \| undefined) => number` | 像素數值 | 檔位映射，未知值兜底 16 |
+| `getIconSvg` | `(name: LhIconName \| undefined) => string \| null` | path `d` 或 null | 取內建圖示，查不到傳回 null 不拋錯 |
+| `getIconStyle` | `(state: LhIconState) => Record<string, string>` | 內聯樣式 | width/height 恆出，color 按需 |
+| `getIconAria` | `(options?: { decorative?: boolean; label?: string }) => LhAriaAttrs` | aria 屬性包 | 裝飾/語義雙模 |
+
+尺寸檔映射：`mini: 12` / `small: 14` / `medium: 16` / `large: 20` / `x-large: 24`，未知字串兜底 16，falsy（含 `0`）也兜底 16。
+
+## 類型定義
+
+```ts
+export interface LhIconState {
+  size: string | number | undefined
+  color: string | undefined
+  name?: LhIconName
+}
+
+export type LhIconName =
+  | 'star' | 'search' | 'check' | 'close' | 'warning' | 'error' | 'info'
+  | 'loading' | 'plus' | 'minus' | 'edit' | 'delete' | 'setting' | 'user'
+  | 'home' | 'menu' | 'more' | 'download' | 'upload' | 'refresh' | 'folder'
+  | 'file' | 'date' | 'clock' | 'email' | 'phone' | 'location' | 'image'
+  | 'share' | 'bell' | 'filter' | 'eye' | 'link'
+```
+
+## 無障礙
+
+`getIconAria` 是本元件的 aria 屬性包函式：
+
+```ts
+getIconAria()                            // { 'aria-hidden': true }  裝飾
+getIconAria({ label: '删除' })            // { 'aria-label': '删除', role: 'img' }
+getIconAria({ decorative: false })        // {}  由外層提供 label
+```
+
+注意 `aria-hidden` 的值是 `true`（布林），`LhAriaAttrs` 允許布林與字串並存，各端 v-bind 時框架會轉成 `"true"`。
+
+## 使用範例
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+
+getIconSize('large')          // 20
+getIconSize(32)               // 32
+getIconSvg('check')           // 'M...'  path 資料
+getIconSvg('not-exist')       // null（不拋錯，UI 層渲染空 svg 或佔位）
+getIconStyle({ size: 'large', color: 'var(--lh-primary-color)' })
+// { width: '20px', height: '20px', color: 'var(--lh-primary-color)' }
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="['lh-icon', { 'lh-icon--loading': name === 'loading' }]"
+  viewBox="0 0 1024 1024"
+  :width="px" :height="px"
+  v-bind="getIconAria({ decorative, label })"
+>
+  <path :d="path" />
+</svg>
+```
+
+```tsx
+// React
+const px = getIconSize(size)
+const aria = getIconAria({ decorative: !label, label })
+return (
+  <svg className="lh-icon" viewBox="0 0 1024 1024" width={px} height={px} {...aria}>
+    <path d={getIconSvg(name) ?? ''} />
+  </svg>
+)
+```
+
+```ts
+// uniapp：非 h5 端不支援在線 svg，UI 層把 path 預渲染成圖片資源；
+// getIconSize 的數值仍用於控制圖片尺寸。
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-icon` | 基礎類：`display: inline-block`、`vertical-align` 對齊修正 |
+| `.lh-icon--loading` | 載入圖示的無限旋轉動畫 |
+
+圖示顏色預設繼承父級文字色（`fill: currentColor`），需要主題色時由 `getIconStyle` 的 `color` 顯式注入。
+
+## 注意事項
+
+- `getIconSvg` 對不存在的名字**傳回 null 而非拋錯**——UI 層應當處理這個分支，否則會渲染出空的 `<svg>`。
+- 內建圖示集是**國風極簡風**，不相容第三方圖示庫（如 element-plus 的 fontawesome 類別名）。需要業務圖示時，各端 `LhIcon` 通常支援傳 `path` 或插槽自繪。
+- `loading` 圖示的旋轉動畫在 CSS 層（`.lh-icon--loading`），不在 core——core 只輸出類別名。
+- 圖示與文字並排時保持預設裝飾狀態；只有「圖示單獨承載操作」時才傳 label。
+
+<FnPlayground module="icon" fn="getIconSize" params='{"size": "large"}' />

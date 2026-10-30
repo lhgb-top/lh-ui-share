@@ -1,0 +1,151 @@
+---
+title: types —— 공개 타입
+description: 'LhLocaleType / LhLeaves / LhBaseProps / LhTypes 제네릭과 ambient 전역 선언'
+---
+
+`src/types/`는 외부에 공개하는 공개 타입 계층입니다. [core/shared/types](/ko/core/types)(core 내부의 유니온 타입)와의 차이: 여기는 **각 UI 라이브러리의 컴포넌트 Props에 쓰이는 기본 형태**입니다.
+
+## import 방법
+
+```ts
+import type {
+  LhLocaleType,
+  LhLocaleMessages,
+  LhLocaleMessageValue,
+  LhLeaves,
+  LhBaseProps,
+  LhTypes,
+  LhSizes,
+  LhLanguages,
+} from '@lh-ui/share/types'
+```
+
+## 내보내기 구조
+
+```ts
+// src/types/index.ts
+export * from './locale'           // 언어 패 관련
+export * from './components/base'  // 컴포넌트 기본 속성
+```
+
+`global.d.ts`, `theme.ts`, `scss.d.ts`는 ambient 선언으로, tsconfig의 `include`에 참여하여 컴파일되지만 **여기서는 명시적으로 내보내지 않습니다**.
+
+## locale 관련 타입
+
+| 타입 | 정의 | 용도 |
+| --- | --- | --- |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | 6개 언어 코드 유니온 |
+| `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | 언어 팩의 잎 노드(재귀적 읽기 전용) |
+| `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | 언어 팩 전체 |
+| `LhLeaves<T, Prefix extends string = ''>` | 재귀 매핑 타입 | 모든 "문자열 잎"의 점 경로 유니온을 도출 |
+| `LhLocaleOptions` | `{ locale: LhLocaleType; messages: LhLocaleMessages }` | `lhlocale.use()`의 입력 형태 |
+
+### LhLeaves의 동작
+
+```ts
+type ZhLeaves = LhLeaves<typeof zhCN>
+// 'common.loading' | 'input.placeholder' | 'input.password' | 'pagination.total' | …
+```
+
+- **문자열 잎** → 전체 경로(`'input.placeholder'`).
+- **배열 키**(예: `datepicker.months`) → `never`. 배열은 키 단위 주소 지정이 불가능하여 `t()`가 도달할 수 없고, `tm()`으로만 가져올 수 있습니다.
+- **객체** → 자식 키로 재귀.
+
+`LhLocalePath = LhLeaves<typeof zhCN>`이 `lhlocale.t()`에 리터럴 자동 보완과 맞춤법 검사를 제공합니다.
+
+## 컴포넌트 기본 속성
+
+제네릭을 가진 세 개의 유니온(사용하는 측이 커스텀 값을 확장할 수 있음):
+
+```ts
+export type LhTypes<T extends string | undefined = undefined> =
+  T extends string ? LhComponentType | T : LhComponentType
+
+export type LhSizes<T extends string | undefined = undefined> =
+  T extends string ? LhComponentSize | T : LhComponentSize
+
+export type LhLanguages<T extends string | undefined = undefined> =
+  T extends string ? LhComponentLanguage | T : LhComponentLanguage
+```
+
+사용법:
+
+```ts
+type MyType = LhTypes<'brand' | 'dangerous'>
+// LhComponentType | 'brand' | 'dangerous'
+```
+
+### LhBaseProps —— 컴포넌트 Props의 기본 형태
+
+```ts
+export interface LhBaseProps<
+  T extends string | undefined = undefined,
+  S extends string | undefined = undefined,
+  L extends string | undefined = undefined,
+> {
+  type?: T extends string ? LhTypes<T> : LhTypes
+  size?: S extends string ? LhSizes<S> : LhSizes
+  disabled?: boolean
+  loading?: boolean
+  plain?: boolean
+  block?: boolean
+  icon?: string
+  nativeType?: string
+  href?: string
+  target?: string
+  title?: string
+  alt?: string
+  lang?: L extends string ? LhLanguages<L> : LhLanguages
+  langPath?: string
+  old?: boolean      // 고령자 전용
+}
+```
+
+각 UI 라이브러리의 컴포넌트 Props가 `extends LhBaseProps`하면, `type` / `size` / `disabled` / `lang`이라는 공개 필드를 자동으로 얻습니다 —— 패밀리 전체의 컴포넌트에서 공통 prop 이름이 일관되도록 보장합니다(사용자가 "이 라이브러리는 `disabled`인데 저 라이브러리는 `disabled`가 없다"를 외울 필요가 없습니다).
+
+| 필드 | 의미 |
+| --- | --- |
+| `type` | 의미 색(`LhTypes`) |
+| `size` | 크기 단계(`LhSizes`) |
+| `disabled` | 비활성화 |
+| `loading` | 로딩 중 |
+| `plain` | 평범한 외형(배경색 없는 테두리 형태) |
+| `block` | 블록 수준 너비 100% |
+| `icon` | 아이콘 이름(내장 아이콘 세트, [아이콘](/ko/theme/tokens)의 아이콘 부분 참고) |
+| `nativeType` | 네이티브 버튼 `type`(`submit` / `reset` / `button`) |
+| `href` / `target` | `<a>`로 렌더링할 때의 링크 |
+| `title` / `alt` | 제목과 대체 텍스트(접근성) |
+| `lang` | 컴포넌트 수준의 언어 재정의 |
+| `langPath` | 커스텀 문구 키 경로 접두사 |
+| `old` | 고령자 모드 스위치(`size="x-large"`와 함께 사용, [constants](/ko/reference/constants) 참고) |
+
+## ambient 전역 선언
+
+tsconfig의 `include`로 효력을 가지며, import가 필요 없습니다:
+
+```ts
+// src/types/global.d.ts
+interface CSSVariable { [key: string]: string }
+
+interface LhUIConfig {
+  prefix?: string
+  theme?: Record<string, string>
+  locale?: string
+}
+
+interface InstallOptions {
+  prefix?: string
+  theme?: Record<string, string>
+  locale?: string
+  components?: any[]
+}
+```
+
+이것들은 "`app.use(LhUI, { prefix: 'x' })`" 같은 전역 설정 항목을 위한 ambient 타입입니다. `theme.ts`는 현재 빈 자리표입니다(테마 타입은 `src/theme/types.ts`에 있음); `scss.d.ts`는 `.scss` 모듈을 선언합니다.
+
+## 주의 사항
+
+- **`LhBaseProps`는 선택적 필드입니다**: 모든 필드를 비울 수 있으며, 컴포넌트는 필요에 따라 extends로 받아들이고 좁힙니다(예: `type`은 button에서 필수).
+- **`lang`과 전역 언어의 관계**: `lang`은 컴포넌트 수준의 재정의(`<lh-button lang="en-US">`)이며, `lhlocale.setLocale`을 부르지 않고 컴포넌트 내부가 언어 팩을 선택합니다.
+- **제네릭 기본값의 함정**: `LhTypes<undefined>`는 `LhComponentType`으로 떨어집니다 —— `undefined`를 제네릭 매개변수로 전달하는 것과 `string` 리터럴을 전달하는 것의 결과가 다르며, 이것은 의도적입니다(`extends string ? ... : ...` 분기).
+- **`LH_LANGUAGE_CONST`는 types의 공개 내보내기 표면에 없습니다**: `types/locale.ts`가 내부적으로 `import`하여 도출에 쓰지만, `types/index.ts`는 `./locale`과 `./components/base`만 내보내므로, 상수를 쓸 때는 `@lh-ui/share/constants`에서 가져오세요.

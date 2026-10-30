@@ -1,0 +1,146 @@
+---
+title: input-number —— إدخال الأرقام
+description: 'incrementValue/decrementValue للخطو وتنقية الدقة، shouldDisableIncrement لحكم تعطيل الزر، وحزمة سمات spinbutton'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+يضيف إدخال الأرقام ثلاثة أشياء فوق حقل الإدخال: **الخطو** (الجمع والطرح وفق step)، **الحدّ** (عدم تجاوز min/max)، و**الدقة** (المنازل العشرية). يستخرج `core/input-number` هذه الأمور الثلاثة كحسابات نقية، ولا تتجاوز طبقة UI ربط أحداث زرَّي الزيادة والنقصان.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `LhInputNumber`: اختيار الكمية، إدخال المبالغ، حجم التصفّح.
+- **لا ينبغي استخدامه**: الأرقام النصية البحتة (استخدم `core/input`، فقد يرغب المستخدم في إدخال «حوالي 10» وهي ليست قيمة صارمة)، والاختيار على هيئة منزلق (استخدم `core/slider`، فهو أوضح).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  incrementValue,
+  decrementValue,
+  shouldDisableIncrement,
+  shouldDisableDecrement,
+  getDisplayValue,
+  getInputNumberAria,
+} from '@lh-ui/share/core/input-number'
+import type { LhInputNumberState } from '@lh-ui/share/core/input-number'
+```
+
+## القصد التصميمي
+
+ثلاثة خطوط دفاع في `incrementValue` / `decrementValue`:
+
+1. **القيمة الابتدائية null**: عندما يكون `value === null` تُعامل زيادة على أنها `step` ونقصان على أنه `-step`، لا الانطلاق من الصفر—فالمستخدم الذي لم يُدخِل قيمة بعد ويضغط الزائد يجب أن يقفز عند «خطوة واحدة» لا عند «min».
+2. **تنقية الدقة**: يُنقَّى `precision` عبر `safePrecision` في `shared/sanitize` إلى عدد صحيح ضمن `[0, 100]`، تفادياً لرمي خطأ RangeError من `toFixed(101)`. وهذا الخط الدفاعي مشترك مع `core/statistic`.
+3. **احتياط النتيجة غير المحدودة**: يرجع `clampSafe` الداخلي عند كون النتيجة NaN إلى `clamp(0, min, max)`—فالخصائص القذرة (`step: NaN`) لن تجعل القيمة NaN تنتقل إلى العرض.
+
+حكم `shouldDisableIncrement` هو `value !== null && value >= max`: فلا تعطيل عند null (الضغط سيصبح القيمة step)، وإنما عند بلوغ الحد الأعلى. ولا يجوز حذف `!== null` وإلا سيكون زر الزيادة رمادياً عند الإدخال الفارغ.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `incrementValue` | `(value: number \| null, step: number, min: number, max: number, precision?: number) => number` | القيمة الجديدة | زيادة بمقدار step |
+| `decrementValue` | `(value: number \| null, step: number, min: number, max: number, precision?: number) => number` | القيمة الجديدة | نقصان بمقدار step |
+| `shouldDisableIncrement` | `(state: LhInputNumberState) => boolean` | قيمة منطقية | معطّل أو عند بلوغ الحد الأعلى |
+| `shouldDisableDecrement` | `(state: LhInputNumberState) => boolean` | قيمة منطقية | معطّل أو عند بلوغ الحد الأدنى |
+| `getDisplayValue` | `(value: number \| null, _placeholder: string) => string` | سلسلة العرض | تحويل القيمة إلى سلسلة، و|null سلسلة فارغة |
+| `clampValue` | نفس `shared/sanitize.clamp` | القيمة المحدودة | إعادة تصدير اسم بديل للتوافق |
+
+لاحظ أن المعامل الثاني لـ `getDisplayValue` وهو `_placeholder` ذو شرطة سفلية وغير مستخدم في جسم الدالة—فعرض العنصر النائب (placeholder) مسؤولية طبقة UI (فالعنصر النائب ينتمي إلى «تنبيه عند انعدام القيمة»، وهو أمر مختلف عن «عرض القيمة»).
+
+## تعريفات الأنواع
+
+```ts
+export interface LhInputNumberState {
+  value: number | null
+  min: number
+  max: number
+  step: number
+  disabled: boolean
+  size: LhComponentSize
+  controls: boolean       // هل تُعرض زرّا الزيادة والنقصان
+  precision: number | undefined
+  placeholder: string
+}
+```
+
+## إمكانية الوصول
+
+يُخرج `getInputNumberAria` دلالات **spinbutton** وفق APG:
+
+```ts
+getInputNumberAria({ value: 5, min: 0, max: 10, step: 1 })
+// { role: 'spinbutton', 'aria-valuemin': 0, 'aria-valuemax': 10, 'aria-valuenow': 5 }
+
+getInputNumberAria({ value: null, min: 0, max: 10, step: 1 })
+// { role: 'spinbutton', 'aria-valuemin': 0, 'aria-valuemax': 10 }  —— null لا تحمل valuenow
+```
+
+- لا تُضاف `aria-valuenow` إلا عند `value != null`؛ فتعليق `aria-valuenow="NaN"` على القيمة الفارغة يجعل قارئ الشاشة يعلن شيئاً شاذاً.
+- التعطيل يضيف `aria-disabled` (لا الاعتماد على disabled الأصلي، لأن بعض الأطراف تستخدم عناصر تحكم مخصّصة).
+- `ariaValueText` يضيف `aria-valuetext`—ويُستخدم عندما لا تكفي القيمة العددية وحدها للتعبير عن الدلالة (مثل «3 أيام» بدلاً من «3»)، وهو **مقدَّم على valuenow في الإعلان**.
+
+## أمثلة الاستخدام
+
+```ts
+import { incrementValue, shouldDisableIncrement } from '@lh-ui/share/core/input-number'
+
+incrementValue(4, 1, 0, 10)      // 5
+incrementValue(null, 2, 0, 10)   // 2 (القيمة null تنطلق من step)
+incrementValue(9, 1, 0, 10)      // 10 (الحد الأقصى clamp)
+incrementValue(9, 1, 0, 10, 2)   // 10، وبعد toFixed(2) يُحوَّل إلى Number
+decrementValue(null, 2, 0, 10)   // -2 (قبل clamp كان -2، ثم يُ clamp إلى 0)
+
+shouldDisableIncrement({ value: 10, max: 10, min: 0, step: 1, disabled: false, ... })  // true
+shouldDisableIncrement({ value: null, max: 10, ... })                                   // false
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-input-number', `lh-input-number--${size}`]">
+  <button
+    v-if="controls"
+    class="lh-input-number__decrease"
+    :disabled="shouldDisableDecrement(state)"
+    aria-label="نقصان"
+    @click="emit('update:modelValue', decrementValue(modelValue, step, min, max, precision))"
+  >−</button>
+  <input
+    class="lh-input-number__input"
+    v-bind="getInputNumberAria({ value: modelValue, min, max, step, disabled })"
+  />
+  <button v-if="controls" class="lh-input-number__increase" :disabled="shouldDisableIncrement(state)">+</button>
+</div>
+```
+
+```tsx
+// React
+const next = incrementValue(value, step, min, max, precision)
+return <button onClick={() => onChange(next)} disabled={shouldDisableIncrement(state)}>+</button>
+```
+
+```ts
+// uniapp: زرّا الزيادة والنقصان عبر view + @tap؛ وتُكتب القيمة بعد تغيّر الخطوة بأسلوب متحكَّم به، انتبه لسباق إدخال لوحة المفاتيح مع الزر
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-input-number` | الصنف الأساسي |
+| `.lh-input-number--{small\|large}` | حجم معياري (medium هو الافتراضي، بلا صنف تعديل) |
+| `.lh-input-number--disabled` | الحالة المعطّلة |
+| `.lh-input-number__input` | منطقة الإدخال الوسطى |
+| `.lh-input-number__increase` / `__decrease` | زرّا الزيادة والنقصان |
+
+الارتفاع 32px (وهو ضمن قائمة الاختلافات في «مشروع رموز الارتفاع» إلى جانب input بـ 37px وselect بـ 32px).
+
+## ملاحظات
+
+- **`step` صفر أو سالب**: لا يتحقق `incrementValue` من صحة step، فـ `step: 0` يجعل القيمة ثابتة؛ وعلى طبقة UI ضمان كون step موجباً.
+- **علاقة الدقة بـ step**: يدير `precision` عدد منازل العرض فقط، دون محاذاة تلقائية مع step. فـ `step: 0.5` مع `precision: 0` ستجعل `incrementValue(0, 0.5, ...)` يُعرض كـ `1` (يُحسب أولاً ثم يُقرَّب).
+- **دلالة القيمة الفارغة**: `value === null` شيء آخر عن `value === 0`، فالأولى «غير مُدخَلة». وتُعيد `getDisplayValue(null)` سلسلة فارغة لا `'0'`.
+- التراكم العشري: مشكلة `0.1 + 0.2` الكلاسيكية موجودة فعلاً في الخطو؛ ومسار `toFixed` الخاص بـ `precision` هو خط الدفاع الوحيد، فبضبط precision يكون الأمر مستقراً، وبدونه قد تحصل انحرافات.
+
+<FnPlayground module="input-number" fn="incrementValue" params='{"value": 4, "step": 1, "min": 0, "max": 10, "precision": 2}' />

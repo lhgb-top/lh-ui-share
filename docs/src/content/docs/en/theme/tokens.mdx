@@ -19,9 +19,9 @@ Tokens are the variables of the design language: colors, font sizes, spacing, ra
 
 ```scss
 :root {
-  --lh-primary-color: #2B5FA6;
+  --lh-primary-color: #2B4C7C;
   --lh-text-primary: rgba(0, 0, 0, 0.88);
-  --lh-bg-color: #ffffff;
+  --lh-bg-color: #FAF6F0;
   --lh-border-color: #e5e6eb;
   --lh-radius-base: 6px;
   --lh-spacing-base: 8px;
@@ -34,9 +34,9 @@ Tokens are the variables of the design language: colors, font sizes, spacing, ra
 ```scss
 [data-theme='dark'],
 .dark {
-  --lh-bg-color: #14141F;
-  --lh-text-primary: rgba(255, 255, 255, 0.85);
-  --lh-border-color: #3A3A4A;
+  --lh-bg-color: #2A2520;
+  --lh-text-primary: #E8E0D8;
+  --lh-border-color: #3A3530;
   // ... 118 entries
 }
 ```
@@ -46,7 +46,7 @@ Dark mode is an **override layer**, not a separate set: it only writes the 118 t
 ### SCSS variables (variables.scss)
 
 ```scss
-$lh-primary-color: #2B5FA6 !default;
+$lh-primary-color: #2B4C7C !default;
 $lh-border-radius-base: 6px !default;
 // ... 183 entries
 ```
@@ -55,25 +55,30 @@ SCSS variables exist to **participate in compile-time computation**: color mixin
 
 ## The layered structure of tokens
 
-Tokens fall into three semantic tiers:
+Tokens fall into three tiers — the first two live in the global theme files, the third in each component's own stylesheet:
 
 ```scss
-// 1. Base palette (the lowest layer, not consumed directly by components)
---lh-blue-6: #2B5FA6;
---lh-red-6: #F5222D;
+// 1. SCSS variables (variables.scss, compile time)
+$lh-primary: #2B4C7C !default;
+$lh-text-primary: #2C2C2C !default;
 
-// 2. Semantic tokens (this is the layer components consume)
---lh-primary-color: var(--lh-blue-6);
---lh-error-color: var(--lh-red-6);
---lh-text-primary: rgba(0, 0, 0, 0.88);
---lh-bg-color: #ffffff;
+// 2. Global CSS variables (var.scss :root, 190 entries)
+--lh-primary-color: #{$lh-primary};
+--lh-text-primary: #{$lh-text-primary};
+--lh-bg-color: #FAF6F0;
 
-// 3. Component tokens (specialized values for individual components)
---lh-button-radius: var(--lh-radius-base);
---lh-switch-knob-color: #fff;
+// 3. Component-level variables (the component's own scss, scoped to its BEM root)
+.lh-card {
+  --lh-card-bg: var(--lh-bg-color, #FAF6F0);
+  --lh-card-border-radius: calc(var(--lh-border-radius-base, 2px) + 2px);
+}
 ```
 
-**Components only consume layers 2 and 3.** Changing the palette (layer 1) cascades into all semantic tokens — this is the lever for re-skinning.
+Key mechanisms:
+
+- **Tiers 1 and 2 are linked by compile-time interpolation, not a `var()` chain**: the value of `--lh-primary-color` is baked in at build time from `$lh-primary` — changing the SCSS variable at runtime has no effect (you must recompile). There is **no separate "base palette" tier** — no `--lh-blue-6` color-step variables exist; semantic tokens are generated directly from the SCSS variables.
+- **Two levers for re-skinning**: edit the SCSS variables in `variables.scss` and recompile (affects every semantic token), or override the `:root` CSS variables at runtime (what `ConfigProvider`'s themeVars does — instant, no rebuild).
+- **Tier 3 defaults to tier 2**: component-level variables usually default to a `var()` reference of a global token (with a fallback), keeping them in sync with the theme while still allowing targeted per-component overrides via themeVars.
 
 ## Semantic domains
 

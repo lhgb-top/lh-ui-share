@@ -1,0 +1,122 @@
+---
+title: avatar —— 頭像
+description: 'getAvatarText 用 codePointAt 提取首字（emoji 安全），isImageSource 判斷圖片兜底，getAvatarClassNames 算形狀修飾'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+頭像元件要處理三種內容形態：圖片、文字、圖示，且需要在圖片載入失敗或位址非法時優雅降級。`core/avatar` 把「文字提取」和「圖片來源判定」做成純函式——這兩個判定跨端必須完全一致，否則會出現「Vue3 顯示文字、uniapp 顯示破圖」的分歧。
+
+## 何時使用
+
+- 各端實作 `LhAvatar`：圖片可用時渲染 `img`，否則渲染 `getAvatarText` 提取的首字，都沒有時渲染圖示佔位。
+- 使用者系統裡取「姓名首字」做預設頭像的場景。
+- **不該用它**：圖片裁剪、上傳。這是 `LhUpload` + 業務邏輯的事。
+
+## 匯入方式
+
+```ts
+import { getAvatarClassNames, getAvatarText, isImageSource } from '@lh-ui/share/core/avatar'
+import type { LhAvatarState, LhAvatarShape } from '@lh-ui/share/core/avatar'
+```
+
+## 設計意圖
+
+`getAvatarText` 用 `codePointAt(0)` + `String.fromCodePoint` 而不是 `str[0]`，這是一個容易忽略的坑：`'😀'[0]` 得到的是半個代理對（`\uD83D`），渲染出來是亂碼方塊。用碼點提取，emoji 和增補平面字元（很多生僻漢字）都安全。
+
+`isImageSource` 的正則只做**寬鬆的可用性判定**，不做安全驗證：匹配 `http(s)://`、`data:image/`、絕對路徑 `/`、相對路徑 `./`、`../` 開頭的字串視為圖片位址。它的用途是「決定要不要嘗試渲染 img」，真正的載入失敗由 `img` 的 `error` 事件兜底（UI 層切到文字狀態）。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getAvatarClassNames` | `(state: LhAvatarState) => string[]` | 類別名陣列 | 形狀與尺寸修飾 |
+| `getAvatarText` | `(source: string) => string` | 首字或 `''` | 從文字提取展示字 |
+| `isImageSource` | `(src: string \| undefined) => boolean` | 布林 | 圖片位址是否值得嘗試渲染 |
+
+邊界細節：
+
+- `getAvatarText('')` → `''`；`getAvatarText(' 水墨 ')` → `'水'`（先 trim）；`getAvatarText('Alice')` → `'A'`。
+- `getAvatarText` 在 `codePointAt(0)` 傳回 undefined（空串已 trim 掉，理論上不會觸發）時傳回 `''`。
+- `isImageSource(undefined)` → `false`；`isImageSource('')` → `false`。
+
+## 類型定義
+
+```ts
+export type LhAvatarShape = 'circle' | 'square'
+
+export interface LhAvatarState {
+  size: LhComponentSize
+  shape: LhAvatarShape
+}
+```
+
+## 無障礙
+
+`core/avatar` 不輸出 aria 屬性包，因為頭像的處理方式取決於內容形態：
+
+- **圖片頭像**：用原生 `<img>`，`alt` 必填（如「張三的頭像」）。不要留空 alt——空 alt 表示「裝飾性圖片」，而頭像通常承載身份資訊。
+- **文字頭像**：文字本身就是可讀內容，無需額外處理。
+- **圖示頭像**（匿名使用者佔位）：圖示走 `getIconAria({ decorative: false, label: '匿名用户' })`。
+
+## 使用範例
+
+```ts
+import { getAvatarText, isImageSource } from '@lh-ui/share/core/avatar'
+
+getAvatarText('王小明')       // '王'
+getAvatarText('Alice Smith')  // 'A'
+getAvatarText('😀哈哈')       // '😀'
+isImageSource('https://a.com/1.png')  // true
+isImageSource('data:image/png;base64,...')  // true
+isImageSource(undefined)               // false
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getAvatarClassNames({ size, shape })">
+  <img v-if="isImage && !error" :src="src" :alt="alt" @error="error = true" />
+  <span v-else-if="text" class="lh-avatar__text">{{ text }}</span>
+  <LhIcon v-else name="user" :decorative="false" label="匿名用户" />
+</div>
+```
+
+```tsx
+// React
+const text = getAvatarText(name)
+const showImg = isImageSource(src) && !imgError
+return (
+  <div className={getAvatarClassNames({ size, shape }).join(' ')}>
+    {showImg ? <img src={src} alt={alt} onError={() => setImgError(true)} />
+      : text ? <span className="lh-avatar__text">{text}</span>
+      : <LhIcon name="user" decorative={false} label="匿名用户" />}
+  </div>
+)
+```
+
+```ts
+// uniapp：<image> 元件有 @error 事件，邏輯同上；
+// 文字頭像在非 h5 端注意字型回退（生僻字可能缺字形）
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-avatar` | 基礎類：固定寬高、溢出隱藏、置中 |
+| `.lh-avatar--{mini\|small\|medium\|large\|x-large}` | 尺寸檔 |
+| `.lh-avatar--circle` / `.lh-avatar--square` | 形狀（圓角程度） |
+| `.lh-avatar__img` | 圖片：鋪滿 + object-fit |
+| `.lh-avatar__text` | 文字：置中、白色、按尺寸縮放 |
+| `.lh-avatar__icon` | 圖示佔位 |
+
+頭像底色預設是主色令牌；多頭像場景（如頭像組）各端 UI 層可按名字雜湊上色，core 不參與。
+
+## 注意事項
+
+- **不要用 `str[0]` 或 `str.charAt(0)`** 在 UI 層自己取首字——emoji 與生僻字會截斷成亂碼，統一用 `getAvatarText`。
+- `isImageSource` 傳回 true 不代表圖片存在，只代表「值得一試」。`onError` 兜底是必須的。
+- `square` 不是直角，而是小圓角（視覺調和），直角頭像在設計中顯得過於尖銳。
+- 圖片頭像的 `object-fit` 預設 `cover`，人臉可能被裁掉邊緣——業務上常需要 `object-position` 微調，這在各端 UI 層處理。
+
+<FnPlayground module="avatar" fn="getAvatarText" params='{"source": "青花瓷"}' />

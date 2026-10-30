@@ -1,0 +1,152 @@
+---
+title: skeleton —— Esqueleto
+description: 'getSkeletonRowWidths genera una secuencia de anchos con la última fila más corta, getSkeletonAria oculta el marcador de posición y exige aria-busy en la capa UI'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El esqueleto es el marcador de posición de «antes de que termine la carga»: usa bloques grises para simular el layout que está a punto de aparecer, de modo que el usuario se hace una idea de «qué verá dentro de un momento». `core/skeleton` calcula la secuencia de anchos de las líneas de texto (la última fila es más corta, como en un párrafo real) y prepara la señal de accesibilidad de que «esto es un marcador de posición, no contenido».
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhSkeleton`: carga de tarjetas, de listas, de artículos.
+- Cuando cualquier zona necesite expresar visualmente «cargando», el esqueleto se ajusta mejor al layout venidero que un indicador giratorio.
+- **No usarlo para**: cargas muy cortas (menos de 300 ms): un esqueleto que aparece un instante resulta molesto; ni para «datos vacíos», que es territorio de `LhEmpty`.
+
+## Importación
+
+```ts
+import {
+  getSkeletonClassNames,
+  getSkeletonItemClassNames,
+  getSkeletonRowWidths,
+  getSkeletonAria,
+} from '@lh-ui/share/core/skeleton'
+import type { LhSkeletonState, LhSkeletonVariant } from '@lh-ui/share/core/skeleton'
+```
+
+## Intención de diseño
+
+El `60%` de la última fila de `getSkeletonRowWidths(rows)` es un detalle importante: la última línea de un párrafo de texto real casi nunca está completa. Un esqueleto con todas las líneas iguales parece «papel rayado» en vez de «texto»; ese 60% da al marcador de posición «sensación de texto».
+
+Solo cuando `rows > 1` se acorta la última fila: con una sola fila, esta es una fila completa (una fila única acortada parece más bien un título truncado). Si `rows <= 0` se devuelve una matriz vacía, sin lanzar error.
+
+`getSkeletonAria()` devuelve siempre `{ 'aria-hidden': true }`: el contenido del esqueleto tiene cero información y el lector de pantalla no debería anunciarlo. Pero **solo ocultar no basta**: el código fuente exige en sus comentarios que la capa UI monte además `aria-busy="true"` en el contenedor exterior, de forma que, cuando los datos estén listos, el lector de pantalla vuelva a anunciar el contenido real. Estos dos atributos forman una pareja: `aria-hidden` elimina el ruido y `aria-busy` marca como «leer más tarde».
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `getSkeletonClassNames` | `(state: LhSkeletonState) => string[]` | matriz de nombres de clase | animación, modificadores de avatar |
+| `getSkeletonItemClassNames` | `(variant: LhSkeletonVariant, animated: boolean) => string[]` | matriz de nombres de clase | forma y animación del bloque de marcador |
+| `getSkeletonRowWidths` | `(rows: number) => string[]` | secuencia de anchos | genera los anchos de las líneas de texto |
+| `getSkeletonAria` | `() => LhAriaAttrs` | paquete de atributos aria | siempre `{ 'aria-hidden': true }` |
+
+Salida de ejemplo:
+
+```ts
+getSkeletonRowWidths(3)   // ['100%', '100%', '60%']
+getSkeletonRowWidths(1)   // ['100%']
+getSkeletonRowWidths(0)   // []
+getSkeletonItemClassNames('text', true)
+// ['lh-skeleton-item', 'lh-skeleton-item--text', 'lh-skeleton-item--animated']
+```
+
+## Definiciones de tipos
+
+```ts
+export type LhSkeletonVariant = 'text' | 'rect' | 'circle'
+
+export interface LhSkeletonState {
+  animated: boolean
+  avatar: boolean
+}
+```
+
+## Accesibilidad
+
+```ts
+// Contenedor exterior de la capa UI
+const aria = { 'aria-busy': true }   // marca «el contenido está cargando; vuelve a leerlo cuando esté listo»
+// El propio elemento del esqueleto
+const skeletonAria = getSkeletonAria()  // { 'aria-hidden': true }
+```
+
+Un error frecuente es hacer solo una de las dos cosas: con únicamente `aria-hidden`, el usuario del lector de pantalla se pierde el contenido nuevo cuando los datos están listos (cree que ya lo ha leído); con únicamente `aria-busy`, el lector de pantalla intenta anunciar el contenido vacío del esqueleto.
+
+## Ejemplos de uso
+
+```ts
+import { getSkeletonRowWidths, getSkeletonItemClassNames } from '@lh-ui/share/core/skeleton'
+
+getSkeletonRowWidths(4)
+// ['100%', '100%', '100%', '60%']
+
+getSkeletonItemClassNames('circle', false)
+// ['lh-skeleton-item', 'lh-skeleton-item--circle']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSkeletonClassNames({ animated, avatar })" aria-busy="true">
+  <div v-if="avatar" class="lh-skeleton__avatar">
+    <div :class="getSkeletonItemClassNames('circle', animated)" />
+  </div>
+  <div class="lh-skeleton__content">
+    <div
+      v-for="(w, i) in getSkeletonRowWidths(rows)"
+      :key="i"
+      :class="getSkeletonItemClassNames('text', animated)"
+      :style="{ width: w }"
+      v-bind="getSkeletonAria()"
+    />
+  </div>
+</div>
+```
+
+```tsx
+// React
+const widths = getSkeletonRowWidths(rows)
+return (
+  <div className={getSkeletonClassNames({ animated, avatar }).join(' ')} aria-busy={true}>
+    <div className="lh-skeleton__content">
+      {widths.map((w, i) => (
+        <div
+          key={i}
+          className={getSkeletonItemClassNames('text', animated).join(' ')}
+          style={{ width: w }}
+          {...getSkeletonAria()}
+        />
+      ))}
+    </div>
+  </div>
+)
+```
+
+```ts
+// uniapp: la animación puede no ser fluida fuera de h5; cada plataforma puede desactivar
+// animated por degradación según el sistema
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-skeleton` | clase base: layout |
+| `.lh-skeleton--animated` | activa la animación de barrido shimmer |
+| `.lh-skeleton--with-avatar` | layout combinado de avatar + texto (espacio reservado a la izquierda del avatar) |
+| `.lh-skeleton-item` | un bloque de marcador de posición |
+| `.lh-skeleton-item--{text\|rect\|circle}` | forma: línea de texto / rectángulo / círculo |
+| `.lh-skeleton-item--animated` | animación de barrido |
+| `.lh-skeleton__avatar` / `.lh-skeleton__content` | zona del avatar y zona de contenido |
+
+El color de los bloques de marcador usa los tokens `--lh-skeleton-*` (un gris ligeramente más oscuro que el fondo + el brillo del barrido) y se atenúa automáticamente en modo oscuro.
+
+## Notas
+
+- `rows` con valor 0 o negativo devuelve una matriz vacía y la capa UI no renderiza ninguna fila: es una entrada legítima, no un error.
+- El **layout del esqueleto debe ser coherente con el contenido real** (la misma estructura de tarjeta, el mismo número de filas), o habrá un salto de layout al terminar la carga. Usar el estado `loading` de `LhCard` ahorra más trabajo que colocar el esqueleto por separado.
+- La animación shimmer es un estímulo vestibular para algunos usuarios; respetar `prefers-reduced-motion` es responsabilidad de la capa de estilos (deshabilitar la animación dentro de `@media`); la capa core no es consciente de ello.
+- `aria-busy` debe montarse en el **contenedor de datos**, no en el esqueleto mismo; cuando el esqueleto se destruye, `aria-busy` debe eliminarse con él.
+
+<FnPlayground module="skeleton" fn="getSkeletonRowWidths" params='{"rows": 3}' />

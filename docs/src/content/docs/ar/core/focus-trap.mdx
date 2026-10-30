@@ -1,0 +1,154 @@
+---
+title: focus-trap —— إدارة التركيز
+description: 'عدّ العناصر القابلة للتركيز، وحلقة Tab للتركيز، وسجل ملكية inert مع حفظ عند الفتح / إرجاع عند الإغلاق، يشترك فيه Dialog / Drawer / Popover'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+لمكوّنات **الطبقات الساترة** مثل الصناديق النمطية والأدراج ومعاينة الصور ثلاثة واجبات تجاه التركيز: عند الفتح تَحفظ مكان المستخدم الأصلي، وأثناء الفتح تُبقي Tab داخل الطبقة، وعند الإغلاق تُعيد التركيز إلى ما كان عليه. وكتابة هذه الأمور الثلاثة في dialog / drawer / popover / popconfirm / image-viewer سينتهي حتمًا بالانحراف، و`shared/focus-trap` هو تنفيذها الوحيد.
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getFocusableElements,
+  focusFirst,
+  focusLast,
+  saveActiveElement,
+  restoreActiveElement,
+  trapTabKey,
+  supportsInert,
+  setInertOutside,
+} from '@lh-ui/share/core/shared/focus-trap'
+```
+
+## جدول الدوال
+
+| الدالة | التوقيع | الدور |
+| --- | --- | --- |
+| `getFocusableElements` | `(container: HTMLElement \| null \| undefined) => HTMLElement[]` | عدّ العناصر التي يمكن أن تستقبل Tab داخل الحاوية |
+| `focusFirst` | `(container) => boolean` | التركيز على أول عنصر قابل للتركيز، ولا يوجد فيُعيد `false` |
+| `focusLast` | `(container) => boolean` | التركيز على آخر عنصر قابل للتركيز، ولا يوجد فيُعيد `false` |
+| `saveActiveElement` | `() => HTMLElement \| null` | تسجيل العنصر النشط حاليًا لإرجاعه لاحقًا (بحارس SSR) |
+| `restoreActiveElement` | `(el: HTMLElement \| null \| undefined) => void` | إرجاع التركيز |
+| `trapTabKey` | `(container: HTMLElement, event: KeyboardEvent) => boolean` | معالجة Tab / Shift+Tab، وبقاء التركيز محصورًا داخل الحاوية |
+| `supportsInert` | `() => boolean` | هل البيئة الحالية تدعم خاصية `inert` |
+| `setInertOutside` | `(container, active: boolean, locked?: HTMLElement[]) => HTMLElement[]` | إضافة / إزالة inert لما سوى الحاوية في DOM |
+
+## تفاصيل سلوك كل دالة
+
+### getFocusableElements
+
+يطابق المرشحين أولًا وفق المُنتقي: `a[href]`، و`button:not([disabled])`، و`input:not([disabled]):not([type="hidden"])`، و`select` / `textarea:not([disabled])`، و`video[controls]`، و`audio[controls]`، و`[contenteditable]:not([contenteditable="false"])`، و`[tabindex]:not([tabindex="-1"])`. ثم يستثني `isHiddenForFocus` **عبر سلسلة الأسلاف** العناصر المحجوبة بـ `disabled` أو tabindex السالب أو `hidden` أو `aria-hidden="true"` أو `display:none` أو `visibility:hidden`.
+
+أمر اجتياز سلسلة الأسلاف جوهري: فالطبقات المنبثقة المنقولة عبر teleport كثيرًا ما تتأثر بـ `aria-hidden` التابع للأب، ولو فحصنا العنصر نفسه فقط لفاتنا أحكامًا. وإذا كانت `container` فارغة تُعيد `[]`.
+
+### focusFirst / focusLast
+
+تُجري التركيز باستخدام `{ preventScroll: true }`. **لماذا**: ضمن أول tick بعد نقل الطبقة المنبثقة إلى body، قد يكون موضع العنصر لا يزال مؤقتًا، و`focus()` الافتراضي يدحرج الصفحة إلى الموضع المؤقت للعنصر. ومنع الدحرج يتفادى هذه القفزة البصرية. وإذا لم يوجد عنصر قابل للتركيز يُعاد `false`، وتقرر طبقة واجهة المستخدم بناءً عليه ما إذا كانت ستنقل التركيز إلى الحاوية نفسها (`tabindex="-1"`).
+
+### saveActiveElement / restoreActiveElement
+
+عند فتح الطبقة المنبثقة `const last = saveActiveElement()`، وعند إغلاقها `restoreActiveElement(last)`. وشروط تخطّي الإرجاع:
+
+- `el` فارغ، أو لا يوجد `document`: عودة مباشرة.
+- `!el.isConnected`: زر الإطلاق أُزيل عبر `v-if` (كأن يُدمَّر أثناء الإغلاق)، فلا يُركز عليه.
+- **الهدف مُقفل بـ `inert` لأحد أسلافه**: يُستبدل ذلك بـ `blur()` للعنصر الذي عليه التركيز حاليًا. وهذا مسار الرجوع الذي تضمنه المواصفة—فبعد blur يعود التركيز إلى body، ولا يظل عالقًا على عنصر مقفل.
+
+### trapTabKey
+
+```
+event.key !== 'Tab' أو event.defaultPrevented  →  إعادة false (دون معالجة)
+لا يوجد تركيز متاح داخل الحاوية  →  preventDefault()، وإعادة true (الحصار، ألا يهرب التركيز)
+التركيز على الحدّ  →  preventDefault()، والقفز إلى الطرف الآخر، وإعادة true
+```
+
+يستخدم الحكم على الحدود **فهرس القائمة** لا مقارنة المراجع. ولماذا: فقد يقع التركيز على عنصر داخل الحاوية لكنه ليس في تسلسل Tab (كأن تركز الحاوية نفسها ذات `tabindex="-1"`)، وحينها لا يُعثر على `document.activeElement` ضمن نتيجة `getFocusableElements()` (`idx === -1`)، فيعامله الخوارزم على أنه «قبل الرأس»، فيقفز Shift+Tab إلى العنصر الأخير، وTab العادي إلى العنصر الأول—وهو ما يتوافق مع الحدس.
+
+### setInertOutside وسجل الملكية
+
+`inert` خاصية قياسية من W3C (مدعومة في جميع المتصفحات منذ 2024)، وإضافتها لعنصر تجعله هو وشجرته الفرعية بأكملها مخفيًا عن التقنيات المساعدة، غير قابل للتركيز، غير قابل للنقر. وهو أشدّ طيدًا من «حلقة Tab» في حجب الخلفية—فمستخدم قارئ الشاشة لن يجد نفسه بالخطأ داخل محتوى الصفحة المغطى.
+
+مسار القفل في `setInertOutside`: يُسار من `container` صعودًا عبر سلسلة الأسلاف حتى `body`، وفي كل طبقة تُوسم الأشجار الفرعية الشقيقة **التي لا تحوي container** بـ inert. وبهذه الطريقة لا يبقى متاحًا سوى الطبقة المنبثقة وسلسلة أسلافها، ويُقفل كل ما سواها.
+
+والعقدة هي **تكديس الطبقات المنبثقة**: فتح popover داخل dialog، ثم إغلاق popover لا ينبغي أن يُفتح dialog. والحل هو سجل الملكية (`WeakMap`):
+
+- عند القفل، يُسجَّل لكل عقدة مقفلة «من الذي قفلها»؛ والاستدعاء المتكرر يُسجِّل الملكية فحسب، **دون تكرار setAttribute** (متطابق ذاتيًا).
+- عند فتح القفل، لا تُزال inertia إلا حين **لا يبقى أي حاوية تملك ملكية** على تلك العقدة.
+- المعامل `locked` هو قائمة إعفاء إضافية (كحاوية طبقة ساترة أخرى ما زالت مفتوحة)، وهذه العُقد لا تُقفل حتى وإن لم تكن على سلسلة أسلاف container.
+
+القيمة المُعادة: عند القفل مصفوفة العُقد المقفلة (لأغراض التنقيح وتأكيدات الاختبار)، وعند فتح القفل `[]`.
+
+الحدود: البيئات التي لا تدعم inert تُعيد `[]` (رجوعًا إلى حلقة trapTabKey)؛ وغياب `document.body` يُعيد `locked`؛ وعندما تكون الحاوية قد انفصلت عن المستند تُحرَّر الملكيات المتبقية أولًا ثم يُعاد `locked` بعد إزالة التكرار.
+
+### supportsInert
+
+للتحسين التدريجي: المتصفحات القديمة (قبل Safari 15.4) لا تعرف `inert`، فتُعيد `setInertOutside` مصفوفة فارغة مباشرة، وعلى المكوّن أن **يشغّل `trapTabKey` أيضًا** كحل احتياطي. ويمكن للسيناريوين التعايش، فinert هو الطبقة الأشدّ طيدًا.
+
+## أمثلة الاستخدام
+
+### دورة حياة التركيز الكاملة في الصندوق النمطي
+
+```ts
+// مكوّن dialog في Vue3
+let lastFocused: HTMLElement | null = null
+let lockedNodes: HTMLElement[] = []
+
+function open() {
+  lastFocused = saveActiveElement()
+  dialogVisible.value = true
+  nextTick(() => {
+    if (!panelRef.value) return
+    focusFirst(panelRef.value)
+    lockedNodes = setInertOutside(panelRef.value, true)
+  })
+}
+
+function close() {
+  setInertOutside(panelRef.value, false, lockedNodes)
+  dialogVisible.value = false
+  restoreActiveElement(lastFocused)
+}
+
+function onKeydown(e: KeyboardEvent) {
+  trapTabKey(panelRef.value, e)   // إعادة false تعني أنه ليس Tab، فمرره إلى منطق آخر
+}
+```
+
+### التوصيل في React
+
+```tsx
+useEffect(() => {
+  if (!open) return
+  const last = saveActiveElement()
+  focusFirst(panelRef.current)
+  const locked = setInertOutside(panelRef.current, true)
+
+  const onKeydown = (e: KeyboardEvent) => trapTabKey(panelRef.current, e)
+  document.addEventListener('keydown', onKeydown)
+
+  return () => {
+    document.removeEventListener('keydown', onKeydown)
+    setInertOutside(panelRef.current, false, locked)
+    restoreActiveElement(last)
+  }
+}, [open])
+```
+
+### الطبقات المنبثقة المتداخلة
+
+```ts
+// dialog مفتوح، ويُفتح popover داخله
+const popoverLocked = setInertOutside(popoverRef.value, true, lockedNodes)
+// إغلاق popover: لا يزال dialog في قائمة إعفاء lockedNodes، فلن يُفتح
+setInertOutside(popoverRef.value, false, popoverLocked)
+```
+
+## ملاحظات
+
+- **أمان SSR**: تُعيد `saveActiveElement` القيمة `null` عند غياب `document`، وتُعيد `getFocusableElements` القيمة `[]` عند استلام `null`. لكن `trapTabKey` / `setInertOutside` تحتاج إلى DOM، فلا تُستدعى إلا في العميل.
+- **لا تنسَ إرجاع التركيز**: هذا مطلب صارم في accessibility. فالقفل بلا إرجاع يجعل مستخدم لوحة المفاتيح يفقد التركيز إلى body عند كل إغلاق لطبقة منبثقة، وتجربه سيئة.
+- **المُطلِق الذي أُزيل عبر `v-if`**: تتخطاه `restoreActiveElement` للعناصر المنفصلة (`isConnected === false`)، وحينها يعود التركيز طبيعيًا إلى body، فلا تُركز بالقوة عقدة ليست في المستند.
+- **سجل الملكية حالة على مستوى الوحدة**: `WeakMap` يُنظَّف تلقائيًا عبر GC، لكن النسخ المتعددة في العملية الواحدة تتشارك الجدول نفسه—وهذا مقصود، وإلا لما عرفت طبقتان المنبثقتان بوجود إحداهما الأخرى، فتفتحان قفل بعضهما بالخطأ.
+
+<FnPlayground module="focus-trap" fn="supportsInert" params='{}' />

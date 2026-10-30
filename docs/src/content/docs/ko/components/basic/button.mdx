@@ -1,0 +1,124 @@
+---
+title: button —— 버튼
+description: 'isClickable이 클릭 가능성을 판정, getSize가 유효 크기를 해결, getClassNames가 유형/크기/형태 수정자 클래스를 계산'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+버튼은 컴포넌트 라이브러리에서 가장 많이 수정되는 컴포넌트 중 하나입니다: 유형, 크기, 형태, 로딩 상태, 비활성 상태, 블록 너비가 조합되어 수많은 변형을 만들어냅니다. `core/button`은 이 변형들의 **계산**을 순수 함수로 뽑아냅니다. UI 계층은 props를 넘기고 클래스명 배열을 루트 요소에 묶기만 하면 됩니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhButton`을 구현할 때: 클래스명은 완전히 `getClassNames`가 산출하고, UI 계층은 직접 문자열을 이어붙이지 않습니다.
+- 버튼 바깥(`LhDropdown`의 트리거, `LhBackTop` 등)에서 같은 '유형 + 크기'의 의미를 재사용하려면, 클래스명을 복사하지 말고 core 함수를 직접 호출합니다.
+- **사용하면 안 되는 곳**: 폼 제출 로직, 쓰로틀. core는 '지금 어떻게 보여야 하는지'만 계산하고, '클릭 후 무엇을 할지'는 계산하지 않습니다.
+
+## 가져오기
+
+```ts
+import { isClickable, getSize, getClassNames } from '@lh-ui/share/core/button'
+import type { LhButtonState } from '@lh-ui/share/core/button'
+```
+
+## 설계 의도
+
+버튼의 상태 모델은 의도적으로 좁게 잡았습니다: `LhButtonState`는 **클래스명에 영향을 주는** 필드만 가집니다. `loading`과 `disabled`는 둘 다 클래스명 계산에 참여하지만(`--disabled`), '클릭에 응답할지'는 상호작용의 의미이지 시각의 의미가 아니므로 `isClickable`으로 따로 뽑아냈습니다. 로딩 중인 버튼은 정상으로 보이지만 클릭할 수 없으며, 이 판정은 클래스명 계산과 독립적이어야 합니다. 그렇지 않으면 'disabled 클래스는 붙었지만 이벤트가 막히지 않은' 빈틈이 생기기 쉽습니다.
+
+크기는 2단계 폴백(컴포넌트 props → `LH_SIZE_DEFAULT`)을 거치지만, `getClassNames`는 내부적으로 크기를 **local size만 받습니다**(두 번째 인수는 `undefined`로 고정): 클래스명 안의 크기 단계는 ConfigProvider 전역 크기를 상속하지 않으며, 전역 크기는 인라인 스타일이나 하위의 자체 결정에만 작용합니다. 이것은 의도된 것입니다. 클래스명은 시각적 계약이고, 전역 설정이 바꾸는 것은 '기본값'이지 '덮어쓰기'가 아닙니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `isClickable` | `(state: { loading?: boolean; disabled?: boolean }) => boolean` | 불리언 | loading 또는 disabled 중 하나라도 참이면 false, 모두 없으면 true |
+| `getSize` | `(localSize: string \| undefined, globalSize: string \| undefined) => string` | 크기 식별자 | 2단계 폴백, 최종 폴백 `'medium'` |
+| `getClassNames` | `(state: LhButtonState) => string[]` | 클래스명 배열 | `lh-button`과 모든 수정자 클래스 계산 |
+| `getStyle` | `() => Record<string, string>` | `{}` | 테마 변수 자리표시자, 항상 비움(아래 참고) |
+
+`getStyle`이 항상 빈 객체를 반환하는 것은 설명할 가치가 있습니다: 버튼의 색은 완전히 `:root` 토큰(`--lh-primary-*` 등)으로 구동되고, ConfigProvider의 themeVars는 부모 CSS 변수를 통해 버튼으로 계단식 전달되므로 버튼 요소에 다시 한 번 선언할 **필요가 없습니다**. 이 함수를 남겨둔 것은 '인라인 테마 변수가 있을 수 있는' 다른 컴포넌트와의 대칭을 위해서이며, 호출 쪽에서는 무조건 `v-bind`하면 됩니다.
+
+## 타입 정의
+
+```ts
+export interface LhButtonState {
+  type: LhComponentType       // 'primary' | 'success' | ... | 'default'
+  size: LhComponentSize       // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  loading: boolean
+  disabled: boolean
+  plain: boolean              // 평문: 채우기 대신 테두리
+  block: boolean              // 블록: 부모 컨테이너 너비를 꽉 채움
+  round: boolean              // 둥근 모서리
+  circle: boolean             // 정원(보통 아이콘과 조합)
+}
+```
+
+## 접근성
+
+`core/button`은 aria 속성 묶음을 출력하지 않습니다: 버튼의 의미는 UI 계층이 네이티브 `<button>` 요소로 담고, `disabled`는 직접 네이티브 속성으로 전달되어 스크린 리더가 자연스럽게 인식합니다. 이것은 '네이티브 의미로 표현할 수 있으면 바퀴를 다시 발명하지 않는다'는 원칙의 표현입니다. 네이티브가 표현할 수 없는 것(spinbutton, treeitem, progressbar 같은)에만 core가 `getXxxAria`를 제공합니다.
+
+UI 계층이 주의해야 할 유일한 점: `loading` 상태의 버튼은 여전히 포커스를 받을 수 있지만 `isClickable`은 false를 반환합니다. 이때 버튼에 `aria-busy="true"`를 주어 스크린 리더가 '작업이 진행 중'임을 알게 해야 합니다('버튼이 고장 났다'가 아니라).
+
+## 사용 예
+
+```ts
+import { getClassNames, isClickable } from '@lh-ui/share/core/button'
+
+getClassNames({ type: 'primary', size: 'large', loading: false, disabled: false, plain: false, block: false, round: true, circle: false })
+// ['lh-button', 'lh-button--primary', 'lh-button--large', 'lh-button--round']
+
+isClickable({ loading: true, disabled: false })  // false
+isClickable({})                                   // true
+```
+
+각 단말의 연결 방식은 모두 'props → state → 바인딩'의 한 가지 패턴입니다:
+
+```vue
+<!-- Vue3 -->
+<button
+  :class="getClassNames({ type, size, loading, disabled, plain, block, round, circle })"
+  :disabled="disabled"
+  :aria-busy="loading"
+  @click="isClickable({ loading, disabled }) && emit('click', $event)"
+>
+  <LhSpinner v-if="loading" :size="14" />
+  <slot />
+</button>
+```
+
+```tsx
+// React
+const cls = getClassNames({ type, size, loading, disabled, plain, block, round, circle })
+return <button className={cls.join(' ')} disabled={disabled} aria-busy={loading} onClick={onClick} />
+```
+
+```ts
+// uniapp: 클래스명도 마찬가지로 class 바인딩에 들어갑니다; 로딩 아이콘은 LhSpinner 사용(uniapp 단말 svg는 이미지로 폴백)
+```
+
+## 스타일과 토큰
+
+`styles/button/index.scss`의 BEM 구조:
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-button` | 기본 클래스: 레이아웃, 글자 크기, 전환 |
+| `.lh-button--{primary\|success\|warning\|danger\|error\|info\|default}` | 의미 유형 |
+| `.lh-button--{mini\|small\|medium\|large\|x-large}` | 크기 단계(높이, padding, 글자 크기) |
+| `.lh-button--plain` | 평문 스타일: 투명 배경 + 테두리 |
+| `.lh-button--block` | 블록 너비 |
+| `.lh-button--round` / `.lh-button--circle` | 둥근 모서리 / 정원 |
+| `.lh-button--disabled` | 비활성 상태(포인터, 투명도) |
+| `.lh-button--blank` | 빈칸 버튼(테두리도 배경도 없이 hover에서만 모습 드러냄) |
+| `.lh-button__icon` / `.lh-button__text` | 아이콘 슬롯과 텍스트 |
+| `.lh-button__loading` / `.lh-button__spinner` / `.lh-button__path` | 로딩 그래픽 |
+
+색은 모두 `var(--lh-primary-*)` / `var(--lh-success-*)` 등의 토큰을 따르며, 다크 모드에서는 `var-dark.scss`가 자동으로 뒤집습니다.
+
+## 주의사항
+
+- `getClassNames`의 크기는 **전역 설정을 상속하지 않습니다**('설계 의도' 참고). 사용하는 단말이 전역 크기가 버튼에 영향을 주기를 요구한다면, UI 계층에서 먼저 `getSize(local, global)`을 거쳐 전달해야 합니다.
+- `loading`과 `disabled`는 클래스명상 동등합니다(둘 다 `--disabled` 시각을 산출)하지만 상호작용 판정은 `isClickable`을 따릅니다. 클래스명 존재 여부로 클릭 가능성을 추론하지 마세요.
+- `circle`은 스타일에서 정사각형 + 정원을 강제하므로, 글자 버튼에 `circle`을 주면 이상하게 눌립니다.
+- `plain`과 `type: 'default'`의 조합은 거의 보이지 않게 되며, 이것은 평문 스타일의 예상된 표현입니다.
+
+<FnPlayground module="button" fn="getClassNames" params='{"state": {"type": "primary", "size": "large", "loading": false, "disabled": false, "plain": false, "block": true, "round": false, "circle": false}}' />

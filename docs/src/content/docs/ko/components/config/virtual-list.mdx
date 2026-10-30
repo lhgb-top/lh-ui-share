@@ -1,0 +1,197 @@
+---
+title: 'virtual-list 가상 목록 —— 설정'
+description: '고정 높이 computeRange와 동적 높이 build/patch/find 듀얼 모드, NaN 정제로 화면 전백 방지, table과 동일한 코어 알고리즘 공유'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+가상 목록은 '수만 건 데이터의 렌더링 방안'입니다: 뷰포트 안의 수십 건만 렌더링하고, 스크롤할 때 동적으로 교체합니다. 10만 행의 데이터를 모두 렌더링하면 브라우저가 멈추지만, 가상 목록은 DOM 노드 수를 일정하게 유지합니다. 대가는 **높이를 예측할 수 있어야** 한다는 것입니다. 고정 높이 모드는 직접 계산하고, 동적 높이 모드는 먼저 측정합니다. `core/virtual-list`는 두 가지 모드를 캡슐화하고, `table`의 가상 스크롤과 `shared/virtual`의 동일한 코어 알고리즘을 공유합니다.
+
+## 언제 사용할까
+
+- 각 단말이 `<LhVirtualList>`를 구현할 때: 긴 메시지 목록, 로그 스트림, 연락처, 대규모 데이터 드롭다운 옵션.
+- 데이터량이 **뷰포트 수용량의 5배 이상**이고, 각 항목의 렌더링 비용이 낮지 않을 때만 가치가 있습니다.
+- **사용하면 안 되는 곳**: 수십~수백 건의 데이터(직접 렌더링하세요. 가상화의 측정/배치 비용이 손해입니다); 항목 높이가 **완전히 예측 불가능하고 측정도 하지 않는** 경우(고정 높이를 받아들이거나 측정 기능을 제공해야 합니다); 전체 DOM이 필요한 경우(전체 선택, Ctrl+F 브라우저 검색, 페이지 전체 인쇄. 가상 목록 바깥의 콘텐츠는 DOM에 없어 검색되지 않습니다).
+
+## 가져오기
+
+```ts
+import {
+  LH_VIRTUAL_ITEM_SIZE,
+  LH_VIRTUAL_OVERSCAN,
+  computeWindow,
+  computeVirtualRange,
+  buildVirtualItems,
+  patchMeasuredSize,
+  findVirtualRange,
+  getItemOffset,
+  getVirtualListClassNames,
+} from '@lh-ui/share/core/virtual-list'
+import type { LhVirtualItem, LhVirtualRange } from '@lh-ui/share/core/virtual-list'
+```
+
+## 설계 의도
+
+**듀얼 모드**: 고정 높이(`computeRange`, O(1)로 구간 계산)와 동적 높이(`buildVirtualItems` + `patchMeasuredSize` + `findVirtualRange`, 측정 필요). 고정 높이가 기본 추천입니다. 단순하고 깜빡임이 없습니다. 동적 높이는 콘텐츠 높이가 정말로 고르지 않은 장면(길이가 다양한 채팅 메시지)에 씁니다.
+
+**table과 동일한 코어 공유**: `shared/virtual`의 주석이 역사를 기록하고 있습니다. 고정 높이 알고리즘이 원래 virtual-list와 table에 **각각 하나씩** 있었고, 심지어 기본 오버스캔도 달랐습니다(2 vs 3). 한쪽의 수정이 다른 쪽에 반영되지 않았습니다. 유일한 알고리즘으로 추출한 후 양쪽은 얇은 래퍼가 되었습니다. `LH_TABLE_OVERSCAN = 3`은 table 쪽의 사용자 정의 값이고, virtual-list는 기본값 `LH_VIRTUAL_OVERSCAN = 2`를 씁니다.
+
+**NaN 정제는 화면 전백 방지**: `computeRange`의 주석이 아주 명확하게 설명합니다. NaN인 scrollTop이 `Math.max` / `Math.floor`에 들어가면 NaN 창을 산출하고, `array.slice(NaN)`은 빈 배열을 반환하여 **화면이 하얗게 됩니다**. 모든 입력 매개변수에 `Number.isFinite` 정제를 합니다. `findVirtualRange`는 더 나아가: `items[NaN].offset`이 TypeError로 렌더링을 중단시킵니다.
+
+**`first`를 `total - 1`에 클램프**: 데이터가 수축한(행을 지운) 후 scrollTop이 아직 클램프되지 않은 그 프레임에, `first`가 total을 넘을 수 있어 `start > end`가 되고 slice가 빈 값을 반환하여 화면이 하얘집니다. 이 클램프는 경쟁 상태 수정입니다.
+
+**`patchMeasuredSize`는 제자리 수정**: 동적 높이에서 실제 높이를 측정한 후, **원래 배열을 수정**하고 뒤따르는 모든 항목의 offset을 밀어주며, 크기 변화량 delta를 반환합니다. `buildVirtualItems`의 전체 재구축(O(n)의 새 배열 + 전체 diff 유발)과 비교해, 한 번만 순회하고 변하지 않은 항목의 재렌더링을 일으키지 않습니다. 주석이 이 트레이드오프를 명시합니다. 여기서는 불변성이 성능에 자리를 내줍니다.
+
+**`getItemOffset`의 고정 높이 지름길**: 고정 높이 모드에서 N번째 항목으로 스크롤할 때 items 배열 없이 직접 `N * itemHeight`입니다. 함수 문서는 동적 모드에서만 쓴다고 명시합니다.
+
+**`computeWindow`는 축 무관 버전**: 수평 가상 스크롤(scrollLeft/viewportWidth/itemWidth)과 수직이 동일한 알고리즘을 공유하며, 필드명이 offsetY에서 offset으로 바뀔 뿐입니다. `LhAxisRange`와 `LhVirtualRange`는 동의어입니다.
+
+## 함수 표
+
+| 함수 / 상수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `computeRange`(`computeVirtualRange`를 경유) | `(scrollTop, viewportHeight, itemHeight, total, overscan?) => LhVirtualRange` | 가시 구간 | 고정 높이 모드 |
+| `computeWindow` | `(scrollOffset, viewportSize, itemSize, total, overscan?) => LhAxisRange` | 축 무관 구간 | 수평 가상화 |
+| `buildVirtualItems` | `(count, sizes, defaultSize?) => { items, totalHeight }` | 항목 배열 | 동적 높이 사전 계산 |
+| `patchMeasuredSize` | `(items, index, size, defaultSize?) => number` | delta | 측정 크기 증분 업데이트 |
+| `findVirtualRange` | `(items, scrollTop, viewportHeight, overscan?) => LhVirtualRange` | 가시 구간 | 동적 높이 이진 탐색 |
+| `getItemOffset` ⚠️ | `(items, index) => number` | 오프셋 | 지정 항목으로 스크롤 |
+| `getVirtualListClassNames` | `() => string[]` | 클래스명 | 컨테이너 |
+
+상수: `LH_VIRTUAL_ITEM_SIZE = 40`(기본 추정 항목 높이), `LH_VIRTUAL_OVERSCAN = 2`(기본 오버스캔).
+
+⚠️ `computeVirtualRange` / `getItemOffset`은 `@deprecated` 호환 별칭이며, 새 코드는 `shared/virtual`의 `computeRange` / `getItemOffsetAt`을 직접 사용합니다.
+
+## 타입 정의
+
+```ts
+export interface LhVirtualItem {
+  size: number      // 이 항목의 추정/측정 높이
+  offset: number    // 이 항목의 목록 상단 기준 오프셋
+}
+
+export interface LhVirtualRange {
+  start: number     // 시작 인덱스(포함)
+  end: number       // 끝 인덱스(미포함)
+  offsetY: number   // 창 오프셋 px(스크롤바를 지탱하는 자리표시자 높이)
+  totalHeight: number  // 전체 높이 px(스크롤바를 만들어냄)
+}
+```
+
+## 접근성
+
+가상 목록은 스크린 리더에게 **보이지 않는 도전**입니다: DOM에는 수십 항목만 있어, 스크린 리더가 '제3000항목, 전체 10000항목'을 읽어줄 수 없습니다.
+
+- **aria-rowcount / aria-rowindex**: 컨테이너에 `aria-rowcount`(총 항목 수), 각 항목에 `aria-rowindex`(실제 인덱스 + 1). 이것은 표의 가상 스크롤(`table`)의 방식이며, 목록 장면에서 빌려 쓸 수 있습니다. **이 속성은 UI 계층이 렌더링**하며, core는 구간만 계산합니다.
+- **스크롤 시 포커스 유지**: 사용자가 키보드로 어떤 항목에 포커스한 후 스크롤하면, 해당 항목이 DOM에서 제거되어 포커스를 잃습니다. UI 계층은 언로드 전에 포커스 index를 기록하고, 다시 마운트한 후 복원해야 합니다. 이것이 가상 목록의 키보드 사용성 핵심 난점입니다.
+- **가상 목록으로 의미 목록을 만들지 마세요**: 스크린 리더의 '요소별 탐색'은 DOM에 존재하는 항목만 탐색할 수 있습니다. 순수 표시용 대규모 데이터 스트림(로그, 메시지)은 가상화에 적합합니다; **스크린 리더의 항목별 접근이 필요한 목록은 신중하게 사용하세요**(사용자가 상품 목록을 하나씩 듣고 싶어 하는 경우 등).
+- **검색 위치 이동**: 가상 목록 바깥의 콘텐츠는 DOM에 없어 브라우저의 Ctrl+F로 검색되지 않습니다. '제N항목으로 이동', '검색 필터' 기능으로 보상을 제공하세요.
+
+## 사용 예
+
+```ts
+import {
+  computeRange, buildVirtualItems, patchMeasuredSize, findVirtualRange,
+} from '@lh-ui/share/core/virtual-list'
+
+// 고정 높이 모드
+computeRange(800, 400, 50, 1000)
+// { start: 14, end: 26, offsetY: 700, totalHeight: 50000 }
+// (first = floor(800/50) = 16, start = 16-2 = 14, visible = ceil(400/50) = 8,
+//   end = 14 + 8 + 4 = 26)
+
+computeRange(0, 400, 50, 10)   // { start: 0, end: 10, offsetY: 0, totalHeight: 500 }
+computeRange(NaN, 400, 50, 10) // { start: 0, end: 10, offsetY: 0, totalHeight: 500 } (NaN 정제)
+computeRange(0, 400, 0, 10)    // { start: 0, end: 0, offsetY: 0, totalHeight: 0 } (itemHeight이 잘못됨)
+```
+
+```ts
+// 동적 높이 모드
+const { items, totalHeight } = buildVirtualItems(5, [30, 0, 60], 40)
+// items: [{ size: 30, offset: 0 }, { size: 40, offset: 30 }, { size: 60, offset: 70 },
+//         { size: 40, offset: 130 }, { size: 40, offset: 170 }]
+// totalHeight: 210 (sizes의 빠진 항목은 defaultSize=40으로 추정)
+
+const delta = patchMeasuredSize(items, 1, 50)  // 10 (40 → 50의 변화량)
+// items[2..4].offset이 +10만큼 밀리고; items[1].size = 50
+
+findVirtualRange(items, 100, 200)
+// 이진 탐색으로 뷰포트 구간을 찾아 { start, end, offsetY, totalHeight } 반환
+```
+
+```ts
+// UI 계층: 고정 높이 모드 렌더링
+const range = ref<LhVirtualRange>({ start: 0, end: 0, offsetY: 0, totalHeight: 0 })
+
+function onScroll() {
+  range.value = computeRange(
+    container.value!.scrollTop,
+    container.value!.clientHeight,
+    props.itemHeight,
+    props.data.length,
+  )
+}
+const visibleData = computed(() => props.data.slice(range.value.start, range.value.end))
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <div class="lh-virtual-list" @scroll.passive="onScroll">
+    <div class="lh-virtual-list__phantom" :style="{ height: range.totalHeight + 'px' }">
+      <div class="lh-virtual-list__window" :style="{ transform: `translateY(${range.offsetY}px)` }">
+        <div v-for="item in visibleData" :key="item.id" class="lh-virtual-list__item">
+          {{ item.text }}
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+```
+
+```ts
+// 동적 높이 모드: 렌더링 후 각 item의 실제 높이를 측정
+function onItemMounted(index: number, el: HTMLElement) {
+  const height = el.getBoundingClientRect().height
+  const delta = patchMeasuredSize(items.value, index, height)
+  if (delta !== 0) {
+    // 높이 변화는 totalHeight와 뒤따르는 offset을 바꾸므로, 구간을 다시 계산
+    range.value = findVirtualRange(items.value, scrollTop.value, viewportHeight.value)
+  }
+}
+```
+
+```tsx
+// React: useRef로 items 배열 보관(patchMeasuredSize가 제자리 수정하여 setState로 측정 체인 재렌더링을 유발하지 않음),
+// 스크롤 이벤트는 throttle 또는 requestAnimationFrame으로 절제
+```
+
+```ts
+// uniapp: <scroll-view scroll-y :scroll-top> + 노드 조회(createSelectorQuery)로
+// 높이 측정; 미니 프로그램의 scroll 이벤트는 이미 절제되어 있지만, scroll-view의 스크롤 동기화는 h5보다 한 박자 느림
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-virtual-list` | 스크롤 컨테이너(고정 높이 + overflow: auto) |
+| `.lh-virtual-list__phantom` | 자리표시자 요소(높이 = totalHeight, 스크롤바를 만들어냄) |
+| `.lh-virtual-list__window` | 가시 창(transform: translateY(offsetY)) |
+| `.lh-virtual-list__item` | 단일 항목 |
+
+컨테이너 높이는 비즈니스가 정합니다(`height: 400px` 또는 flex 채우기); `will-change: transform`이 창 이동 성능을 최적화합니다.
+
+## 주의사항
+
+- **고정 높이 모드는 정말로 고정 높이여야**: 콘텐츠 줄바꿈, 아이콘 크기 차이가 항목 높이를 고르지 않게 만들고, 고정 높이 모드에서 어긋남(항목이 잘리거나 겹침)이 생깁니다.확실하지 않으면 동적 높이 모드를 쓰거나, CSS `white-space: nowrap; overflow: hidden; text-overflow: ellipsis`로 강제 단일 행 고정 높이를 만드세요.
+- **`overscan`의 의미**: 뷰포트 위아래에 각각 2항목을 더 렌더링하여, 빠른 스크롤 시 빈 공간 깜빡임을 막습니다. 값이 클수록 부드럽지만 렌더링이 많아집니다. 2는 경험적 기본값이고 table은 3을 씁니다(표의 행이 더 복잡).
+- **동적 높이의 깜빡임 문제**: 첫 화면은 추정 높이로 렌더링하고, 측정 후 실제 높이가 다르면 목록이 한 번 움찔합니다. 완화: 추정값을 최대한 정확하게(역사 평균 높이 사용), 또는 첫 화면 렌더링 시 동기 측정.
+- **`patchMeasuredSize`의 delta 용도**: 반환된 높이 차이는 **scrollTop 보정**에 씁니다. 크기가 변한 후 스크롤 위치가 원래 콘텐츠에 더 이상 대응하지 않을 수 있어, UI 계층이 이에 따라 스크롤량을 보상합니다.
+- **key의 안정성**: `v-for`의 key는 안정적인 비즈니스 id여야 합니다(index가 아님). 가상 목록은 항목의 증삭제가 잦아, index를 key로 쓰면 잘못된 DOM을 재사용합니다.
+- **수평 가상화에는 `computeWindow`**: 가로 스크롤의 캐러셀, 시간축은 축 무관 버전을 쓰며, 알고리즘은 같은 하나입니다.
+- **`@deprecated` 별칭**: `computeVirtualRange` / `getItemOffset`은 예전 이름이며 `shared/virtual`에 위임합니다. 새 코드는 코어(`@lh-ui/share/core/shared/virtual`)를 직접 가져오고, 하위의 vue2는 여전히 예전 이름을 참조하므로 삭제 전에 먼저 하위를 수정하세요.
+- **측정 시점의 순환 의존**: 렌더링은 구간에 의존하고, 구간은 높이에 의존하며, 높이는 렌더링 후 측정에 의존합니다. 해결: 첫 화면은 추정 높이로 렌더링하고, 측정 후 한 번 업데이트합니다. 측정 콜백 안에서 동기적으로 강제 레이아웃을 하지 마세요(`getBoundingClientRect`가 이미 한 번의 리플로우입니다).
+- **가상 목록 안에서 복잡한 애니메이션을 하지 마세요**: 항목이 빈번하게 마운트/언마운트되어 등장/퇴장 애니메이션이 깜빡입니다. 애니메이션이 필요하면 FLIP을 쓰거나 애니메이션을 항목 내부에 만드세요.
+
+<FnPlayground module="virtual-list" fn="computeRange" params='{"scrollTop": 800, "viewportHeight": 400, "itemHeight": 50, "total": 1000}' />

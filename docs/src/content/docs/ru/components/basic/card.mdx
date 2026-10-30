@@ -1,0 +1,140 @@
+---
+title: card —— Карточка
+description: 'getCardInteractivity различает семантику interactive/static, isCardInteractive проверяет интерактивность, три ступени shadow'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Карточка — это «контейнер содержимого», но в современных библиотеках компонентов карточка часто **целиком кликабельна**. В этот момент она перестаёт быть обычным `<div>`: ей нужна семантика кнопки, фокус с клавиатуры и срабатывание по Enter/Space. `core/card` через `getCardInteractivity` делает решение «кнопка это или нет» явным, чтобы UI-слой мог на его основе навешивать tabindex и role.
+
+## Когда использовать
+
+- При реализации `LhCard` на каждой платформе: классы и интерактивную семантику вычисляет core.
+- Агрегированное представление информации: обложка + заголовок + описание + блок действий.
+- **Не следует использовать**: scenarios, требующие элементов форм или сложного вложенного взаимодействия. Положить кнопку внутрь карточки можно (блок действий), но **целиком кликабельная карточка с кнопкой внутри** создаёт проблемы доступности вложенного взаимодействия — такого следует избегать.
+
+## Импорт
+
+```ts
+import { getCardClassNames, isCardInteractive, getCardInteractivity } from '@lh-ui/share/core/card'
+import type { LhCardState, LhCardShadow, LhCardInteractivity } from '@lh-ui/share/core/card'
+```
+
+## Замысел
+
+Условие в `isCardInteractive` — `clickable && !loading`: карточка в состоянии загрузки неинтерактивна. Это `&&` кажется самоочевидным, но оно решает реальную проблему: при загрузке карточка обычно показывает скелет, и в этот момент клик должен поглощаться, а не запускать ещё не готовую операцию.
+
+`getCardInteractivity` возвращает `'interactive'` / `'static'`, а не логическое значение, чтобы код UI-слоя читался так, будто он работает с двумя разными **элементами**:
+
+- `interactive`: при отрисовке навешиваются `role="button"`, `tabindex="0"`, обработка Enter/Space и `@click`.
+- `static`: никакой семантики — просто контейнер.
+
+Такое разделение необходимо: если бы UI-слой писал `v-if="clickable"` напрямую, три места (role, tabindex, события клавиатуры) эволюционировали бы каждое само по себе и легко появилась бы дыра.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getCardClassNames` | `(state: LhCardState) => string[]` | массив классов | ступень тени, кликабельность, модификатор загрузки |
+| `isCardInteractive` | `(state: LhCardState) => boolean` | логическое | `clickable && !loading` |
+| `getCardInteractivity` | `(state: LhCardState) => LhCardInteractivity` | `'interactive'` / `'static'` | решение о семантической роли |
+
+Пример вывода:
+
+```ts
+getCardClassNames({ shadow: 'hover', clickable: true, loading: false })
+// ['lh-card', 'lh-card--shadow-hover', 'lh-card--clickable']
+
+getCardInteractivity({ shadow: 'hover', clickable: true, loading: false })  // 'interactive'
+getCardInteractivity({ shadow: 'always', clickable: false, loading: false }) // 'static'
+```
+
+## Определения типов
+
+```ts
+export type LhCardShadow = 'always' | 'hover' | 'never'
+export type LhCardInteractivity = 'interactive' | 'static'
+
+export interface LhCardState {
+  shadow: LhCardShadow
+  clickable: boolean
+  loading: boolean
+}
+```
+
+## Доступность
+
+Это ядро компонента. Если карточка целиком кликабельна, она должна быть реализована по шаблону кнопки из APG — три вещи в UI-слое обязательны все сразу:
+
+```vue
+<div
+  :class="getCardClassNames({ shadow, clickable, loading })"
+  :role="interactivity === 'interactive' ? 'button' : undefined"
+  :tabindex="interactivity === 'interactive' ? 0 : undefined"
+  @click="interactivity === 'interactive' && emit('click')"
+  @keydown.enter="interactivity === 'interactive' && emit('click')"
+  @keydown.space.prevent="interactivity === 'interactive' && emit('click')"
+>
+```
+
+Обратите внимание на `.prevent` для пробела: нативная кнопка подавляет стандартную прокрутку страницы по пробелу; при имитации кнопки через div это нужно делать вручную, иначе карточка будет одновременно прокручиваться и срабатывать.
+
+**Не стоит** ради простоты рендерить кликабельную карточку как `<button>`: стили кнопки по умолчанию (inline, центрирование текста) конфликтуют с карточной раскладкой, а блочное содержимое внутри button вызывает проблемы в старых браузерах. div + role — равноценная реализация, признанная APG.
+
+## Примеры использования
+
+```ts
+import { getCardClassNames, getCardInteractivity } from '@lh-ui/share/core/card'
+
+getCardClassNames({ shadow: 'never', clickable: false, loading: true })
+// ['lh-card', 'lh-card--shadow-never', 'lh-card--loading']
+```
+
+```tsx
+// React
+const interactivity = getCardInteractivity({ shadow, clickable, loading })
+const interactive = interactivity === 'interactive'
+return (
+  <div
+    className={getCardClassNames({ shadow, clickable, loading }).join(' ')}
+    role={interactive ? 'button' : undefined}
+    tabIndex={interactive ? 0 : undefined}
+    onClick={interactive ? onClick : undefined}
+    onKeyDown={interactive ? (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() }
+    } : undefined}
+  >
+    {loading ? <Skeleton /> : children}
+  </div>
+)
+```
+
+```ts
+// uniapp: view поддерживает hover-class, тень при наведении можно имитировать через :hover-class;
+// события клавиатуры работают только на h5, на остальных платформах реагирует лишь tap
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-card` | базовый класс: скругление, рамка, фон, переход |
+| `.lh-card--shadow-{always\|hover\|never}` | три ступени тени: всегда / при наведении / никогда |
+| `.lh-card--clickable` | кликабельность: подъём при hover + курсор-указатель + нажатие active |
+| `.lh-card--loading` | состояние загрузки: область содержимого закрывается скелетом |
+| `.lh-card__header` / `.lh-card__title` / `.lh-card__extra` | шапка: заголовок + блок действий справа |
+| `.lh-card__cover` | область изображения-обложки (сопряжение скруглений на всю ширину) |
+| `.lh-card__body` | основная область содержимого |
+| `.lh-card__footer` | нижний блок действий |
+| `.lh-card__loading-line` / `--narrow` / `--wide` | строки скелета-плейсхолдера |
+
+Тени и скругления идут через токены `--lh-shadow-*` / `--lh-radius-*`, их можно переопределить через ConfigProvider.
+
+## Замечания
+
+- **Ловушка вложенного взаимодействия**: при `role="button"` на всей карточке кнопки и ссылки внутри неё становятся потомками button, и скринридер пропустит их (внутри button не разрешён интерактивный контент). Если они должны присутствовать одновременно, откажитесь от кликабельности всей карточки и сузьте зону клика до конкретного элемента.
+- У `shadow` нет значения по умолчанию: тип требует обязательной передачи, в props UI-слоя обычно задают `'hover'`.
+- Скелет в состоянии загрузки реализован в стилях через `.lh-card__loading-line`, core выводит только класс `--loading`.
+- `clickable: true` без привязанного события click допустимо (лишь выглядит кликабельно) — это вопрос к вызывающему, а не к core.
+
+<FnPlayground module="card" fn="getCardClassNames" params='{"state": {"shadow": "hover", "clickable": true, "loading": false}}' />

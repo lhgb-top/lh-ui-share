@@ -1,0 +1,146 @@
+---
+title: input —— Поле ввода
+description: 'подсчёт символов getWordCount, усечение clampString, пакет атрибутов getInputAria, inline-стили размера по сетке соответствия'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Поле ввода — фундамент формы. `core/input` занимается четырьмя вещами: отображением и подсчётом количества символов, усечением слишком длинного ввода, inline-стилями по размерной сетке и пакетом атрибутов доступности поля ввода. Он намеренно **не касается** валидации (это обязанность `core/form`) и дебаунса (это дело реактивности UI-слоя).
+
+## Когда использовать
+
+- В каждой платформе реализован `LhInput` (включая вариант textarea: модификатор `--textarea`).
+- Нужно повторно использовать тот же набор подсчёта символов и aria-атрибутов в кастомных элементах ввода.
+- **Не использовать для**: числового ввода — `core/input-number` (со step и клампом); времени — `core/time-picker`; дат — `core/date-picker`.
+
+## Импорт
+
+```ts
+import {
+  getWordCount,
+  shouldShowWordLimit,
+  clampString,
+  getInputStyle,
+  getInputAria,
+} from '@lh-ui/share/core/input'
+import type { LhInputState } from '@lh-ui/share/core/input'
+```
+
+## Замысел дизайна
+
+Обе границы `getWordCount` возникли из реальных межплатформенных различий:
+
+- Если `value` равно undefined, подсчёт откатывается к 0 — в React/uniapp управляемое значение может кратко быть undefined перед монтированием, и `undefined.length` сразу упадёт.
+- Если `maxlength` равно undefined, в качестве верхней границы отображается `∞`, а не `'undefined'`. Этот символ делает «без ограничения» визуально явным, а не похожим на bug.
+
+Размерные стили `getInputStyle` — **inline**, а не имена классов: поля ввода lh-ui поддерживают глобальный размер через ConfigProvider, и при переключении глобального размера не нужно пересчитывать имена классов — inline-стили пересчитываются по props. Обратите внимание, что здесь размерное отображение отличается от кнопок (кнопки используют имена классов) — это результат исторической эволюции каждого компонента.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `getWordCount` | `(state: Pick<LhInputState, 'value' \| 'maxlength'>) => string` | `"использовано/лимит"` | строка подсчёта символов |
+| `shouldShowWordLimit` | `(state: Pick<LhInputState, 'maxlength' \| 'minlength'>) => boolean` | логическое значение | показывать подсчёт, если заданы maxlength или minlength |
+| `clampString` | `(value: string, maxlength?: number) => string` | строка | усечение при превышении длины |
+| `getInputStyle` | `(size: string) => Record<string, string>` | inline-стили | отображение padding/размера шрифта по размерной сетке |
+| `getInputAria` | `(options: { label?: string; describedby?: string; invalid?: boolean; required?: boolean }) => LhAriaAttrs` | пакет aria-атрибутов | выводит четыре атрибута по необходимости |
+
+Отображение размерной сетки `getInputStyle`: `mini` — padding `4px 8px` / размер шрифта 12, `small` — `6px 10px` / 12, `medium` — `8px 12px` / 14, `large` — `12px 16px` / 16; для неизвестного size откат к `medium`.
+
+## Определения типов
+
+```ts
+export interface LhInputState {
+  value: string
+  size: LhComponentSize
+  maxlength: number | undefined
+  minlength: number | undefined
+}
+```
+
+## Доступность
+
+Все четыре атрибута `getInputAria` **навешиваются по необходимости** (выводятся только истинные значения, ложные не появляются в ключах):
+
+```ts
+getInputAria({ label: 'Имя пользователя', required: true })
+// { 'aria-label': 'Имя пользователя', 'aria-required': true }
+
+getInputAria({ invalid: true, describedby: 'lh-form-error-username' })
+// { 'aria-invalid': true, 'aria-describedby': 'lh-form-error-username' }
+```
+
+Связка с `core/form` — ключевое применение: `LhFormItem` рендерит элемент с текстом ошибки (id генерируется через `getFormFieldErrorId(prop)`), и этот id передаётся сюда через `describedby`, после чего программа чтения экрана зачитывает «Недопустимый ввод, ошибка: …». См. [form](/ru/components/form/form).
+
+## Примеры использования
+
+```ts
+import { getWordCount, clampString, getInputAria } from '@lh-ui/share/core/input'
+
+getWordCount({ value: 'hello', maxlength: 10 })   // '5/10'
+getWordCount({ value: 'hello', maxlength: undefined })  // '5/∞'
+getWordCount({ value: undefined, maxlength: 10 })       // '0/10'
+clampString('abcdef', 3)   // 'abc'
+clampString('abcdef')      // 'abcdef' (без ограничения возвращается как есть)
+getInputAria({ label: 'Поиск' })  // { 'aria-label': 'Поиск' }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-input', `lh-input--${size}`, { 'lh-input--textarea': type === 'textarea' }]">
+  <div class="lh-input__wrapper">
+    <input
+      class="lh-input__inner"
+      :style="getInputStyle(size)"
+      v-bind="getInputAria({ label, describedby, invalid: !!error, required })"
+    />
+  </div>
+  <span v-if="shouldShowWordLimit({ maxlength, minlength })" class="lh-input__count">
+    {{ getWordCount({ value, maxlength }) }}
+  </span>
+</div>
+```
+
+```tsx
+// React
+const aria = getInputAria({ label, describedby, invalid: !!error, required })
+return (
+  <div className={`lh-input lh-input--${size}`}>
+    <div className="lh-input__wrapper">
+      <input className="lh-input__inner" style={getInputStyle(size)} {...aria} />
+    </div>
+  </div>
+)
+```
+
+```ts
+// uniapp: <input> — встроенный компонент, поддерживается и class, и style;
+// textarea используется через компонент <textarea>, а подсчёт символов на не-h5
+// платформах берёт на себя собственное свойство count компонента
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-input` | базовый класс |
+| `.lh-input--{mini\|small\|medium\|large}` | размерная сетка |
+| `.lh-input--textarea` | вариант textarea |
+| `.lh-input--disabled` / `.lh-input--prefix` / `.lh-input--suffix` | состояния и слоты |
+| `.lh-input__wrapper` | обёртка (рамка, состояние фокуса) |
+| `.lh-input__wrapper--focused` / `--disabled` / `--has-label` | состояния обёртки |
+| `.lh-input__inner` | нативный элемент ввода |
+| `.lh-input__label` / `--float` | плавающая метка (material-стиль) |
+| `.lh-input__prefix` / `__suffix` | слоты до и после (значки, кнопки) |
+| `.lh-input__clear` / `__count` | кнопка очистки / подсчёт символов |
+
+Цвет рамки при фокусе — `var(--lh-primary-color)`, при ошибке — `var(--lh-danger-color)`.
+
+## Замечания
+
+- **Несимметричный padding у `--has-label`**: с плавающей меткой `padding-top` равен 16px (место под метку), остальные размеры симметричны. Это пункт, ожидающий унификации в «специальной задаче по токенам высоты».
+- **Несогласованная высота элементов управления**: input 37px / select 32px / cascader 27→32px и так далее; первопричина — в `var.scss` отсутствуют токены `--lh-control-height-*` (там же, ждёт последующего changeset).
+- **Семантика «символов» у `maxlength`**: `clampString` использует `slice` и считает в UTF-16 кодовых единицах; символы emoji из дополнительных плоскостей считаются как 2. Если UI-слою нужен подсчёт по кодовым точкам, он обрабатывает это сам.
+- Не перекрывайте возвращаемое значение `getInputStyle` значением `sx` — приоритет sx выше, их нужно объединять, а не перекрывать.
+
+<FnPlayground module="input" fn="getWordCount" params='{"state": {"value": "青花瓷", "maxlength": 10}}' />

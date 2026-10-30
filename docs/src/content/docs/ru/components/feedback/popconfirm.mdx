@@ -1,0 +1,167 @@
+---
+title: popconfirm —— Всплывающее подтверждение
+description: 'лёгкое решение для повторного подтверждения: семантика alertdialog, тон warning по умолчанию, контракт событий кнопок подтверждения/отмены'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Удаление, отправка, публикация — подобные действия, которые «трудно отменить», требуют от пользователя повторного подтверждения. `dialog` для этого слишком тяжёл (модальность, перехват фокуса, маска), а `popconfirm` показывает маленькое всплывающее окно прямо на месте: одно предложение и две кнопки, после подтверждения оно сразу исчезает. Это компонент, **интерактивный вес которого находится ровно между tooltip и dialog**.
+
+## Когда использовать
+
+- В каждой платформе реализован `<LhPopconfirm>`: удаление строки, отмена действия, очистка данных, отправка заказа.
+- **Лёгкое, локальное, с малым запасом на отмену** повторное подтверждение.
+- **Не использовать для**: последствий настолько серьёзных, что требуется полное внимание пользователя (используйте `dialog` — модальная маска принудительно фокусирует); просто передачи информации (используйте `tooltip` / `message`); подтверждений с указанием причины или флажками (используйте `dialog` с формой).
+
+## Импорт
+
+```ts
+import {
+  LH_POPCONFIRM_TYPE_DEFAULT,
+  LH_POPCONFIRM_PLACEMENT_DEFAULT,
+  getPopconfirmIconName,
+  getPopconfirmClass,
+  getPopconfirmTriggerAria,
+  getPopconfirmPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popconfirm'
+import type { LhPopconfirmType, LhPopconfirmTrigger, LhPopconfirmState } from '@lh-ui/share/core/popconfirm'
+```
+
+## Замысел дизайна
+
+**Тон по умолчанию — warning, а не info**: `LH_POPCONFIRM_TYPE_DEFAULT = 'warning'` — появление подтверждения почти всегда означает «здесь есть риск», поэтому по умолчанию тон должен быть предостерегающим. info остаётся для чисто информационных подтверждений («Пометить как прочитанное?»), danger — для необратимых действий («После удаления восстановление невозможно»).
+
+**Три тона, три значка**: info → `info`, warning → `warning`, danger → `error` (имя значка error, а не danger — в библиотеке значков принято имя error, это отображение между разными схемами именования). Неизвестный type откатывается к warning.
+
+**`role="alertdialog"`, а не popover-овский `"dialog"`**: alertdialog в ARIA — это «диалог, требующий немедленного ответа» — программы чтения экрана **зачитывают его в приоритете** (прерывающий характер, как у alert, но требуют от пользователя сделать выбор). Это точнее соответствует семантике «жду твоего решения», чем dialog.
+
+**Контракт событий подтверждения/отмены — на UI-слое**: core предоставляет только имена классов, значки, aria и задержки; события `onConfirm` / `onCancel`, тексты кнопок, состояние loading — всё это в UI-слое, поскольку оно касается общения внутри дерева компонентов (emit), а core не касается API фреймворка.
+
+**Задержки следуют за popover**: по умолчанию в `getDefaultDelay` — 200/100, как и в popover — пузырь подтверждения тоже допускает запуск по hover, и указатель должен иметь возможность войти в него.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `getPopconfirmIconName` | `(type: LhPopconfirmType) => string` | имя значка | для неизвестного type откат к warning |
+| `getPopconfirmClass` | `(state: { type, placement, popperClass? }) => string[]` | имена классов | тон + позиция |
+| `getPopconfirmTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | пакет aria | expanded/controls/haspopup |
+| `getPopconfirmPopperAria` | `(id?) => LhAriaAttrs` | пакет aria | role=alertdialog |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | задержки | по умолчанию 200 / 100 |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | разрешено ли | перехват при disabled |
+
+Константы: `LH_POPCONFIRM_TYPE_DEFAULT = 'warning'`, `LH_POPCONFIRM_PLACEMENT_DEFAULT = 'top'`.
+
+## Определения типов
+
+```ts
+export type LhPopconfirmType = 'info' | 'warning' | 'danger'
+export type LhPopconfirmTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopconfirmState {
+  type?: LhPopconfirmType
+  trigger?: LhPopconfirmTrigger
+  placement?: LhPlacement
+  visible?: boolean
+  disabled?: boolean
+  showIcon?: boolean             // по умолчанию true
+}
+```
+
+## Доступность
+
+```ts
+getPopconfirmPopperAria('pc-1')
+// { role: 'alertdialog', id: 'pc-1' }
+getPopconfirmTriggerAria(true, 'pc-1')
+// { 'aria-expanded': true, 'aria-controls': 'pc-1', 'aria-haspopup': 'true' }
+```
+
+- **Зачитывание alertdialog**: при обнаружении alertdialog программа чтения экрана немедленно зачитывает его содержимое (aria-labelledby или внутренний текст), **пользователю не нужно читать его самостоятельно** — в этом его большая обязательность по сравнению с dialog, что соответствует намерению «жду подтверждения».
+- **У кнопок должен быть ясный текст**: «ОК / Отмена» лучше, чем «OK / NO» или значки-кнопки. При тоне `danger` текст кнопки подтверждения рекомендуется формулировать с указанием последствий («Удалить», а не «ОК»).
+- **Отмена — безопасное направление**: что Enter должно запускать по умолчанию — **подтверждение** или **отмену**? Общая практика — помещать начальный фокус на кнопку **«Отмена»** (одно нажатие Tab + Enter — безопасный выход) — для деструктивных операций не стоит заранее помещать фокус на подтверждение. Это решение UI-слоя, core в него не вмешивается.
+- **Esc = отмена**: когда `canCloseOnEscape` разрешает, Esc должен запускать onCancel, а не просто закрывать — семантически «закрыть окно подтверждения» означает «не подтверждать».
+- **Значок с aria-hidden**: семантический значок (warning/error) уже передан текстом, а сам значок декоративен, чтобы программа чтения не зачитывала дважды «предупреждение».
+
+## Примеры использования
+
+```ts
+import { getPopconfirmIconName, getPopconfirmClass, LH_POPCONFIRM_TYPE_DEFAULT } from '@lh-ui/share/core/popconfirm'
+
+getPopconfirmIconName('info')     // 'info'
+getPopconfirmIconName('warning')  // 'warning'
+getPopconfirmIconName('danger')   // 'error'
+getPopconfirmIconName('other' as never)  // 'warning' (откат)
+
+getPopconfirmClass({ type: 'danger', placement: 'top' })
+// ['lh-popconfirm__popper', 'lh-popconfirm__popper--danger', 'lh-popconfirm__popper--top']
+
+LH_POPCONFIRM_TYPE_DEFAULT  // 'warning'
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopconfirm
+    title="После удаления восстановление невозможно. Удалить эту строку?"
+    type="danger"
+    confirm-text="Удалить"
+    cancel-text="Отмена"
+    @confirm="remove(row)"
+  >
+    <template #reference>
+      <LhButton type="danger" size="small">Удалить</LhButton>
+    </template>
+  </LhPopconfirm>
+</template>
+
+<script setup>
+async function remove(row) {
+  // Срабатывает onConfirm; внутри компонента можно поддержать confirmLoading:
+  // пузырь закрывается только после завершения асинхронной операции
+  await api.delete(row.id)
+  LhMessage.success('Удалено')
+}
+</script>
+```
+
+```ts
+// Асинхронное подтверждение: во время confirm отключаем кнопки + показываем loading,
+// при неудаче оставляем пузырь открытым
+// Это логика UI-слоя: core не хранит асинхронное состояние
+```
+
+```tsx
+// React: onConfirm/onCancel передаются через props; управляемый visible в связке с асинхронным подтверждением
+```
+
+```ts
+// uniapp: пузырь через <view>; нажатое состояние кнопки через hover-class; контракт событий по той же модели
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-popconfirm__popper` | контейнер пузыря |
+| `.lh-popconfirm__popper--{info\|warning\|danger}` | тон (цвет значка + цвет кнопки подтверждения) |
+| `.lh-popconfirm__popper--{top\|bottom\|…}` | позиция |
+| `.lh-popconfirm__icon` | значок тона |
+| `.lh-popconfirm__title` | текст заголовка |
+| `.lh-popconfirm__actions` | область кнопок (выравнивание по правому краю) |
+
+Цвет кнопки подтверждения следует тону: danger использует `--lh-danger-color`, warning — `--lh-warning-color`, info — `--lh-primary-color`.
+
+## Замечания
+
+- **Заголовок должен чётко указывать последствия**: «Точно удалить?» — плохой текст (последствие не названо); «После удаления восстановление невозможно. Удалить эту строку?» — хороший. Это основа UX popconfirm.
+- **Не вкладывать друг в друга**: popconfirm внутри popconfirm заставит пользователя гадать, какой именно слой он сейчас подтверждает. Для многошаговых подтверждений используйте dialog.
+- **Триггер — отключённая кнопка**: кнопка с `disabled` не генерирует события (нативное ограничение), и popconfirm не откроется — бизнес-слой должен обработать это сам (обернуть в неотключённый элемент или вообще не рендерить при отключении).
+- **Момент закрытия при асинхронном подтверждении**: во время обработки confirm следует отключить обе кнопки + маску для защиты от повторных нажатий; при ошибке **оставить пузырь открытым** и показать ошибку, а закрывать только при успехе. Синхронное закрытие пузыря прямо внутри onConfirm — частый bug.
+- **Сочетание с message**: после завершения подтвердённого действия дайте обратную связь успехом через `message` («Удалено») — это стандартная цепочка «подтверждение → выполнение → обратная связь».
+- **Запуск по hover на мобильных**: как и в popover, на сенсорных экранах нет hover. Для межплатформенного использования по умолчанию применяется запуск по click.
+- **`role="alertdialog"` не несёт неявной семантики кнопок**: область кнопок должна рендериться настоящими `<button>` (а не div + onclick), иначе пользователи клавиатуры не смогут с ними работать.
+
+<FnPlayground module="popconfirm" fn="getPopconfirmIconName" params='{"type": "danger"}' />

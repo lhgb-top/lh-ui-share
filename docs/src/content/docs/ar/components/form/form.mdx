@@ -1,0 +1,221 @@
+---
+title: form —— النموذج
+description: 'محرك القواعد validateFormField (غير المتزامن غير مقتصر)، getFormFieldValue لجلب القيمة بالمسار النقطي، getFormFieldAria لربط الأخطاء'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+عناصر تحكم النموذج لا تجمع البيانات بنفسها—**التحقق وربط الأخطاء** هما جوهر النموذج. ويوفّر `core/form` ثلاثة أشياء: محرك قواعد (`validateFormField`)، وجالب قيم (`getFormFieldValue`، يدعم المسار النقطي)، ومجموعة حزم سمات ربط الأخطاء (`getFormFieldAria`). وهو يتعمّد **ألا يحتوي تنسيق النموذج ككل** (تسجيل الحقول، توقيت الإرسال، إعادة الضبط)، فتلك مسؤولية مكوّن `LhForm` في طبقة UI.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `LhForm` / `LhFormItem`: أي مشهد إدخال يحتاج إلى التحقق.
+- المشاهد التي تتطلب ربط أخطاء التحقق بقارئ الشاشة (`aria-invalid` + `aria-describedby`).
+- **لا ينبغي استخدامه**: التحقق البسيط لحقل واحد بلا اعتمادات بين الحقول (قد يكفي `required` الذي يحمله المكوّن نفسه)؛ وعند الحاجة إلى رسم اعتمادات معقد بين الحقول (مثل «إذا كان A هو x فإن B إلزامي ويجب أن يساوي C») عبّر عنها بدالة `validator` مخصّصة، ولا تحاول تركيب عدة قواعد مدمجة.
+
+## طريقة الاستيراد
+
+```ts
+import {
+  getFormFieldValue,
+  isEmptyValue,
+  validateFormField,
+  getFormFieldErrorId,
+  getFormFieldAria,
+} from '@lh-ui/share/core/form'
+import type { LhFormRule, LhFormState } from '@lh-ui/share/core/form'
+```
+
+## القصد التصميمي
+
+**ثلاثة قرارات رئيسية في محرك القواعد**:
+
+1. **القيم الفارغة تهتم بـ required فقط**—عندما تكون القيمة فارغة وغير إلزامي **تُتجاوز جميع القواعد**، موافقة لاتفاق المكتبات السائدة (Element / Ant Design): من لم يُدخِل فلا يُخطَّئ. وهذا يعني أن `type: 'email'` لن يُخطئ السلسلة الفارغة بـ «صيغة بريد خاطئة»—بل تُعبَّأ نية الإلزام عبر `required`.
+
+2. **القواعد غير المتزامنة غير مقتصرة (لا short-circuit)**—وهذا اختلاف عن السلوك القديم، وهو أدق نقطة في هذه الوحدة. يمكن أن تُعيد `validator` وعداً (Promise). وكان التنفيذ القديم **يتجاوز جميع القواعد التالية** بعد أول thenable، فتُبتلع قاعدة الطول بعد التحقق غير المتزامن لتفرّيد البريد. أما التنفيذ الجديد فيغلّف كل قاعدة في دالة تقييم كسول (`RuleCheck`)، وعند مصادفة thenable يُعلَّق ويُتابَع **تقييم القواعد التالية**، ثم تُدمج جميع الأخطاء في Promise واحد يُجمَّع. ولا يزال أول خطأ متزامن يُعاد فوراً (اقتصار على الأخطاء المتزامنة، لا على القواعد غير المتزامنة).
+
+3. **المُصادِق الذي يرمي خطأ متزامناً يُعامَل كفشل تحقق**—تُؤخذ `error.message` كنص الخطأ، دون أن تنفذ كاستثناء غير مُلتقَط. فعندما يكتب المستخدم مُصادِقاً مخصصاً فيه خطأ (يرمي TypeError)، يظهر النموذج كـ «فشل التحقق لهذا الحقل» بدلاً من انهيار الصفحة.
+
+**أولوية نص `required`**: عند القيمة الفارغة يُبحث أولاً عن «قاعدة إلزامية قدّمت message صراحةً»، وإلا فتُؤخذ أول قاعدة إلزامية. وعالج هذا التصميم علة حقيقية—فطبقة المكوّن (form item) عندما يكون `required` صحيحاً **تضمِّن قاعدة `{ required: true }` بلا message**، فإن سبقت قواعد المستخدم ذات الـ message، سيطابق `find` القاعدة المُضمَّنة ويتراجع إلى النص العام، **مبتلِعاً نص المستخدم المخصص**.
+
+**المسار النقطي في `getFormFieldValue`**: يُختزل `'user.address.city'` طبقة طبقة، وعند مواجهة غير كائن (null / قيمة أولية) في المنتصف يُعاد undefined دون رمي استثناء. ويمكّن هذا حقول النموذج من الارتباط مباشرة بنموذج متداخل، دون الحاجة لطبقة UI لسَطح البيانات.
+
+**تعريف `isEmptyValue`**: undefined / null / سلسلة فارغة / مصفوفة فارغة تُعدّ فارغة؛ **أما سلسلة المسافات والكائن الفارغ فلا تُعدّ فارغة**—فدلالة المسافات يحددها طبقة المكوّن بالقص (trim) عند الحاجة قبل التمرير، وcore لا يتخذ هذا القرار نيابة عن العمل.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `getFormFieldValue` | `(model, prop: string) => unknown` | قيمة الحقل | مسار نقطي، عند الفقد يُعاد undefined |
+| `isEmptyValue` | `(value: unknown) => boolean` | هل هي فارغة | أربع حالات فراغ |
+| `validateFormField` | `(value, rules?, model, requiredMessage?) => string \| undefined \| Promise<string \| undefined>` | نص الخطأ / undefined | محرك القواعد |
+| `getFormFieldErrorId` | `(prop: string) => string` | id العنصر | يوافق aria-describedby |
+| `getFormFieldAria` | `(options: { prop, error?, required? }) => LhAriaAttrs` | حزمة سمات aria | invalid + describedby + required |
+
+## تعريفات الأنواع
+
+```ts
+export interface LhFormRule {
+  required?: boolean
+  message?: string
+  trigger?: string  // وقت الإطلاق (blur / change / submit)؛ لا يفسره core، بل يرشّح طبقة UI القواعد وفق الحدث
+  /** تحقق نوعي مدمج؛ القيم الفارغة تُتجاوز (القاعدة نفسها لـ required) */
+  type?: 'string' | 'number' | 'boolean' | 'array' | 'email' | 'url'
+  pattern?: string | RegExp       // تعبير نمطي (للسلاسل فقط)
+  min?: number                    // الحد الأدنى عددياً، أو أقل طول لـ string/array
+  max?: number                    // الحد الأعلى عددياً، أو أكبر طول لـ string/array
+  len?: number                    // طول مطابق (string/array)
+  /** مُصادِق مخصص: يُعيد نص الخطأ، ولا يُعيد شيئاً عند النجاح؛ يدعم غير المتزامن */
+  validator?: (value: unknown, model: Record<string, unknown>) => string | undefined | Promise<string | undefined>
+}
+
+export interface LhFormState {
+  model: Record<string, unknown>
+  rules?: Record<string, LhFormRule[]>
+}
+```
+
+**الدلالة المزدوجة لـ `min` / `max`** هي تسهيل تصميمي: تُقارن القيم العددية حسب المقدار، وتُقارن السلاسل/المصفوفات حسب الطول. وثمنها ضعف دقة النوع، غير أن مكسب بساطة إعداد القواعد أكبر (`{ min: 6, message: '6 أحرف على الأقل' }` تصلح لكلمة المرور وعدد الأشخاص معاً).
+
+## إمكانية الوصول
+
+`getFormFieldAria` هو **الميل الأخير** لإمكانية الوصول في النموذج: عند فشل التحقق يُربط تنبيه الخطأ بعنصر التحكم، فيُعلن قارئ الشاشة «إدخال غير صالح، الخطأ هو…».
+
+```ts
+getFormFieldAria({ prop: 'username', error: 'اسم المستخدم إلزامي', required: true })
+// { 'aria-invalid': true, 'aria-describedby': 'lh-form-error-username', 'aria-required': true }
+
+getFormFieldAria({ prop: 'username', required: true })
+// { 'aria-required': true } (عند انعدام الخطأ لا يتم الربط بعنصر تنبيه فارغ)
+
+getFormFieldAria({ prop: 'username' })
+// {} (كائن فارغ عند انعدام الحالة)
+```
+
+الاتفاقات المتممة:
+
+- يجب أن يُعرَض عنصر تنبيه الخطأ بـ id من `getFormFieldErrorId(prop)`—يشير إليه `aria-describedby`.
+- **توقيت `aria-describedby`**: لا يُخرَج إلا عندما يكون error ذا قيمة (تفادياً للإشارة إلى عنصر فارغ غير موجود)، فعلى حزمة السمات ونص الخطأ التحدّث في الإطار نفسه.
+- يُخرج الحقل `required` قيمة `aria-required`، ليعلن قارئ الشاشة «إلزامي» بمجرد الدخول إلى عنصر التحكم.
+- الدلالة الدلالية لـ `trigger` في إمكانية الوصول: لا ينبغي للتحقق المُطلَق بـ blur أن يقاطع المستخدم في منتصف الكتابة (الخطأ مع كل ضغطة حرف تجربة سيئة)؛ أما التحقق المُطلَق بـ change فيناسب المشاهد الخفيفة «التحقق أثناء الكتابة».
+
+## أمثلة الاستخدام
+
+```ts
+import { validateFormField, isEmptyValue, getFormFieldValue } from '@lh-ui/share/core/form'
+
+isEmptyValue('')           // true
+isEmptyValue([])           // true
+isEmptyValue('  ')         // false (سلسلة المسافات ليست فارغة)
+isEmptyValue({})           // false (الكائن الفارغ ليس فارغاً)
+isEmptyValue(0)            // false (0 قيمة صحيحة!)
+
+getFormFieldValue({ user: { name: 'lh' } }, 'user.name')   // 'lh'
+getFormFieldValue({ user: null }, 'user.name')             // undefined (غير كائن في المنتصف)
+getFormFieldValue({}, 'missing')                           // undefined
+```
+
+```ts
+// إلزامي
+validateFormField('', [{ required: true, message: 'اسم المستخدم إلزامي' }], {})
+// 'اسم المستخدم إلزامي'
+
+// قيمة فارغة غير إلزامية: تجاوز جميع القواعد
+validateFormField('', [{ required: false, type: 'email', message: 'صيغة البريد خاطئة' }], {})
+// undefined
+
+// النوع المدمج + الطول
+validateFormField('ab', [{ min: 6, message: '6 أحرف على الأقل' }], { username: 'ab' })
+// '6 أحرف على الأقل'
+
+// تعبير نمطي
+validateFormField('123', [{ pattern: /^\d{4}$/, message: '4 أرقام' }], {})
+// '4 أرقام'
+
+// مُصادِق متزامن مخصص
+validateFormField('abc', [{
+  validator: (v) => (v as string).includes('@') ? undefined : 'يجب أن يحتوي @',
+}], {})
+// 'يجب أن يحتوي @'
+
+// مُصادِق يرمي خطأ: معاملة كفشل تحقق
+validateFormField('x', [{ validator: () => { throw new Error('انهار المُصادِق') } }], {})
+// 'انهار المُصادِق'
+
+// مُصادِق غير متزامن (غير مقتصر: القواعد المتزامنة التالية ستُقيَّم أيضاً)
+validateFormField('ab', [
+  { validator: async (v) => await checkUnique(v) ? undefined : 'مستخدم بالفعل', message: 'x' },
+  { min: 6, message: '6 أحرف على الأقل' },
+], {})
+// Promise<[أول خطأ من 'مستخدم بالفعل' أو '6 أحرف على الأقل']>
+```
+
+```vue
+<!-- Vue3: التوصيل النموذجي لـ form-item -->
+<script setup>
+const error = ref('')
+async function validate(trigger: string) {
+  const rules = (props.rules ?? []).filter((r) => !r.trigger || r.trigger === trigger)
+  error.value = (await validateFormField(
+    getFormFieldValue(props.model, props.prop),
+    rules,
+    props.model,
+    t('form.required'),
+  )) ?? ''
+}
+</script>
+
+<template>
+  <div class="lh-form-item" :class="{ 'is-error': error }">
+    <label class="lh-form-item__label" :for="inputId">{{ label }}</label>
+    <div class="lh-form-item__content">
+      <slot :aria-props="getFormFieldAria({ prop, error, required })" />
+      <p
+        v-if="error"
+        :id="getFormFieldErrorId(prop)"
+        class="lh-form-item__error"
+        role="alert"
+      >
+        {{ error }}
+      </p>
+    </div>
+  </div>
+</template>
+```
+
+```tsx
+// React: تمرير حزمة السمات شفافاً إلى عنصر التحكم المُلفَّف
+// <input {...getFormFieldAria({ prop, error, required })} aria-describedby={error ? getFormFieldErrorId(prop) : undefined} />
+```
+
+```ts
+// uniapp: طبقة core صالحة بالكامل؛ وانتبه إلى دعم سمات aria المحدود على غير h5، فيعتمد عرض الخطأ على الجانب البصري + role="alert"
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-form` | حاوية النموذج |
+| `.lh-form--inline` | تخطيط سطري (label وعنصر التحكم في السطر نفسه) |
+| `.lh-form--label-top` / `--label-left` / `--label-right` | موضع label |
+| `.lh-form-item` | عنصر الحقل |
+| `.lh-form-item.is-error` | فشل التحقق (إطار أحمر لعنصر التحكم) |
+| `.lh-form-item__label` | الوسم (تُعرض النجمة الإلزامية عبر `::before`) |
+| `.lh-form-item__content` | منطقة عنصر التحكم |
+| `.lh-form-item__error` | تنبيه الخطأ (`role="alert"`) |
+| `.lh-form-item__required` | نجمة إلزامي |
+
+لون الخطأ `--lh-danger-color`؛ والنجمة الإلزامية باللون نفسه. ويتحكم الرمز `--lh-form-label-width` في عرض label (أساس المحاذاة عند المساواة للنهاية).
+
+## ملاحظات
+
+- **`0` / `false` ليست قيمة فارغة**: `isEmptyValue(0)` يُعيد false. وهذا أكثر الفخاخ التي تُطأ—«الكمية 0» إدخال صحيح، ولا ينبغي لـ `required` أن يُخطئها. وكذلك `false` قيمة صحيحة بالنسبة لـ checkbox.
+- **المعامل الثاني لـ `validator` هو model بأكمله**: استخدمه للتحقق عبر الحقول (مثل تأكيد كلمة المرور)، ولا تلتقط القيمة القديمة داخل الإغلاق (closure).
+- **عزل التحقق غير المتزامن (debounce)**: عندما يُرسل `validator` طلباً، يجب على طبقة UI عزله (عادة 300ms) ومعالجة السباق «تغيّر الحقل عند عودة الطلب»—فطبقة core لم تتدخل في ذلك، وإعادة نص خطأ منتهي الصلاحية هي مسؤولية المُستدعي.
+- **`trigger` تفسّره طبقة UI**: فـ core يحمله فقط ولا يستهلكه. ترشّح طبقة المكوّن القواعد وفق الحدث (blur/change/submit) قبل تمريرها إلى `validateFormField`.
+- **`requiredMessage` هو نص احتياطي عام**: يأتي عادة من حزمة اللغة (`form.required`)، ولا يُستخدم إلا عندما يكون `message` للقاعدة غير معرَّف؛ وحتى تمرير سلسلة فارغة صراحةً `message: ''` تُستخدم كما هي (لا تُعامَل كفقد).
+- **أول خطأ بين القواعد المتعددة**: القواعد المتزامنة مقتصرة (أول مطابقة تُعاد)، والقواعد غير المتزامنة تُقيَّم جميعاً ثم يُؤخذ أول خطأ يُحل. وترتيب عرض الأخطاء يوافق ترتيب مصفوفة القواعد.
+- **prop للحقل المتداخل**: يُستخدم `'user.name'` لجلب القيمة وإنشاء error id (`lh-form-error-user.name`)—فالنقطة في id تحتاج إلى تهريب (escaping) في محددات CSS، انتبه عند استخدام `document.getElementById` أو `querySelector`.
+
+<FnPlayground module="form" fn="validateFormField" params='{"value": "ab", "rules": [{"min": 6, "message": "6 أحرف على الأقل"}], "model": {}}' />

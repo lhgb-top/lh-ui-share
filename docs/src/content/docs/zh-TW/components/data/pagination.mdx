@@ -1,0 +1,194 @@
+---
+title: pagination —— 分頁
+description: 'getPaginationRange 視窗收縮演算法（首末常駐 + 雙側省略號）、clampPage 越界歸一、aria-current=page'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+分頁是「資料量大於一視區」時的標準導航。它的核心難點不是翻頁，而是**頁碼區間的顯示**：100 頁時不可能把 100 個按鈕全畫出來，如何用首末頁 + 目前視窗 + 省略號既表達位置又提供快速跳轉，各庫都有自己的演算法。`core/pagination` 實作的是通行的「視窗收縮」演算法，並對各種非法輸入做了歸一化。
+
+## 何時使用
+
+- 各端實作 `LhPagination`：表格底部份頁、搜尋結果分頁、相簿分頁。
+- 資料可分頁且需要使用者顯式控制頁碼的場景。
+- **不該用它**：無限捲動載入（用 `virtual-list` 或捲動監聽）；資料量小到一視區放得下（不分頁更簡單）。
+
+## 匯入方式
+
+```ts
+import {
+  getPageCount,
+  clampPage,
+  getPaginationRange,
+  getPaginationItemAria,
+  formatMessage,
+} from '@lh-ui/share/core/pagination'
+import type {
+  LhPaginationRangeItem,
+  LhPaginationRangeState,
+  LhPaginationMessageParams,
+} from '@lh-ui/share/core/pagination'
+```
+
+## 設計意圖
+
+**`getPageCount` 的雙參數淨化**：`total` 與 `pageSize` 都過 `shared/sanitize.sanitizeNumber`——NaN / Infinity 不會穿透成 NaN 頁數。這個防禦不是多餘的：`total` 常來自非同步介面，載入中可能是 undefined，`Math.ceil(undefined / 10)` 是 NaN，而 NaN 會讓 `clampPage`、區間演算法全部失效。
+
+**`clampPage` 對 NaN 與 Infinity 的區別對待**：NaN 視為非法回退到首頁；**±Infinity 交給鉗制**——`Infinity` 落到末頁、`-Infinity` 落到首頁。這個區分有實際意義：受控模式下外部傳入的非法值（NaN）應當回到安全位置，而「跳到末頁」用 Infinity 表達是合法用法。
+
+**區間演算法的吸附邏輯**：`getPaginationRange` 的 `current` 先經 `clampPage` 歸一——註解記錄了一個真實場景：UI 層透傳的 `innerCurrent` 可能短暫越界（受控模式下外部值與內部值不同步、或總數變小後 current 未同步），不鉗制會導致目前頁落在顯示視窗之外、省略號判定反轉。
+
+**省略號只在真正產生間隙時輸出**：`showLeftEllipsis = leftSibling > 2` 而非 `> 1`——視窗緊貼首頁時（如 current=3，siblingCount=1），左側只有「2」一個頁碼被省略，此時顯示連續的 1,2,3,4,5 比插入省略號更清晰。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getPageCount` | `(total, pageSize) => number` | 總頁數（最小 1） | 雙參數淨化 |
+| `clampPage` | `(page, pageCount) => number` | 鉗制頁碼 | NaN→1，Infinity→末頁 |
+| `getPaginationRange` | `(state: LhPaginationRangeState) => LhPaginationRangeItem[]` | 區間項陣列 | 視窗收縮演算法 |
+| `getPaginationItemAria` | `(options: { page, current, labelTemplate? }) => LhAriaAttrs` | aria 屬性包 | aria-current / aria-label |
+| `formatMessage` | 由 `shared/format` 再匯出 | 插值文案 | 保持原有匯入路徑 |
+
+## 類型定義
+
+```ts
+export type LhPaginationRangeItemType = 'page' | 'ellipsis'
+
+export interface LhPaginationRangeItem {
+  type: LhPaginationRangeItemType
+  page: number    // ellipsis 項恆為 0，位置即語義
+}
+
+export interface LhPaginationRangeState {
+  current: number       // 目前頁（1 起）
+  pageCount: number
+  siblingCount?: number // 目前頁兩側頁碼數，預設 1
+}
+
+export type LhPaginationMessageParams = Record<string, string | number>
+```
+
+## 無障礙
+
+```ts
+getPaginationItemAria({ page: 3, current: 3, labelTemplate: '第 {page} 頁' })
+// { 'aria-current': 'page', 'aria-label': '第 3 頁' }
+
+getPaginationItemAria({ page: 5, current: 3, labelTemplate: '第 {page} 頁' })
+// { 'aria-label': '第 5 頁' }
+
+getPaginationItemAria({ page: 5, current: 3 })
+// {}（無模板時不輸出 aria-label；按鈕內的數字本身可讀）
+```
+
+- 目前頁輸出 `aria-current="page"`——這是分頁的 APG 標準約定，讀屏軟體據此播報「目前頁面」而非把頁碼當普通連結。
+- **省略號按鈕**要有 `aria-label`（如「向前跳 5 頁」）或 `disabled`——純 `…` 文字對讀屏軟體毫無資訊量，這是最常見的分頁無障礙缺陷。
+- 分頁整體應包在 `<nav aria-label="分页">` 裡，與頁面其它導航區分。
+- `labelTemplate` 來自語言包（`pagination.page` 等），`{page}` 佔位由本函式替換。
+
+## 使用範例
+
+```ts
+import { getPageCount, clampPage, getPaginationRange } from '@lh-ui/share/core/pagination'
+
+getPageCount(100, 10)    // 10
+getPageCount(105, 10)    // 11
+getPageCount(0, 10)      // 1（最小 1 頁）
+getPageCount(NaN, 10)    // 1（total 淨化為 0，再被 Math.max(1, …) 抬到 1）
+getPageCount(100, NaN)   // 100（pageSize 淨化為預設值 1，即每頁 1 條）
+
+clampPage(5, 10)    // 5
+clampPage(0, 10)    // 1
+clampPage(15, 10)   // 10
+clampPage(NaN, 10)  // 1
+clampPage(Infinity, 10)  // 10（Infinity 落末頁）
+
+// siblingCount 預設 1，總槽位 = 1*2 + 5 = 7
+getPaginationRange({ current: 1, pageCount: 10 })
+// [1, 2, 3, …, 10]
+getPaginationRange({ current: 5, pageCount: 10 })
+// [1, …, 4, 5, 6, …, 10]
+getPaginationRange({ current: 10, pageCount: 10 })
+// [1, …, 8, 9, 10]
+getPaginationRange({ current: 5, pageCount: 5 })
+// [1, 2, 3, 4, 5]（頁數少於槽位，全顯示，無省略號）
+getPaginationRange({ current: 99, pageCount: 10 })
+// [1, …, 8, 9, 10]（current 越界被鉗制）
+```
+
+```vue
+<!-- Vue3 -->
+<nav class="lh-pagination" aria-label="分页">
+  <button type="button" class="lh-pagination__prev" :disabled="current <= 1" @click="go(current - 1)">
+    上一页
+  </button>
+  <template v-for="(item, i) in range" :key="i">
+    <span v-if="item.type === 'ellipsis'" class="lh-pagination__ellipsis">…</span>
+    <button
+      v-else
+      type="button"
+      class="lh-pagination__item"
+      :class="{ 'is-active': item.page === current }"
+      v-bind="getPaginationItemAria({ page: item.page, current, labelTemplate: t('pagination.page') })"
+      @click="go(item.page)"
+    >
+      {{ item.page }}
+    </button>
+  </template>
+  <button type="button" class="lh-pagination__next" :disabled="current >= pageCount" @click="go(current + 1)">
+    下一页
+  </button>
+  <select v-model="pageSize" class="lh-pagination__sizes">
+    <option :value="10">10 条/页</option>
+    <option :value="20">20 条/页</option>
+    <option :value="50">50 条/页</option>
+  </select>
+  <span class="lh-pagination__total">共 {{ total }} 条</span>
+</nav>
+```
+
+```ts
+const pageCount = computed(() => getPageCount(props.total, pageSize.value))
+const range = computed(() =>
+  getPaginationRange({ current: current.value, pageCount: pageCount.value }),
+)
+function go(page: number) {
+  const next = clampPage(page, pageCount.value)
+  if (next !== current.value) emit('update:current', next)
+}
+```
+
+```tsx
+// React：受控分頁，current 由父組件持有；go 裡 clampPage 後再回呼
+```
+
+```ts
+// uniapp：<view> + <view> 遍歷區間項；頁碼跳轉用 <input type="number"> + 跳轉按鈕
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-pagination` | 基礎類（flex 置中） |
+| `.lh-pagination__prev` / `__next` | 上/下一頁按鈕 |
+| `.lh-pagination__item` | 頁碼按鈕 |
+| `.lh-pagination__item.is-active` | 目前頁（主色底） |
+| `.lh-pagination__ellipsis` | 省略號 |
+| `.lh-pagination__sizes` | 每頁條數選擇器 |
+| `.lh-pagination__total` / `__jump` | 總數文字 / 跳轉輸入 |
+
+目前頁 `--lh-primary-color` 底 + `--lh-color-on-primary` 文字；停用按鈕 `--lh-text-disabled`；按鈕間距由 `--lh-gap-small` 控制。
+
+## 注意事項
+
+- **頁碼從 1 起**：`current`、`page`、`pageCount` 全部 1 起，與 `table` 的行下標（0 起）不同，混用易錯。
+- **`pageCount` 與 `total` 的關係**：UI 層通常用 `getPageCount(total, pageSize)` 算出，但也可以直接傳 `pageCount`（伺服器端已知總頁數時）。兩個來源不要同時用，以免不一致。
+- **`pageSize` 變化時 `current` 的收斂**：從 50 條/頁切到 10 條/頁，目前頁可能超出新的 `pageCount`——`watch(pageSize)` 時調一次 `clampPage`，否則顯示空頁。
+- **省略號的互動**：點選省略號通常跳 5 頁（`current ± 5`）；core 不內建這個行為，UI 層自行實作並給省略號按鈕 `aria-label`。
+- **`siblingCount` 與槽位**：`totalSlots = siblingCount * 2 + 5`（首末頁 + 目前頁 + 兩個省略號位 + 雙側兄弟）。`pageCount <= totalSlots` 時全顯示無省略號——設 `siblingCount: 2` 時門檻是 9 頁。
+- **受控模式的短暫越界**：`getPaginationRange` 內部已鉗制 `current`，所以渲染不會出錯；但 `aria-current` 會落在鉗制後的頁上，外部狀態同步後自然一致。
+- **`formatMessage` 的再匯出**：本模組從 `shared/format` 同綁定再匯出 `formatMessage`，僅為保持下游既有匯入路徑（`pagination.total` 這類帶 `{total}` 佔位符的文案插值），新程式碼直接從 `core/shared/format` 引。
+
+<FnPlayground module="pagination" fn="getPaginationRange" params='{"state": {"current": 5, "pageCount": 20, "siblingCount": 1}}' />

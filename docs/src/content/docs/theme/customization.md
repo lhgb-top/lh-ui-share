@@ -53,8 +53,8 @@ docs 主题定制页导出的 `:root { --lh-*: ... }` 文本与 `themeVars` 是*
 ```css
 /* 项目入口 */
 :root {
-  --lh-primary-color: #2B5FA6;
-  --lh-primary-color-hover: #3D72BC;
+  --lh-primary-color: #2B4C7C;
+  --lh-primary-color-hover: #3D649E;
   /* ... */
 }
 ```

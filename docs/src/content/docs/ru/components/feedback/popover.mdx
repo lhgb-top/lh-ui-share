@@ -1,0 +1,177 @@
+---
+title: popover —— Всплывающий слой
+description: 'плавающий слой с интерактивным содержимым: задержка скрытия 100 мс при переходе указателя, role=dialog + aria-labelledby, семантика триггера aria-haspopup'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Popover — это «tooltip, в который можно что-то положить»: в подсказке могут быть кнопки, формы, меню, изображения. Он не заменяет tooltip — в tooltip можно поместить только чистый текст, и взаимодействие там запрещено; и не заменяет dialog — dialog модальный и перехватывает фокус. `core/popover` такой же тонкий, как tooltip, и разница кроется исключительно в **интерактивном весе**.
+
+## Когда использовать
+
+- В каждой платформе реализован `<LhPopover>`: карточки с деталями, панели фильтров, встроенные формы, группы кнопок действий.
+- Сценарии, где пользователю нужно **задержаться в плавающем слое и взаимодействовать с ним**.
+- **Не использовать для**: односложных текстовых подсказок (используйте `tooltip`, он легче и сдержаннее); строгих подтверждений, прерывающих поток пользователя (используйте `dialog`, модальный); подтверждений действий (используйте `popconfirm`, семантически точнее).
+
+## Импорт
+
+```ts
+import {
+  LH_POPOVER_TRIGGERS,
+  LH_POPOVER_PLACEMENT_DEFAULT,
+  getPopoverClass,
+  getPopoverWidthStyle,
+  getPopoverTriggerAria,
+  getPopoverPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+import type { LhPopoverTrigger, LhPopoverState } from '@lh-ui/share/core/popover'
+```
+
+## Замысел дизайна
+
+**Почему задержка скрытия составляет 100 мс**: скрытие tooltip — 0 мс (исчезает немедленно при выходе указателя), а popover оставляет 100 мс — **чтобы указатель мог дойти от триггера до плавающего слоя**. При перемещении мыши от триггера к слою указатель на короткое время покидает элемент-триггер, и при нулевой задержке слой закрылся бы на полпути, так что пользователь в него вообще не попал бы. Это прямое следствие интерактивности popover.
+
+**`LH_POPOVER_TRIGGERS` как константа-валидатор**: способы запуска образуют конечное перечисление (click/hover/focus/manual) и экспортируются как массив readonly для проверки пропов на UI-слое (validator во Vue, runtime-утверждения в React), а также являются runtime-аналогом TS-типа.
+
+**`role="dialog"`, а не `"tooltip"`**: по WAI-ARIA внутри tooltip не может быть интерактивных элементов, а интерактивный плавающий слой обязан иметь семантику dialog. В сочетании с `aria-labelledby`, указывающим на элемент заголовка, программа чтения экрана при открытии зачитывает заголовок, а не всё содержимое целиком.
+
+**Перехват `canCloseOnEscape` при disabled**: по умолчанию закрытие по Esc разрешено, а при `disabled` оно блокируется — в отключенном состоянии слой и так не должен запускаться, а этот гард не позволит закрыть уже открытый слой по Esc после того, как компонент был отключён (по бизнес-семантике disabled обычно означает «операция заблокирована»).
+
+**Стрелка необязательна**: класс `--arrow` добавляется, только если `arrow !== false` — для стрелки нужны дополнительные вычисления позиционирования (`computeArrowOffset` из `shared/popper`), и чисто информационным всплывающим слоям можно её отключить.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возвращаемое значение | Назначение |
+| --- | --- | --- | --- |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | задержки | по умолчанию 200 / 100 |
+| `getPopoverClass` | `(state: { placement, arrow?, popperClass? }) => string[]` | имена классов | позиция + стрелка + пользовательский класс |
+| `getPopoverWidthStyle` | `(width?: string \| number) => Record<string, string>` | inline-стили | нормализация ширины |
+| `getPopoverTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | пакет aria | aria-expanded/controls/haspopup |
+| `getPopoverPopperAria` | `(id?, titleId?) => LhAriaAttrs` | пакет aria | role=dialog + aria-labelledby |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | разрешено ли | перехват при disabled |
+
+Константы: `LH_POPOVER_TRIGGERS` (4 способа запуска), `LH_POPOVER_PLACEMENT_DEFAULT = 'top'`.
+
+## Определения типов
+
+```ts
+export type LhPopoverTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopoverState {
+  placement?: LhPlacement        // 12 позиций (shared/popper)
+  trigger?: LhPopoverTrigger
+  width?: string | number        // ширина всплывающего слоя
+  title?: string
+  visible?: boolean
+  disabled?: boolean
+  arrow?: boolean                // по умолчанию true
+  showAfter?: number
+  hideAfter?: number
+}
+```
+
+## Доступность
+
+```ts
+getPopoverTriggerAria(true, 'pop-1')
+// { 'aria-expanded': true, 'aria-controls': 'pop-1', 'aria-haspopup': 'true' }
+getPopoverTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'true' }
+
+getPopoverPopperAria('pop-1', 'pop-1-title')
+// { role: 'dialog', id: 'pop-1', 'aria-labelledby': 'pop-1-title' }
+```
+
+- **Три атрибута триггера**: `aria-haspopup` объявляет «я выведу всплывающее окно», `aria-expanded` — «открыто ли оно сейчас», `aria-controls` указывает на «какой именно элемент всплыл». Пользователи клавиатуры ориентируются по состоянию expanded.
+- **`aria-controls` требует существования плавающего слоя**: id существует, только когда слой отрендерен через `v-if`; если popperId не передан, выводятся только expanded/haspopup. **Не нужно, чтобы controls указывал на размонтированный элемент** — после закрытия слой удаляется, и controls триггера повиснет в воздухе (программы чтения это прощают, но строгий валидатор сообщит об ошибке).
+- **Заголовок — это «витрина»**: `aria-labelledby` указывает на `<div class="lh-popover__title" :id="titleId">`. Заголовок должен чётко говорить, что это за всплывающий слой («Условия фильтрации», «Детали заказа»), а не быть глаголом («Нажмите здесь»).
+- **Управление фокусом — работа UI-слоя**: `role="dialog"` сам по себе не перехватывает фокус — перехватывать ли его и куда поместить начальный фокус, UI-слой решает через `shared/focus-trap`. У немодального popover обычно **перехвата нет** (пользователь может работать с остальной страницей), но клик извне должен его закрывать.
+- **Открытие с клавиатуры**: при запуске по click триггер, будучи кнопкой, открывается по Enter/Space; запуск по hover недоступен пользователям клавиатуры — **не предоставляйте только hover-запуск для критичных операций**.
+
+## Примеры использования
+
+```ts
+import {
+  getDefaultDelay, getPopoverClass, getPopoverWidthStyle, canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 100 }
+getDefaultDelay(0, 0)                   // { show: 0, hide: 0 } (явно мгновенно)
+
+getPopoverClass({ placement: 'bottom' })
+// ['lh-popover__popper', 'lh-popover__popper--bottom', 'lh-popover__popper--arrow']
+getPopoverClass({ placement: 'top', arrow: false })
+// ['lh-popover__popper', 'lh-popover__popper--top']
+getPopoverClass({ placement: 'top', popperClass: 'my-pop' })
+// ['lh-popover__popper', '…--top', '…--arrow', 'my-pop']
+
+getPopoverWidthStyle(240)     // { width: '240px' }
+getPopoverWidthStyle('50%')   // { width: '50%' }
+getPopoverWidthStyle(undefined) // {}
+
+canCloseOnEscape({ disabled: false })  // true
+canCloseOnEscape({ disabled: true })   // false
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopover :width="280" trigger="click" title="Условия фильтрации">
+    <template #reference>
+      <LhButton>Фильтр</LhButton>
+    </template>
+    <div class="filter-body">
+      <LhCheckbox v-model="form.active">Только включённые</LhCheckbox>
+      <LhButton type="primary" @click="apply">Применить</LhButton>
+    </div>
+  </LhPopover>
+</template>
+```
+
+```ts
+// Закрытие по клику извне (UI-слой): document слушает click и проверяет,
+// находится ли target вне триггера и плавающего слоя
+function onDocumentClick(e: MouseEvent) {
+  if (!triggerEl.value?.contains(e.target as Node) && !popperEl.value?.contains(e.target as Node)) {
+    state.visible = false
+  }
+}
+watch(() => state.visible, (v) => {
+  v ? document.addEventListener('click', onDocumentClick) : document.removeEventListener('click', onDocumentClick)
+})
+```
+
+```tsx
+// React: узлы триггера и слоя получаем через useRef; клик извне — через самописный хук useClickOutside;
+// слой порталится в document.body, чтобы родительский overflow:hidden его не обрезал
+```
+
+```ts
+// uniapp: плавающий слой через <view>; «закрытие по клику извне» на стороне мини-программ
+// реализуется через глобальную маску с catchtouchstart
+```
+
+## Стили и токены
+
+| Имя класса | Семантика |
+| --- | --- |
+| `.lh-popover__popper` | контейнер всплывающего слоя |
+| `.lh-popover__popper--{top\|top-start\|…}` | 12 позиций (включая фактическую после flip) |
+| `.lh-popover__popper--arrow` | со стрелкой |
+| `.lh-popover__title` | заголовок |
+| `.lh-popover__body` | область содержимого |
+
+Цвет фона `--lh-bg-color`, рамка `--lh-border-color`, тень `--lh-box-shadow-popover`, скругление `--lh-border-radius-base`, z-index `--lh-z-index-popover`.
+
+## Замечания
+
+- **Слой нужно телепортировать в body**: оставшись в исходном положении DOM, он пострадает от родительских `overflow: hidden`, `transform` и stacking-контекста `z-index`. После телепортации координаты позиционирования считаются относительно окна просмотра через `computePosition` из `shared/popper`.
+- **Имя класса после flip**: `getPopoverClass` принимает **фактически применённый placement** (значение после popper flip), а не исходное значение пропа — иначе стрелка будет смотреть не туда. UI-слой должен передавать фактическую позицию, возвращённую popper.
+- **`width` и авторазмер содержимого**: при фиксированной ширине узкое содержимое растягивается; без ширины содержимое может вылезти за пределы окна просмотра. Для сложного содержимого рекомендуется передавать `min-width`, а не `width` (через popperClass с пользовательскими стилями).
+- **Запуск по hover на мобильных**: на сенсорных экранах нет hover — popover с hover-запуском на мобильных сначала нужно «нажать», чтобы войти в состояние «зависания», а затем нажать в другом месте, чтобы закрыть — опыт так себе. Межплатформенным компонентам рекомендуется переключать способ запуска по платформе.
+- **Вложенные popover**: если в слое A открыть B, при закрытии A нужно каскадно закрыть и B, иначе B повиснет в воздухе. Учитывайте это при совместном использовании состояния popper.
+- **Запуск `manual`**: полностью управляется внешним `v-model:visible` — часто сочетается с логикой вроде «выбрал строку — раскрыл», при этом закрытие по клику извне нужно писать самостоятельно (закрытие по клику извне в core тоже реализовано на UI-слое).
+- **Повторное использование кода вместе с tooltip**: оба используют `shared/popper` и `shared/delay`, но **перемешивать aria-роли нельзя** — ради повторного использования не нужно применять `role="tooltip"` к интерактивному слою: это нарушает ARIA, и поведение программ чтения экрана будет непредсказуемым.
+
+<FnPlayground module="popover" fn="getDefaultDelay" params='{"showAfter": null, "hideAfter": null}' />

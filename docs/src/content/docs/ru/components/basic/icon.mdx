@@ -1,0 +1,132 @@
+---
+title: icon —— Иконка
+description: 'getIconSize пересчёт размеров, getIconSvg получает встроенный SVG path, getIconAria пакет aria-атрибутов в двух режимах: декоративный/семантический'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`core/icon` содержит набор из 33 минималистичных SVG-иконок в китайском стиле и отвечает за пересчёт «размерной шкалы» в `width/height` SVG, а также за превращение решения «декоративная или семантическая» в пакет aria-атрибутов. У самого компонента иконки нет конечного автомата props — это **набор параметров функции отрисовки**.
+
+## Когда использовать
+
+- При реализации `LhIcon` на каждой платформе: `name` → path, `size` → пиксели, `color` → инлайновый `color`.
+- Везде, где рядом с текстом нужна иконка. **Подавляющее большинство иконок должны быть декоративными** (`decorative: true`, значение по умолчанию) — скринридер их не объявляет.
+- Когда иконка несёт семантику (например, в кнопке «удалить» нет текста, только иконка), обязательно передавайте `decorative: false` + `label`, иначе скринридер прочитает лишь молчаливую графику.
+
+## Импорт
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+import type { LhIconState, LhIconName } from '@lh-ui/share/core/icon'
+import { LH_ICON_SVGS_CONST } from '@lh-ui/share/core/icon'
+```
+
+## Замысел
+
+У размера иконки два источника: **предустановленная шкала** (`'small'` / `'medium'` …) и **произвольное число**. `getIconSize` объединяет их в `number`, поскольку атрибуты `width`/`height` SVG принимают только числа (единицу определяет сам атрибут), и UI-слою не нужно выяснять, «это шкала или пиксели».
+
+Доступность использует дихотомию APG «декоративная vs семантическая»:
+
+- Декоративная иконка (по умолчанию): `aria-hidden="true"`, удаляется из дерева доступности. Иконка рядом с текстом всегда идёт этим путём.
+- Семантическая иконка: `role="img"` + `aria-label`, становится объявляемой графикой.
+- Третий случай: `decorative: false`, а `label` не задан — не скрывается и не получает семантики, возвращается пустой объект. Он оставлен для сценария «label у кнопки с иконкой предоставляет внешний aria-label», чтобы избежать двойного объявления.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getIconSize` | `(size: string \| number \| undefined) => number` | число пикселей | отображение шкалы, неизвестные значения откатываются к 16 |
+| `getIconSvg` | `(name: LhIconName \| undefined) => string \| null` | path `d` или null | получает встроенную иконку; если не найдена — null без исключения |
+| `getIconStyle` | `(state: LhIconState) => Record<string, string>` | инлайновые стили | width/height всегда, color по необходимости |
+| `getIconAria` | `(options?: { decorative?: boolean; label?: string }) => LhAriaAttrs` | пакет aria-атрибутов | декоративный/семантический режимы |
+
+Отображение размерной шкалы: `mini: 12` / `small: 14` / `medium: 16` / `large: 20` / `x-large: 24`; неизвестные строки откатываются к 16, falsy-значения (включая `0`) также к 16.
+
+## Определения типов
+
+```ts
+export interface LhIconState {
+  size: string | number | undefined
+  color: string | undefined
+  name?: LhIconName
+}
+
+export type LhIconName =
+  | 'star' | 'search' | 'check' | 'close' | 'warning' | 'error' | 'info'
+  | 'loading' | 'plus' | 'minus' | 'edit' | 'delete' | 'setting' | 'user'
+  | 'home' | 'menu' | 'more' | 'download' | 'upload' | 'refresh' | 'folder'
+  | 'file' | 'date' | 'clock' | 'email' | 'phone' | 'location' | 'image'
+  | 'share' | 'bell' | 'filter' | 'eye' | 'link'
+```
+
+## Доступность
+
+`getIconAria` — функция пакета aria-атрибутов этого компонента:
+
+```ts
+getIconAria()                            // { 'aria-hidden': true }  декоративная
+getIconAria({ label: 'Удалить' })        // { 'aria-label': 'Удалить', role: 'img' }
+getIconAria({ decorative: false })       // {}  label предоставляется внешним aria-label
+```
+
+Обратите внимание, что значение `aria-hidden` — это `true` (логическое); `LhAriaAttrs` допускает сосуществование логических и строковых значений, а при v-bind фреймворк преобразует его в `"true"`.
+
+## Примеры использования
+
+```ts
+import { getIconSize, getIconSvg, getIconStyle, getIconAria } from '@lh-ui/share/core/icon'
+
+getIconSize('large')          // 20
+getIconSize(32)               // 32
+getIconSvg('check')           // 'M...'  данные path
+getIconSvg('not-exist')       // null (без исключения; UI-слой отрисовывает пустой svg или плейсхолдер)
+getIconStyle({ size: 'large', color: 'var(--lh-primary-color)' })
+// { width: '20px', height: '20px', color: 'var(--lh-primary-color)' }
+```
+
+```vue
+<!-- Vue3 -->
+<svg
+  :class="['lh-icon', { 'lh-icon--loading': name === 'loading' }]"
+  viewBox="0 0 1024 1024"
+  :width="px" :height="px"
+  v-bind="getIconAria({ decorative, label })"
+>
+  <path :d="path" />
+</svg>
+```
+
+```tsx
+// React
+const px = getIconSize(size)
+const aria = getIconAria({ decorative: !label, label })
+return (
+  <svg className="lh-icon" viewBox="0 0 1024 1024" width={px} height={px} {...aria}>
+    <path d={getIconSvg(name) ?? ''} />
+  </svg>
+)
+```
+
+```ts
+// uniapp: на не-h5 платформах нет поддержки инлайн-svg, UI-слой предварительно
+// преобразует path в графические ресурсы; число из getIconSize
+// по-прежнему управляет размером изображения.
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-icon` | базовый класс: `display: inline-block`, корректировка `vertical-align` |
+| `.lh-icon--loading` | бесконечная анимация вращения иконки загрузки |
+
+Цвет иконки по умолчанию наследуется от цвета текста родителя (`fill: currentColor`); когда нужен цвет темы, его явно инжектит `color` из `getIconStyle`.
+
+## Замечания
+
+- `getIconSvg` для несуществующего имени **возвращает null, а не выбрасывает исключение** — UI-слой должен обрабатывать эту ветку, иначе отрисуется пустой `<svg>`.
+- Встроенный набор иконок — **минималистичный китайский стиль**, он не совместим со сторонними библиотеками (например, классами fontawesome из element-plus). Когда нужны бизнес-иконки, `LhIcon` на каждой платформе обычно позволяет передать `path` или нарисовать свой слот.
+- Анимация вращения иконки `loading` находится в CSS (`.lh-icon--loading`), а не в core — core выводит только классы.
+- Рядом с текстом иконка остаётся декоративной по умолчанию; `label` передаётся, только когда иконка одна несёт в себе операцию.
+
+<FnPlayground module="icon" fn="getIconSize" params='{"size": "large"}' />

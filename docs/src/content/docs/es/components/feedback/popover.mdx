@@ -1,0 +1,178 @@
+---
+title: popover —— Capa emergente
+description: 'una capa flotante que puede contener contenido interactivo: retardo de ocultación de 100 ms al entrar con hover, role=dialog + aria-labelledby, semántica del disparador con aria-haspopup'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Popover es «un tooltip que puede llevar cosas dentro»: el aviso puede contener botones, formularios, menús, imágenes. No sustituye a tooltip — este solo admite texto puro y prohíbe la interacción; tampoco sustituye a dialog — este es modal y roba el foco. `core/popover` es igual de fino que tooltip; la diferencia está toda en el **peso de la interacción**.
+
+## Cuándo usarlo
+
+- Cada framework implementa `<LhPopover>`: detalles en forma de tarjeta, paneles de filtros, formularios en línea, grupos de botones de acción.
+- Escenarios en los que el usuario debe **permanecer dentro de la capa flotante e interactuar** con ella.
+- **No usarlo para**: avisos de una sola frase en texto puro (usa `tooltip`, más ligero y contenido); confirmaciones fuertes que deban interrumpir el flujo del usuario (usa `dialog`, modal); confirmaciones de una operación (usa `popconfirm`, semántica más precisa).
+
+## Importación
+
+```ts
+import {
+  LH_POPOVER_TRIGGERS,
+  LH_POPOVER_PLACEMENT_DEFAULT,
+  getPopoverClass,
+  getPopoverWidthStyle,
+  getPopoverTriggerAria,
+  getPopoverPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+import type { LhPopoverTrigger, LhPopoverState } from '@lh-ui/share/core/popover'
+```
+
+## Intención de diseño
+
+**Por qué existe el retardo de ocultación de 100 ms**: la ocultación de tooltip es de 0 ms (desaparece al salir), pero popover deja 100 ms — **para que el puntero pueda viajar del disparador a la capa flotante**. Al desplazar el ratón del disparador a la capa, este sale brevemente del elemento disparador; con un retardo de 0 ms la capa se cerraría a medio camino y el usuario no podría entrar. Es la restricción directa que impone que popover sea interactivo.
+
+**`LH_POPOVER_TRIGGERS` como constante de validación**: los modos de disparo son una enumeración cerrada (click/hover/focus/manual) y se exportan como un array de solo lectura para que la capa UI valide las props (validator de Vue, aserciones en tiempo de ejecución de React); al mismo tiempo, es la correspondencia en tiempo de ejecución del tipo de TS.
+
+**`role="dialog"` en lugar de `"tooltip"`**: WAI-ARIA establece que un tooltip no puede contener elementos interactivos; una capa flotante interactiva debe tener semántica de dialog. Se combina con `aria-labelledby` apuntando al elemento del título, de modo que al abrirse, el lector de pantalla anuncia el título en vez de todo el contenido.
+
+**La interceptación por `disabled` en `canCloseOnEscape`**: por defecto se permite cerrar con Esc; con `disabled` se impide — en estado desactivado la capa no debería poder dispararse, y esta guardia evita que una capa ya abierta se cierre con Esc después de que el componente se haya desactivado (en semántica de negocio, disabled suele significar «operación bloqueada»).
+
+**La flecha es opcional**: solo si `arrow !== false` se añade la clase `--arrow` — la flecha necesita cálculos de posicionamiento adicionales (`computeArrowOffset` de `shared/popper`), y una capa emergente puramente informativa puede omitirlos.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | retardos | por defecto 200 / 100 |
+| `getPopoverClass` | `(state: { placement, arrow?, popperClass? }) => string[]` | clases | posición + flecha + personalización |
+| `getPopoverWidthStyle` | `(width?: string \| number) => Record<string, string>` | estilos inline | normalización de la anchura |
+| `getPopoverTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | bolsa aria | aria-expanded/controls/haspopup |
+| `getPopoverPopperAria` | `(id?, titleId?) => LhAriaAttrs` | bolsa aria | role=dialog + aria-labelledby |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | si se permite | se intercepta con disabled |
+
+Constantes: `LH_POPOVER_TRIGGERS` (4 modos de disparo) y `LH_POPOVER_PLACEMENT_DEFAULT = 'top'`.
+
+## Definiciones de tipos
+
+```ts
+export type LhPopoverTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopoverState {
+  placement?: LhPlacement        // 12 posiciones (shared/popper)
+  trigger?: LhPopoverTrigger
+  width?: string | number        // anchura de la capa emergente
+  title?: string
+  visible?: boolean
+  disabled?: boolean
+  arrow?: boolean                // por defecto true
+  showAfter?: number
+  hideAfter?: number
+}
+```
+
+## Accesibilidad
+
+```ts
+getPopoverTriggerAria(true, 'pop-1')
+// { 'aria-expanded': true, 'aria-controls': 'pop-1', 'aria-haspopup': 'true' }
+getPopoverTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'true' }
+
+getPopoverPopperAria('pop-1', 'pop-1-title')
+// { role: 'dialog', id: 'pop-1', 'aria-labelledby': 'pop-1-title' }
+```
+
+- **El trío del disparador**: `aria-haspopup` declara «voy a abrir algo», `aria-expanded` declara «¿está abierto ahora?» y `aria-controls` apunta a «qué elemento he abierto». Los usuarios de teclado se orientan con el estado expanded.
+- **`aria-controls` necesita que la capa exista**: el id solo existe cuando la capa se renderiza con `v-if`; si no se pasa popperId, solo se emite expanded/haspopup. **No hagas que controls apunte a un elemento desmontado** — al cerrar, la capa se elimina y el controls del disparador quedaría colgando (los lectores de pantalla lo toleran, pero una validación estricta marca error).
+- **El título es la fachada**: `aria-labelledby` apunta a `<div class="lh-popover__title" :id="titleId">`. El título debe dejar claro qué es la capa emergente («Filtros», «Detalle del pedido»), nunca un verbo («Haz clic aquí»).
+- **La gestión del foco es tarea de la capa UI**: `role="dialog"` no incluye trampa de foco — si se atrapa el foco o no, y dónde cae el foco inicial, lo decide la capa UI con `shared/focus-trap`. Un popover no modal normalmente **no atrapa** el foco (el usuario puede seguir operando el resto de la página), pero al pulsar fuera debe cerrarse.
+- **Abrir con teclado**: con el disparo por click, que el disparador sea un botón permite abrirlo con Enter/Space; el disparo por hover no es alcanzable para usuarios de teclado — **no ofrezcas únicamente disparo por hover en operaciones clave**.
+
+## Ejemplos de uso
+
+```ts
+import {
+  getDefaultDelay, getPopoverClass, getPopoverWidthStyle, canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 100 }
+getDefaultDelay(0, 0)                   // { show: 0, hide: 0 } (inmediato explícito)
+
+getPopoverClass({ placement: 'bottom' })
+// ['lh-popover__popper', 'lh-popover__popper--bottom', 'lh-popover__popper--arrow']
+getPopoverClass({ placement: 'top', arrow: false })
+// ['lh-popover__popper', 'lh-popover__popper--top']
+getPopoverClass({ placement: 'top', popperClass: 'my-pop' })
+// ['lh-popover__popper', '…--top', '…--arrow', 'my-pop']
+
+getPopoverWidthStyle(240)     // { width: '240px' }
+getPopoverWidthStyle('50%')   // { width: '50%' }
+getPopoverWidthStyle(undefined) // {}
+
+canCloseOnEscape({ disabled: false })  // true
+canCloseOnEscape({ disabled: true })   // false
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopover :width="280" trigger="click" title="Filtros">
+    <template #reference>
+      <LhButton>Filtrar</LhButton>
+    </template>
+    <div class="filter-body">
+      <LhCheckbox v-model="form.active">Solo activos</LhCheckbox>
+      <LhButton type="primary" @click="apply">Aplicar</LhButton>
+    </div>
+  </LhPopover>
+</template>
+```
+
+```ts
+// Cerrar al pulsar fuera (capa UI): document escucha click y decide si el target
+// está fuera del disparador y de la capa
+function onDocumentClick(e: MouseEvent) {
+  if (!triggerEl.value?.contains(e.target as Node) && !popperEl.value?.contains(e.target as Node)) {
+    state.visible = false
+  }
+}
+watch(() => state.visible, (v) => {
+  v ? document.addEventListener('click', onDocumentClick) : document.removeEventListener('click', onDocumentClick)
+})
+```
+
+```tsx
+// React: useRef para el disparador y para el nodo de la capa; el clic externo usa un hook
+// useClickOutside propio; la capa se porta a document.body para que no la recorte un
+// overflow:hidden del padre
+```
+
+```ts
+// uniapp: la capa es un <view>; «cerrar al pulsar fuera» se implementa en la plataforma
+// de miniprogramas con una máscara global catchtouchstart
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-popover__popper` | contenedor de la capa emergente |
+| `.lh-popover__popper--{top\|top-start\|…}` | 12 posiciones (incluida la posición real tras el volteo) |
+| `.lh-popover__popper--arrow` | con flecha |
+| `.lh-popover__title` | título |
+| `.lh-popover__body` | zona de contenido |
+
+Fondo `--lh-bg-color`, borde `--lh-border-color`, sombra `--lh-box-shadow-popover`, esquinas redondeadas `--lh-border-radius-base`, z-index `--lh-z-index-popover`.
+
+## Advertencias
+
+- **La capa debe teletransportarse a body**: si se queda en su posición original del DOM, el `overflow: hidden`, el `transform` o el contexto de apilamiento del `z-index` del padre la fastidiarán. Tras teletransportarla, las coordenadas de posicionamiento se calculan respecto al viewport con `computePosition` de `shared/popper`.
+- **El nombre de la clase tras el volteo**: `getPopoverClass` recibe el **placement realmente efectivo** (el valor tras el flip del popper), no el valor original de la prop — si no, la flecha apunta en distinto sentido que lo visual. La capa UI debe pasar la posición real devuelta por el popper.
+- **`width` y la adaptación al contenido**: con una anchura fija, el contenido estrecho queda estirado; sin anchura, el contenido puede asomarse fuera del viewport. Con contenido complejo se recomienda pasar `min-width` en lugar de `width` (con estilos personalizados vía popperClass).
+- **El disparo por hover en móvil**: las pantallas táctiles no tienen hover; un popover disparado por hover exige en móvil un toque para entrar en estado «flotante» y otro toque en otro sitio para cerrarse — una experiencia pésima. En componentes multiplataforma se recomienda cambiar el modo de disparo según la plataforma.
+- **Popover anidado**: si dentro de la capa de A se abre B, al cerrar A debes cerrar B en cascada, o B queda colgando. Tenlo en cuenta cuando se comparte el estado del popper.
+- **El disparo `manual`**: totalmente controlado desde fuera con `v-model:visible` — se combina a menudo con lógicas del tipo «al seleccionar una fila, se expande»; en ese caso, la lógica de cerrar al pulsar fuera debes escribirla tú (que core cierre al pulsar fuera también lo implementa la capa UI).
+- **La reutilización de código con tooltip**: ambos comparten `shared/popper` y `shared/delay`, pero **los roles de aria no se pueden mezclar** — no vayas a reutilizar y poner `role="tooltip"` de un tooltip en una capa interactiva; eso viola ARIA y el comportamiento del lector de pantalla es impredecible.
+
+<FnPlayground module="popover" fn="getDefaultDelay" params='{"showAfter": null, "hideAfter": null}' />

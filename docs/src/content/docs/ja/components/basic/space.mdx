@@ -1,0 +1,126 @@
+---
+title: space —— 間隔
+description: 'resolveSpaceGaps がプリセット段階 / 数値 / 配列を CSS gap に正規化しトークンを使用するかをマーク、getSpaceClassNames がレイアウトクラスを算出'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`space` はコンポーネントライブラリで最もよくある問題を解決します：要素の組を固定の間隔で並べることです。これはレイアウトフレームワーク（それは `LhGrid`）ではなく、「間隔のセマンティクス化」です——`small` / `medium` / `large` はデザイントークン、数値は一時的な微調整、配列は列と行の間隔をそれぞれ制御します。
+
+## いつ使うか
+
+- 各端が `LhSpace` を実装する：ボタングループ、フォーム項目の並び、カード内の要素レイアウト。
+- コンポーネント内部で「これらの要素の間を空ける」を表現したいあらゆる場所。
+- **使うべきでない**：二次元グリッドが必要な場合（`LhGrid` を使う）、flex の高度な整列が必要な場合（直接スタイルを書く）。space は間隔だけを管理し、整列は `align` でパススルーします。
+
+## インポート方法
+
+```ts
+import { getSpaceClassNames, resolveSpaceGaps, resolveSpaceAlignment } from '@lh-ui/share/core/space'
+import type { LhSpaceState, LhSpaceSizeInput, LhSpaceAlignment } from '@lh-ui/share/core/space'
+```
+
+## 設計意図
+
+`resolveSpaceGaps` の核心は**「トークン」と「リテラル」の区別**です：
+
+- プリセット段階（`small` / `medium` / `large`）は `var(--lh-spacing-*)` を出力し、`usesTokens: true` を返します——間隔はテーマのカスタマイズに伴って変化します。
+- 数値は px リテラルとみなし、`usesTokens: false` を返します——間隔は呼び出し側の一時的な決定です。
+- 配列 `[columnGap, rowGap]` は両軸をそれぞれ制御します。
+
+なぜ `usesTokens` を外部に晒すのか？ UI 層のレンダリング戦略が異なるからです：トークンを使う場合はクラス名を省略でき（gap は直接 CSS 変数で駆動される）、リテラルを使う場合はインラインスタイルを書かなければなりません。このフラグにより、UI 層が出力値を正規表現でマッチする必要がなくなります。
+
+段階は `var.scss` に**実際に登録されている** spacing トークンだけを参照し、フォールバック値はトークンのデフォルト値と一致します——ユーザーが `--lh-spacing-*` を上書きして初めて実際の効果があり、この一致性は `verify:styles` が保証します。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getSpaceClassNames` | `(state: LhSpaceState) => string[]` | クラス名配列 | 方向、折り返し、サイズのモディファイアクラス |
+| `resolveSpaceGaps` | `(size: LhSpaceSizeInput) => { columnGap: string; rowGap: string; usesTokens: boolean }` | gap の記述 | size を CSS gap に正規化 |
+| `resolveSpaceAlignment` | `(alignment: string) => string` | CSS 値 | 整列値のパススルー |
+
+`resolveSpaceGaps` のマッピング：
+
+| 入力 | columnGap / rowGap | usesTokens |
+| --- | --- | --- |
+| `'small'` | `var(--lh-spacing-sm, 8px)` | true |
+| `'medium'` | `var(--lh-spacing-base, 16px)` | true |
+| `'large'` | `var(--lh-spacing-xl, 24px)` | true |
+| `24`（数値） | `24px` | false |
+| `[16, 8]` | `16px` / `8px` | false |
+
+境界：配列の欠落項や有限でない値は `0` にフォールバックします（`"undefinedpx"` を避けるため）；プリセットと数値の混在（`['medium', 8]` など）はサポートしません。
+
+## 型定義
+
+```ts
+export type LhSpaceAlignment = 'start' | 'center' | 'end' | 'baseline'
+export type LhSpaceSizeInput = 'small' | 'medium' | 'large' | number | [number, number]
+
+export interface LhSpaceState {
+  direction: 'horizontal' | 'vertical'
+  wrap: boolean
+  size: string    // クラス名計算はプリセット段階しか受け取らない
+}
+```
+
+型上の分業に注意してください：`LhSpaceState.size`（クラス名用）はプリセット段階の文字列しか受け取りません；`LhSpaceSizeInput`（gap 計算用）はさらに数値と配列を受け取ります。クラス名に `lh-space--16px` が現れることはありません。
+
+## アクセシビリティ
+
+`space` は純粋なレイアウト要素で、aria 属性を出力せず、それ自体はスクリーンリーダーから見えません。それが包む内容はそれぞれ元のセマンティクスを保ちます——これが `<button>` のようなコンテナと space の違いです：space はいかなるセマンティクス層も導入しません。
+
+## 使用例
+
+```ts
+import { getSpaceClassNames, resolveSpaceGaps } from '@lh-ui/share/core/space'
+
+getSpaceClassNames({ direction: 'horizontal', wrap: true, size: 'small' })
+// ['lh-space', 'lh-space--horizontal', 'lh-space--small', 'lh-space--wrap']
+
+resolveSpaceGaps('medium')
+// { columnGap: 'var(--lh-spacing-base, 16px)', rowGap: 'var(--lh-spacing-base, 16px)', usesTokens: true }
+
+resolveSpaceGaps([16, 8])
+// { columnGap: '16px', rowGap: '8px', usesTokens: false }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSpaceClassNames({ direction, wrap, size })" :style="gapStyle">
+  <slot />
+</div>
+```
+
+```tsx
+// React
+const gaps = resolveSpaceGaps(size)
+const style = { columnGap: gaps.columnGap, rowGap: gaps.rowGap }
+return <div className={getSpaceClassNames({ direction, wrap, size }).join(' ')} style={style}>{children}</div>
+```
+
+```ts
+// uniapp：gap は非 h5 端でもよくサポートされる（nvue / uvue いずれも対応）；
+// 一部の端が gap をサポートしない場合、UI 層は子項目に margin を付ける方式に降格する
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-space` | ベースクラス：flex コンテナ |
+| `.lh-space--horizontal` / `.lh-space--vertical` | 方向（flex-direction） |
+| `.lh-space--wrap` | 折り返しを許可 |
+| `.lh-space--{small\|medium\|large}` | 段階クラス（`--lh-spacing-*` トークンと組み合わせる） |
+
+段階クラスと `resolveSpaceGaps` のプリセット出力は**同じトークンの 2 つの表現**です：クラス名は `@use` の SCSS 変数（コンパイル時）を使い、gap は CSS 変数（実行時）を使います。両者の値は一致し、`verify:styles` が検証します。
+
+## 注意事項
+
+- **混用しない**：`resolveSpaceGaps(['medium', 8])` はサポートされません（実装上、混合を認識しない）。両軸で異なる間隔が必要な場合はすべて数値の `[16, 8]` を使ってください。
+- **数値とトークンの選択**：コンポーネントライブラリ内部のデフォルト値は段階を使うべき（テーマに伴って変化する）であり、業務呼び出し箇所の一時的な微調整は数値を使います。
+- 折り返し（`wrap`）は horizontal でのみ意味があります；vertical + wrap は無効です。
+- `resolveSpaceAlignment` は現状そのまま渡し、具体的な flex キーワードのマッピングはスタイル層（クラス名駆動）にあります。
+
+<FnPlayground module="space" fn="resolveSpaceGaps" params='{"size": "medium"}' />

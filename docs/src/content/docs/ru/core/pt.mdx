@@ -1,0 +1,121 @@
+---
+title: pt —— слияние пробрасываемых атрибутов
+description: 'mergePt поверхностно сливает пакет props PT (class / style / attrs) с базовыми class-именами; проброс стилей на внутренние элементы компонента'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+Внутри компонента несколько элементов (`<button>` у кнопки и `<span>` внутри него, `<input>` у поля ввода и префиксный значок `<i>`) — как пользователю извне подстроить один конкретный из них? Ответ lh-ui — **пакет props PT (PassThrough)**: компонент открывает проп `pt`, который по именам внутренних элементов пробрасывает `class` / `style` / `attrs`. `mergePt` объединяет их с собственными базовыми class-именами компонента.
+
+## Когда использовать
+
+- Внутри библиотеки компонентов: каждый внутренний элемент вызывает `mergePt(props.pt?.icon, 'lh-button__icon')` и получает class / style / attrs, которые нужно повесить.
+- Со стороны пользователя — точная подстройка внутренностей компонента через проп `pt`, без пробивания `:deep()`.
+
+**Не использовать**: для настройки на уровне темы (используйте [themeVars](/ru/theme/customization)); для простого добавления class-имени (используйте проп `class`).
+
+## Импорт
+
+```ts
+import { mergePt, type LhPtAttrs } from '@lh-ui/share/core/shared/pt'
+```
+
+## Типы и функции
+
+```ts
+export interface LhPtAttrs {
+  class?: string | string[] | Record<string, boolean>
+  style?: Record<string, string>
+  attrs?: Record<string, any>
+}
+```
+
+| Функция | Сигнатура | Назначение |
+| --- | --- | --- |
+| `mergePt` | `(pt: LhPtAttrs \| undefined, baseClass: string) => { class: string[]; style: Record<string, string>; attrs: Record<string, any> }` | объединяет props PT с базовым class-именем |
+
+## Правила слияния
+
+### class
+
+`baseClass` **всегда идёт первым элементом массива**, class пользователя — после:
+
+```ts
+mergePt({ class: 'my-icon' }, 'lh-button__icon')
+// { class: ['lh-button__icon', 'my-icon'], style: {}, attrs: {} }
+
+mergePt({ class: ['a', 'b'] }, 'lh-button__icon')
+// class: ['lh-button__icon', 'a', 'b']
+
+mergePt({ class: { active: true, disabled: false } }, 'lh-button__icon')
+// class: ['lh-button__icon', 'active']   —— из объекта берутся только ключи с истинным значением
+
+mergePt({ class: 'a  b ' }, 'lh-button__icon')
+// class: ['lh-button__icon', 'a', 'b']   —— строка режется по пробелам, пустые строки отбрасываются
+```
+
+Почему `baseClass` первый: **специфичность BEM-базового class-имени не должна подавляться пользовательским** (при равной специфичности победит тот, кто записан позже). Модификатор `--primary` компонента по-прежнему должен перекрывать пользовательский `my-icon`.
+
+### style / attrs
+
+```ts
+mergePt(undefined, 'lh-button__icon')
+// { class: ['lh-button__icon'], style: {}, attrs: {} }   —— при пустом pt остальные поля пусты
+
+mergePt({ style: { color: 'red' }, attrs: { 'data-x': '1' } }, 'lh-button__icon')
+// { class: ['lh-button__icon'], style: { color: 'red' }, attrs: { 'data-x': '1' } }
+```
+
+**Внимание**: `style` / `attrs` передаются **по ссылке**, без копирования. UI-слой использует их как есть — `v-bind="merged.attrs"` / `:style="merged.style"`; не мутируйте возвращаемое значение внутри компонента.
+
+## Примеры использования
+
+### Внутри компонента (элемент значка кнопки)
+
+```ts
+// компонент button
+const iconPt = computed(() => mergePt(props.pt?.icon, 'lh-button__icon'))
+```
+
+```vue
+<template>
+  <button class="lh-button">
+    <i v-if="icon" v-bind="iconPt.attrs" :class="iconPt.class" :style="iconPt.style" />
+    <span><slot /></span>
+  </button>
+</template>
+```
+
+### Со стороны пользователя
+
+```vue
+<lh-button
+  :pt="{
+    icon: { class: 'text-lg', style: { marginRight: '4px' } },
+    $root: { attrs: { 'data-test': 'submit' } },
+  }"
+>
+  Отправить
+</lh-button>
+```
+
+### React
+
+```tsx
+const iconPt = mergePt(pt?.icon, 'lh-button__icon')
+
+return (
+  <button className="lh-button">
+    {icon && <i className={iconPt.class.join(' ')} style={iconPt.style} {...iconPt.attrs} />}
+  </button>
+)
+```
+
+## Замечания
+
+- **Поверхностное слияние, без deepMerge**: `class` склеивается на уровне массива, а `style` / `attrs` заменяются целиком. У глубокого слияния здесь нет семантики (class — это список, а не дерево).
+- **При пустом `pt` возвращается полностью пустой объект**: UI-слой может деструктурировать не глядя, без проверки на пустоту.
+- **Возвращаемый class — массив**: `:class` во Vue принимает массив, в React понадобится `.join(' ')`.
+- **Базовое class-имя нельзя опускать**: `mergePt(pt, '')` даст массив с пустой строкой первым элементом — базовое BEM-имя является якорем стилей, он должен быть у каждого внутреннего элемента.
+
+<FnPlayground module="pt" fn="mergePt" params='{"pt": {"class": "my-icon text-lg"}, "baseClass": "lh-button__icon"}' />

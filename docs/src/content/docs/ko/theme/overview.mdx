@@ -1,0 +1,163 @@
+---
+title: 테마 시스템 개요
+description: '5개의 런타임 원시와 SCSS 토큰 이중 소스 동기화: JS 측이 CSS 변수를 주입하고, 컴포넌트는 var()만 소비'
+---
+
+import PresetPreview from '../../../../components/PresetPreview.astro'
+
+lh-ui의 테마 시스템은 **이중 소스**이며, 이 점을 먼저 분명히 해야 합니다:
+
+| 소스 | 내용 | 소비 방식 |
+| --- | --- | --- |
+| `styles/theme/common/var.scss` + `var-dark.scss` | CSS 사용자 속성(`--lh-*`) | 컴포넌트 SCSS 안의 `var(--lh-*)`, 런타임에 평가 |
+| `styles/theme/common/variables.scss` | SCSS 변수(`$lh-*`) | 컴파일 타임에 구체적인 값으로 구워지며, 계산에 사용(색 함수, 섀도 합성 등) |
+| `src/theme/themes/index.ts` | 5개 프리셋의 `vars` 매핑 | JS가 런타임에 `<style>`에 주입(ConfigProvider / ThemeStudio) |
+
+**컴포넌트는 CSS 변수만 인식합니다**. JS 측의 테마 시스템이 존재하는 이유는: 하나의 디자인 토큰 세트를 **런타임에** DOM의 어떤 부분 트리에 주입하여, 컴포넌트가 재컴파일 없이 스킨을 바꿀 수 있게 하는 것입니다.
+
+## 두 가지 경로
+
+### 1. 프리셋 테마(바로 사용 가능)
+
+5개 내장 프리셋: 青花瓷 (청화백자) / 松花绿 (송화록) / 朱砂 (주사) / 水墨 (수묵) / 藤黄 (등황). UI 계층은 `buildPresetStyleText(vars)`로 `<style>` 텍스트를 생성하여 DOM에 씁니다.
+
+```ts
+import { LH_THEME_PRESETS, buildPresetStyleText, LH_PRESET_THEME_STYLE_ID } from '@lh-ui/share/theme'
+
+const preset = LH_THEME_PRESETS[0]                    // 青花瓷
+const styleText = buildPresetStyleText(preset.vars)  // CSS 텍스트로 조립
+// → <style id="lh-preset-theme">에 주입
+```
+
+자세한 내용은 [테마 프리셋](/ko/theme/presets)을 참고하세요.
+
+### 2. 런타임 맞춤 설정(themeVars)
+
+ConfigProvider는 `themeVars`를 받으며, 키는 **약식**(자동으로 `--lh-` 접두사 보충)입니다:
+
+```vue
+<lh-config-provider :theme-vars="{ 'primary-color': '#1677ff' }">
+  <App />
+</lh-config-provider>
+```
+
+자세한 내용은 [런타임 맞춤 설정](/ko/theme/customization)을 참고하세요.
+
+## 5개의 런타임 원시
+
+`src/theme/index.ts`가 내보냅니다(구현은 `src/theme/themes/index.ts`):
+
+| 원시 | 시그니처 | 용도 |
+| --- | --- | --- |
+| `LH_THEME_PRESETS` | `LhThemePreset[]` | 전체 프리셋 배열, docs와 ConfigProvider가 이것을 순회 |
+| `registerTheme(preset)` | `(preset: LhThemePreset) => void` | 프리셋을 등록하거나 덮어씀(같은 이름이면 덮어씀, 내장 프리셋도 덮어쓸 수 있음) |
+| `getThemePreset(name)` | `(name: LhThemePresetName) => LhThemePreset \| undefined` | 이름으로 프리셋 가져오기 |
+| `getThemeVars(name)` | `(name: LhThemePresetName) => LhThemeVars \| undefined` | 이름으로 해당 vars 가져오기(미등록이면 `undefined` 반환) |
+| `buildPresetStyleText(vars)` | `(vars: Record<string, string>) => string` | vars를 주입 가능한 `<style>` 텍스트로 조립 |
+
+추가로 대비 계산 원시(`verify:theme`와 ThemeStudio가 사용):
+
+| 원시 | 시그니처 | 용도 |
+| --- | --- | --- |
+| `getRelativeLuminance(color)` | `(color: string \| undefined) => number \| undefined` | WCAG 상대 휘도(hex가 아니면 `undefined` 반환) |
+| `getContrastRatio(a, b)` | `(a, b: string \| undefined) => number \| undefined` | WCAG 대비(1~21) |
+| `buildPresetDarkVars(vars)` | `(vars: Record<string, string>) => Record<string, string>` | 프리셋 vars에서 어두운색 블록 변수를 도출 |
+| `LH_PRESET_THEME_STYLE_ID` | `'lh-preset-theme'` | 주입 요소의 고정 id |
+
+## 타입
+
+```ts
+export type LhThemePresetName =
+  | 'cerblue' | 'songhua' | 'zhusha' | 'shuimo' | 'golden'
+  | (string & {})          // ← 커스텀 이름을 개방하면서 리터럴 자동 보완을 유지
+
+export interface LhThemePreset {
+  name: LhThemePresetName
+  label: string            // 중국어 명칭
+  labelEn: string          // 영어 명칭
+  description: string      // 테마 설명
+  vars: Record<string, string>   // CSS 변수 매핑
+}
+
+export type LhThemeVars = Record<string, string>
+```
+
+`LhThemePresetName` 끝의 `(string & {})`는 TS의 기교입니다: 앞의 5개 리터럴의 자동 보완을 유지하면서, `registerTheme({ name: 'my-brand', ... })`에 임의의 문자열을 전달할 수 있게 합니다. 미등록 이름은 `getThemePreset` / `getThemeVars`에서 `undefined`를 반환합니다.
+
+## 주입 제약: `<style>`만 허용, 인라인 style 금지
+
+이것은 테마 시스템에서 **가장 중요한 제약**이며, 한 번 함정을 밟았습니다:
+
+```ts
+// ✅ 올바름: <style> 요소에 작성, 명시도 0,1,0
+const el = document.createElement('style')
+el.id = LH_PRESET_THEME_STYLE_ID
+el.textContent = buildPresetStyleText(vars)
+document.head.appendChild(el)
+
+// ❌ 틀림: documentElement의 인라인 style에 작성, 명시도 1,0,0,0
+Object.assign(document.documentElement.style, vars)
+```
+
+**이유**: 인라인 style의 명시도는 **모든 스타일시트**보다 높아, `var-dark.scss` 안의 어두운색 변수 선언 전체(`[data-theme='dark'], .dark { --lh-*: ... }`)를 눌러버립니다 —— 어두운색 변수가 인라인의 밝은색 값으로 덮여 다크 모드의 색 배합이 왜곡됩니다.
+
+`buildPresetStyleText`가 생성하는 텍스트 구조:
+
+```css
+:root {
+  --lh-primary-color: #2B4C7C;
+  /* ...프리셋의 모든 vars */
+}
+
+[data-theme='dark'],
+.dark {
+  --lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent);
+  --lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff);
+  /* 어두운 주색 프리셋은 주색을 추가로 밝게 */
+}
+```
+
+어두운색 블록은 `:root` 블록 **뒤**에 오며, 같은 명시도에서는 뒤가 이깁니다 —— 따라서 밝은 주색 프리셋이 `:root`에 선언한 `--lh-selected-color`의 밝은색 값이 어두운색으로 새어 들어가지 않습니다. 어두운색 블록의 내용은 `buildPresetDarkVars`가 도출합니다.
+
+## buildPresetDarkVars의 어두운색 도출
+
+세 가지 규칙:
+
+1. **무조건 두 변수를 재정의**(`var()`로 참조, 적용 요소에서 평가되어 현재 주색을 따라감):
+   - `--lh-primary-color-bg: color-mix(in srgb, var(--lh-primary-color) 25%, transparent)`
+   - `--lh-selected-color: color-mix(in srgb, var(--lh-primary-color) 40%, #fff)`
+
+2. **어두운 주색 밝게 하기**: `--lh-primary-color`가 어두운색 페이지 바탕 `#1A1A2E`(`DARK_PAGE_BG`)에 대한 대비가 3 미만(`DARK_PRIMARY_CONTRAST_THRESHOLD`)이면 어두운 주색으로 판정하여 추가로 밝게 합니다:
+   - `--lh-primary-color: color-mix(in srgb, <리터럴 값> 55%, #fff)` —— **리터럴 값을 직접 대입**합니다, `color-mix(var(--lh-primary-color) …)`는 CSS 자기 참조 순환을 만들기 때문입니다
+   - `--lh-primary-color-hover: color-mix(in srgb, var(--lh-primary-color) 70%, #fff)`
+   - `--lh-primary-color-active: color-mix(in srgb, var(--lh-primary-color) 85%, #000)`
+   - `--lh-color-on-primary: #101410`(`INK_ON_LIGHTENED_PRIMARY`) —— 밝게 한 뒤에는 흰 글자의 대비가 오히려 3:1에 미치지 못해 먹글자로 바꿉니다
+
+3. 대비 계산은 `getContrastRatio(getRelativeLuminance(primary), getRelativeLuminance(DARK_PAGE_BG))`를 사용합니다. hex가 아닌 값(`var()`가 들어간 동적 값)은 `undefined`를 반환하여 "판정 불가"로 처리합니다 —— 그러므로 프리셋 vars의 주색은 리터럴 hex여야 합니다.
+
+## 이중 소스 동기화
+
+**내장 테마의 주색을 바꿀 때는 양쪽을 함께 바꿔야** 합니다:
+
+1. `src/theme/themes/index.ts`의 프리셋 `vars['--lh-primary-color']`(JS의 런타임 주입용)
+2. `styles/theme/common/variables.scss`의 `$lh-primary-color`(컴포넌트 SCSS의 계산용)
+
+`tests/unit/theme.spec.ts`에 일치성 회귀가 있으며, `pnpm test`를 실행하면 다름을 잡아냅니다.
+
+## 테마로 할 수 없는 것
+
+- **컨트롤 높이를 바꿀 수 없습니다**: 높이 토큰 `--lh-control-height-*`가 아직 설정되지 않았습니다(각 컨트롤의 높이가 제각각이며, "높이 토큰 전문 작업"에 기록되어 향후 체인지셋을 기다리는 중).
+- **컴포넌트 구조를 바꿀 수 없습니다**: 테마는 토큰 값만 바꾸고, 레이아웃과 DOM 구조는 변하지 않습니다.
+- **문양은 별도 시스템입니다**: [중국풍 문양](/ko/theme/patterns)을 참고하세요.
+
+## 프리셋 미리보기
+
+<PresetPreview />
+
+## 관련 문서
+
+- [테마 프리셋](/ko/theme/presets) —— 5개 내장 프리셋 상세
+- [디자인 토큰](/ko/theme/tokens) —— 185개 밝은색 + 118개 어두운색 전체 표
+- [런타임 맞춤 설정](/ko/theme/customization) —— themeVars / componentTheme / patternComponents
+- [다크 모드](/ko/theme/dark-mode) —— 메커니즘과 컴파일 타임 베이크 함정
+- [중국풍 문양](/ko/theme/patterns) —— 6개의 내장 텍스처

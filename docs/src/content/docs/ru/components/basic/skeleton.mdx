@@ -1,0 +1,152 @@
+---
+title: skeleton —— Скелет
+description: 'getSkeletonRowWidths генерирует последовательность ширин с укороченной последней строкой, getSkeletonAria скрывает плейсхолдер и требует от UI-слоя aria-busy'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Скелет — это плейсхолдер «до завершения загрузки»: серые блоки имитируют грядущую раскладку, давая пользователю представление о том, «что он увидит через секунду». `core/skeleton` вычисляет последовательность ширин текстовых строк (последняя строка укорочена, как в реальном абзаце) и подготавливает сигнал доступности «это плейсхолдер, а не содержимое».
+
+## Когда использовать
+
+- При реализации `LhSkeleton` на каждой платформе: загрузка карточек, списков, статей.
+- Когда в любой области нужно выразить визуал «идёт загрузка»: скелет ближе к будущей раскладке, чем крутящийся loading.
+- **Не следует использовать**: при очень короткой загрузке (меньше 300 мс) — мелькание скелета скорее мешает; а также для «нет данных» — это `LhEmpty`.
+
+## Импорт
+
+```ts
+import {
+  getSkeletonClassNames,
+  getSkeletonItemClassNames,
+  getSkeletonRowWidths,
+  getSkeletonAria,
+} from '@lh-ui/share/core/skeleton'
+import type { LhSkeletonState, LhSkeletonVariant } from '@lh-ui/share/core/skeleton'
+```
+
+## Замысел
+
+`getSkeletonRowWidths(rows)` возвращает `60%` для последней строки — деталь, но важная: последний строка реального текстового абзаца почти никогда не бывает полной. Скелет с одинаковой шириной всех строк выглядит как «полосатые обои», а не как «текст», и эти 60% придают плейсхолдеру «текстовость».
+
+Последняя строка укорачивается только при `rows > 1`: единственная строка — это полноценная строка (укорачивание одиночной строки скорее похоже на обрезанный заголовок). При `rows <= 0` возвращается пустой массив, без исключения.
+
+`getSkeletonAria()` всегда возвращает `{ 'aria-hidden': true }` — содержимое скелета несёт ноль информации, скринридер не должен его объявлять. Но **одного скрытия недостаточно**: комментарии в исходнике требуют, чтобы UI-слой одновременно навесил `aria-busy="true"` на внешний контейнер — тогда при готовности данных скринридер перечитает настоящее содержимое. Эти два атрибута составляют пару: `aria-hidden` убирает шум, `aria-busy` помечает «прочитать позже».
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getSkeletonClassNames` | `(state: LhSkeletonState) => string[]` | массив классов | анимация, модификатор с аватаром |
+| `getSkeletonItemClassNames` | `(variant: LhSkeletonVariant, animated: boolean) => string[]` | массив классов | форма блока-плейсхолдера и анимация |
+| `getSkeletonRowWidths` | `(rows: number) => string[]` | последовательность ширин | генерирует ширины текстовых строк |
+| `getSkeletonAria` | `() => LhAriaAttrs` | пакет aria-атрибутов | всегда `{ 'aria-hidden': true }` |
+
+Пример вывода:
+
+```ts
+getSkeletonRowWidths(3)   // ['100%', '100%', '60%']
+getSkeletonRowWidths(1)   // ['100%']
+getSkeletonRowWidths(0)   // []
+getSkeletonItemClassNames('text', true)
+// ['lh-skeleton-item', 'lh-skeleton-item--text', 'lh-skeleton-item--animated']
+```
+
+## Определения типов
+
+```ts
+export type LhSkeletonVariant = 'text' | 'rect' | 'circle'
+
+export interface LhSkeletonState {
+  animated: boolean
+  avatar: boolean
+}
+```
+
+## Доступность
+
+```ts
+// Внешний контейнер в UI-слое
+const aria = { 'aria-busy': true }   // пометка «содержимое грузится, после готовности перечитать»
+// Сам элемент скелета
+const skeletonAria = getSkeletonAria()  // { 'aria-hidden': true }
+```
+
+Типичная ошибка — сделать лишь одно из двух: только `aria-hidden` лишит пользователя скринридера нового содержимого после готовности данных (он решит, что уже прочитал); только `aria-busy` заставит скринридер попытаться объявить пустое содержимое скелета.
+
+## Примеры использования
+
+```ts
+import { getSkeletonRowWidths, getSkeletonItemClassNames } from '@lh-ui/share/core/skeleton'
+
+getSkeletonRowWidths(4)
+// ['100%', '100%', '100%', '60%']
+
+getSkeletonItemClassNames('circle', false)
+// ['lh-skeleton-item', 'lh-skeleton-item--circle']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSkeletonClassNames({ animated, avatar })" aria-busy="true">
+  <div v-if="avatar" class="lh-skeleton__avatar">
+    <div :class="getSkeletonItemClassNames('circle', animated)" />
+  </div>
+  <div class="lh-skeleton__content">
+    <div
+      v-for="(w, i) in getSkeletonRowWidths(rows)"
+      :key="i"
+      :class="getSkeletonItemClassNames('text', animated)"
+      :style="{ width: w }"
+      v-bind="getSkeletonAria()"
+    />
+  </div>
+</div>
+```
+
+```tsx
+// React
+const widths = getSkeletonRowWidths(rows)
+return (
+  <div className={getSkeletonClassNames({ animated, avatar }).join(' ')} aria-busy={true}>
+    <div className="lh-skeleton__content">
+      {widths.map((w, i) => (
+        <div
+          key={i}
+          className={getSkeletonItemClassNames('text', animated).join(' ')}
+          style={{ width: w }}
+          {...getSkeletonAria()}
+        />
+      ))}
+    </div>
+  </div>
+)
+```
+
+```ts
+// uniapp: анимация на не-h5 платформах может быть плавной не везде;
+// UI-слой каждой платформы может отключать animated по ситуации
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-skeleton` | базовый класс: раскладка |
+| `.lh-skeleton--animated` | включает shimmer-анимацию прокраски |
+| `.lh-skeleton--with-avatar` | комбинированная раскладка «аватар + текст» (место слева под аватар) |
+| `.lh-skeleton-item` | отдельный блок-плейсхолдер |
+| `.lh-skeleton-item--{text\|rect\|circle}` | форма: текстовая строка / прямоугольник / круг |
+| `.lh-skeleton-item--animated` | shimmer-анимация |
+| `.lh-skeleton__avatar` / `.lh-skeleton__content` | область аватара и область содержимого |
+
+Цвет блоков-плейсхолдеров — токены `--lh-skeleton-*` (серый чуть темнее фона + блик прокраски), в тёмной теме автоматически затемняется.
+
+## Замечания
+
+- При `rows`, равном 0 или отрицательному, возвращается пустой массив, и UI-слой не отрисовывает строки — это допустимый вход, а не ошибка.
+- **Раскладка скелета должна совпадать с будущим реальным содержимым** (та же структура карточки, то же число строк), иначе после загрузки произойдёт скачок раскладки. Использовать состояние `loading` у `LhCard` проще, чем размещать скелет отдельно.
+- shimmer-анимация для некоторых пользователей является вестибулярным раздражителем; уважение к `prefers-reduced-motion` лежит в слое стилей (отключение анимации через `@media`), core об этом не знает.
+- `aria-busy` нужно вешать на **контейнер данных**, а не на сам скелет — после уничтожения скелета `aria-busy` должен быть снят вместе с ним.
+
+<FnPlayground module="skeleton" fn="getSkeletonRowWidths" params='{"rows": 3}' />

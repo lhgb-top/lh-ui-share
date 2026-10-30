@@ -1,0 +1,163 @@
+---
+title: collapse —— 折りたたみパネル
+description: 'normalizeActiveKeys の三状態正規化、toggleCollapseKey のアコーディオンモード、イミュータブルな更新'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+折りたたみパネルは「コンテンツが多すぎる、デフォルトで畳んでおく、必要に応じて広げる」という標準的なソリューションです。FAQ、設定項目のグループ化、長いフォームの分割によく使われます。状態モデルは極めてシンプルです——「どのパネルが開いているか」の配列——難しいのは**アコーディオンモード**（同時に開けるのは 1 つだけ）と**受控値の正規化**だけです。
+
+## いつ使うか
+
+- 各端末で `LhCollapse` を実装するケース：FAQ の質問、設定のグループ化、複雑なフォームの分割折りたたみ、サイドバーメニューのグループ。
+- コンテンツブロックを独立して折りたたみ / 展開でき、縦方向のスペースを節約したいシーン。
+- **使うべきでないケース**：固定項目が 2〜3 個しかない（そのまま表示する方が手間がかからない）；厳密な線形ステップが必要（`steps` を使う）。
+
+## インポート方法
+
+```ts
+import {
+  normalizeActiveKeys,
+  toggleCollapseKey,
+  getCollapseItemClassNames,
+} from '@lh-ui/share/core/collapse'
+import type { LhCollapseKey } from '@lh-ui/share/core/collapse'
+```
+
+## 設計意図
+
+**`normalizeActiveKeys` の三状態正規化**：受控 `v-model` は単一値（`'1'`）、配列（`['1','2']`）、undefined（すべて畳む）のいずれかで渡ってくる可能性があります。これを配列に統一すれば、下流の `includes` 判定は一つの形だけを相手にすればよくなります——「入力は寛容に、内部は厳格に」のまた一つの例です。
+
+**アコーディオンの「ゼロ開許可」**：`toggleCollapseKey(keys, key, true)` は `keys.includes(key)` のとき `[]` を返します。他の項目を保持しません——アコーディオンモードで開いているパネルをもう一度クリックすると**すべて畳みます**。これは（別のパネルに切り替わるのではなく）直感的な挙動です。アコーディオンに単一値を渡す場合、UI 層の `v-model` は配列を受け取るため、自分で型を処理する必要があります（または UI 層がアコーディオンモード向けに単一値 API を別途提供します）。
+
+**イミュータブルな更新**：2 つの関数はどちらも新しい配列を返し、リアクティブな状態にそのまま渡せます。引数を変更することはありません。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `normalizeActiveKeys` | `(value: LhCollapseKey \| LhCollapseKey[] \| undefined) => LhCollapseKey[]` | キー配列 | 三状態の正規化 |
+| `toggleCollapseKey` | `(keys, key, accordion: boolean) => LhCollapseKey[]` | 新しいキー配列 | アコーディオン / 通常 |
+| `getCollapseItemClassNames` | `(state: { active, disabled }) => string[]` | クラス名 | 展開 / 無効 |
+
+## 型定義
+
+```ts
+export type LhCollapseKey = string | number
+```
+
+## アクセシビリティ
+
+collapse は APG の **accordion / disclosure** パターンの典型的な実装です。セマンティクスの組み立ては UI 層が行います（core は属性バッグ関数を提供しません。パターンがシンプルで、各端末で DOM の差が大きいためです）。
+
+```html
+<!-- 各 item は一つの disclosure -->
+<div class="lh-collapse__item">
+  <h3>
+    <button type="button" aria-expanded="true" aria-controls="panel-1" id="trigger-1">
+      タイトル
+    </button>
+  </h3>
+  <div id="panel-1" role="region" aria-labelledby="trigger-1">コンテンツ</div>
+</div>
+```
+
+- `aria-expanded` はトリガーボタンに付け、`active` と同じソースを共有します——これがアクセシブルな折りたたみパネルの**中核となる属性**です。
+- パネルコンテナは `role="region"` + `aria-labelledby` でトリガーを逆参照し、双方向の関連付けを作ります。
+- **無効な項目**：トリガーボタンに `disabled` を付けます（クラス名だけでない、本物の disabled 属性）。キーボードとスクリーンリーダーの両方が認識します。
+- キーボード：Tab でトリガー間を移動し、Enter/Space で展開を切り替えます。
+- アコーディオンモードでは、畳んだパネルを `aria-hidden="true"` で隠さ**ないでください**——コンテンツはまだ DOM の中にあります（アニメーション中は見える）。CSS の height アニメーションで十分です。もし本当に DOM から取り除くなら、`aria-expanded` の状態を適切に管理してください。
+
+## 使用例
+
+```ts
+import { normalizeActiveKeys, toggleCollapseKey } from '@lh-ui/share/core/collapse'
+
+normalizeActiveKeys('1')          // ['1']
+normalizeActiveKeys(['1', '2'])   // ['1', '2']
+normalizeActiveKeys(undefined)    // []
+
+toggleCollapseKey([], '1', false)       // ['1']
+toggleCollapseKey(['1'], '1', false)    // []（もう一度クリックで畳む）
+toggleCollapseKey(['1'], '2', false)    // ['1', '2']（通常モードは複数開可）
+toggleCollapseKey(['1'], '1', true)     // []（アコーディオン：もう一度クリックで全て畳む）
+toggleCollapseKey(['1'], '2', true)     // ['2']（アコーディオン：新しく開いたものだけ残す）
+```
+
+```vue
+<!-- Vue3 -->
+<div class="lh-collapse">
+  <div
+    v-for="item in items"
+    :key="item.key"
+    :class="getCollapseItemClassNames({ active: activeKeys.includes(item.key), disabled: item.disabled })"
+  >
+    <h4 class="lh-collapse__header">
+      <button
+        type="button"
+        class="lh-collapse__trigger"
+        :disabled="item.disabled"
+        :aria-expanded="activeKeys.includes(item.key)"
+        :aria-controls="`lh-panel-${item.key}`"
+        :id="`lh-trigger-${item.key}`"
+        @click="onToggle(item)"
+      >
+        <span class="lh-collapse__arrow">{{ activeKeys.includes(item.key) ? '▾' : '▸' }}</span>
+        {{ item.title }}
+      </button>
+    </h4>
+    <div
+      v-show="activeKeys.includes(item.key)"
+      class="lh-collapse__panel"
+      :id="`lh-panel-${item.key}`"
+      role="region"
+      :aria-labelledby="`lh-trigger-${item.key}`"
+    >
+      <slot :name="item.key" :item="item" />
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// 受控 + アコーディオン
+const activeKeys = computed(() => normalizeActiveKeys(props.modelValue))
+function onToggle(item) {
+  if (item.disabled) return
+  emit('update:modelValue', toggleCollapseKey(activeKeys.value, item.key, props.accordion))
+}
+```
+
+```tsx
+// React：アコーディオンモードで v-model が単一値か配列かは UI 層の API が決めます；
+// core は常に配列を操作し、UI 層が emit 時に必要に応じて変換します（アコーディオンかつ単一値でよいなら [0] を取る）
+```
+
+```ts
+// uniapp：<view> + v-show；展開アニメーションは CSS の max-height transition（<view> でサポート）
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-collapse` | 基本クラス |
+| `.lh-collapse__item` | 単一のパネル項目 |
+| `.lh-collapse__item--active` | 展開状態 |
+| `.lh-collapse__item--disabled` | 無効 |
+| `.lh-collapse__header` / `__trigger` | ヘッダー / トリガーボタン |
+| `.lh-collapse__arrow` | 展開矢印（回転アニメーション） |
+| `.lh-collapse__panel` | パネルコンテンツ領域 |
+
+ヘッダー背景 `--lh-fill-color`、矢印 `--lh-text-color-secondary`、無効な項目 `--lh-text-disabled`、パネル境界 `--lh-border-color`。
+
+## 注意事項
+
+- **`v-show` vs `v-if`**：展開アニメーションには DOM の常駐が必要です（`v-show` + height/max-height transition）。`v-if` では破棄時に折りたたみアニメーションが再生できず、挙動がぎこちなくなります。
+- **受控値の型とアコーディオン**：アコーディオンは論理上 1 つの展開項目しか持てませんが、`toggleCollapseKey` が返すのは配列です（`[]` または `[key]` の可能性あり）。UI 層がアコーディオン向けに単一値 API を露出する場合、emit 時に `[0] ?? undefined` を取ります。配列 API のままでも構いませんが、その場合は呼び出し側が自分を律する必要があります。
+- **`normalizeActiveKeys` の呼び出しタイミング**：毎レンダー時に正規化するコストは極めて低いです（`Array.isArray` 判定 1 回）。心配なら `computed` でキャッシュしてください。
+- **ネストした折りたたみパネル**：内側の `activeKeys` は外側と独立です。DOM がネストしている場合、内側のパネルの `role="region"` が別の region の中に入ります——これは許容されますが、`aria-labelledby` の id はグローバルに一意にしてください（key に接頭辞を付ける）。
+- **アニメーション中の高さ**：`max-height` 方式では十分に大きい上限（例えば `1000px`）を設定しないと、コンテンツが極端に高いときにアニメーション速度が歪みます。より正確な方法は JS で `scrollHeight` を測って設定することです——core は関与せず、UI 層が自分で実装します。
+- **id の一意性**：`aria-controls` / `aria-labelledby` は id に依存します。複数の collapse インスタンスが共存するページでは、key にコンポーネントレベルの接頭辞を付けてください（UI 層は `useId` またはインスタンス uid を使用）。
+
+<FnPlayground module="collapse" fn="toggleCollapseKey" params='{"keys": ["1", "2"], "key": "3", "accordion": false}' />

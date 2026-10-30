@@ -1,0 +1,169 @@
+---
+title: popconfirm —— Bulle de confirmation
+description: 'La solution légère de confirmation en deux étapes : sémantique alertdialog, ton warning par défaut, contrat d’événements des boutons confirmer/annuler'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Supprimer, soumettre, publier — ce genre d'opérations « difficiles à annuler une fois faites » exigent une seconde confirmation de l'utilisateur. `dialog` est trop lourd (modale, vole le focus, masque) ; `popconfirm` fait apparaître une petite bulle à l'endroit même : une phrase + deux boutons, et elle disparaît dès la confirmation. C'est le composant dont le **poids d'interaction se situe exactement entre tooltip et dialog**.
+
+## Quand l'utiliser
+
+- Chaque framework implémente `<LhPopconfirm>` : supprimer une ligne, annuler une opération, vider des données, soumettre une commande.
+- Les confirmations en deux étapes **légères, sur place et avec peu de marge de retour en arrière**.
+- **À ne pas utiliser pour** : des conséquences assez graves pour exiger toute l'attention de l'utilisateur (utilisez `dialog` — le masque modal force la concentration) ; une simple information (utilisez `tooltip` / `message`) ; une confirmation nécessitant la saisie d'un motif ou le cochage d'options (utilisez `dialog` avec un formulaire).
+
+## Import
+
+```ts
+import {
+  LH_POPCONFIRM_TYPE_DEFAULT,
+  LH_POPCONFIRM_PLACEMENT_DEFAULT,
+  getPopconfirmIconName,
+  getPopconfirmClass,
+  getPopconfirmTriggerAria,
+  getPopconfirmPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popconfirm'
+import type { LhPopconfirmType, LhPopconfirmTrigger, LhPopconfirmState } from '@lh-ui/share/core/popconfirm'
+```
+
+## Intentions de conception
+
+**Le ton par défaut est warning, pas info** : `LH_POPCONFIRM_TYPE_DEFAULT = 'warning'` — l'apparition d'une bulle de confirmation signifie presque toujours « il y a un risque », le ton par défaut doit donc être l'avertissement. info est laissé aux confirmations purement informatives (« Marquer comme lu ? »), danger aux opérations irréversibles (« La suppression est irréversible »).
+
+**Trois tons, trois icônes** : info → `info`, warning → `warning`, danger → `error` (le nom de l'icône est error et non danger — le nommage de la bibliothèque d'icônes est error, c'est un mapping entre deux nomenclatures). Un type inconnu retombe sur warning.
+
+**`role="alertdialog"` plutôt que `"dialog"` de popover** : alertdialog est, dans ARIA, « la boîte de dialogue exigeant une réponse immédiate de l'utilisateur » — les lecteurs d'écran l'**annoncent en priorité** (caractère interruptif semblable à alert, mais en exigeant un choix). Cela correspond mieux que dialog à la sémantique « j'attends votre décision ».
+
+**Le contrat d'événements confirmer/annuler est dans la couche UI** : core ne fournit que les classes, l'icône, les attributs aria et les délais ; les événements `onConfirm` / `onCancel`, les textes des boutons et l'état de loading appartiennent à la couche UI — parce qu'ils impliquent la communication dans l'arbre des composants (emit), que core ne touche pas aux API du framework.
+
+**Les délais suivent popover** : les valeurs par défaut de `getDefaultDelay` sont 200/100, identiques à popover — la bulle de confirmation admet elle aussi le déclenchement au survol, et le pointeur doit pouvoir y entrer.
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getPopconfirmIconName` | `(type: LhPopconfirmType) => string` | nom d'icône | type inconnu : repli warning |
+| `getPopconfirmClass` | `(state: { type, placement, popperClass? }) => string[]` | noms de classes | ton + position |
+| `getPopconfirmTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | paquet aria | expanded/controls/haspopup |
+| `getPopconfirmPopperAria` | `(id?) => LhAriaAttrs` | paquet aria | role=alertdialog |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | délais | 200 / 100 par défaut |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | autorisé ? | intercepté quand disabled |
+
+Constantes : `LH_POPCONFIRM_TYPE_DEFAULT = 'warning'`, `LH_POPCONFIRM_PLACEMENT_DEFAULT = 'top'`.
+
+## Définitions de types
+
+```ts
+export type LhPopconfirmType = 'info' | 'warning' | 'danger'
+export type LhPopconfirmTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopconfirmState {
+  type?: LhPopconfirmType
+  trigger?: LhPopconfirmTrigger
+  placement?: LhPlacement
+  visible?: boolean
+  disabled?: boolean
+  showIcon?: boolean             // true par défaut
+}
+```
+
+## Accessibilité
+
+```ts
+getPopconfirmPopperAria('pc-1')
+// { role: 'alertdialog', id: 'pc-1' }
+getPopconfirmTriggerAria(true, 'pc-1')
+// { 'aria-expanded': true, 'aria-controls': 'pc-1', 'aria-haspopup': 'true' }
+```
+
+- **L'annonce de l'alertdialog** : quand un lecteur d'écran rencontre un alertdialog, il en annonce immédiatement le contenu (aria-labelledby ou le texte interne) — **l'utilisateur n'a pas besoin d'aller le lire** — c'est ce qui le rend plus contraignant que dialog, conforme à l'intention « en attente de votre confirmation ».
+- **Les boutons doivent avoir un texte explicite** : « Confirmer / Annuler » est préférable à « OK / NO » ou à des boutons icônes. Avec le ton `danger`, le texte du bouton de confirmation devrait exprimer la conséquence (« Supprimer » plutôt que « Confirmer »).
+- **L'annulation est la direction sûre** : Entrée déclenche-t-elle **confirmer** ou **annuler** par défaut ? La pratique courante est que le focus initial se porte sur le bouton **Annuler** (un seul Tab + Entrée permet une sortie sûre) — pour une opération destructrice, ne placez pas le focus par défaut sur Confirmer. C'est la décision de la couche UI, core n'intervient pas.
+- **Esc = annuler** : quand `canCloseOnEscape` l'autorise, Esc devrait déclencher onCancel et pas seulement fermer — sémantiquement, « fermer la bulle de confirmation » c'est « ne pas confirmer ».
+- **Icône aria-hidden** : la sémantique de l'icône (warning/error) est déjà portée par le texte, l'icône elle-même est décorative, pour éviter que le lecteur d'écran annonce « avertissement » en double.
+
+## Exemples d'utilisation
+
+```ts
+import { getPopconfirmIconName, getPopconfirmClass, LH_POPCONFIRM_TYPE_DEFAULT } from '@lh-ui/share/core/popconfirm'
+
+getPopconfirmIconName('info')     // 'info'
+getPopconfirmIconName('warning')  // 'warning'
+getPopconfirmIconName('danger')   // 'error'
+getPopconfirmIconName('other' as never)  // 'warning' (repli)
+
+getPopconfirmClass({ type: 'danger', placement: 'top' })
+// ['lh-popconfirm__popper', 'lh-popconfirm__popper--danger', 'lh-popconfirm__popper--top']
+
+LH_POPCONFIRM_TYPE_DEFAULT  // 'warning'
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopconfirm
+    title="La suppression est irréversible. Confirmer la suppression de cette ligne ?"
+    type="danger"
+    confirm-text="Supprimer"
+    cancel-text="Annuler"
+    @confirm="remove(row)"
+  >
+    <template #reference>
+      <LhButton type="danger" size="small">Supprimer</LhButton>
+    </template>
+  </LhPopconfirm>
+</template>
+
+<script setup>
+async function remove(row) {
+  // onConfirm est déclenché ; le composant peut gérer confirmLoading : la bulle ne se
+  // ferme qu'une fois l'asynchrone terminé
+  await api.delete(row.id)
+  LhMessage.success('Supprimé')
+}
+</script>
+```
+
+```ts
+// Confirmation asynchrone : pendant le confirm, désactiver les boutons + afficher un
+// loading ; en cas d'échec, garder la bulle ouverte
+// Logique de la couche UI : core ne détient pas d'état asynchrone
+```
+
+```tsx
+// React : onConfirm/onCancel sont transmis par props ; le visible contrôlé s'accorde à
+// la confirmation asynchrone
+```
+
+```ts
+// uniapp : bulle en <view> ; l'état cliqué des boutons utilise hover-class ; le contrat
+// d'événements est le même modèle
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-popconfirm__popper` | conteneur de la bulle |
+| `.lh-popconfirm__popper--{info\|warning\|danger}` | ton (couleur de l'icône + couleur du bouton confirmer) |
+| `.lh-popconfirm__popper--{top\|bottom\|…}` | position |
+| `.lh-popconfirm__icon` | icône de ton |
+| `.lh-popconfirm__title` | texte du titre |
+| `.lh-popconfirm__actions` | zone des boutons (alignés à droite) |
+
+La couleur du bouton de confirmation suit le ton : danger utilise `--lh-danger-color`, warning `--lh-warning-color`, info `--lh-primary-color`.
+
+## Remarques
+
+- **Le titre doit exprimer la conséquence** : « Confirmer la suppression ? » est un mauvais texte (la conséquence n'est pas dite) ; « La suppression est irréversible. Confirmer la suppression de cette ligne ? » est un bon texte. C'est le cœur de l'expérience popconfirm.
+- **Ne pas imbriquer** : un popconfirm dans un popconfirm laisse l'utilisateur perplexe sur la couche qu'il est en train de confirmer. Pour des confirmations multi-étapes, utilisez dialog.
+- **Quand le déclencheur est un bouton désactivé** : un bouton `disabled` ne déclenche pas d'événement (limitation native) et popconfirm ne peut pas s'ouvrir — le métier doit le gérer lui-même (envelopper dans un élément non désactivé, ou ne pas rendre le popconfirm quand désactivé).
+- **Le timing de fermeture de la confirmation asynchrone** : pendant le traitement du confirm, les deux boutons devraient être désactivés + un masque pour empêcher les doubles clics ; en cas d'échec, **garder la bulle ouverte** et signaler l'erreur, et fermer seulement en cas de succès. Fermer la bulle de façon synchrone dans onConfirm est un bug courant.
+- **La coopération avec message** : une fois la confirmation accomplie, utilisez `message` pour un retour de succès (« Supprimé ») ; les deux forment la chaîne standard « confirmer → exécuter → retour ».
+- **Le déclenchement au survol sur mobile** : comme popover, l'écran tactile n'a pas de survol. Le déclenchement par clic est la valeur par défaut multiterminale.
+- **`role="alertdialog"` n'apporte pas la sémantique implicite des boutons** : la zone des boutons doit être rendue avec de vrais `<button>` (pas des div + onclick), pour que les utilisateurs au clavier puissent les actionner.
+
+<FnPlayground module="popconfirm" fn="getPopconfirmIconName" params='{"type": "danger"}' />

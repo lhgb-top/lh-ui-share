@@ -1,0 +1,138 @@
+---
+title: sx —— 스타일 약어
+description: 'sxToStyle이 Tailwind 스타일의 sx 속성을 인라인 스타일로 변환, 고정 우선순위: 단변 > 축 그룹 > 약어'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`sx`는 lh-ui의 **인라인 스타일 약어**입니다: `style="margin-top: 32px"` 대신 `mt: 4`를, 네 변의 padding을 한 번에 적는 대신 `p: 2`를 씁니다. Tailwind가 아닙니다(클래스명을 만들지도, CSS를 끌어오지도 않습니다). 실행 시점에 속성 패키지를 `Record<string, string>`으로 바로 평가해 UI 계층이 `:style`에 묶게 합니다.
+
+## 사용 시기
+
+- 컴포넌트 라이브러리 내부: `sx` 덕분에 컴포넌트가 「레이아웃 미세 조정」 층에서 새 prop을 만들지 않아도 됩니다——`<LhButton sx={{ mt: 2 }} />`만으로 위쪽 간격을 밀어낼 수 있습니다.
+- 데이터에 따라 동적으로 변하는 간격: 숫자를 px로 환산하는 규칙(`×8`)이 「나에게 좀 더 가까이」 같은 의미에 안정된 눈금을 줍니다.
+- **쓰면 안 되는 곳**: 체계화된 시각 디자인. sx는 「호출 지점의 임시 미세 조정」이고, 테마 색이나 컨트롤 높이 같은 디자인 토큰은 여전히 CSS 변수로 갑니다([테마 시스템](/ko/theme/overview) 참조); sx에 `color: 'var(--lh-primary-color)'`를 적어도 동작하지만, 컴포넌트가 직접 토큰을 소비하게 두는 편이 더 권장됩니다.
+
+## 가져오기
+
+```ts
+// 정확한 가져오기(권장, tree-shaking 친화적)
+import { sxToStyle, mergeSx } from '@lh-ui/share/core/shared/sx'
+import type { LhSxProps } from '@lh-ui/share/core/shared/sx'
+
+// 또는 집약 진입점에서
+import { sxToStyle } from '@lh-ui/share/core/shared'
+```
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `sxToStyle` | `(sx: LhSxProps) => Record<string, string>` | 인라인 스타일 객체 | sx 속성 패키지를 CSS 스타일로 평가 |
+| `mergeSx` | `(...list: (LhSxProps \| undefined \| null)[]) => LhSxProps` | 병합된 sx | 나중 것이 앞선 것을 덮음, UI 계층이 「기본 sx + 호출 측 sx」를 조합하게 함 |
+
+### `sxToStyle`의 우선순위 규칙
+
+**「단변 > 축 그룹 > 약어」, 그리고 키의 적힌 순서와 무관**합니다. 구현상 `약어 → 축 그룹 → 단변`의 고정 순서로 스타일 객체에 쓰고, 나중에 쓴 것이 먼저 쓴 것을 덮으므로, 키 순서를 어떻게 배열하든:
+
+```ts
+sxToStyle({ m: 2, mt: 4 })   // { marginTop: '32px', marginRight: '16px', marginBottom: '16px', marginLeft: '16px' }
+sxToStyle({ mt: 4, m: 2 })   // 완전히 동일
+sxToStyle({ my: 2, mt: 4 })  // marginTop 단변이 승리: 32px; mb는 여전히 16px
+```
+
+이 규칙 덕분에 컴포넌트 라이브러리는 안전하게 「기본 패키지 + 사용자 덮어쓰기」를 적을 수 있습니다: 사용자가 넘긴 `mt`가 컴포넌트 내부의 `m`을 반드시 이깁니다.
+
+### 숫자와 문자열
+
+- **숫자는 `×8px`로 환산**: `mt: 4` → `32px`. 8은 lh-ui의 간격 기준입니다(`--lh-spacing-*` 토큰과 같은 눈금).
+- **문자열은 그대로 통과**: `w: '50%'` → `50%`, `p: '1rem'` → `1rem`.
+- **레이아웃 계 키는 환산하지 않음**: `display` / `flex` / `flexDirection` / `alignItems` / `justifyContent`의 값은 문자열 그대로 적습니다(`flexDirection: 'column'`이 `columnpx`가 되지 않습니다).
+- 모든 키는 `!== undefined`로 판정합니다: 빈 문자열 `''`은 **명시적 비움**으로 보고 그대로 적습니다.
+
+## 타입 정의
+
+```ts
+export interface LhSxProps {
+  // 크기
+  w?: string | number
+  h?: string | number
+  // 바깥 여백: 단변 / 축 그룹 / 약어
+  mt?: string | number
+  mr?: string | number
+  mb?: string | number
+  ml?: string | number
+  my?: string | number
+  mx?: string | number
+  m?: string | number
+  // 안쪽 여백: 같은 구조
+  pt?: string | number
+  pr?: string | number
+  pb?: string | number
+  pl?: string | number
+  py?: string | number
+  px?: string | number
+  p?: string | number
+  // 레이아웃
+  display?: string
+  flex?: string
+  flexDirection?: 'row' | 'column'
+  alignItems?: string
+  justifyContent?: string
+  // 하류 커스텀 키 호환; 알 수 없는 키는 조용히 버려집니다
+  [key: string]: any
+}
+```
+
+인덱스 시그니처 `[key: string]: any`는 의도된 것입니다: 각 UI 라이브러리는 자신의 `LhXxxProps`에 `sx?: LhSxProps`와 컴포넌트 고유 속성을 함께 두고, 인덱스 시그니처가 타입들이 서로 충돌하지 않게 합니다; 알 수 없는 키는 평가 시 버려지고 스타일에는 새어나가지 않습니다.
+
+## 사용 예시
+
+### 순수 함수
+
+```ts
+sxToStyle({ mt: 2, px: 3, display: 'flex', alignItems: 'center' })
+// {
+//   marginTop: '16px',
+//   paddingLeft: '24px',
+//   paddingRight: '24px',
+//   display: 'flex',
+//   alignItems: 'center',
+// }
+```
+
+### 각 단말 접속
+
+```vue
+<!-- Vue3 / Vue2: :style에 직접 묶음 -->
+<template>
+  <lh-button :style="sxToStyle($props.sx)">버튼</lh-button>
+</template>
+```
+
+```tsx
+// React
+<div style={sxToStyle({ my: 4, w: '100%' })} />
+```
+
+```ts
+// uniapp: sxToStyle가 내놓는 것은 평범한 객체, 그대로 style 바인딩으로
+// (숫자 ×8px는 h5 외 단말에서 플랫폼별 환산이 필요, UI 계층이 처리)
+```
+
+`mergeSx`의 전형적인 용법은 컴포넌트 내부에서 기본값을 조합하는 것입니다:
+
+```ts
+// 컴포넌트 내부
+const merged = mergeSx({ py: 2, px: 4 }, props.sx) // 사용자의 sx가 기본값을 덮음
+const style = sxToStyle(merged)                    // 평가는 한 번만, 우선순위 규칙도 한 번만 정산
+```
+
+## 주의 사항
+
+- **`mergeSx`는 얕은 병합**(`Object.assign`)이고 재귀하지 않습니다; sx의 값은 모두 스칼라이므로 얕은 병합으로 충분합니다.
+- **`sxToStyle`은 거짓 값에 `{}` 반환**: `sxToStyle(undefined)`는 빈 객체이고, UI 계층은 판단 없이 호출해도 됩니다.
+- 숫자 환산의 8px 기준은 토큰 체계와 정렬하지만, sx 자체는 **CSS 변수를 참조하지 않습니다**——내놓는 것은 계산이 끝난 리터럴이고, 「이번 호출에서 살짝 비틀자」인 시나리오에 맞지 「테마를 따라 바뀌자」인 시나리오에는 맞지 않습니다.
+- 크로스 플랫폼: uniapp의 h5 외 단말 rpx는 UI 계층에서 환산해야 하고, sx 코어는 px만 내보냅니다.
+
+<FnPlayground module="sx" fn="sxToStyle" params='{"sx": {"mt": 4, "px": 3, "display": "flex"}}' />

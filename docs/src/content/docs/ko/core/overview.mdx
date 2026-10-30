@@ -1,0 +1,70 @@
+---
+title: 공유 코어 개요
+description: 'core/shared의 12개 서브모듈, 순수 함수 계층의 설계 철학, 모듈 간 의존'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+## 이것은 무엇인가
+
+`@lh-ui/share/core/shared`는 lh-ui 패밀리 전체의 **공통 알고리즘 계층**입니다——12개의 의존성 없는 TypeScript 모듈이, 모든 컴포넌트에서 사용되면서 각 단말마다 따로 작성하기 쉽고(그리고 미묘한 차이가 나기 쉬운) 로직을 유일한 구현으로 수렴시킵니다:
+
+팝업 층 위치 지정, 가상 스크롤, 키보드 내비게이션, 포커스 트랩, aria 속성 구축, 날짜 프리미티브, 숫자 정제, 스타일 패스스루……이러한 알고리즘은 **어떤 프레임워크에도 속하지 않습니다**: 입력은 보통 데이터, 출력도 보통 데이터이며, 리액티비티에도 DOM 전역 상태에도 손대지 않습니다(소수의 함수는 DOM을 읽지만 SSR 가드가 있습니다).
+
+lh-ui-plus, lh-ui-vue2, lh-ui-react, lh-ui-uniapp 네 단말의 같은 컴포넌트는 **동일한** `computePosition`, 동일한 `getNextListIndex`를 사용합니다. 버그 하나를 고치면 네 단말이 동시에 고쳐지고, 경계 조건 하나를 추가하면 네 단말이 동시에 갖춰집니다.
+
+## 12개의 서브모듈
+
+| 모듈 | 책임 | 핵심 내보내기 |
+| --- | --- | --- |
+| [`sx`](/ko/core/sx) | sx 속성 → 인라인 스타일, 고정 우선순위 "단일 변 > 축 그룹 > 약어" | `sxToStyle` / `mergeSx` / `LhSxProps` |
+| [`popper`](/ko/core/popper) | 팝업 층 위치 지정 엔진: 12 방위, 주축 뒤집기, 교차축 클램프, 화살표 오프셋 | `computePosition` / `parsePlacement` / `LhPlacement` |
+| [`virtual`](/ko/core/virtual) | 고정 높이 가상 스크롤 구간(virtual-list와 table이 동일한 알고리즘을 공유) | `computeRange` / `computeWindow` / `LH_VIRTUAL_OVERSCAN` |
+| [`keyboard`](/ko/core/keyboard) | 키보드 상호작용: 키 판정, 목록 / 그리드 / range 내비게이션, type-ahead | `getNextListIndex` / `getNextGridCell` / `LH_KEYS` |
+| [`focus-trap`](/ko/core/focus-trap) | 포커스 관리: 포커스 가능 요소 열거, Tab 포커스 트랩, inert 소유권 레지스트리 | `trapTabKey` / `setInertOutside` / `focusFirst` |
+| [`a11y`](/ko/core/a11y) | aria 속성의 원자적 빌더("거짓값 생략" 의미 통일) | `getPopupTriggerAria` / `ariaExpanded` / `getDecorativeAria` |
+| [`date`](/ko/core/date) | 날짜 프리미티브: 월별 날 수, 비교, 비활성 판정, 고정 폭 토큰 포맷팅 | `formatDate` / `parseDate` / `isDateDisabled` |
+| [`format`](/ko/core/format) | 텍스트 템플릿 보간(`{key}` 자리 표시자) | `formatMessage` |
+| [`delay`](/ko/core/delay) | 표시 / 숨김 지연 정규화(tooltip / popover / popconfirm이 공유) | `resolveDelay` |
+| [`pt`](/ko/core/pt) | PT 패스스루 속성 병합(class / style / attrs의 얕은 병합) | `mergePt` / `LhPtAttrs` |
+| [`sanitize`](/ko/core/sanitize) | 숫자 정제: NaN / Infinity를 진입 지점에서 일괄 차단 | `sanitizeNumber` / `clamp` / `safePrecision` |
+| [`types`](/ko/core/types) | 공유 유니언 타입: 크기 / 언어 / 타입 / 위치 | `LhComponentSize` / `LhComponentType` |
+
+집약 진입점 `@lh-ui/share/core/shared`는 12개 모듈을 모두 `export *`합니다. 모듈 단위로 `@lh-ui/share/core/shared/popper`를 정확히 임포트하면, 번들러가 사용한 부분만 옮기게 할 수도 있습니다.
+
+## 설계 철학
+
+### 순수 함수, 상태는 UI 계층에
+
+core 계층의 함수는 **컴포넌트 상태를 유지하지 않습니다**. popper를 예로 들면: `computePosition(trigger, popper, viewport, options)`는 세 개의 rect 리터럴을 받아 `{ top, left, placement, arrowOffset }`를 반환합니다——"현재 트리거가 어디에 있는지, 플로팅 층이 얼마나 큰지, 뷰포트가 얼마나 큰지"는 모두 UI 계층이 호출하는 순간에 측정해서 전달합니다. 즉:
+
+- 같은 함수가 Vue3의 `watchEffect`에서도, React의 `useLayoutEffect`에서도, uniapp의 `onPageScroll`에서도 동작합니다.
+- **단일 테스트에 컴포넌트 렌더링이 불필요**: `tests/unit/`의 많은 케이스는 "rect 세트를 만들고 출력을 단언"하는 것이며, 네 단말이 같은 테스트 결과를 공유합니다(레드라인 3: core 단위 테스트는 이 리포지토리에 유일한 사본).
+
+### SSR 가드는 기본 계약
+
+소수의 함수는 DOM을 읽어야 합니다(`getWindowViewport`, `getFocusableElements`, `saveActiveElement`). 이들은 모두 진입 지점에서 `typeof document === 'undefined'` / `typeof window === 'undefined'`를 판정하고 안전한 빈 값(`[]` / `null` / 너비와 높이가 0인 rect)을 반환하므로, Nuxt / Next / uniapp의 서버 사이드 렌더링에서도 손상되지 않습니다. 문서에서는 각 함수에 "SSR 안전" 또는 구체적인 가드 동작을 명시합니다.
+
+### "거짓값 생략" aria 규약
+
+`a11y` 모듈의 모든 빌더는 동일한 규약을 따릅니다: **불리언형 aria 속성은 거짓일 때 `undefined`를 출력해, 프레임워크가 그 속성을 렌더링하지 않게 합니다**(`aria-required: false` 같은 "명시적 부정"은 대부분의 경우 노이즈입니다). 예외는 의미상 명시적인 음성이 필요한 속성입니다: `aria-expanded: false`, `aria-invalid: false`는 있는 그대로 출력됩니다. 자세한 내용은 [a11y 문서](/ko/core/a11y)를 참조하세요.
+
+### 진입 지점에서 정제, 하류는 방어하지 않음
+
+`sanitize`의 존재 덕분에 core의 다른 함수는 곳곳에 `Number.isFinite` 방어를 작성하지 않아도 됩니다. 페이지 번호, 간격, step, precision 같은 외부 출처의 숫자는 알고리즘에 진입하기 전에 `sanitizeNumber`를 통과하며, NaN / Infinity는 안전한 기본값으로 교체됩니다. 이것은 "한 곳에서 차단하고 전체를 깨끗하게"라는 트레이드오프입니다: 호출자는 직접 유한성을 보장하고 `clamp`를 사용하거나, 진입 지점 정제를 신뢰한다고 명시적으로 선택합니다.
+
+### 모듈 간 의존은 가볍습니다
+
+세 가지뿐입니다:
+
+- `keyboard` ← `sanitize.clamp`(내비게이션 경계 클램프)
+- `popper` ← `sanitize.clamp` + `sanitize.sanitizeNumber`(클램프와 매개변수 정제)
+- `shared/types` ← `constants.LH_SIZE_CONST` / `LH_LANGUAGE_CONST` / `LH_TYPES_CONST`(`import type`, 유니언 타입은 상수에서 도출)
+
+순환 의존도 없고, `locales` / UI 계층으로의 역의존도 없습니다. `format` 모듈의 존재는 이 선의 산물입니다: `rate`의 `'{n} 星'`, `pagination`의 `'共 {total} 条'` 같은 보간은 원래 locales 싱글톤을 역참조해야 했지만, 순수한 문자열 함수로 강등된 덕분에 core 컴포넌트는 locales의 모듈 레벨 부작용에 더 이상 의존하지 않습니다.
+
+## 직접 사용해 보기
+
+<FnPlayground module="sanitize" fn="clamp" params='{"value": 12, "min": 0, "max": 10}' />
+
+각 서브모듈 문서 페이지의 말미에는 이런 플레이그라운드 블록이 있습니다: 매개변수를 입력하고 클라이언트에서 직접 실행한 뒤, 출력을 확인할 수 있습니다.

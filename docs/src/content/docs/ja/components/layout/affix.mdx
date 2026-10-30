@@ -1,0 +1,152 @@
+---
+title: affix 固定 —— レイアウト
+description: 'isAffixFixed のビューポートはみ出し判定（top/bottom 双方向モード）、getAffixFixedStyle の配置スタイル、IntersectionObserver と getBoundingClientRect のデュアルパス'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+ページがスクロールする時、釘付けにしたい要素があります：上部ナビゲーション、下部の操作バー、サイドの目次。`affix` は要素がビューポートから滚出した時に fixed 配置に切り替え、滚回してきたら元に戻します。難しいのは切り替えそのものではなく**判定のタイミング**と**プレースホルダーによる塌陷防止**です——core は判定とスタイルだけを管理し、監視とプレースホルダーは UI 層の責任です。
+
+## いつ使うか
+
+- 各端末で `<LhAffix>` を実装：ページ上部のナビゲーションの釘付け、フォーム下部の操作バーの下詰め、長いドキュメントのサイド目次のビューポート固定。
+- 要素が**スクロール中も可視であり続ける**必要があるシーン。
+- **使うべきでないケース**：要素が元々ビューポート内にある短いページ（釘付け不要）；全画面マスクが必要なシーン（`loading` の fullscreen を使う）；サイドバー全体の固定レイアウト（直接 CSS の `position: sticky` を使う方が簡単——affix の価値は「しきい値まで滚動したら固定する」という条件付きの挙動にある）。
+
+## インポート方法
+
+```ts
+import {
+  getAffixClassNames,
+  isAffixFixed,
+  getAffixFixedStyle,
+} from '@lh-ui/share/core/affix'
+import type { LhAffixState } from '@lh-ui/share/core/affix'
+```
+
+## 設計意図
+
+**top と bottom は相互排他的な 2 つのモード**：`offsetTop > 0` の時は「頂辺がビューポートの上部しきい値を越えたか」を判定し、`offsetBottom > 0` の時は「底辺がビューポートの下部しきい値を越えたか」を判定します。2 つの offset は同時に有効になれません——`isAffixFixed` は `if (offsetBottom > 0)` で優先的にボトムモードに入ります。セマンティクス上、要素が釘付けできるのは一方の辺だけです。
+
+**ボトム判定は必ずビューポートの高さを必要とする**：`rect.bottom > viewportHeight - offsetBottom`——プレースホルダー要素の底辺が「ビューポートの下端 - しきい値」を越えて初めて固定とみなします。このしきい値は**動的です**（viewportHeight はウィンドウサイズに伴って変化する）ので、UI 層は毎回のコールバックで現在のビューポートの高さを渡さなければならず、キャッシュしてはなりません。
+
+**判定関数と監視メカニズムの疎結合**：`isAffixFixed` が消費するのは `{ top, bottom }` の矩形オブジェクトで、それがどこから来たかに関知しません——IntersectionObserver のコールバックから entry の boundingClientRect を取るか、resize/scroll イベントの中で `getBoundingClientRect()` でフォールバックするか、2 つのパスが同じ判定ロジックを共有します。
+
+**`getAffixFixedStyle` の `top: 'auto'` / `bottom: 'auto'`**：固定時に他方の軸を明示的に auto にし、要素が同時に top と bottom を持つことを防ぎます（fixed 配置下で两者に同時に値があると要素の高さが引き伸ばされます）。
+
+**スタイルの直接変更ではなく fixed クラス名**：`lh-affix--fixed` によって SCSS が fixed 配置の詳細（z-index、シャドウ、トランジションアニメーション）を决定し、core の `getAffixFixedStyle` は top/bottom の具体的なピクセル値だけを計算します——配置のオンオフとオフセット量を分離します。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getAffixClassNames` | `(state: LhAffixState) => string[]` | クラス名 | fixed 状態 |
+| `isAffixFixed` | `(rect: { top, bottom }, offsetTop, offsetBottom, viewportHeight) => boolean` | 固定するか | ビューポートはみ出し判定 |
+| `getAffixFixedStyle` | `(offsetTop, offsetBottom) => Record<string, string>` | インラインスタイル | fixed 配置のオフセット |
+
+## 型定義
+
+```ts
+export interface LhAffixState {
+  fixed: boolean    // 現在固定状態か（クラス名を駆動）
+}
+```
+
+## アクセシビリティ
+
+affix は純粋な視覚的な配置で、**内容のセマンティクスを変えず**、専用の aria 属性はありません。関連する 2 つの実践：
+
+- **固定状態になっても DOM の順序を変えない**：要素が fixed になっても元の DOM 位置に留まり、スクリーンリーダーはソースコードの順序で読み上げます。視覚のためにそれを body の末尾に移動（teleport）すると、読み上げの順序が飛びます——affix の実装は配置を変えるだけで DOM を動かすべきです。
+- **固定要素の可視性**：固定状態の要素は常にビューポート内にあり、`aria-hidden` がスクロールに伴って変化することはありません（元々ずっと可視だからです）。
+- **フォーカストラップのリスク**：下詰めの「保存 / 送信」操作バーは長いフォームでは便利ですが、fixed 要素がページの下部の内容を遮る可能性があります（ボタンが最後の行を永遠に覆う）——UI 層は body または内容コンテナに `padding-bottom` でスペースを確保すべきです。これはレイアウトの問題であってアクセシビリティの問題ではありませんが、操作性に影響します。
+
+## 使用例
+
+```ts
+import { isAffixFixed, getAffixFixedStyle } from '@lh-ui/share/core/affix'
+
+// トップモード：頂辺がしきい値 80px を越える
+isAffixFixed({ top: 50, bottom: 200 }, 80, 0, 900)   // false（50 < 80 で固定されるが、50 は越えていない）
+isAffixFixed({ top: 100, bottom: 300 }, 80, 0, 900)  // true（100 > 80）
+// 判定の方向に注意：top < offsetTop が真 —— 要素の頂辺がしきい値線より**上**にある（卷き取られた）
+
+// ボトムモード：底辺が「ビューポートの下端 - しきい値」を越える
+isAffixFixed({ top: 700, bottom: 950 }, 0, 60, 900)  // true（950 > 900-60=840）
+isAffixFixed({ top: 500, bottom: 700 }, 0, 60, 900)  // false（700 < 840、まだ越えていない）
+
+// 両方の offset を渡す：ボトムを優先
+isAffixFixed({ top: 100, bottom: 950 }, 80, 60, 900)  // true（ボトムの分岐に入る）
+```
+
+```ts
+getAffixFixedStyle(80, 0)   // { position: 'fixed', top: '80px', bottom: 'auto' }
+getAffixFixedStyle(0, 60)   // { position: 'fixed', bottom: '60px', top: 'auto' }
+getAffixFixedStyle(0, 0)    // { position: 'fixed', top: '0px', bottom: 'auto' }（デフォルトはトップに釘付け）
+```
+
+```ts
+// UI 層：IntersectionObserver のメインパス + プレースホルダーによる塌陷防止
+const placeholder = document.createElement('div')  // 固定時に元の位置を保持し、後続の内容の跳変を防ぐ
+let observer: IntersectionObserver | undefined
+
+function observe() {
+  observer = new IntersectionObserver(
+    (entries) => {
+      const rect = entries[0].boundingClientRect
+      const fixed = isAffixFixed(
+        { top: rect.top, bottom: rect.bottom },
+        props.offsetTop ?? 0,
+        props.offsetBottom ?? 0,
+        window.innerHeight,
+      )
+      if (fixed !== state.fixed) {
+        state.fixed = fixed
+        if (fixed) targetEl.before(placeholder)   // プレースホルダー
+        else placeholder.remove()                  // プレースホルダーを撤去
+      }
+    },
+    { threshold: [0, 1] },
+  )
+  observer.observe(targetEl)
+}
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhAffix :offset-top="64">
+    <nav class="page-nav">…</nav>
+  </LhAffix>
+</template>
+```
+
+```tsx
+// React：useEffect で IntersectionObserver を登録；SSR 時はスキップし（IntersectionObserver がない）、
+// クライアントの活性化後にマウントする
+```
+
+```ts
+// uniapp：IntersectionObserver はミニプログラム側では wx.createIntersectionObserver；
+// h5 側ではブラウザのネイティブ API を使う。core の判定関数は両端で共有
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-affix` | ラッパーコンテナ（元の位置） |
+| `.lh-affix--fixed` | 固定状態（position: fixed + z-index + オプションのシャドウ／トランジション） |
+
+z-index `--lh-z-index-affix`；固定状態のシャドウ `--lh-box-shadow-affix`（オプション、トップ釘付け時に底部に細いシャドウで階層を区別）。
+
+## 注意事項
+
+- **プレースホルダー要素は必須**：要素が一度 fixed になると文書フローから外れ、後続の内容が全体に上へずれて空きを埋めます——ページが激しく跳変します。UI 層は必ず同サイズのプレースホルダー要素を置かなければなりません（上記の例）。プレースホルダーの高さは**固定前**の要素の高さに等しくしてください。
+- **ボトムモードのビューポートの高さはリアルタイムに**：`isAffixFixed` の `viewportHeight` 引数は毎回のコールで現在の値を渡すべきで、ウィンドウの resize 時に再判定しなければなりません（affix の状態が固定から非固定に戻る可能性があります）。
+- **`offsetTop` / `offsetBottom` は二者択一**：同時に渡すとボトムが優先され、トップのしきい値は無効になります。API 上は両方を渡すことを許容しますが、セマンティクス上はどちらか一方だけを設定すべきです。
+- **固定状態の幅の塌陷**：要素が fixed になると幅はもはや親コンテナの制約を受けません（block 要素が fixed になると内容幅まで縮みます）。SCSS 側は通常、`--fixed` の中で元の幅を記録して再利用するか、UI 層が幅をインラインスタイルに書き込みます。
+- **ネストしたスクロールコンテナ**：ページの中に局所的にスクロールするコンテナ（window のスクロールではない）がある場合、IntersectionObserver の root はそのコンテナに設定しなければなりません——`isAffixFixed` のビューポート高さの引数もコンテナの clientHeight に変えます。core は区別せず、呼び出し側が一致を保証します。
+- **IntersectionObserver の互換性**：ターゲットとなる端末はすべてサポート済みです；極めて古い環境をサポートする必要がある場合は、scroll イベント + `getBoundingClientRect()` でフォールバックしてください（判定関数は矩形オブジェクトだけを消費するため、そのまま再利用できます）。
+- **affix と sticky の選択**：CSS の `position: sticky` は大部分の「トップ釘付け」のニーズをカバーでき、JS ゼロで実現できます。affix の追加の価値は**しきい値の制御が可能**なこと（端に貼るまで待たず、64px 越えで固定）と**ボトムモード**（sticky はスクロール方向の近い辺にしか貼れない）です。シンプルなシーンでは affix を使わないでください。
+
+<FnPlayground module="affix" fn="isAffixFixed" params='{"rect": {"top": 100, "bottom": 300}, "offsetTop": 80, "offsetBottom": 0, "viewportHeight": 900}' />

@@ -1,0 +1,141 @@
+---
+title: virtual —— 虛擬捲動
+description: 'computeRange / computeWindow 定高虛擬捲動區間，virtual-list 與 table 共用同一份演算法'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+定高虛擬捲動原本在 `virtual-list` 與 `table` 各有一份實作——連預設過掃描量都不一樣（2 與 3），修一個邊界漏另一處。`shared/virtual` 把演算法抽成唯一一份，兩處只做薄封裝。
+
+## 何時使用
+
+- **虛擬列表 / 表格**：資料上千行時只渲染視區內的十幾行。
+- **水平虛擬捲動**：`computeWindow` 是軸無關的，橫向時間軸、橫向捲動的 tabs 條同樣適用。
+- **不該用它**：不定高場景**只有「取偏移」能力**（`getItemOffsetAt`），沒有變高視窗演算法——動態高度的虛擬捲動需要 UI 層維護累積高度表，本模組只提供取偏移這一步。
+
+## 匯入方式
+
+```ts
+import {
+  computeRange,
+  computeWindow,
+  getItemOffsetAt,
+  LH_VIRTUAL_OVERSCAN,
+  type LhVirtualRange,
+} from '@lh-ui/share/core/shared/virtual'
+```
+
+## 類型與常數
+
+```ts
+export interface LhVirtualRange {
+  start: number        // 渲染區間起點下標（含）
+  end: number          // 渲染區間終點下標（不含）
+  offsetY: number      // 起點元素相對容器頂部的偏移（撐高量的負值起點）
+  totalHeight: number  // 全部資料的總高度（撐高容器用）
+}
+
+export interface LhAxisRange {
+  start: number
+  end: number
+  offset: number
+  totalSize: number
+}
+
+export const LH_VIRTUAL_OVERSCAN = 2   // 預設過掃描行數
+```
+
+## 函式表
+
+| 函式 | 簽名 | 作用 |
+| --- | --- | --- |
+| `computeRange` | `(scrollTop, viewportHeight, itemHeight, total, overscan?) => LhVirtualRange` | 縱向定高虛擬區間 |
+| `computeWindow` | `(scrollOffset, viewportSize, itemSize, total, overscan?) => LhAxisRange` | 軸無關定高視窗（橫向用） |
+| `getItemOffsetAt` | `(items: { offset: number }[], index: number) => number` | 動態高度模式取指定項的捲動偏移 |
+
+## 計算邏輯
+
+`computeRange` 的核心是三步：
+
+1. **首項下標**：`first = floor(scrollTop / itemHeight)`，再往前後各擴 `overscan` 行。
+2. **末項下標**：`end = min(total, start + visible + overscan × 2)`，其中 `visible = ceil(viewportHeight / itemHeight)`。
+3. **總高度**：`totalHeight = total × itemHeight`，用於把容器撐到真實高度，讓捲動軸比例正確。
+
+傳回的 `offsetY` 是「渲染起點在總高度裡的位置」，UI 層把它作為內容容器的 `translateY`（或 padding-top）。
+
+## 邊界保護
+
+這個模組的防禦主要針對**資料收縮的那一幀**：使用者正在看第 500 行，資料突然變成 10 條，`scrollTop` 還沒來得及被瀏覽器鉗回去，樸素的演算法會算出 `start = 490 > end`，`slice()` 傳回空陣列 → 白屏。
+
+處理方式：`first` 鉗到 `total - 1`，保證 `start <= end` 永遠成立。同類守衛還有：
+
+| 壞輸入 | 行為 |
+| --- | --- |
+| `itemHeight` 非有限 / ≤ 0 | 傳回全零區間（不渲染，不報錯） |
+| `total` 非有限 / ≤ 0 | 傳回全零區間 |
+| `scrollTop` 非有限 | 回退 0 |
+| `viewportHeight` 非有限 | 回退 0（→ 只渲染 overscan 部分，不白屏） |
+| `overscan` 非有限 | 回退 `LH_VIRTUAL_OVERSCAN` |
+
+## 使用範例
+
+### 純函式
+
+```ts
+computeRange(400, 300, 40, 1000)
+// first = 10, visible = 8, overscan = 2
+// start = 10 - 2 = 8, end = min(1000, 10 + 8 + 4) = 22
+// offsetY = 8 * 40 = 320, totalHeight = 40000
+// → 渲染第 8~21 項，容器 translateY 320px
+```
+
+### Vue3 接線
+
+```vue
+<template>
+  <div class="lh-virtual-list" @scroll="onScroll" :style="{ height: `${viewportHeight}px` }">
+    <div :style="{ height: `${range.totalHeight}px` }">
+      <div :style="{ transform: `translateY(${range.offsetY}px)` }">
+        <LhVirtualItem v-for="i in visibleItems" :key="i.index" :data="i.data" />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+const range = ref<LhVirtualRange>({ start: 0, end: 0, offsetY: 0, totalHeight: 0 })
+
+function onScroll(e: Event) {
+  range.value = computeRange(
+    (e.target as HTMLElement).scrollTop,
+    viewportHeight.value,
+    props.itemHeight,
+    props.data.length,
+  )
+}
+</script>
+```
+
+### 橫向捲動
+
+```ts
+// 同一份演算法，換軸
+const window = computeWindow(scrollLeft, viewportWidth, itemWidth, total)
+```
+
+### 捲動到指定項（動態高度）
+
+```ts
+// UI 層維護累積偏移表 [{ offset: 0 }, { offset: 40 }, ...]
+const offset = getItemOffsetAt(itemOffsets, targetIndex)
+container.scrollTop = offset
+```
+
+## 注意事項
+
+- **定高是前提**：`computeRange` 假設每項高度嚴格相等。若列表項高度可變，UI 層要自己維護高度表，並用 `getItemOffsetAt` 做跳轉——本模組不提供變高視窗演算法。
+- **`getItemOffsetAt` 越界傳回 0**：空列表、下標越界都是 0，不拋錯。
+- **過掃描的取捨**：`LH_VIRTUAL_OVERSCAN = 2` 是「快速捲動時不閃」與「多渲染行數」的平衡點；使用者快速捲動時 `overscan` 區域保證下一幀的內容已經渲染好。可以透過參數覆蓋，但小於 1 會在捲動時閃爍。
+- **`computeWindow` 與 `computeRange` 同源**：前者內部委託後者再重新命名欄位，行為完全一致，縱向場景用哪個都行。
+
+<FnPlayground module="virtual" fn="computeRange" params='{"scrollTop": 400, "viewportHeight": 300, "itemHeight": 40, "total": 1000}' />

@@ -1,0 +1,167 @@
+---
+title: slider —— Curseur
+description: 'snapToStep l’adsorption au pas, getValueFromPosition la conversion en pourcentage, getInitialValue la valeur initiale de l’intervalle, paquet d’attributs sémantiques slider'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Le curseur transforme la sélection d'un nombre en **une opération spatiale** : glisser est plus intuitif que de saisir, et l'on voit immédiatement la position de la valeur dans la plage. `core/slider` gère la conversion bidirectionnelle « valeur ↔ position », l'adsorption au pas, la valeur initiale à deux bornes en mode intervalle (range), ainsi que la sémantique APG slider.
+
+## Quand l'utiliser
+
+- Chaque framework implémente `LhSlider` : volume, plage de prix, réglage d'opacité.
+- Les cas où le domaine de valeurs est continu ou le grain du pas assez grossier.
+- **À ne pas utiliser pour** : la saisie d'une valeur numérique précise (`input-number` ; un curseur ne peut pas exprimer une valeur hors pas comme « 37 »).
+
+## Import
+
+```ts
+import {
+  snapToStep,
+  clampAndSnap,
+  getValueFromPosition,
+  getPositionFromValue,
+  getSliderClassNames,
+  getInitialValue,
+  buildMarksList,
+  getSliderThumbAria,
+} from '@lh-ui/share/core/slider'
+import type { LhSliderState, LhSliderMark } from '@lh-ui/share/core/slider'
+```
+
+## Intentions de conception
+
+`snapToStep` renvoie la **valeur telle quelle** lorsque `step` n'est pas un nombre fini ou est `<= 0`, plutôt que de renvoyer NaN — un `step: 0` produirait NaN lors du modulo ; ici, on considère qu'un « pas illégal » équivaut à « pas d'adsorption », et le bornage pur est laissé à `clampAndSnap`. Séparation des responsabilités : l'adsorption et le bornage sont deux choses indépendantes.
+
+Le renvoi de 0 par `getPositionFromValue` lorsque `max === min` évite la division par zéro : lorsque la plage se réduit à un point, le curseur doit naturellement se trouver au départ.
+
+`getInitialValue` renvoie, en mode intervalle, `[min borné, (min+max)/2 borné]` — le deuxième curseur se place par défaut au **point médian** plutôt qu'à max, par considération visuelle (deux curseurs collés l'un à l'autre donnent l'impression d'un bug).
+
+## Tableau des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `snapToStep` | `(value: number, min: number, step: number) => number` | valeur adsorbée | alignée sur le graduation le plus proche selon step |
+| `clampAndSnap` | `(value: number, min: number, max: number, step: number) => number` | valeur régularisée | adsorption puis bornage |
+| `getValueFromPosition` | `(pct: number, min: number, max: number, step: number) => number` | valeur numérique | pourcentage → valeur |
+| `getPositionFromValue` | `(value: number, min: number, max: number) => number` | pourcentage [0,1] | valeur → position |
+| `getSliderClassNames` | `(state: LhSliderState) => string[]` | classes | disabled / range / size |
+| `getInitialValue` | `(state: LhSliderState) => number \| [number, number]` | valeur initiale | en mode intervalle, renvoie deux bornes |
+| `buildMarksList` | `(marks?: Record<number, string>) => LhSliderMark[]` | tableau des graduations | tri croissant par value |
+| `getSliderThumbAria` | `(options: { value, min, max, vertical?, disabled?, ariaValueText? }) => LhAriaAttrs` | paquet d'attributs aria | sémantique slider |
+
+## Définitions de types
+
+```ts
+export interface LhSliderMark {
+  label: string
+  value: number
+}
+
+export interface LhSliderState {
+  value: number | [number, number] | null
+  min: number
+  max: number
+  step: number
+  disabled: boolean
+  range: boolean              // mode intervalle (deux curseurs)
+  showInput: boolean          // couplage avec input-number
+  size: LhComponentSize
+  marks: Record<number, string> | undefined
+}
+```
+
+## Accessibilité
+
+`getSliderThumbAria` restitue la sémantique APG slider. **En mode intervalle, il faut l'appeler une fois pour chaque curseur** :
+
+```ts
+getSliderThumbAria({ value: 30, min: 0, max: 100 })
+// { role: 'slider', 'aria-valuenow': 30, 'aria-valuemin': 0, 'aria-valuemax': 100 }
+
+getSliderThumbAria({ value: 60, min: 0, max: 100, vertical: true, disabled: true })
+// { role: 'slider', 'aria-valuenow': 60, 'aria-valuemin': 0, 'aria-valuemax': 100,
+//   'aria-orientation': 'vertical', 'aria-disabled': true }
+```
+
+- `vertical` produit `aria-orientation: 'vertical'` (l'horizontale est la direction par défaut, non déclarée).
+- `ariaValueText` produit `aria-valuetext` — à utiliser lorsque la valeur a besoin d'une expression sémantique (par exemple « 30 % » ou « lent »), il est **annoncé en priorité par rapport à valuenow**.
+- Interaction clavier (couche UI) : ←/→ ou ↓/↑ augmentent / diminuent d'un step, Home/End sautent à min/max, PageUp/Down font un grand pas.
+
+## Exemples d'utilisation
+
+```ts
+import { getValueFromPosition, getPositionFromValue, snapToStep } from '@lh-ui/share/core/slider'
+
+getValueFromPosition(0.5, 0, 100, 1)   // 50
+getValueFromPosition(0.333, 0, 100, 5) // 35 (adsorbé à un multiple de 5)
+getPositionFromValue(30, 0, 100)       // 0.3
+getPositionFromValue(150, 0, 100)      // 1 (bornage)
+getPositionFromValue(50, 50, 50)       // 0 (max===min évite la division par zéro)
+snapToStep(7, 0, 5)                    // 5
+snapToStep(8, 0, 5)                    // 10
+snapToStep(7, 0, 0)                    // 7 (step illégal, pas d'adsorption)
+buildMarksList({ 0: 'Bas', 100: 'Haut' })  // [{ label: 'Bas', value: 0 }, { label: 'Haut', value: 100 }]
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSliderClassNames({ value, min, max, step, disabled, range, showInput, size, marks })">
+  <div class="lh-slider__track">
+    <div class="lh-slider__bar" :style="{ width: pct + '%' }" />
+    <div
+      class="lh-slider__button-wrapper"
+      :style="{ left: pct + '%' }"
+      v-bind="getSliderThumbAria({ value, min, max, disabled })"
+      @pointerdown="startDrag"
+    >
+      <div class="lh-slider__button" />
+    </div>
+    <template v-if="marks">
+      <div v-for="mark in buildMarksList(marks)" :key="mark.value" class="lh-slider__marks">
+        <span class="lh-slider__mark" :style="{ left: getPositionFromValue(mark.value, min, max) * 100 + '%' }">
+          {{ mark.label }}
+        </span>
+      </div>
+    </template>
+  </div>
+</div>
+```
+
+```tsx
+// React : le glissement utilise les pointer events + getBoundingClientRect pour le pourcentage
+// const pct = (clientX - rect.left) / rect.width
+// onChange(getValueFromPosition(pct, min, max, step))
+```
+
+```ts
+// uniapp : <slider> est un composant natif (curseur unique), supporte min/max/step/show-value ;
+// le mode intervalle et les graduations (marks) nécessitent une implémentation personnalisée
+// en view, le glissement se fait par @touchmove
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-slider` | classe de base |
+| `.lh-slider--{small\|large}` | tailles (dimension du curseur) |
+| `.lh-slider--disabled` | désactivé |
+| `.lh-slider--range` | mode intervalle (deux curseurs + segment central en surbrillance) |
+| `.lh-slider__track` | piste |
+| `.lh-slider__bar` | plage sélectionnée (segment en surbrillance) |
+| `.lh-slider__button-wrapper` / `__button` | curseur |
+| `.lh-slider__marks` / `__mark` | graduations |
+| `.lh-slider__input` / `__input-text` | champ de saisie couplé |
+
+La piste est colorée par `--lh-fill-color`, le segment sélectionné par `--lh-primary-color`.
+
+## Remarques
+
+- **`getPositionFromValue` renvoie un nombre décimal de [0,1]** : c'est la couche UI qui concatène le `%` ; ne pas croire qu'il renvoie un pourcentage.
+- **L'alignement de l'adsorption et des graduations** : la value de `marks` doit être un multiple de step, sinon la graduation tombe entre deux valeurs adsorbables et l'utilisateur ne peut pas l'atteindre en glissant.
+- **Le croisement en mode intervalle** : les deux curseurs peuvent se traverser mutuellement (la couche UI l'interdit habituellement, ou les échange automatiquement), le `clampAndSnap` de core ne gère pas cette sémantique.
+- **Le mode vertical** : en `vertical`, la hauteur de la piste remplace la largeur, le dénominateur de la conversion doit être adapté ; le `getValueFromPosition` de core est indépendant de l'axe (il prend un pourcentage), c'est la couche UI qui calcule pct.
+- **Le couplage de `showInput`** : les min/max/step du `input-number` doivent être identiques à ceux du slider, sous peine d'une incohérence des domaines de valeurs entre les deux.
+
+<FnPlayground module="slider" fn="getValueFromPosition" params='{"pct": 0.35, "min": 0, "max": 100, "step": 5}' />

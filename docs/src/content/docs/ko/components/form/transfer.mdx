@@ -1,0 +1,180 @@
+---
+title: transfer —— 트랜스퍼
+description: 'partitionTransferData 불변 분할, moveTransferKeys 유령 키 정리, getTransferCheckAllState 삼태, sourceKeys 단일 데이터 소스'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+트랜스퍼가 해결하는 것은 **양방향의 다중 선택 이동**입니다: 왼쪽 열은 "선택 대기", 오른쪽 열은 "선택됨"이고, 가운데 두 개의 화살표 버튼이 양쪽으로 옮깁니다. checkbox 그룹보다 많은 옵션에 적합하고 (페이지 매김 + 검색), 여러 개의 select보다 직관적입니다 (양쪽이 모두 보임). `core/transfer`는 **단일 데이터 소스 `sourceKeys`**로 모델링합니다——왼쪽 열은 "sourceKeys에 없는 항목", 오른쪽 열은 "sourceKeys에 있는 항목"이며, 모든 조작은 이 배열을 변환하는 것일 뿐입니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhTransfer`: 권한 할당, 역할 멤버 선택, 태그 필터링, 데이터 필드 선택.
+- 옵션이 많고 (>10), 검색 필터링이 필요하며, "선택됨/선택되지 않음" 양쪽을 동시에 봐야 하는 상황.
+- **사용하면 안 되는 경우**: 옵션이 6개 미만 (checkbox 그룹 또는 segmented가 공간을 더 아낌); 단방향 선택으로 "다시 옮겨올" 필요가 없음 (select가 더 적합).
+
+## 임포트 방법
+
+```ts
+import {
+  partitionTransferData,
+  toggleTransferChecked,
+  toggleTransferCheckAll,
+  moveTransferKeys,
+  getTransferCheckAllState,
+  filterTransferItems,
+  getTransferClassNames,
+  getTransferPanelClassNames,
+} from '@lh-ui/share/core/transfer'
+import type { LhTransferItem, LhTransferSide } from '@lh-ui/share/core/transfer'
+```
+
+## 설계 의도
+
+**`sourceKeys` 단일 데이터 소스**: 컴포넌트의 "값"은 오른쪽 열의 key 배열입니다. 왼쪽 열은 별도로 상태를 저장하지 않습니다——`partitionTransferData(data, sourceKeys)`가 매번 전체 데이터에서 잘라냅니다. 이것이 "왼쪽 열과 오른쪽 열 상태가 동기화되지 않는" 고전적인 버그를 피합니다: 어떤 이동이든 단 하나의 배열만 바꾸면 양쪽 뷰가 자동으로 재계산됩니다.
+
+**`moveTransferKeys`의 유령 키 정리**: `checked`에는 `data`에 없는 키가 나타날 수 있습니다 (데이터 새로고침 후 남은 예전 선택, **유령 키**라고 부름). 그것들은 옮길 수도 없고, 원래 영역에 남아 다음 프레임을 오염시켜서도 안 됩니다——그래서 함수는 이동 후 **원래 영역의 유령 키도 함께 걸러냅니다**. 주석에 이 결정의 두 가지 고려가 적혀 있습니다.
+
+**`toggleTransferCheckAll`은 비활성화 항목을 건너뜀**: 모두 선택은 "선택 가능한" (`!disabled`) 항목만 고르고, 모두 해제도 그것들만 지웁니다——비활성화 항목의 선택 상태는 그대로 두며, 이는 "비활성화 = 조작 불가"의 직관에 맞습니다.
+
+**`getTransferCheckAllState`의 삼태**: `all` / `some` / `none`이 모두 선택 checkbox의 `indeterminate` 상태를 구동합니다——이것은 모두 선택 상자의 표준 상호작용입니다 (일부 선택됨을 가로줄로 표시).
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `partitionTransferData` | `(data, sourceKeys) => { left, right }` | 양쪽 목록 | keySet으로 분할 |
+| `toggleTransferChecked` | `(checked, key) => Array` | 새 선택 배열 | hit하면 제거, 그 외에는 추가 |
+| `toggleTransferCheckAll` | `(checked, sideItems) => Array` | 새 선택 배열 | 모두 선택/모두 해제 (비활성화 건너뜀) |
+| `moveTransferKeys` | `(sourceKeys, data, checked, direction) => Array` | 새 sourceKeys | 이동하며 유령 키 정리 |
+| `getTransferCheckAllState` | `(checked, sideItems) => 'all' \| 'some' \| 'none'` | 삼태 | indeterminate 구동 |
+| `filterTransferItems` | `(items, query) => LhTransferItem[]` | 필터링 목록 | 대소문자 무구분 |
+| `getTransferClassNames` | `(state: { disabled }) => string[]` | 클래스명 | 비활성화 |
+| `getTransferPanelClassNames` | `(side) => string[]` | 클래스명 | 패널 쪽별 |
+
+## 타입 정의
+
+```ts
+export interface LhTransferItem {
+  key: string | number
+  label?: string       // 런타임 계약은 누락을 허용 (UI 계층은 key로 폴백하여 표시)
+  disabled?: boolean   // 비활성화 (이동 불가, 모두 선택에도 참여하지 않음)
+}
+
+export type LhTransferSide = 'left' | 'right'
+```
+
+## 접근성
+
+트랜스퍼의 접근성 구조는 UI 계층이 조립하며, core는 속성 팩 함수를 제공하지 않습니다 (플로팅 레이어나 복잡한 의미가 없음): 두 패널은 각각 `role="listbox"`, 목록 항목은 `role="option"` + `aria-selected`; 가운데 이동 버튼은 보통 `<button>`이며 `aria-label`로 방향을 설명합니다 (예: "오른쪽으로 3개 이동"); 모두 선택 상자는 checkbox 의미를 사용하고, `indeterminate` 상태는 `getTransferCheckAllState`의 `some`으로 DOM 속성을 발동합니다.
+
+키보드 관례: 목록 항목에 포커스를 둔 뒤 Space로 선택, ↑/↓로 이동; 이동 버튼에 포커스를 둔 뒤 Enter로 실행.
+
+## 사용 예시
+
+```ts
+import {
+  partitionTransferData, moveTransferKeys, getTransferCheckAllState, filterTransferItems,
+} from '@lh-ui/share/core/transfer'
+
+const data = [
+  { key: 'a', label: '사과' },
+  { key: 'b', label: '바나나', disabled: true },
+  { key: 'c', label: '체리' },
+]
+
+partitionTransferData(data, ['c'])
+// { left: [사과, 바나나], right: [체리] }
+
+moveTransferKeys(['c'], data, ['a', 'b'], 'left-to-right')
+// ['c', 'a']  —— b는 비활성화로 이동하지 않음; a는 왼쪽에서 오른쪽으로 이동
+
+moveTransferKeys(['c'], data, ['a', 'ghost'], 'left-to-right')
+// ['c', 'a']  —— 유령 키 'ghost'는 버려지고 결과에 남지 않음
+
+getTransferCheckAllState(['a'], [{ key: 'a' }, { key: 'b', disabled: true }, { key: 'c' }])
+// 'some' (선택 가능 항목은 a와 c, a만 선택 → 일부; b는 비활성화로 계산에서 제외)
+
+filterTransferItems(data, '바나')   // [{ key: 'b', label: '바나나' }]
+filterTransferItems(data, '')     // 원래 배열 (빈 query는 필터링하지 않음)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTransferClassNames({ disabled })">
+  <transfer-panel
+    side="left"
+    :items="partition.left"
+    :checked="leftChecked"
+    @toggle="onToggle"
+    @check-all="onCheckAll"
+  />
+  <div class="lh-transfer__buttons">
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="leftChecked.length === 0"
+      :aria-label="`오른쪽으로 ${leftChecked.length}개 이동`"
+      @click="move('left-to-right')"
+    >→</button>
+    <button
+      type="button"
+      class="lh-transfer__button"
+      :disabled="rightChecked.length === 0"
+      :aria-label="`왼쪽으로 ${rightChecked.length}개 이동`"
+      @click="move('right-to-left')"
+    >←</button>
+  </div>
+  <transfer-panel side="right" :items="partition.right" :checked="rightChecked" />
+</div>
+```
+
+```ts
+// 상태 배선 (computed로 분할, checked는 로컬 선택 상태)
+const partition = computed(() => partitionTransferData(props.data, props.modelValue))
+const leftChecked = computed(() => state.checked.filter((k) => !props.modelValue.includes(k)))
+const rightChecked = computed(() => state.checked.filter((k) => props.modelValue.includes(k)))
+
+function move(direction) {
+  const checked = direction === 'left-to-right' ? leftChecked.value : rightChecked.value
+  emit('update:modelValue', moveTransferKeys(props.modelValue, props.data, checked, direction))
+  state.checked = state.checked.filter((k) => !checked.includes(k))  // 옮겨간 선택 제거
+}
+```
+
+```tsx
+// React: sourceKeys가 제어값; 선택 상태는 로컬 useState이며 이동 후 해당 선택을 비움
+```
+
+```ts
+// uniapp: <view> 두 열 + <scroll-view> 스크롤; 검색창 필터링은 filterTransferItems 사용
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-transfer` | 기본 클래스 (flex 가로 레이아웃) |
+| `.lh-transfer--disabled` | 비활성 |
+| `.lh-transfer-panel` | 단일 쪽 패널 |
+| `.lh-transfer-panel--left` / `--right` | 쪽별 |
+| `.lh-transfer-panel__header` | 패널 머리 (모두 선택 상자 + 카운트) |
+| `.lh-transfer-panel__search` | 검색창 |
+| `.lh-transfer-panel__body` | 목록 영역 |
+| `.lh-transfer-panel__item` | 목록 항목 |
+| `.lh-transfer-panel__item--disabled` | 비활성 항목 |
+| `.lh-transfer-panel__footer` | 빈 상태/카운트 꼬리 |
+| `.lh-transfer__buttons` / `__button` | 가운데 버튼 그룹 |
+
+패널 머리의 checkbox `indeterminate` 상태는 `getTransferCheckAllState`가 구동합니다.
+
+## 주의사항
+
+- **`checked`와 `sourceKeys`는 두 개의 독립적인 상태**: `checked`는 "현재 무엇을 선택했는가" (양쪽에 걸칠 수 있음)이고, `sourceKeys`는 "오른쪽 열에 무엇이 있는가" (컴포넌트 값)입니다. 이동 후 옮겨간 key를 `checked`에서 수동으로 제거해야 하며, 그렇지 않으면 선택 상태에 남게 됩니다 (`moveTransferKeys`가 checked를 대신 고쳐주지 않습니다).
+- **유령 키의 출처**: 데이터를 비동기로 불러올 때 사용자가 몇 항목을 먼저 선택한 뒤 데이터가 새로고침되어 일부 key가 사라지는 경우——이 key들이 `checked`에 남으면 유령 키입니다. `moveTransferKeys`가 그것들을 정리하지만, `toggleTransferCheckAll`의 모두 선택 카운트 (`getTransferCheckAllState`)도 영향을 받을 수 있으므로, UI 계층이 선택 상태를 렌더링할 때 `byKey.has(key)`로 한 번 더 걸르는 것이 더 안정적입니다.
+- **비활성화 항목의 경계**: `disabled: true`인 항목은 **옮길 수 없고, 모두 선택에 참여하지 않으며, 모두 해제에서 지워지지도 않습니다**——기존 선택 상태를 유지합니다. 비즈니스에서 "비활성화 항목은 강제로 선택 해제"가 필요하다면 데이터 계층에서 처리하고, core에 의존하지 마세요.
+- **`label`의 누락 허용**: 타입에서 `label?`는 선택이며, UI 계층은 `key`로 폴백하여 표시해야 합니다 (`item.label ?? item.key`).
+- **대량 데이터의 성능**: `partitionTransferData`는 매번 data를 완전히 순회하고; `filterTransferItems`는 query가 변할 때 실행됩니다. 데이터가 수천 건일 때 가상 스크롤을 고려하세요 (`core/shared/virtual`), core의 분할 함수 자체는 O(n)으로 병목이 아닙니다.
+- **검색과 분할의 겹침 순서**: 먼저 `partitionTransferData`를 하고 각 쪽에 `filterTransferItems`를 하세요——순서가 반대면 검색창이 분할되지 않은 전체 데이터를 필터링하게 됩니다.
+
+<FnPlayground module="transfer" fn="moveTransferKeys" params='{"sourceKeys": ["c"], "data": [{"key": "a", "label": "사과"}, {"key": "b", "label": "바나나", "disabled": true}, {"key": "c", "label": "체리"}], "checked": ["a", "b"], "direction": "left-to-right"}' />

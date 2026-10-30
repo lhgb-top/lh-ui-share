@@ -1,0 +1,120 @@
+---
+title: tag —— 태그
+description: 'getTagClassNames가 유형/크기/둥근 모서리/닫기 가능/비활성/테두리 수정자 클래스를 계산'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+태그는 표시, 분류, 선택에 쓰입니다. `core/tag`는 한 가지 일만 합니다: 태그의 상태를 클래스명 배열로 계산하는 것. 버튼보다 더 단순합니다. 상호작용 판정도 없고 크기 폴백도 없으며, 모든 시각 변형이 클래스명에 직접 떨어집니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhTag`를 구현할 때: 클래스명은 모두 `getTagClassNames`가 산출합니다.
+- 태그의 시각을 재사용하되 컴포넌트는 도입하고 싶지 않은 경우(표 셀 안의 상태 표시 등)에, core 함수와 `styles/tag`의 클래스명을 직접 가져올 수 있습니다.
+- **사용하면 안 되는 곳**: `sx` 미세 조정이나 커스텀 색이 필요한 경우. 태그의 색은 의미 토큰이며, 커스터마이징하려면 core를 고치지 말고 ConfigProvider의 componentTheme을 사용하세요.
+
+## 가져오기
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+import type { LhTagState, LhTagType } from '@lh-ui/share/core/tag'
+```
+
+## 설계 의도
+
+태그의 상태는 모두 '시작 스위치'이며 계산 로직이 전혀 없습니다. `getTagClassNames`의 원칙은 **참일 때만 추가**하는 것입니다: `type`과 `size`가 거짓 값이면 수정자 클래스조차 산출하지 않고, `closable` / `disabled` / `round` / `hit`는 각자 독립적으로 판정합니다. 이로써 클래스명 배열은 항상 '최소 충분 집합'이 되며, `lh-tag--undefined` 같은 더러운 클래스가 나오지 않습니다.
+
+`hit`(테두리)는 태그가 버튼 대비 독자적으로 가진 의미입니다: 태그는 흔히 '가벼운 존재감'이 필요하고, 채우기보다 테두리가 더 어울립니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getTagClassNames` | `(state: LhTagState) => string[]` | 클래스명 배열 | 태그의 모든 클래스명 계산 |
+
+출력 예:
+
+```ts
+getTagClassNames({ type: 'success', size: 'small', closable: true, disabled: false, round: false, hit: true })
+// ['lh-tag', 'lh-tag--success', 'lh-tag--small', 'lh-tag--closable', 'lh-tag--hit']
+```
+
+## 타입 정의
+
+```ts
+export type LhTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhTagState {
+  type: LhTagType
+  size: LhComponentSize        // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  closable: boolean            // 닫기 가능(× 버튼 렌더링)
+  disabled: boolean            // 비활성(닫기 버튼도 반응하지 않음)
+  round: boolean               // 둥근 모서리
+  hit: boolean                 // 채우기 대신 테두리
+}
+```
+
+## 접근성
+
+`core/tag`는 aria 속성 묶음을 출력하지 않습니다: 태그는 순수 표시 요소이며, 기본적으로 글자 콘텐츠를 스크린 리더에게 그대로 보여주면 됩니다. **닫기 버튼**은 네이티브 `<button>`(또는 각 단말의 동등 요소)으로 담고 `aria-label`(예: '제거')을 주어야 하며, 이것은 UI 계층의 책임입니다.
+
+간과하기 쉬운 점: 태그를 거름 조건으로 쓸 때(`LhSelect`의 다중 선택 tag 등) 상호작용 의미가 생기므로, 이때 클릭 가능 영역 전체에 `role="button"`을 주어야 합니다. 이것은 각 단말의 UI 계층이 처리하고 core는 관여하지 않습니다.
+
+## 사용 예
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+
+getTagClassNames({ type: 'primary', size: 'medium', closable: false, disabled: false, round: false, hit: false })
+// ['lh-tag', 'lh-tag--primary', 'lh-tag--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getTagClassNames({ type, size, closable, disabled, round, hit })">
+  <slot />
+  <button v-if="closable" class="lh-tag__close" aria-label="닫기" @click="!disabled && emit('close')">
+    <LhIcon name="close" :size="12" />
+  </button>
+</span>
+```
+
+```tsx
+// React
+const cls = getTagClassNames({ type, size, closable, disabled, round, hit })
+return (
+  <span className={cls.join(' ')}>
+    {children}
+    {closable && <CloseButton disabled={disabled} />}
+  </span>
+)
+```
+
+```ts
+// uniapp: 클래스명 동일; close 버튼은 view + @tap 사용, aria-label은 단말별 지원이 다르며,
+// 읽지 못하는 경우 스크린 리더 의미 렌더링을 생략하도록 저하할 수 있습니다(h5가 아닌 단말의 스크린 리더 능력은 애초에 제한적)
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-tag` | 기본 클래스: inline-flex, 안쪽 여백, 글자 크기, 둥근 모서리 |
+| `.lh-tag--{primary\|success\|warning\|danger\|info\|default}` | 의미 유형(배경색 + 글자색) |
+| `.lh-tag--{mini\|small\|medium\|large\|x-large}` | 크기 단계 |
+| `.lh-tag--round` | 크게 둥근 모서리(캡슐 형태) |
+| `.lh-tag--hit` | 테두리 스타일 |
+| `.lh-tag--closable` | 닫기 버튼 오른쪽 간격 확보 |
+| `.lh-tag--disabled` | 비활성 상태: 투명도 낮춤 + 금지 커서 |
+| `.lh-tag__text` | 글자 노드(넘침 생략) |
+| `.lh-tag__close` | 닫기 버튼 |
+
+색은 모두 `var(--lh-*)`이며, 다크 모드는 `var-dark.scss`가 뒤집습니다.
+
+## 주의사항
+
+- `type`과 `size`가 거짓 값일 때 **수정자 클래스를 산출하지 않습니다**(default로 폴백하지 않음). UI 계층이 `lh-tag--default`의 존재에 의존한다면 명시적으로 `type: 'default'`을 넘겨야 합니다.
+- 닫기 버튼의 비활성 판정은 UI 계층에 있습니다(`disabled`가 click을 막음), core의 `--disabled`는 시각만 담당합니다.
+- `round`와 `hit`는 공존하여 '테두리 캡슐'을 얻을 수 있습니다.
+
+<FnPlayground module="tag" fn="getTagClassNames" params='{"state": {"type": "warning", "size": "small", "closable": true, "disabled": false, "round": true, "hit": false}}' />

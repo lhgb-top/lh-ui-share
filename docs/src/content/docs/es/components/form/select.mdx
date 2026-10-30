@@ -1,0 +1,155 @@
+---
+title: select —— Selector desplegable
+description: 'coincidencia exacta con findSelectOption, ids deterministas con getSelectOptionId, tres capas de bolsas de atributos de accesibilidad: combobox/listbox/option'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El selector desplegable es la implementación más simple del patrón «disparador + lista flotante». `core/select` gestiona la búsqueda de opciones, la generación determinista de ids de opción y las tres capas de bolsas de atributos de accesibilidad del patrón combobox de APG. **El cálculo del posicionamiento no está aquí** — las coordenadas de la capa flotante las calcula `core/shared/popper` (véase [popper](/es/core/popper)).
+
+## Cuándo usarlo
+
+- Cada framework implementa `LhSelect`.
+- Escenarios de selección única; para selección múltiple, usa la cascada o un grupo de checkboxes.
+- **No usarlo para**: opciones con jerarquía de árbol (usa `cascader`); varios cientos de opciones (valora la virtualización con `virtual-list`).
+
+## Importación
+
+```ts
+import {
+  findSelectOption,
+  getNextEnabledIndex,
+  getSelectOptionId,
+  getSelectTriggerAria,
+  getSelectListboxAria,
+  getSelectOptionAria,
+} from '@lh-ui/share/core/select'
+import type { LhSelectOption, LhSelectState } from '@lh-ui/share/core/select'
+```
+
+## Intención de diseño
+
+El carácter «determinista» de `getSelectOptionId(listboxId, index)` es la condición previa para que el patrón combobox de APG funcione: el disparador referencia el elemento resaltado actual mediante `aria-activedescendant` y ambos deben apuntar **al mismo id del DOM**. En lugar de dejar que la capa UI genere ids sobre la marcha y luego busque cómo sincronizarlos, la capa core fija la regla `${listboxId}-option-${index}` y ambos extremos toman el valor según ella.
+
+Su guardia es igualmente importante: si `listboxId` está vacío, si index no es un número entero o si `index < 0` (-1 significa que no hay resaltado), devuelve **undefined** — las propiedades undefined las ignora el v-bind del marco, de modo que no se produce un `aria-activedescendant` que apunte a un elemento inexistente.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `findSelectOption` | `(options: LhSelectOption[], value: unknown) => LhSelectOption \| undefined` | opción | coincidencia exacta de value con `Object.is` |
+| `getNextEnabledIndex` | `(options: LhSelectOption[], currentIndex: number, direction: 1 \| -1) => number` | índice | **@deprecated**, delega en `shared/keyboard.getNextListIndex` |
+| `getSelectOptionId` | `(listboxId: string \| undefined, index: number) => string \| undefined` | id | concatenación determinista; ante Entradas no válidas devuelve undefined |
+| `getSelectTriggerAria` | `(options: { visible: boolean; listboxId?: string; highlightedIndex: number }) => LhAriaAttrs` | bolsa de atributos aria | disparador combobox |
+| `getSelectListboxAria` | `(id?: string) => LhAriaAttrs` | bolsa de atributos aria | contenedor listbox |
+| `getSelectOptionAria` | `(options: { listboxId?: string; index: number; selected: boolean; disabled?: boolean }) => LhAriaAttrs` | bolsa de atributos aria | una sola opción |
+
+## Definiciones de tipos
+
+```ts
+export interface LhSelectOption {
+  label: string
+  value: unknown
+  disabled?: boolean
+}
+
+export interface LhSelectState {
+  options: LhSelectOption[]
+  highlightedIndex: number
+}
+```
+
+## Accesibilidad
+
+Las tres capas de bolsas de atributos constituyen el patrón combobox completo:
+
+```ts
+// Disparador: aria-haspopup="listbox" + aria-expanded + aria-controls
+getSelectTriggerAria({ visible: true, listboxId: 'my-listbox', highlightedIndex: 2 })
+// { role: 'combobox', 'aria-expanded': true, 'aria-controls': 'my-listbox',
+//   'aria-haspopup': 'listbox', 'aria-activedescendant': 'my-listbox-option-2' }
+
+// Capa flotante: role="listbox" + id (correspondiente con el aria-controls del disparador)
+getSelectListboxAria('my-listbox')  // { role: 'listbox', id: 'my-listbox' }
+
+// Opción: role="option" + id + aria-selected
+getSelectOptionAria({ listboxId: 'my-listbox', index: 2, selected: true })
+// { role: 'option', id: 'my-listbox-option-2', 'aria-selected': true }
+```
+
+El circuito completo de la interacción de teclado (lo implementa la capa UI; core aporta el algoritmo): ArrowDown/Up mueve `highlightedIndex` (con `shared/keyboard.getNextListIndex`, circulando entre el principio y el final y saltándose los disabled), Enter selecciona y Esc cierra. **El resaltado visual debe compartir origen con `highlightedIndex`**, o se dará la situación de «aria apunta a A y los ojos ven B».
+
+## Ejemplos de uso
+
+```ts
+import { findSelectOption, getSelectOptionId, getSelectTriggerAria } from '@lh-ui/share/core/select'
+
+const options = [
+  { label: '青花瓷', value: 'cerblue' },
+  { label: '水墨', value: 'shuimo', disabled: true },
+]
+findSelectOption(options, 'cerblue')   // { label: '青花瓷', value: 'cerblue' }
+findSelectOption(options, 'nope')      // undefined
+getSelectOptionId('lb', 0)             // 'lb-option-0'
+getSelectOptionId('lb', -1)            // undefined (sin resaltado)
+getSelectOptionId(undefined, 0)        // undefined
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="['lh-select', `lh-select--${size}`, { 'lh-select--open': visible, 'lh-select--disabled': disabled }]">
+  <button
+    class="lh-select__trigger"
+    v-bind="getSelectTriggerAria({ visible, listboxId, highlightedIndex })"
+    @click="toggle"
+  >
+    <span class="lh-select__value" :class="{ 'lh-select__value--placeholder': !selected }">
+      {{ selected ? selected.label : placeholder }}
+    </span>
+    <LhIcon class="lh-select__arrow" name="more" :size="12" />
+  </button>
+  <div v-if="visible" :id="listboxId" class="lh-select__dropdown" v-bind="getSelectListboxAria(listboxId)">
+    <div
+      v-for="(opt, i) in options"
+      :key="i"
+      class="lh-select__option"
+      :class="{ 'lh-select__option--highlighted': i === highlightedIndex, 'lh-select__option--selected': i === selectedIdx, 'lh-select__option--disabled': opt.disabled }"
+      v-bind="getSelectOptionAria({ listboxId, index: i, selected: i === selectedIdx, disabled: opt.disabled })"
+      @click="choose(opt)"
+    >{{ opt.label }}</div>
+  </div>
+</div>
+```
+
+```tsx
+// React: estado visible + useRef para mantener listboxId (se genera un id estable con useId)
+```
+
+```ts
+// uniapp: la capa flotante es un view con posicionamiento absoluto; aria-activedescendant
+// no se soporta fuera de h5 y la navegación por teclado degrada a solo mover el foco
+// (el elemento enfocado); el lector de pantalla se apoya en el evento focus para anunciar
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-select` | clase base |
+| `.lh-select--{small\|large}` / `--disabled` / `--open` | modificadores de estado |
+| `.lh-select__trigger` | botón del disparador |
+| `.lh-select__value` / `--placeholder` | valor mostrado / estado del marcador de posición |
+| `.lh-select__arrow` / `__clear` / `__actions` | flecha / limpiar / zona de acciones |
+| `.lh-select__dropdown` / `--teleported` | capa flotante (teleported indica que se ha trasladado a body) |
+| `.lh-select__option` / `--highlighted` / `--selected` / `--disabled` | cuatro estados de la opción |
+| `.lh-select__empty` | marcador de posición cuando no hay opciones |
+| `.lh-select-fade-*` | transición de entrada y salida de la capa flotante (clases de Vue3; el extremo Vue2 se alinea con un mixin) |
+
+## Advertencias
+
+- **`Object.is` en lugar de `===`**: `findSelectOption` usa `Object.is` y maneja correctamente los casos límite de `NaN` y `-0` (aunque rara vez aparecen en valores de opciones reales).
+- **`getNextEnabledIndex` está obsoleto**: la implementación se ha consolidado en `shared/keyboard.getNextListIndex`; esta función solo delega y conserva la firma antigua. El código nuevo debe importar directamente el núcleo.
+- **Estabilidad del id**: `listboxId` no puede cambiar durante el ciclo de vida del componente (si no, `aria-activedescendant` apuntaría a un id antiguo); usa el generador de ids estables de cada marco.
+- **El portal (teleport)**: cuando la capa flotante se traslada a body, `aria-controls` sigue siendo válido (dentro del mismo documento), pero **la gestión del foco** requiere cuidado — tras pulsar una opción, el foco debería volver al disparador.
+
+<FnPlayground module="select" fn="findSelectOption" params='{"options": [{"label": "青花瓷", "value": "cerblue"}, {"label": "水墨", "value": "shuimo"}], "value": "cerblue"}' />

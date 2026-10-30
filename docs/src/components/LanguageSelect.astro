@@ -1,0 +1,103 @@
+---
+/**
+ * 语言切换器覆盖（Starlight `components: { LanguageSelect }` 机制）
+ *
+ * 复制自 @astrojs/starlight 0.42.6 的 dist/components/LanguageSelect.astro，
+ * 唯一改动：change 处理器把 `window.location.pathname = value` 换成
+ * `window.location.replace(value)`——原写法每切一种语言就 push 一条历史记录，
+ * 同一页面试 N 种语言就要 back N 次；replace 不留历史条目，back 直达切换前的页面
+ * （2026-10-15）。
+ *
+ * 【维护提示】升级 @astrojs/starlight 后请对照 dist/components/LanguageSelect.astro
+ * 重新同步本文件（除 change 处理器外应原样一致）。内联的 localizedUrl 等价实现
+ * 同步自 dist/utils/localizedUrl.js 0.42.6。
+ */
+import context from 'virtual:starlight/project-context'
+import config from 'virtual:starlight/user-config'
+import Select from '@astrojs/starlight/components/Select.astro'
+
+/** stripTrailingSlash 等价实现（dist/utils/path.js 0.42.6） */
+function stripTrailingSlash(path: string): string {
+  return path.endsWith('/') ? path.slice(0, -1) : path
+}
+
+/**
+ * 取当前页路径在目标 locale 下的等价路径（dist/utils/localizedUrl.js 0.42.6 的等价实现）。
+ * Starlight 未公开导出该工具，只能内联。
+ */
+function localizedUrl(url: URL | string, locale: string | undefined): URL {
+  const target = new URL(url, Astro.url)
+  if (!config.locales) return target
+  if (locale === 'root') locale = ''
+  const base = stripTrailingSlash(import.meta.env.BASE_URL)
+  const hasBase = target.pathname.startsWith(base)
+  if (hasBase) target.pathname = target.pathname.replace(base, '')
+  const [_leadingSlash, baseSegment] = target.pathname.split('/')
+  const isRootHtml = baseSegment?.endsWith('.html')
+  const baseSlug = isRootHtml ? baseSegment?.slice(0, -5) : baseSegment
+  if (baseSlug && baseSlug in config.locales) {
+    if (locale) target.pathname = target.pathname.replace(baseSlug, locale)
+    else if (isRootHtml) target.pathname = '/index.html'
+    else target.pathname = target.pathname.replace('/' + baseSlug, '')
+  } else if (locale) {
+    if (baseSegment === 'index.html') target.pathname = '/' + locale + '.html'
+    else target.pathname = '/' + locale + target.pathname
+  }
+  if (hasBase) target.pathname = base + target.pathname
+  if (context.trailingSlash === 'never') target.pathname = stripTrailingSlash(target.pathname)
+  return target
+}
+
+/**
+ * Get the equivalent of the current page path for the passed locale.
+ */
+function localizedPathname(locale: string | undefined): string {
+  return localizedUrl(Astro.url, locale).pathname
+}
+
+---
+{
+	config.isMultilingual && (
+		<starlight-lang-select>
+			<Select
+				icon="translate"
+				label={Astro.locals.t('languageSelect.accessibleLabel')}
+				options={Object.entries(config.locales).map(([code, locale]) => ({
+					value: localizedPathname(code),
+					selected: code === Astro.locals.starlightRoute.locale,
+					label: locale!.label,
+				}))}
+				width="7em"
+			/>
+		</starlight-lang-select>
+	)
+}
+
+<script>
+	class StarlightLanguageSelect extends HTMLElement {
+		constructor() {
+			super();
+			const select = this.querySelector('select');
+			if (select) {
+				select.addEventListener('change', (e) => {
+					if (e.currentTarget instanceof HTMLSelectElement) {
+						// 语言切换不入历史栈：用 replace 载入目标语言页面（2026-10-15），
+						// 原实现为 `window.location.pathname = ...`（push 一条历史）
+						window.location.replace(e.currentTarget.value);
+					}
+				});
+				window.addEventListener('pageshow', (event) => {
+					if (!event.persisted) return;
+					// If the page was loaded from a cache, the language select selected index might not be
+					// in sync with the current page.
+					const markupSelectedIndex =
+						select.querySelector<HTMLOptionElement>('option[selected]')?.index;
+					if (markupSelectedIndex !== select.selectedIndex) {
+						select.selectedIndex = markupSelectedIndex ?? 0;
+					}
+				});
+			}
+		}
+	}
+	customElements.define('starlight-lang-select', StarlightLanguageSelect);
+</script>

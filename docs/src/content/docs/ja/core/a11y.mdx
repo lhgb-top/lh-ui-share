@@ -1,0 +1,200 @@
+---
+title: a11y —— aria 属性ビルダー
+description: '統一された aria 原子ビルダーと「偽値は省略」のセマンティクス。ポップアップ層のトリガーと装飾要素の属性パックがすぐ使える'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+aria 属性の綴りと値は面倒な作業です：`aria-haspopup` か `ariaHaspopup` か？ `'true'` か
+`true` か？ 偽値はレンダリングすべきか？ 各コンポーネントがそれぞれ組み立てれば、綴りを
+間違えるか、値が空のときに省略し忘れます（スクリーンリーダーに
+`aria-controls="undefined"` が大量に現れます）。`shared/a11y` は一連の純関数で規約を
+固定します。
+
+## 中核の規約：偽値は省略
+
+すべての真偽型 aria ビルダーは同じルールに従います：
+
+| 属性 | 偽値の挙動 | 理由 |
+| --- | --- | --- |
+| `aria-required: false` | `{}` を返し、レンダリングしない | スクリーンリーダーにとって「必須でない」の明示的宣言はノイズ |
+| `aria-haspopup: false` | `{}` を返し、レンダリングしない | 同上 |
+| `aria-current: false` | 出現しない | ビルダーの型がそもそも `false` を受け取らない（多くのスクリーンリーダーが無視する） |
+| `aria-controls` / `aria-labelledby` / `aria-describedby` | id が空のとき `{}` を返す | `aria-controls="undefined"` がレンダリングされるのはよくあるバグ |
+| **`aria-expanded: false`** | **そのまま出力** | 折りたたみ状態は明示的に読み上げる必要がある |
+| **`aria-invalid: false`** | **そのまま出力** | 「検証通過」は明示的に読み上げる必要がある |
+
+2 つの「例外」は意図的です：`aria-expanded` / `aria-invalid` の偽値にはセマンティクス上の
+情報があり、スクリーンリーダーはそれに基づいて「折りたたみ済み」「入力有効」と読み上げます。
+
+## インポート方法
+
+```ts
+import {
+  generateAriaId,
+  ariaExpanded,
+  ariaControls,
+  ariaLabelledby,
+  ariaDescribedby,
+  ariaInvalid,
+  ariaRequired,
+  ariaCurrent,
+  ariaHaspopup,
+  getPopupTriggerAria,
+  getDecorativeAria,
+  type LhAriaAttrs,
+  type LhAriaHaspopup,
+} from '@lh-ui/share/core/shared/a11y'
+```
+
+## 型
+
+```ts
+// aria 属性パッケージの形：キーは 'aria-*' または 'role'、そのまま v-bind / {...spread}
+export type LhAriaAttrs = Record<string, string | number | boolean | undefined>
+
+// aria-haspopup の正規の値（APG）
+export type LhAriaHaspopup =
+  | 'false' | 'true' | 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog' | 'combobox'
+```
+
+## 関数表
+
+| 関数 | シグネチャ | 役割 |
+| --- | --- | --- |
+| `generateAriaId` | `(prefix = 'lh-aria') => string` | aria 関連付け用の一意な id を生成する |
+| `ariaExpanded` | `(expanded: boolean) => LhAriaAttrs` | 展開 / 折りたたみ状態 |
+| `ariaControls` | `(id: string \| undefined) => LhAriaAttrs` | 制御するパネルへの参照 |
+| `ariaLabelledby` | `(id: string \| undefined) => LhAriaAttrs` | 可視のテキストをアクセシブル名として参照 |
+| `ariaDescribedby` | `(id: string \| undefined) => LhAriaAttrs` | 補足説明への参照 |
+| `ariaInvalid` | `(invalid: boolean) => LhAriaAttrs` | 検証失敗のマーク |
+| `ariaRequired` | `(required: boolean) => LhAriaAttrs` | 必須のセマンティクス |
+| `ariaCurrent` | `(current: 'page' \| 'step' \| 'location' \| 'date' \| 'time' \| true \| undefined) => LhAriaAttrs` | 現在位置のマーク |
+| `ariaHaspopup` | `(kind: LhAriaHaspopup \| boolean) => LhAriaAttrs` | どの種類のポップアップ層かを宣言 |
+| `getPopupTriggerAria` | `(options: { expanded; popupId?; haspopup? }) => LhAriaAttrs` | ポップアップ層トリガーの**共通属性パック** |
+| `getDecorativeAria` | `(decorative = true) => LhAriaAttrs` | 装飾要素を支援技術から隠す |
+
+## 2 つの合成属性パック
+
+### getPopupTriggerAria
+
+popover / popconfirm / select / cascader / date-picker / dropdown のトリガーが**すべて**
+これを使い、1 回で 3 つのことが得られます：
+
+```ts
+getPopupTriggerAria({ expanded: true, popupId: 'lh-popover-1' })
+// {
+//   'aria-expanded': true,
+//   'aria-controls': 'lh-popover-1',
+//   'aria-haspopup': 'true',      // デフォルト値
+// }
+
+getPopupTriggerAria({ expanded: false, popupId: 'lh-popover-1', haspopup: 'menu' })
+// { 'aria-expanded': false, 'aria-controls': 'lh-popover-1', 'aria-haspopup': 'menu' }
+
+getPopupTriggerAria({ expanded: false })   // popupId を渡さない
+// { 'aria-expanded': false, 'aria-haspopup': 'true' }   —— aria-controls は出力されない
+```
+
+`haspopup` のデフォルトは `'true'` です。セマンティクス上より正確な値（ドロップダウンは
+`listbox`、カスケードは `menu`、カレンダーは `dialog`）はスクリーンリーダーの読み上げをより
+正確にします。各コンポーネントは自分のセマンティクスに応じて渡します。
+
+### getDecorativeAria
+
+```ts
+getDecorativeAria()       // { 'aria-hidden': true }
+getDecorativeAria(false)  // {}   —— 明示的に非表示を解除
+```
+
+装飾要素（純粋な区切り線、loading の装飾、スケルトンの幾何形状）は支援技術にとってノイズです。
+**本当に情報を持たない要素にのみ使う**点に注意してください——テキストのある要素に
+`aria-hidden` を付けるのはアクセシビリティ違反です。`false` を渡すと空オブジェクトを返し、
+「デフォルトでは隠すが、一部の場面では見せたい」という条件分岐に使います。
+
+## generateAriaId
+
+```ts
+const id = generateAriaId('lh-popover')  // 'lh-popover-1'、'lh-popover-2' ……
+```
+
+プレフィックスは渡した値に固定され、モジュール内の自動増分カウンターが同一プロセス内の
+複数インスタンスで id が衝突しないようにします。SSR 安全（DOM アクセスなし）。
+
+**注意**：カウンターは**モジュールレベルの可変状態**であり、この関数は純関数ではありません——
+同じ入力でもプロセスの異なる時点で異なる出力を返します。サーバーサイドレンダリングでは
+カウントが 0 から始まり、クライアントのハイドレーションでも 0 から始まるため、レンダリング
+順が一致していれば id も一致します。ただし SSR / CSR のレンダリング順が異なる場合
+（非同期コンポーネント、条件付きレンダリングの違い）は id が不一致になる可能性があります。
+各 UI ライブラリのポップアップ層コンポーネントはクライアントでのみ id を生成し
+（`onMounted` 以降）、この問題を回避しています。
+
+## 使用例
+
+### Vue3
+
+```vue
+<template>
+  <button
+    v-bind="getPopupTriggerAria({ expanded: open, popupId: panelId, haspopup: 'dialog' })"
+    @click="toggle"
+  >
+    開く
+  </button>
+  <div :id="panelId" role="dialog" v-show="open">……</div>
+</template>
+
+<script setup lang="ts">
+const panelId = generateAriaId('lh-popover')
+</script>
+```
+
+オブジェクトを返す関数を `v-bind` するのは Vue の慣用表現です——属性パッケージ内の
+`undefined` 値は Vue が自動的にスキップするため、「偽値は省略」の規約と自然に一致します。
+
+### React
+
+```tsx
+const panelId = generateAriaId('lh-popover')
+
+return (
+  <>
+    <button {...getPopupTriggerAria({ expanded: open, popupId: panelId })} onClick={toggle} />
+    {open && <div id={panelId} role="dialog">……</div>}
+  </>
+)
+```
+
+### フォーム検証
+
+```ts
+// input コンポーネント
+const aria = {
+  ...ariaRequired(props.required),      // 必須でないときは属性ごとレンダリングしない
+  ...ariaInvalid(!!errorMessage.value), // 検証通過も明示的に読み上げる
+  ...ariaDescribedby(errorMessage.value ? errorId : undefined),
+}
+```
+
+### ページネーション / パンくずリストの現在位置
+
+```ts
+ariaCurrent(isActive ? 'page' : undefined)   // 現在ページ以外は出力せず、ノイズを避ける
+ariaCurrent(isActive ? 'page' : undefined)   // ページネーションは 'page'、ステップは 'step'、日付は 'date'
+```
+
+## 注意事項
+
+- **`aria-controls` の id は実在しなければならない**：本モジュールは属性を組み立てるだけで、
+  id が正しいかはコンポーネントの責任です。ポップアップ層を `v-if` で遅延レンダリングすると、
+  閉じた状態ではパネルが DOM に存在せず、`aria-controls` は存在しない要素を指します——これは
+  許容できます（スクリーンリーダーは無視します）が、誤った要素を指すよりはましです。
+- **テキストのある要素に `aria-hidden` を付けない**：これはアクセシビリティの厳格な違反です。
+- **`ariaCurrent` の値はセマンティクスで選ぶ**：ページネーションは `'page'`、ステップは
+  `'step'`、パンくずリストは `'location'`、カレンダーは `'date'`。型はこれらのリテラル +
+  `true` を受け取ります。
+- **合成パックと原子関数を混用して上書きしない**：`getPopupTriggerAria` はすでに
+  `aria-haspopup` を含むため、外側でさらに `ariaHaspopup(...)` を spread すると後から展開した
+  ほうに上書きされます——必要に応じてどちらか一方を選んでください。
+
+<FnPlayground module="a11y" fn="getPopupTriggerAria" params='{"options": {"expanded": true, "popupId": "lh-popover-demo", "haspopup": "menu"}}' />

@@ -1,0 +1,122 @@
+---
+title: avatar —— アバター
+description: 'getAvatarText は codePointAt で先頭文字を抽出（emoji 対応）、isImageSource が画像フォールバックを判定、getAvatarClassNames が形状モディファイアを算出'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+アバターコンポーネントは 3 つのコンテンツ形態を扱う必要があります：画像、テキスト、アイコン。そして画像の読み込み失敗やアドレス不正時には優雅にフォールバックしなければなりません。`core/avatar` は「テキスト抽出」と「画像ソース判定」を純関数にします——この 2 つの判定は各端で完全に一致している必要があり、そうでないと「Vue3 はテキストを表示、uniapp は壊れた画像を表示」という食い違いが生じます。
+
+## いつ使うか
+
+- 各端が `LhAvatar` を実装する：画像が使える場合は `img` をレンダリング、そうでなければ `getAvatarText` が抽出した先頭文字をレンダリング、どちらもない場合はアイコンプレースホルダーをレンダリングする。
+- ユーザーシステムで「名前の先頭文字」をデフォルトアバターにするケース。
+- **使うべきでない**：画像の切り抜き、アップロード。それは `LhUpload` と業務ロジックの仕事です。
+
+## インポート方法
+
+```ts
+import { getAvatarClassNames, getAvatarText, isImageSource } from '@lh-ui/share/core/avatar'
+import type { LhAvatarState, LhAvatarShape } from '@lh-ui/share/core/avatar'
+```
+
+## 設計意図
+
+`getAvatarText` が `str[0]` ではなく `codePointAt(0)` + `String.fromCodePoint` を使うのは、見落とされやすい落とし穴です：`'😀'[0]` はサロゲートペアの半分（`\uD83D`）になり、レンダリングすると文字化けの四角になります。コードポイントで抽出すれば、emoji や補助平面の文字（多くの希少な漢字）も安全です。
+
+`isImageSource` の正規表現は**緩い利用可能性判定**を行うだけで、安全検証はしません：`http(s)://`、`data:image/`、絶対パス `/`、相対パス `./`、`../` で始まる文字列を画像アドレスとみなします。その目的は「img のレンダリングを試みるかどうか」の決定であり、実際の読み込み失敗は `img` の `error` イベントがフォールバックします（UI 層がテキスト状態に切り替えます）。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getAvatarClassNames` | `(state: LhAvatarState) => string[]` | クラス名配列 | 形状とサイズのモディファイア |
+| `getAvatarText` | `(source: string) => string` | 先頭文字または `''` | テキストから表示文字を抽出 |
+| `isImageSource` | `(src: string \| undefined) => boolean` | 真偽値 | 画像アドレスとしてレンダリングを試みる価値があるか |
+
+境界の詳細：
+
+- `getAvatarText('')` → `''`；`getAvatarText(' 水墨 ')` → `'水'`（先に trim する）；`getAvatarText('Alice')` → `'A'`。
+- `getAvatarText` は `codePointAt(0)` が undefined を返す場合（空文字は trim で除外されるため、理論上は発生しない）に `''` を返します。
+- `isImageSource(undefined)` → `false`；`isImageSource('')` → `false`。
+
+## 型定義
+
+```ts
+export type LhAvatarShape = 'circle' | 'square'
+
+export interface LhAvatarState {
+  size: LhComponentSize
+  shape: LhAvatarShape
+}
+```
+
+## アクセシビリティ
+
+`core/avatar` は aria 属性パックを出力しません。アバターの扱いはコンテンツ形態によって異なるためです：
+
+- **画像アバター**：ネイティブ `<img>` を使い、`alt` は必須（「張三のアバター」など）。alt を空にしないでください——空の alt は「装飾的な画像」を意味しますが、アバターは通常アイデンティティ情報を担います。
+- **テキストアバター**：テキスト自体が読み可能なコンテンツのため、追加の処理は不要です。
+- **アイコンアバター**（匿名ユーザーのプレースホルダー）：アイコンは `getIconAria({ decorative: false, label: '匿名ユーザー' })` に従います。
+
+## 使用例
+
+```ts
+import { getAvatarText, isImageSource } from '@lh-ui/share/core/avatar'
+
+getAvatarText('王小明')       // '王'
+getAvatarText('Alice Smith')  // 'A'
+getAvatarText('😀哈哈')       // '😀'
+isImageSource('https://a.com/1.png')  // true
+isImageSource('data:image/png;base64,...')  // true
+isImageSource(undefined)               // false
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getAvatarClassNames({ size, shape })">
+  <img v-if="isImage && !error" :src="src" :alt="alt" @error="error = true" />
+  <span v-else-if="text" class="lh-avatar__text">{{ text }}</span>
+  <LhIcon v-else name="user" :decorative="false" label="匿名ユーザー" />
+</div>
+```
+
+```tsx
+// React
+const text = getAvatarText(name)
+const showImg = isImageSource(src) && !imgError
+return (
+  <div className={getAvatarClassNames({ size, shape }).join(' ')}>
+    {showImg ? <img src={src} alt={alt} onError={() => setImgError(true)} />
+      : text ? <span className="lh-avatar__text">{text}</span>
+      : <LhIcon name="user" decorative={false} label="匿名ユーザー" />}
+  </div>
+)
+```
+
+```ts
+// uniapp：<image> コンポーネントには @error イベントがあり、ロジックは上記と同じ；
+// 非 h5 端のテキストアバターではフォントのフォールバックに注意（希少な漢字は字形を欠くことがある）
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-avatar` | ベースクラス：固定の幅・高さ、オーバーフロー非表示、中央揃え |
+| `.lh-avatar--{mini\|small\|medium\|large\|x-large}` | サイズの段階 |
+| `.lh-avatar--circle` / `.lh-avatar--square` | 形状（角丸の度合い） |
+| `.lh-avatar__img` | 画像：满面 + object-fit |
+| `.lh-avatar__text` | テキスト：中央揃え、白色、サイズに合わせて縮小 |
+| `.lh-avatar__icon` | アイコンプレースホルダー |
+
+アバターの背景色はデフォルトで主色トークンです。複数アバターの場面（アバターグループなど）では各端の UI 層が名前のハッシュで色を割り当てできますが、core は関与しません。
+
+## 注意事項
+
+- UI 層で `str[0]` や `str.charAt(0)` を使って**自分で先頭文字を取らない**——emoji や希少漢字が途中で切れて文字化けします。一律に `getAvatarText` を使います。
+- `isImageSource` が true を返しても画像が存在することを意味せず、「試す価値がある」だけです。`onError` のフォールバックは必須です。
+- `square` は完全な直角ではなく、小さな角丸です（視覚的な調和）。直角のアバターはデザイン上尖りすぎて見えます。
+- 画像アバターの `object-fit` はデフォルトで `cover` であり、顔の縁が切り取られることがあります——業務上しばしば `object-position` での微調整が必要で、これは各端の UI 層で処理します。
+
+<FnPlayground module="avatar" fn="getAvatarText" params='{"source": "青花瓷"}' />

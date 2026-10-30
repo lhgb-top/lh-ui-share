@@ -1,0 +1,127 @@
+---
+title: badge —— バッジ
+description: 'getBadgeClassNames は非表示 / ドット / ゼロ値の 3 つの状態モディファイアを算出する。count は UI 層が算出してから渡す'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+バッジは「通知数」の視覚的な表現です：隅にある小さな赤いドット、数字、または非表示のプレースホルダー。`core/badge` の状態モデルは**数値セマンティクス**をすでに 3 つの真偽値に折りたたんでいます——UI 層が「数字が 0 か、表示するか」を計算し、core はその 3 つの真偽値をクラス名にマッピングするだけです。
+
+## いつ使うか
+
+- 各端が `LhBadge` を実装する：クラス名は `getBadgeClassNames` が産出する。
+- カスタム要素にバッジの視覚を再利用したい場合（`LhAvatar` の隅バッジ、`LhMenu` 項目のバッジなど）、直接 core の関数を import する。
+- **使うべきでない**：「99+」の切り捨てやアニメーションなどのロジック——これらは UI 層の props の責務であり、core は数値処理を行わない。
+
+## インポート方法
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+import type { LhBadgeState, LhBadgeType } from '@lh-ui/share/core/badge'
+```
+
+## 設計意図
+
+バッジの状態で最も注目すべきは `isHidden` / `isDot` / `isZero` の 3 つの排他的な視覚状態です：
+
+- `isDot`：数字を表示せず、ドットだけを表示する（強い通知、数字が未知か知る必要がない）。
+- `isZero`：値が 0。多くのデザインは「0 でも隠さない」を選ぶ（「ない」ことを「未読み込み」と区別させるため）が、スタイルは弱める。
+- `isHidden`：完全に非表示（`display: none`）。「新着がない」場合に使う。
+
+この 3 つの判定ロジック（`value === 0`、`hidden` prop など）は UI 層が行い、core はその結論を受け取るだけです。これにより各端で「いつ隠すか」の戦略を変えつつ、視覚表現を一致させられます。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getBadgeClassNames` | `(state: LhBadgeState) => string[]` | クラス名配列 | バッジの全クラス名を計算 |
+
+出力例：
+
+```ts
+getBadgeClassNames({ type: 'danger', size: 'small', isHidden: false, isDot: true, isZero: false })
+// ['lh-badge', 'lh-badge--danger', 'lh-badge--small', 'lh-badge--dot']
+```
+
+## 型定義
+
+```ts
+export type LhBadgeType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhBadgeState {
+  type: LhBadgeType
+  size: LhComponentSize
+  isHidden: boolean
+  isDot: boolean
+  isZero: boolean
+}
+```
+
+## アクセシビリティ
+
+`core/badge` は aria 属性パックを出力しませんが、バッジの**アクセシビリティ処理は UI 層で非常に重要**であり、よく間違えられます：
+
+- バッジは**装飾的な視覚的強調**であり、内容自体（「3 件の未読」など）はセマンティクスを持つテキストで担うべきです。バッジに `aria-hidden="true"` を付けるのが安全なデフォルトです。
+- バッジが唯一の情報源である場合（テキストのない純粋な隅バッジなど）、`aria-label` を提供するか親要素で宣言しなければなりません。そうでないとスクリーンリーダーのユーザーは「新着がある」ことをまったく知覚できません。
+- 数字のバッジはスクリーンリーダーに桁ごとに読み上げさせてはいけません（「9」「9」は「きゅうきゅう」と読まれる）。「99 プラス」のようにフォーマットするか、UI 層の `aria-label` に任せます。
+
+## 使用例
+
+```ts
+import { getBadgeClassNames } from '@lh-ui/share/core/badge'
+
+getBadgeClassNames({ type: 'primary', size: 'medium', isHidden: false, isDot: false, isZero: false })
+// ['lh-badge', 'lh-badge--primary', 'lh-badge--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span class="lh-badge-wrapper">
+  <slot />
+  <sup
+    v-if="!hidden"
+    :class="getBadgeClassNames({ type, size, isHidden: hidden, isDot, isZero: value === 0 })"
+    aria-hidden="true"
+  >
+    {{ isDot ? '' : displayValue }}
+  </sup>
+</span>
+```
+
+```tsx
+// React
+const cls = getBadgeClassNames({ type, size, isHidden, isDot, isZero })
+return (
+  <span className="lh-badge-wrapper">
+    {children}
+    {!isHidden && <sup className={cls.join(' ')} aria-hidden="true">{isDot ? '' : value}</sup>}
+  </span>
+)
+```
+
+```ts
+// uniapp：非 h5 端のバッジは view の絶対位置指定で実装することが多い。数字の切り捨て（99+）は UI 層の props が処理する
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-badge` | ベースクラス：絶対位置指定の隅バッジ、角丸、文字サイズ、文字色 |
+| `.lh-badge--{primary\|success\|warning\|danger\|info\|default}` | セマンティクスタイプ（背景色） |
+| `.lh-badge--{small\|medium\|large}` | サイズの段階（`.lh-badge--mini` / `--x-large` を含む） |
+| `.lh-badge--dot` | ドット形状（固定の小さな正円、内容をレンダリングしない） |
+| `.lh-badge--zero` | ゼロ値の弱化（透明度、より小さい視覚的重み） |
+| `.lh-badge--hidden` | 完全に非表示 |
+| `.lh-badge__content` | コンテンツノード |
+| `.lh-badge-zoom-enter-active` / `.lh-badge-zoom-leave-active` | 出現 / 消失のスケール遷移 |
+
+バッジの位置は外側の `.lh-badge-wrapper` が `position: relative` を提供することに依存します（各端の UI 層が保証する）。
+
+## 注意事項
+
+- `isDot` と `isZero` が同時に true の場合、スタイルは `--dot` を優先する（ドット形状は内容をレンダリングしないためゼロ値のモディファイアは無意味）——UI 層はこの組み合わせを避けるべきです。
+- 型テーブルの `LhBadgeType` には `'default'` がありますが、バッジで最も一般的なのは `'danger'`（赤いドット）です。`'default'` はニュートラルなグレーです。
+- 遷移クラス `lh-badge-zoom-*` は Vue3 スタイルの `-enter-active` / `-leave-active` です。Vue2 端では `lh-enter-both` mixin で揃えます（[遷移 mixin](/ja/reference/transition-mixins) を参照）。
+
+<FnPlayground module="badge" fn="getBadgeClassNames" params='{"state": {"type": "danger", "size": "small", "isHidden": false, "isDot": true, "isZero": false}}' />

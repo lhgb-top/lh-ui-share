@@ -1,0 +1,209 @@
+---
+title: image —— 画像
+description: 'stepZoom/stepRotate で拡大・回転、normalizePreviewList でプレビュー一覧の退化、stepViewerIndex でループ切り替え、dialog セマンティクス'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+画像コンポーネントの中心は表示ではありません（`<img>` で十分です）。それは**プレビュー**です：クリックで拡大、ホイールで拡大縮小、回転、複数画像の切り替え。`core/image` が管理するのはプレビューアーの状態計算です——拡大のステップとクランプ、回転の正規化、画像一覧のループ切り替え。
+
+## いつ使うか
+
+- 各端末で `LhImage` を実装するケース：商品画像、アバタープレビュー、証明写真、ギャラリー。
+- クリックで拡大表示（拡大 / 回転 / 複数画像の切り替え）が必要なシーン。
+- **使うべきでないケース**：純粋な装飾画像（`<img>` か背景画像でよく、コンポーネントのオーバーヘッドは不要）；複雑な切り抜き / 編集（それは image-cropper の役割です）。
+
+## インポート方法
+
+```ts
+import {
+  getImageClassNames,
+  normalizePreviewList,
+  stepZoom,
+  stepRotate,
+  stepViewerIndex,
+  getViewerImageStyle,
+  getImageViewerAria,
+} from '@lh-ui/share/core/image'
+import {
+  LH_IMAGE_ZOOM_MIN,
+  LH_IMAGE_ZOOM_MAX,
+  LH_IMAGE_ZOOM_STEP,
+} from '@lh-ui/share/core/image'
+import type { LhImageFit, LhImageState, LhImageViewerState } from '@lh-ui/share/core/image'
+```
+
+## 設計意図
+
+**拡大の浮動小数点クランプ**：`stepZoom` は每次 `LH_IMAGE_ZOOM_STEP`（0.25）を加算したあと、`Math.round(next * 100) / 100` してから `[0.25, 4]` にクランプします。丸めにより `zoom` は常にきれいな小数（0.25 / 0.5 / 0.75 …）となり、`1.0000000000000002` のような値にはなりません——後者は `scale()` で目に見えるジャギーを生みます。
+
+**回転の負数剰余修正**：`(((rotate + 90) % 360) + 360) % 360`——JS の `%` は負数に対して負の値を返します（`-90 % 360 === -90`）。外側の `+360) % 360` がこれを `[0, 360)` に正規化します。この関数自体は +90 しかせず負になることはありませんが、この修正は防御的なものです（呼び出し側が負の角度を初期値として渡した場合）。
+
+**`stepViewerIndex` のループ切り替え**：`(index + delta + total) % total`——最初の画像で「前へ」を押すと最後の画像に跳びます。`total <= 0` のときは 0 を返します（空の一覧への防御）。
+
+**`normalizePreviewList` の退化**：`previewSrcList` が渡されないときは `[src]` に退化します——単一画像のプレビューと複数画像のプレビューが同じロジックで動き、`total` が 1 になるだけです。切り替えボタンは自動的に非表示になります。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getImageClassNames` | `(state: LhImageState) => string[]` | クラス名 | error / previewable |
+| `normalizePreviewList` | `(src, previewSrcList?) => string[]` | 一覧 | 未指定時は [src] に退化 |
+| `stepZoom` | `(zoom, direction: 1 \| -1) => number` | 新しい拡大率 | ステップ + クランプ |
+| `stepRotate` | `(rotate: number) => number` | 新しい角度 | +90°、[0,360) に正規化 |
+| `stepViewerIndex` | `(index, total, delta) => number` | 新しい添字 | ループ |
+| `getViewerImageStyle` | `(state: LhImageViewerState) => Record<string, string>` | スタイル | transform |
+| `getImageViewerAria` | `(options?: { id?, label? }) => LhAriaAttrs` | aria 属性バッグ | dialog セマンティクス |
+
+定数：`LH_IMAGE_ZOOM_MIN = 0.25`、`LH_IMAGE_ZOOM_MAX = 4`、`LH_IMAGE_ZOOM_STEP = 0.25`。
+
+## 型定義
+
+```ts
+export type LhImageFit = 'contain' | 'cover' | 'fill' | 'none' | 'scale-down'  // ネイティブ object-fit
+
+export interface LhImageState {
+  fit: LhImageFit
+  error: boolean
+  loaded: boolean
+  preview: boolean    // プレビュー可能か（クリックへの応答 + マスク表示を決める）
+}
+
+export interface LhImageViewerState {
+  zoom: number
+  rotate: number
+  index: number
+  total: number
+}
+
+export const LH_IMAGE_ZOOM_MIN = 0.25
+export const LH_IMAGE_ZOOM_MAX = 4
+export const LH_IMAGE_ZOOM_STEP = 0.25
+```
+
+## アクセシビリティ
+
+プレビューアーは **dialog** として提示し、`aria-modal` を宣言します：
+
+```ts
+getImageViewerAria({ id: 'lh-viewer', label: '2 枚目、全 5 枚' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-viewer', 'aria-label': '2 枚目、全 5 枚' }
+
+getImageViewerAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true` はスクリーンリーダーに背景が到達不能であることを伝えます——`core/shared/focus-trap` と組み合わせてフォーカスを閉じ込め、Esc で閉じます。
+- **`label` に連番を含める価値は大きい**：複数画像のプレビュー時にスクリーンリーダーが「2 枚目、全 5 枚」と読み上げれば、ユーザーはあと何枚見られるか分かります。単一画像なら「画像プレビュー」で十分です。
+- サムネイル自体には `alt`（または `role="img" aria-label`）を持たせます——画像が見えないとき、これが唯一のテキスト情報です。装飾的な画像には `alt=""` を使います。
+- ツールバーボタン（拡大 / 回転 / 前へ / 次へ）はアイコンボタンであり、必ず `aria-label` を付けます。
+- **読み込み失敗のアクセシビリティ通知**：`error` 状態のプレースホルダー画像には `role="img"` + `aria-label="画像の読み込みに失敗しました"` を付けます。そうでないと、スクリーンリーダーのユーザーはここに元々画像があったことを知りません。
+
+## 使用例
+
+```ts
+import { stepZoom, stepRotate, stepViewerIndex, normalizePreviewList } from '@lh-ui/share/core/image'
+
+stepZoom(1, 1)      // 1.25
+stepZoom(4, 1)      // 4（上限に達して増えない）
+stepZoom(0.25, -1)  // 0.25（下限に達して減らない）
+stepRotate(0)       // 90
+stepRotate(270)     // 0（[0, 360) に正規化）
+stepRotate(-90)     // 0（負数剰余修正）
+stepViewerIndex(0, 5, -1)   // 4（末尾にループ）
+stepViewerIndex(4, 5, 1)    // 0（先頭にループ）
+stepViewerIndex(0, 0, 1)    // 0（空の一覧）
+normalizePreviewList('a.jpg', ['b.jpg', 'c.jpg'])  // ['b.jpg', 'c.jpg']
+normalizePreviewList('a.jpg', undefined)          // ['a.jpg']
+normalizePreviewList('a.jpg', [])                 // ['a.jpg']（空の配列も退化）
+getViewerImageStyle({ zoom: 1.5, rotate: 90, index: 0, total: 1 })
+// { transform: 'scale(1.5) rotate(90deg)' }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getImageClassNames({ fit, error, loaded, preview })">
+  <img
+    v-if="!error"
+    class="lh-image__img"
+    :src="src"
+    :alt="alt"
+    :style="{ objectFit: fit }"
+    @load="loaded = true"
+    @error="error = true"
+    @click="preview && openViewer()"
+  />
+  <div v-else class="lh-image__error" role="img" aria-label="画像の読み込みに失敗しました">
+    <LhIcon name="image" />
+  </div>
+  <div v-if="preview && loaded" class="lh-image__mask">
+    <LhIcon name="zoom-in" /> <span>クリックしてプレビュー</span>
+  </div>
+</div>
+
+<Teleport to="body">
+  <div v-if="visible" class="lh-image-viewer" v-bind="getImageViewerAria({ id: viewerId, label: viewerLabel })">
+    <div class="lh-image-viewer__mask" @click="close" />
+    <img
+      class="lh-image-viewer__img"
+      :src="list[index]"
+      :style="getViewerImageStyle({ zoom, rotate, index, total: list.length })"
+    />
+    <div class="lh-image-viewer__toolbar">
+      <button type="button" aria-label="縮小" @click="zoom = stepZoom(zoom, -1)">−</button>
+      <span class="lh-image-viewer__zoom">{{ Math.round(zoom * 100) }}%</span>
+      <button type="button" aria-label="拡大" @click="zoom = stepZoom(zoom, 1)">+</button>
+      <button type="button" aria-label="回転" @click="rotate = stepRotate(rotate)">⟳</button>
+      <template v-if="list.length > 1">
+        <button type="button" aria-label="前へ" @click="index = stepViewerIndex(index, list.length, -1)">‹</button>
+        <button type="button" aria-label="次へ" @click="index = stepViewerIndex(index, list.length, 1)">›</button>
+      </template>
+    </div>
+  </div>
+</Teleport>
+```
+
+```ts
+const list = computed(() => normalizePreviewList(props.src, props.previewSrcList))
+const viewerLabel = computed(() => `${index.value + 1} 枚目、全 ${list.value.length} 枚`)
+```
+
+```tsx
+// React：ホイールでの拡大（viewer に onWheel を設定）
+// const next = stepZoom(zoom, e.deltaY < 0 ? 1 : -1); setZoom(next)
+```
+
+```ts
+// uniapp：<image> は組み込みコンポーネント（mode 属性が object-fit に対応：widthFix / aspectFill など）；
+// プレビューアーは <view> + <image> を使うか、uni.previewImage を呼ぶ（システムレベル、回転機能なし）
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-image` | 基本クラス |
+| `.lh-image--error` | 読み込み失敗 |
+| `.lh-image--previewable` | プレビュー可能（hover でマスク表示） |
+| `.lh-image__img` | 画像本体 |
+| `.lh-image__error` | 失敗プレースホルダー |
+| `.lh-image__mask` | hover マスク |
+| `.lh-image-viewer` | 全画面プレビューアー（fixed 配置） |
+| `.lh-image-viewer__mask` | 黒いマスク |
+| `.lh-image-viewer__img` | 大きな画像（transform アニメーション） |
+| `.lh-image-viewer__toolbar` / `__zoom` | ツールバー / 拡大率パーセント |
+
+マスク色 `rgba(0, 0, 0, 0.5)`；ツールバーボタンは半透明の濃い背景；画像の transition は `transform` に（拡大・回転が滑らか）。
+
+## 注意事項
+
+- **`previewSrcList` と `src` の関係**：`previewSrcList` はプレビュー時に使う大きな画像の一覧で、ページ上のサムネイル `src` と異なっていてもかまいません（サムネイルは小さい画像で通信量を節約し、プレビューは原本を使う）。未指定時は `[src]` に退化します——この場合プレビューされるのはサムネイルなので、拡大するとぼやける可能性があります。
+- **`zoom` は境界で変化しない**：`stepZoom` は [0.25, 4] にクランプします。ボタンはこれに基づいて disable するか視覚的なフィードバックを返し、押しても反応がない事態を避けてください。
+- **回転と拡大の順序**：`transform: scale(zoom) rotate(rotate)`——先に拡大、後に回転。順序が逆だと回転に拡大のずれが伴います（中心を基準にする場合は差は小さいですが、移動との組み合わせでは顕著です）。
+- **フォーカス管理**：プレビューアーを開いたときフォーカスはツールバーに入れ、閉じたときサムネイルに戻します——`core/shared/focus-trap` で処理しないと、Tab がページの背後に逃げてしまいます。
+- **`error` 状態の再試行**：core は再試行関数を提供しません。UI 層は `src` にクエリパラメータ（`?t=Date.now()`）を付けて強制的に再読み込みできますが、その前に `error` 状態をクリアしてください。
+- **`loaded` の用途**：読み込み完了前はスケルトン（`skeleton`）や低解像度のぼかしたプレースホルダー（LQIP）を表示できます。
+- **メモリへの配慮**：大きな画像一覧のプレビューでは、`previewSrcList` のうち本当に読み込まれるのは `index` の近辺だけです（ブラウザがオンデマンドに読み込む）。ですが数十個の `<img>` を一度にレンダリングしないでください——core はレンダリング数を管理せず、UI 層が制限します。
+- **uniapp での `fit` の対応付け**：`object-fit` の 5 つの値はミニプログラム側では `<image mode>` の各値に対応します（`scale-down` は直接の対応がなく、通常は `aspectFit` で近似します）。UI 層が対応付けを行います。
+
+<FnPlayground module="image" fn="stepZoom" params='{"zoom": 1, "direction": 1}' />

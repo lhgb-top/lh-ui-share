@@ -1,0 +1,179 @@
+---
+title: dialog —— مربع الحوار
+description: 'بوابة الخروج canClose، قرار تقييد التركيز shouldTrapFocus، ثلاثة أنماط لتحديد الموضع في getDialogStyle، ودلالة dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+مربع الحوار هو طبقة مشروطة «تُقاطع التدفق الحالي وتطالب المستخدم بمعالجة هذا الأمر أولاً»: تأكيد الحذف، وملء نموذج، وعرض التفاصيل. جوهره ليس بصرياً، بل **التركيز وقفل التمرير**—فالوضع المشروط يعني أن الصفحة الخلفية غير قابلة للتفاعل. يحوّل `core/dialog` مسائل «هل يمكن الإغلاق» و«هل يجب تقييد التركيز» و«أنماط تحديد الموضع» إلى دوال نقية، بينما يتولّى `core/shared/focus-trap` تنفيذ التقييد الفعلي.
+
+## متى يُستخدم
+
+- تنفّذ الأطراف المختلفة `LhDialog`: تأكيد العمليات الخطرة، النماذج المستقلة (أكثر تركيزاً من الدرج)، عرض المعلومات المهمة.
+- المشاهد التي تتطلب **وضعاً مشروطاً** (مقاطعة التدفق الرئيسي، والمعالجة الإلزامية أولاً).
+- **لا ينبغي استخدامه**: التنبيهات غير المشروطة الخفيفة (استخدم `message` / `notification`)؛ لوحات التفاصيل الجانبية المنزلقة (استخدم `drawer`، فهي لا تحجب الشاشة بالكامل)؛ التأكيدات البسيطة (استخدم `popconfirm`، فهو أخف وزناً).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  canClose,
+  getDialogStyle,
+  getDialogPopperClass,
+  shouldTrapFocus,
+  getDialogAria,
+} from '@lh-ui/share/core/dialog'
+import type { LhDialogState } from '@lh-ui/share/core/dialog'
+```
+
+## القصد التصميمي
+
+**قيمتان افتراضيتان غير متماثلتين في `canClose`**:
+
+- `closeOnClickModal` يكون **false** افتراضياً (النقر على القناع لا يُغلق)—فمربعات الحوار عادةً ما تحمل نماذج أو تأكيدات تتطلب إجراءً صريحاً من المستخدم، والإغلاق بالخطأ عند لمس القناع يضيّع المدخلات.
+- `closeOnPressEscape` يكون **true** افتراضياً (يمكن إغلاقه بـ Esc)—فمستخدمو لوحة المفاتيح يحتاجون إلى مخرج للطوارئ، وهذا ما تنص عليه أنماط APG لمربعات الحوار.
+
+هذا اللامتناظر هو تصميم تجريبي متعمَّد: **منع الإغلاق بالخطأ مع إبقاء مخرج متاح**.
+
+**`shouldTrapFocus` يتخذ القرار فقط**: يُعيد «هل تفعيل تقييد التركيز»، بينما التنفيذ الفعلي للتقييد على طبقة UI بالتعاون مع `core/shared/focus-trap` (عند الفتح saveActiveElement + focusFirst، وعند keydown يقوم trapTabKey، و inert يتولاه setInertOutside، وعند الإغلاق يعيد restoreActiveElement التركيز). طبقة core لا تلمس DOM.
+
+**تقسيم العمل في تحديد موضع `getDialogStyle`**: يتولّى flexbox الخاص بالحاوية محاذاة `top` / `center` / `bottom`، ولا يُطبَّق `marginTop` إلا عندما يكون `position: 'top'` أو غير مضبوط—فإضافة marginTop إلى center/bottom ستتعارض مع flexbox.
+
+**صنف visible في `getDialogPopperClass`**: يُستخدم كحالة بداية/نهاية للحركة الانتقالية، وليس للتحكم في الإظهار والإخفاء (وهما من شأن `v-if`/`v-show`).
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `canClose` | `(state, reason: 'modalClick' \| 'escape') => boolean` | هل يُسمح بالإغلاق | بوابة الخروج |
+| `getDialogStyle` | `(state: { top?, zIndex?, position? }) => Record<string, string>` | الأنماط | تحديد الموضع والطبقة |
+| `getDialogPopperClass` | `(state: LhDialogState) => string[]` | أسماء الأصناف | حالة visible |
+| `shouldTrapFocus` | `(state: { visible, lockScroll }) => boolean` | هل يتم التقييد | قرار (دون لمس DOM) |
+| `getDialogAria` | `(options?: { id?, titleId? }) => LhAriaAttrs` | حزمة سمات aria | دلالة dialog |
+
+## تعريفات الأنواع
+
+```ts
+export interface LhDialogState {
+  visible: boolean
+  lockScroll: boolean
+  closeOnClickModal: boolean   // افتراضياً false
+  closeOnPressEscape: boolean  // افتراضياً true
+  width: string | number | undefined
+  top: string | undefined
+  zIndex: number | undefined
+  position: 'top' | 'center' | 'bottom' | undefined
+}
+```
+
+## إمكانية الوصول
+
+يُخرج `getDialogAria` دلالات مربع الحوار المشروط وفق APG:
+
+```ts
+getDialogAria({ id: 'lh-dialog-1', titleId: 'lh-dialog-title' })
+// { role: 'dialog', 'aria-modal': true, id: 'lh-dialog-1', 'aria-labelledby': 'lh-dialog-title' }
+
+getDialogAria()
+// { role: 'dialog', 'aria-modal': true }
+```
+
+- `aria-modal: true` يُعلم قارئ الشاشة أن الخلفية غير قابلة للوصول (ويصبح كاملاً بالاقتران مع inert / focus-trap).
+- **عند وجود عنوان يجب تمرير `titleId`**؛ وعند عدم وجود عنوان لا يتم إخراج `aria-labelledby`، وهنا يجب أن تضمن طبقة UI وجود `aria-label` كحل احتياطي—فمربع حوار بلا اسم قابل للوصول سيُعلنه قارئ الشاشة «مربع حوار» فارغاً.
+- إدارة التركيز (طبقة UI): عند الفتح يدخل التركيز إلى مربع الحوار (أول عنصر قابل للتركيز أو منطقة المحتوى)، وعند الإغلاق **يُعاد إلى العنصر المُطلِق**—وهذا هو الاتفاق المعياري لتقييد التركيز، وإغفال الإعادة يجعل مستخدمي لوحة المفاتيح يفقدون موضعهم.
+- **`aria-modal` ليس بديلاً**: فهو مجرد إقرار، أما العزل الفعلي للخلفية فيعتمد على تطبيق inert في `core/shared/focus-trap`. الإقرار دون عزل فعلي («وضع مشروط زائف») هو خلل شائع.
+- عندما يحتوي مربع الحوار على نموذج، يجب توضيح دلالة الإرسال بـ Enter / الإغلاق بـ Esc (إذا كانت هناك تعديلات غير محفوظة قبل إغلاق Esc، يُستحسن التأكيد مرتين).
+
+## أمثلة الاستخدام
+
+```ts
+import { canClose, shouldTrapFocus, getDialogStyle } from '@lh-ui/share/core/dialog'
+
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'modalClick')  // false
+canClose({ closeOnClickModal: false, closeOnPressEscape: true }, 'escape')      // true
+canClose({}, 'escape')        // true (الإغلاق بـ Esc مسموح افتراضياً)
+canClose({}, 'modalClick')    // false (الإغلاق بنقر القناع غير مسموح افتراضياً)
+
+shouldTrapFocus({ visible: true, lockScroll: true })   // true
+shouldTrapFocus({ visible: true, lockScroll: false })  // false
+shouldTrapFocus({ visible: false, lockScroll: true })  // false
+
+getDialogStyle({ top: '15vh', position: 'top', zIndex: 2000 })
+// { marginTop: '15vh', zIndex: '2000' }
+getDialogStyle({ top: '15vh', position: 'center' })
+// {} (center يتوسطه flexbox، ولا يتم إضافة marginTop)
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <transition name="lh-dialog-fade">
+    <div v-if="visible" class="lh-dialog__wrapper" :style="{ zIndex }">
+      <div class="lh-dialog__mask" @click="onMaskClick" />
+      <div
+        :class="getDialogPopperClass({ visible })"
+        :style="getDialogStyle({ top, zIndex, position })"
+        v-bind="getDialogAria({ id: dialogId, titleId })"
+      >
+        <header class="lh-dialog__header">
+          <h3 class="lh-dialog__title" :id="titleId">{{ title }}</h3>
+          <button v-if="showClose" type="button" class="lh-dialog__close" aria-label="إغلاق" @click="close">✕</button>
+        </header>
+        <div class="lh-dialog__body"><slot /></div>
+        <footer class="lh-dialog__footer"><slot name="footer" /></footer>
+      </div>
+    </div>
+  </transition>
+</teleport>
+```
+
+```ts
+function onMaskClick() {
+  if (canClose({ closeOnClickModal, closeOnPressEscape }, 'modalClick')) close()
+}
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && canClose({ closeOnClickModal, closeOnPressEscape }, 'escape')) close()
+}
+
+// تقييد التركيز (بالتعاون مع shared/focus-trap)
+watch(visible, async (v) => {
+  if (v) { savedFocus = saveActiveElement(); await nextTick(); focusFirst(dialogRef.value) }
+  else { restoreActiveElement(savedFocus) }
+})
+```
+
+```tsx
+// React: استخدم CSSTransition أو حلاً بلا مكتبة للحركة الانتقالية؛ ونواة focus-trap نفسها لتقييد التركيز
+```
+
+```ts
+// uniapp: <view> + تحديد position: fixed؛ وقفل التمرير من شأن طبقة UI
+// (ليس هناك تمرير body يمكن قفله في التطبيقات المصغّرة، بل تُلفّ منطقة المحتوى بـ scroll-view)؛
+// وتُستخدم canClose / getDialogAria من core كما هي
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-dialog__wrapper` | الغلاف الخارجي (توسيط flexbox + zIndex) |
+| `.lh-dialog__mask` | القناع (أسود شبه شفاف) |
+| `.lh-dialog__popper` | جسم مربع الحوار |
+| `.lh-dialog__popper--visible` | حالة التوسّع (نهاية الحركة الانتقالية) |
+| `.lh-dialog__header` / `__title` / `__close` | الرأس |
+| `.lh-dialog__body` | منطقة المحتوى |
+| `.lh-dialog__footer` | منطقة الأزرار السفلية |
+
+القناع `rgba(0, 0, 0, 0.5)`؛ الجسم `--lh-bg-color` + زاوية مستديرة `--lh-radius-base` + ظل؛ ويتحكم prop الـ `width` في العرض (افتراضياً 50%).
+
+## ملاحظات
+
+- **تعارض `closeOnClickModal` مع النماذج**: يُستحسن ضبط مربعات الحوار التي تحتوي على نماذج صراحةً على `false` (وهي أيضاً القيمة الافتراضية)، لتجنّب ضياع المدخلات عند لمس القناع بالخطأ.
+- **العلاقة بين `lockScroll` وتقييد التركيز**: يتطلب `shouldTrapFocus` أن يكون `lockScroll` صحيحاً أيضاً—فقفل التمرير يعني عادةً وضعاً مشروطاً كاملاً، وتقييد التركيز يكون سلوكاً مكمّلاً. قفل التمرير دون تقييد التركيز يخلق تجربة منقطعة «يقفز Tab إلى الصفحة الخلفية».
+- **مربعات الحوار المتداخلة**: يجب أن يكون zIndex لمربع الحوار الداخلي أعلى من الخارجي (تُدار عبر عدّاد متزايد)، كما يجب حفظ حالة تقييد التركيز بشكل متداخل (عند إغلاق الداخلي يُعاد التركيز إلى عنصره المُطلِق، لا إلى الخارجي الأبعد).
+- **إدارة `zIndex`**: يكتفي core بكتابة القيمة الممرّرة في الأنماط دون زيادة ذاتية. يجب أن تستخدم طبقة UI عدّاداً عاماً لـ zIndex (لسرّ التعارض مع مستويات message / notification).
+- **توقيت تحميل الحركة الانتقالية**: `v-if` يزيل DOM فوراً، ويتطلب إغلاق الحركة التعاون مع `<transition>`؛ إذا دُمِّر DOM أثناء الحركة سيفشل إعادة التركيز—استخدم `@after-leave` لتأخير منطق الإزالة الفعلي.
+- **`position: 'bottom'`**: مربعات الحوار السفلية (نمط action sheet على الأجهزة المحمولة) تحاذى بـ flex-end الخاص بـ flexbox، ولا قيمة لـ `top` هنا.
+- **`width` كنسبة مئوية**: `'50%'` تكون نسبةً إلى عرض القناع، ويُستحسن على الشاشات الضيقة للأجهزة المحمولة تغييرها إلى `'90%'` أو قيمة px محددة.
+
+<FnPlayground module="dialog" fn="canClose" params='{"state": {"closeOnClickModal": false, "closeOnPressEscape": true}, "reason": "escape"}' />

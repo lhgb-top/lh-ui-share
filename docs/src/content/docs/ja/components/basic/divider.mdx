@@ -1,0 +1,153 @@
+---
+title: divider —— 区切り線
+description: 'getDividerRole が separator / presentation のセマンティクスを区別、needsAriaOrientation が垂直方向の宣言を決定、borderStyle は dashed より優先'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+区切り線は最も「薄い」コンポーネントですが、そのアクセシビリティのセマンティクスはかえって最も議論する価値があります：領域を区切る一本の線は、スクリーンリーダーにとって**有用な構造**でしょうか、それとも**ノイズ**でしょうか？ `core/divider` は `getDividerRole` によってこの意思決定を明示化します——文案付きの区切り線は本当の `separator`、純粋な装飾線は `presentation`（アクセシビリティツリーから外す）です。
+
+## いつ使うか
+
+- 各端が `LhDivider` を実装する：クラス名、セマンティクスロール、方向の宣言はすべて core が計算する。
+- フォームの分割、カード内容のグループ化、文章の段落区切り。
+- **使うべきでない**：レイアウトの間隔として使うこと。間隔は `LhSpace` や padding の責務であり、区切り線は**セマンティクス**を持つ要素です。
+
+## インポート方法
+
+```ts
+import {
+  getDividerClassNames,
+  getDividerRole,
+  needsAriaOrientation,
+} from '@lh-ui/share/core/divider'
+import type {
+  LhDividerState,
+  LhDividerDirection,
+  LhDividerLabelPosition,
+  LhDividerRole,
+} from '@lh-ui/share/core/divider'
+```
+
+## 設計意図
+
+区切り線には 2 つの「破線」の表現があります：古い `dashed` 真偽 prop と新しい `borderStyle` 文字列です。`getDividerClassNames` の優先度は **`borderStyle` が明示的に非空 > `dashed`** であり、`'dashed'` / `'dotted'` にだけ対応するスタイルクラスがあります——`'solid'` や任意の不正な値を渡しても汚いクラスは産出されず、デフォルトの実線でレンダリングされます。これは漸進的マイグレーションのための設計です：古いコードの `dashed` は引き続き機能し、新しいコードは `borderStyle` でより豊富な枠線スタイルを表現できます。
+
+`needsAriaOrientation` の条件は `hasContent && direction === 'vertical'` で、どちらの条件も必要です：
+
+- 水平は APG における separator の**デフォルトの方向**で、`aria-orientation="horizontal"` を宣言するのは冗長な情報です。
+- 文案がない場合はロールが `presentation` となり、要素はすでにアクセシビリティツリーから外されているため、方向を宣言する受け手がいません。
+
+垂直方向でも横向きと同様に文案をサポートします（垂直の文案は線分の上下に配置される）ため、「文案があり、かつ垂直」は到達可能な状態です；`labelPosition` は
+横向きのセマンティクスであり、垂直の文案は常に中央寄せとなり、`getDividerClassNames` は垂直向きの `--label-*` モディファイアクラスを産出しません。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getDividerClassNames` | `(state: LhDividerState) => string[]` | クラス名配列 | 方向、破線、文案のモディファイアクラス |
+| `getDividerRole` | `(hasContent: boolean) => LhDividerRole` | `'separator'` / `'presentation'` | セマンティクスロール |
+| `needsAriaOrientation` | `(direction: 'horizontal' \| 'vertical', hasContent: boolean) => boolean` | 真偽値 | aria-orientation を宣言すべきか |
+
+出力例：
+
+```ts
+getDividerClassNames({ direction: 'horizontal', dashed: false, hasContent: true, labelPosition: 'center', borderStyle: null })
+// ['lh-divider', 'lh-divider--horizontal', 'lh-divider--with-text', 'lh-divider--label-center']
+
+getDividerRole(true)   // 'separator'
+getDividerRole(false)  // 'presentation'
+needsAriaOrientation('vertical', true)   // true
+needsAriaOrientation('vertical', false)  // false
+```
+
+## 型定義
+
+```ts
+export type LhDividerDirection = 'horizontal' | 'vertical'
+export type LhDividerLabelPosition = 'left' | 'center' | 'right'
+export type LhDividerRole = 'separator' | 'presentation'
+
+export interface LhDividerState {
+  direction: LhDividerDirection
+  dashed: boolean
+  hasContent: boolean
+  labelPosition: LhDividerLabelPosition
+  borderStyle?: string        // 明示指定時に dashed より優先
+}
+```
+
+## アクセシビリティ
+
+区切り線のアクセシビリティは 3 つの部分から組み立てられ、UI 層はそのまま使うべきです：
+
+```ts
+const role = getDividerRole(hasContent)              // 'separator' | 'presentation'
+const orientation = needsAriaOrientation(direction, hasContent)
+const aria = { role, ...(orientation ? { 'aria-orientation': 'vertical' } : {}) }
+```
+
+- **文案付きの区切り線**：`role="separator"`。スクリーンリーダーは「区切り」と読み上げ、内容を 2 つの区間に分けることを知覚します。
+- **純粋な装飾線**：`role="presentation"`。アクセシビリティツリーから削除します。
+- **垂直 + 文案付き**：垂直はデフォルトの方向ではないため、追加で `aria-orientation="vertical"` を宣言します。
+
+## 使用例
+
+```ts
+import { getDividerClassNames, getDividerRole } from '@lh-ui/share/core/divider'
+
+getDividerClassNames({ direction: 'vertical', dashed: true, hasContent: false, labelPosition: 'left', borderStyle: null })
+// ['lh-divider', 'lh-divider--vertical', 'lh-divider--dashed']
+```
+
+```vue
+<!-- Vue3 -->
+<div
+  :class="getDividerClassNames({ direction, dashed, hasContent: !!slots.default, labelPosition, borderStyle })"
+  :role="getDividerRole(!!slots.default)"
+  :aria-orientation="needsAriaOrientation(direction, !!slots.default) ? 'vertical' : undefined"
+>
+  <span v-if="slots.default" class="lh-divider__label"><slot /></span>
+</div>
+```
+
+```tsx
+// React
+const hasContent = !!children
+const cls = getDividerClassNames({ direction, dashed, hasContent, labelPosition, borderStyle })
+return (
+  <div
+    className={cls.join(' ')}
+    role={getDividerRole(hasContent)}
+    aria-orientation={needsAriaOrientation(direction, hasContent) ? 'vertical' : undefined}
+  >
+    {hasContent && <span className="lh-divider__label">{children}</span>}
+  </div>
+)
+```
+
+```ts
+// uniapp：role / aria は非 h5 端でのサポートが限られており、クラス名だけをレンダリングするように降格できる（視覚の一致を優先）
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-divider` | ベースクラス：位置決め、枠線の色 |
+| `.lh-divider--horizontal` / `.lh-divider--vertical` | 方向（枠線をどちら側に置くかを決める） |
+| `.lh-divider--dashed` | 破線（古い dashed prop との互換） |
+| `.lh-divider--with-text` | 文案付き：枠線が中央の位置を譲る |
+| `.lh-divider--label-{left\|center\|right}` | 文案の揃え位置 |
+| `.lh-divider__label` | テキストノード（両側の間隔と背景で枠線を覆う） |
+
+枠線の色は `var(--lh-border-color)` を使い、ダークモードで自動的に反転します。
+
+## 注意事項
+
+- `borderStyle` は `dashed` より優先し、`'dashed'` / `'dotted'` のみ有効です——これは意図的な自制であり、任意の CSS border-style を prop として晒すことを避けています。
+- 垂直の区切り線は親コンテナに明確な高さ（通常は flex 行）が必要です。そうでないと高さが 0 に潰れます。
+- `role="presentation"` と `role="none"` は APG で等価ですが、本コンポーネントは `presentation` を使います（歴史的な互換性がより良いため）。
+- `hasContent` を判定する際は「空白のスロットのみがレンダリングされた」ケースに注意してください。Vue では `!!slots.default?.()` のほうが確実です。
+
+<FnPlayground module="divider" fn="getDividerClassNames" params='{"state": {"direction": "horizontal", "dashed": false, "hasContent": true, "labelPosition": "center", "borderStyle": null}}' />

@@ -1,0 +1,189 @@
+---
+title: "utils —— les utilitaires généraux"
+description: "createNamespace / deepMerge / debounce / throttle / cssVars et les 15 autres fonctions utilitaires indépendantes des frameworks"
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+`src/utils/` est la couche d'utilitaires généraux la plus basse : même core ne dépend pas de ces fonctions (core utilise la série d'algorithmes plus spécialisés de `core/shared/`) ; elles servent l'implémentation des composants des bibliothèques UI et le côté métier.
+
+## Comment importer
+
+```ts
+import { createNamespace, deepMerge, debounce, generateId } from '@lh-ui/share/utils'
+```
+
+## La table des fonctions
+
+| Fonction | Signature | Rôle |
+| --- | --- | --- |
+| `generateId` | `(prefix = 'lh') => string` | Génère un identifiant unique (`${prefix}_${Date.now()}_${counter}`) |
+| `generateRandomId` | `() => string` | Génère un identifiant aléatoire (7 caractères en base 36) |
+| `isEmpty` | `(val: unknown) => boolean` | Vérifie si la valeur est vide (uniquement `null` / `undefined` / `''`) |
+| `isString` | `(val: unknown) => val is string` | Le garde-fou de type : la chaîne |
+| `isNumber` | `(val: unknown) => val is number` | Le garde-fou de type : le nombre (`NaN` renvoie `false`) |
+| `isPlainObject` | `(val: unknown) => val is Record<string, unknown>` | Le garde-fou de type : l'objet simple |
+| `debounce` | `<T>(fn: T, delay = 300) => LhDebounced<T>` | L'anti-rebond (avec `cancel` / `flush`) |
+| `throttle` | `<T>(fn: T, delay = 300) => LhThrottled<T>` | La limitation de débit (exécution immédiate en tête + exécution de rattrapage en queue) |
+| `deepMerge` | `<T>(target: T, ...sources: Partial<T>[]) => T` | La fusion profonde des objets |
+| `getScrollbarWidth` | `() => number` | Obtient la largeur de la barre de défilement (le résultat est mis en cache) |
+| `toggleClass` | `(el, className, force?) => void` | Ajoute / supprime une classe CSS |
+| `getEventValue` | `(e: Event) => string` | Extrait la valeur cible d'un événement |
+
+Les sous-modules exportés (re-exportés à la fin de `@lh-ui/share/utils`) :
+
+| Fonction | Signature | Rôle |
+| --- | --- | --- |
+| `createNamespace` | `(block: string) => LhNamespace` | L'utilitaire d'espace de noms BEM |
+| `toCssVarName` | `(key: string) => string` | Génère un nom de variable CSS (renvoie tel quel si le préfixe `--lh-` est déjà présent, **idempotent**) |
+| `cssVars` | `(vars: Record<string, string>) => Record<string, string>` | Les paires clé-valeur des themeVars → l'objet de variables CSS liable à `:style` |
+| `stripCssVarName` | `(key: string) => string` | Retire le préfixe `--lh-` et restitue la clé prop de themeVars |
+
+## createNamespace —— l'espace de noms BEM
+
+```ts
+const ns = createNamespace('button')
+
+ns.b()              // 'lh-button'
+ns.e('text')        // 'lh-button__text'
+ns.m('primary')     // 'lh-button--primary'
+ns.em('text', 'disabled')  // 'lh-button__text--disabled'
+ns.is('loading', true)     // 'is-loading'
+ns.is('loading', false)    // '' (la chaîne vide est ignorée par le framework)
+```
+
+Les noms de classes de tous les composants lh-ui sont générés par cet utilitaire, afin de garantir la cohérence de la structure BEM et l'absence d'oubli du préfixe `lh-`. Les classes d'état produites par `is()` **ne portent pas le préfixe d'espace de noms** (`is-loading` et non `lh-button--is-loading`), c'est la convention familiale.
+
+Les types :
+
+```ts
+export interface LhNamespace {
+  b: () => string                       // le bloc
+  e: (element: string) => string        // l'élément
+  m: (modifier: string) => string       // le modificateur
+  em: (element: string, modifier: string) => string  // l'élément et son modificateur
+  is: (name: string, state?: boolean | string) => string  // la classe d'état
+}
+```
+
+## debounce / throttle
+
+### debounce —— n'exécuter que le dernier appel pendant la période de silence
+
+```ts
+const debounced = debounce((q: string) => search(q), 300)
+input.addEventListener('input', (e) => debounced(e.target.value))
+
+debounced.cancel()   // au démontage, on nettoie les appels en attente non exécutés
+debounced.flush()    // Exécute immédiatement l'appel en attente (une no-op s'il n'y en a pas)
+```
+
+`cancel` / `flush` ne sont pas une décoration optionnelle : au démontage d'un composant, un minuteur non nettoyé appellerait un contexte déjà détruit ; le bouton « recherche immédiate » doit appeler `flush()` pour lancer tout de suite les requêtes pas encore déclenchées.
+
+### throttle —— exécution immédiate en tête + exécution de rattrapage en queue
+
+```ts
+const throttled = throttle(onScroll, 100)
+window.addEventListener('scroll', throttled)
+```
+
+Le démarrage de la fenêtre temporelle déclenche une **exécution immédiate** (la tête) ; le tout dernier appel de la fenêtre est **exécuté par rattrapage** à sa fermeture (la queue). Une limitation de débit naïve perd la dernière image d'un défilement rapide — or c'est au moment où le défilement s'arrête que la mise à jour est la plus nécessaire (le calcul de position du sticky / affix).
+
+`throttle` n'a que `cancel` (nettoyer le minuteur de queue + réinitialiser `lastTime`), pas de `flush` (la queue signifie sémantiquement « exécuter plus tard »).
+
+Les types :
+
+```ts
+export interface LhDebounced<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+  flush(): void
+}
+
+export interface LhThrottled<T> {
+  (...args: Parameters<T>): void
+  cancel(): void
+}
+```
+
+## Le trio cssVars
+
+La prop `themeVars` du ConfigProvider utilise des **clés abrégées** (`'primary-color'`) ; ce que les composants consomment, ce sont les variables CSS (`--lh-primary-color`). Ces trois fonctions assurent la conversion dans les deux sens :
+
+```ts
+cssVars({ 'primary-color': '#1677ff' })
+// { '--lh-primary-color': '#1677ff' }   ← liable tel quel à :style
+
+toCssVarName('primary-color')      // '--lh-primary-color'
+toCssVarName('--lh-primary-color') // '--lh-primary-color' (idempotent)
+
+stripCssVarName('--lh-primary-color')  // 'primary-color'
+```
+
+**L'idempotence de `toCssVarName` est importante** : elle évite que certaines clés déjà préfixées sur certains chemins ne se voient rajouter un second préfixe et deviennent `--lh---lh-primary-color` — une telle clé échoue silencieusement (la variable CSS n'existe pas), donnant l'impression que « le changement de thème ne fait rien ».
+
+## deepMerge
+
+```ts
+deepMerge({ a: 1, nested: { x: 1 } }, { nested: { y: 2 } })
+// { a: 1, nested: { x: 1, y: 2 } }
+```
+
+- La récursion n'a lieu que lorsque **les deux côtés sont des objets simples**.
+- `sourceVal !== undefined` seul permet la surcharge (passer explicitement `undefined` ne surcharge pas).
+- **La cible est modifiée sur place puis renvoyée** — c'est le point d'attention : pour ne pas polluer l'objet d'origine, commencez par une copie superficielle `{ ...target }`.
+
+## getScrollbarWidth
+
+```ts
+getScrollbarWidth()   // par exemple 15 (Windows) / 0 (macOS sans barre de défilement)
+```
+
+Le résultat est mis en cache dans la variable de module `_scrollbarWidth`. **Garde SSR** : renvoie `0` quand `typeof document === 'undefined'`.
+
+Usage : à l'ouverture d'un dialog / drawer, on verrouille le défilement du body ; le côté droit perd la largeur d'une barre de défilement, il faut compenser avec un `padding-right`, sinon le contenu de la page tressaute horizontalement.
+
+## Exemples d'utilisation
+
+### BEM + fusion de classes dans un composant
+
+```ts
+const ns = createNamespace('dialog')
+
+const headerClass = computed(() => [
+  ns.e('header'),
+  ns.is('centered', props.centered),
+  // la classe passée par l'utilisateur
+  ...(typeof attrs.class === 'string' ? attrs.class.split(' ') : []),
+])
+```
+
+### Le ConfigProvider injecte les variables de thème
+
+```ts
+const styleVars = computed(() => cssVars(props.themeVars))
+// <div :style="styleVars">
+```
+
+### La limitation de débit d'une écoute de défilement
+
+```ts
+onMounted(() => {
+  const onScroll = throttle(updateAffixPosition, 100)
+  window.addEventListener('scroll', onScroll, true)
+  onUnmounted(() => {
+    window.removeEventListener('scroll', onScroll, true)
+    onScroll.cancel()
+  })
+})
+```
+
+## Points d'attention
+
+- **`isEmpty` ne juge que trois choses** : `null` / `undefined` / `''`. `0` / `false` / `[]` **ne sont pas vides**. Pour tester « un tableau vide / un objet vide », écrivez le test vous-même.
+- **`isNumber(NaN)` est `false`** : NaN est délibérément exclu.
+- **`deepMerge` modifie la cible sur place** : la source d'erreur la plus fréquente.
+- **`generateId` n'est pas une fonction pure** : un compteur s'incrémente au niveau du module ; des appels répétés dans un même processus donnent des résultats différents (l'ordre entre SSR / CSR doit être identique, voir la note sur generateAriaId dans [accessibilité](/fr/core/a11y#generateariaid)).
+- **Les composables du type `useLhSize` ne sont pas ici** : ce qui dépend de l'API de composition de chaque framework appartient à la couche UI de chaque framework ; share ne l'exporte pas.
+
+<FnPlayground module="utils" fn="createNamespace" params='{"block": "button"}' />

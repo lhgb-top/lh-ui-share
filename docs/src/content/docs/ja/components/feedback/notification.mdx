@@ -1,0 +1,195 @@
+---
+title: notification —— 通知
+description: 'groupNotificationsByPosition の四隅グループ化、computeStackOffsets の積み上げオフセット、message よりも重い通知レイヤー'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+通知はメッセージの「重量版」です：タイトルを伴い、画面の四隅に張り付き、より長く留まり、クリックでジャンプできます。**システム級あるいは非同期のイベント**——新着メッセージの到着、タスクの完了、バックグラウンド操作の結果——に使われます。`core/notification` が管理するのは四隅のグループ化と積み上げオフセットです——これが `message`（単列入りの上部中央）との核心的な差異です。
+
+## いつ使うか
+
+- 各端末で `LhNotification` を実装（サービス式 API）：システム通知、非同期タスクの結果、あとで確認したいイベント。
+- 内容が多い（タイトル + 本文）、ユーザーがクリックして追跡する必要があるシーン。
+- **使うべきでないケース**：瞬時の操作フィードバック（`message` を使う、より軽い）；即座に処理が必要な確認（`dialog` を使う）；ページ内の恒久的な提示（`alert` を使う）。
+
+## インポート方法
+
+```ts
+import {
+  LH_NOTIFICATION_DURATION_DEFAULT,
+  LH_NOTIFICATION_GAP_DEFAULT,
+  getNotificationIconName,
+  getNotificationClassNames,
+  isTopPosition,
+  isRightPosition,
+  groupNotificationsByPosition,
+  computeStackOffsets,
+  getNotificationRole,
+  getNotificationAria,
+} from '@lh-ui/share/core/notification'
+import type {
+  LhNotificationType,
+  LhNotificationPosition,
+  LhNotificationRecord,
+} from '@lh-ui/share/core/notification'
+```
+
+## 設計意図
+
+**単列ではなく四隅のグループ化**：`groupNotificationsByPosition` はキューを位置ごとに 4 つのグループに切り分け、サービス層がグループごとに四隅のコンテナにレンダリングします。コメントにはあるフォールバックが記録されています：未知の position（JS 側の汚いデータ）は**デフォルトの top-right に落ちる**ようにし、1 件の汚いデータがグループ全体を崩さないようにしています。
+
+**`computeStackOffsets` の加算方向**：各件について**ビューポートの端**からの相対オフセットを返します——端に貼く 1 件目は 0、以降は「前にある件の高さ + 間隔」を順に加算します。**下端に貼るコンテナの方向の反転は呼び出し側が行います**——core はコンテナがどちら側にあるか知らず、「端からどれだけ離れているか」だけを計算します。
+
+**デフォルトの長さは message より長い**：`LH_NOTIFICATION_DURATION_DEFAULT = 4500` 対 message の 3000——通知は性質上「あとで見てもよい」ものであり、長く留まるのが理にかなっています。
+
+**`isTopPosition` / `isRightPosition` の文字列判定**：`position.startsWith('top')` / `endsWith('right')`——`'top-left'` のような複合位置をセマンティックなフラグに分解し、UI 層がコンテナの配置と入場アニメーションの方向（上端に貼くものは上から、下端に貼くものは下からスライドイン）を決めるのに使います。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getNotificationIconName` | `(type) => LhIconName` | アイコン名 | 4 つのセマンティクス |
+| `getNotificationClassNames` | `(state: { type, showClose, clickable }) => string[]` | クラス名 | タイプ／閉じるボタン／クリック可 |
+| `isTopPosition` | `(position) => boolean` | 上端か | コンテナの配置と入場方向 |
+| `isRightPosition` | `(position) => boolean` | 右側か | コンテナの配置 |
+| `groupNotificationsByPosition` | `(items) => Record<Position, T[]>` | 4 グループ | 未知の位置は top-right にフォールバック |
+| `computeStackOffsets` | `(heights: number[], gap?) => number[]` | オフセット配列 | 高さ + 間隔を加算 |
+| `getNotificationRole` | `(type) => 'alert' \| 'status'` | live ロール | message と同パラダイム |
+| `getNotificationAria` | `(type) => LhAriaAttrs` | aria 属性バッグ | role |
+
+定数：`LH_NOTIFICATION_DURATION_DEFAULT = 4500`、`LH_NOTIFICATION_GAP_DEFAULT = 16`。
+
+## 型定義
+
+```ts
+export type LhNotificationType = 'info' | 'success' | 'warning' | 'danger' | 'error'  // loading なし
+export type LhNotificationPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left'
+
+export interface LhNotificationRecord {
+  id: number
+  type: LhNotificationType
+  title: string
+  content: string
+  duration: number       // 0 は自動的に閉じないことを示す
+  position: LhNotificationPosition
+  showClose: boolean
+  sx?: LhSxProps
+  onClick?: () => void
+  onClose?: () => void
+}
+```
+
+## アクセシビリティ
+
+```ts
+getNotificationAria('danger')   // { role: 'alert' }
+getNotificationAria('success')  // { role: 'status' }
+```
+
+- ロールマッピングは `message` / `alert` と同パラダイム：warning/danger/error は即座に読み上げ、info/success はキューに入ります。
+- **タイトルの読み上げ**：通知はタイトルを伴うため、タイトルを `<h4>`（または `role="heading"`）としてレンダリングすることを推奨します——スクリーンリーダーは見出し階層として扱います；live region によって読み上げられるのは content のみで、タイトルは DOM のセマンティクスで伝わります。
+- **クリック可能な通知**：`clickable` 状態ではカード全体がクリック可能でジャンプするため、`<button>` または `role="link"` で包むべきです——`<div>` に onclick だけ付けるのは避けてください、キーボードのユーザーがトリガーできません。
+- **閉じるボタン**：アイコンボタンには `aria-label` が必要です。
+
+## 使用例
+
+```ts
+import {
+  groupNotificationsByPosition, computeStackOffsets, isTopPosition,
+} from '@lh-ui/share/core/notification'
+
+isTopPosition('top-right')   // true
+isTopPosition('bottom-left') // false
+isRightPosition('top-right')  // true
+isRightPosition('top-left')   // false
+
+groupNotificationsByPosition([
+  { position: 'top-right' }, { position: 'bottom-left' }, { position: 'top-right' },
+])
+// { 'top-right': [2 件], 'top-left': [], 'bottom-right': [], 'bottom-left': [1 件] }
+
+groupNotificationsByPosition([{ position: 'middle' as never }])
+// 未知の位置 → フォールバックして 'top-right' に
+
+computeStackOffsets([40, 60, 30])
+// [0, 76, 152]  ← 0, 40+16, 40+16+60+16
+computeStackOffsets([40])  // [0]
+```
+
+```ts
+// サービス層：四隅のコンテナがそれぞれキューを管理
+const groups = computed(() => {
+  const byPos = groupNotificationsByPosition(queue.value)
+  return Object.entries(byPos).map(([position, items]) => ({
+    position: position as LhNotificationPosition,
+    items,
+    // 積み上げオフセット：下端のコンテナは反転が必要（1 件目が下端に貼き、以降は上へ積む）
+    offsets: computeStackOffsets(items.map((i) => heights.value[i.id] ?? 60)),
+  }))
+})
+```
+
+```vue
+<!-- Vue3 -->
+<teleport to="body">
+  <div
+    v-for="group in groups"
+    :key="group.position"
+    class="lh-notification"
+    :class="[`lh-notification--${group.position}`]"
+  >
+    <transition-group :name="isTopPosition(group.position) ? 'lh-notification-slide-top' : 'lh-notification-slide-bottom'" tag="div">
+      <div
+        v-for="(record, i) in group.items"
+        :key="record.id"
+        :class="getNotificationClassNames({ type: record.type, showClose: record.showClose, clickable: !!record.onClick })"
+        :role="getNotificationRole(record.type)"
+        :style="{ transform: `translateY(${(isTopPosition(group.position) ? 1 : -1) * group.offsets[i]}px)` }"
+        @click="record.onClick?.()"
+      >
+        <LhIcon :name="getNotificationIconName(record.type)" />
+        <div class="lh-notification__main">
+          <h4 class="lh-notification__title">{{ record.title }}</h4>
+          <p class="lh-notification__content">{{ record.content }}</p>
+        </div>
+        <button v-if="record.showClose" type="button" aria-label="閉じる" @click.stop="close(record.id)">✕</button>
+      </div>
+    </transition-group>
+  </div>
+</teleport>
+```
+
+```tsx
+// React：高さはレンダリング後に計測（ref + useCallbackLayoutEffect）してから積み上げオフセットを算出；
+// 最初のフレームは見積もりの高さを使い、計測が正確になってから更新する
+```
+
+```ts
+// uniapp：<view> + fixed で四隅；高さの計測は createSelectorQuery を使う
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-notification` | コンテナ（四隅 fixed） |
+| `.lh-notification--{top-right\|top-left\|bottom-right\|bottom-left}` | 位置 |
+| `.lh-notification__item` | 1 件のカード |
+| `.lh-notification__item--{info\|success\|warning\|danger\|error}` | セマンティックタイプ |
+| `.lh-notification__item--closable` / `--clickable` | 閉じるボタンあり / クリック可（hover ハイライト + ポインタ） |
+| `.lh-notification__main` / `__title` / `__content` | メイン領域 / タイトル / 本文 |
+
+幅は固定（320~360px など）、`--lh-bg-color` の背景 + シャドウ；4 つのセマンティック色はアイコンと左側のカラーバーに適用されます。
+
+## 注意事項
+
+- **積み上げオフセットには実際の高さが必要**：`computeStackOffsets` は heights 配列を消費し、UI 層が各件の実際のレンダリング高さを計測しなければなりません。最初のフレームで見積もりの高さを使うとジャンプが発生します——計測が正確になってから状態を一度更新してください。
+- **下端のコンテナの方向反転**：`computeStackOffsets` が返すのは「端からの距離」で、bottom のコンテナは -1 を掛けます（下方向を正とするため）。これは呼び出し側の責任で、core はコンテナの方位を認識しません。
+- **`duration: 0` の通知**：自動的に閉じません。「未読メッセージ」のようにユーザーが自発的に消去すべきものに適します——`showClose: true` を併用するか、クリック後に閉じます。
+- **`onClick` と `showClose` のイベント衝突**：クリック可能なカード上の閉じるボタンには `@click.stop` が必要です。さもないと閉じるをクリックした際にカードのジャンプも同時にトリガーされます。
+- **複数位置を混用する際のコンテナ数**：四隅のコンテナは空であっても恒久的に DOM に存在させます（transition-group が必要とするため）、`v-if` にするとアニメーションが壊れます。
+- **message との境界**：通知はより重い（角を占め、タイトルを伴い、より長く留まる）ため、操作フィードバックは message で十分です。两者は共存できます（操作成功は message、システム通知は notification）。
+- **`position` の型の厳格さ**：TS 下で位置を間違えて渡すと弾かれますが、JS の呼び出し側は `'topCenter'` のような値を渡す可能性があります——フォールバックして top-right に入るためクラッシュはしないものの、位置は期待に合いません。呼び出し側は自己確認してください。
+
+<FnPlayground module="notification" fn="groupNotificationsByPosition" params='{"items": [{"position": "top-right"}, {"position": "bottom-left"}, {"position": "top-right"}]}' />

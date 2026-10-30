@@ -1,0 +1,224 @@
+---
+title: time-picker —— اختيار الوقت
+description: 'parseTime/formatTime لتحليل رموز ذات عرض ثابت، و generateTimeColumn لأعمدة الخطو، و wrapTimeValueInRange للالتفاف، ودلالة dialog'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+اختيار الوقت تفاعل **بثلاثة أعمدة دوّارة** (ساعة/دقيقة/ثانية): يدير المستخدم كل عمود على حدة، بدلاً من كتابة الأرقام في حقل إدخال واحد. ويتولّى `core/time-picker` تحليل سلسلة النسق ذي العرض الثابت وعكسه، وتوليد الأعمدة وفق الخطوة، وتصفية القيم المسموحة والالتفاف، إضافة إلى دلالة APG لكل من dialog و listbox. ويدعم الوضعين `time` (الوقت وحده) و `date-time` (التاريخ + الوقت).
+
+## متى يُستخدم
+
+- تُنجزه الأطراف على هيئة `LhTimePicker`: مواعيد الحجز، والمهام المجدولة، وإعداد ساعات العمل.
+- القيمة «لحظة زمنية» بدقة تصل إلى الدقيقة أو الثانية.
+- **لا ينبغي استخدامه**: عند الحاجة للتاريخ دون الوقت (استخدم `date-picker`)؛ وللتمديد الزمني (استخدم time-picker مرتين أو الوضع `isRange`).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  padNumber,
+  formatTime,
+  parseTime,
+  extractTime,
+  generateTimeColumn,
+  createDateTime,
+  isValidTime,
+  formatDateToTimeString,
+  getHourStep,
+  getMinuteStep,
+  getSecondStep,
+  getDisabledHours,
+  getDisabledMinutes,
+  getDisabledSeconds,
+  getHourRange,
+  filterTimeColumnByRange,
+  wrapTimeValueInRange,
+  clampTimeValue,
+  getTimePickerClassNames,
+  getTimePickerTriggerAria,
+  getTimePickerPanelAria,
+  getTimePickerColumnAria,
+} from '@lh-ui/share/core/time-picker'
+import type {
+  LhTimeData,
+  LhTimeColumn,
+  LhTimePickerState,
+  LhTimePickerOptions,
+  LhTimeColumnType,
+  LhTimePickerMode,
+  LhTimeSelectEventData,
+} from '@lh-ui/share/core/time-picker'
+```
+
+## القصد التصميمي
+
+يستخدم `parseTime` / `formatTime` **رموزاً ذات عرض ثابت** (`HH` / `mm` / `ss` لكل منها خانتان) بدلاً من مكتبة تواريخ عامة، وهو اختيار مقصود: فالوقت له ثلاثة مكوّنات فقط، والتحليل الموضعي `substring(idx, idx+2)` أخف بكثير من التعابير النمطية أو moment، وهو متناظر تماماً مع `formatTime` — فما يُكتب يمكن تحليله عائداً. وعند فشل التحليل تُعادة null دائماً، دون إعادة بيانات قذرة جزئية.
+
+وقد أُضيف وقاية لخطوة `generateTimeColumn`: القيمة غير الموجبة تُوحَّد إلى 1 (فالقيمة `step: 0` تُدخل حلقة `for` في دوران لا ينتهي)، وتُقَرَّب الكسور (فتصبح `step: 2.5` هي 2). أما `wrapTimeValueInRange` فcd يُعيد القيمة الأصلية **عندما يغطي المجال كامل المدى** — وهو توافق مع السلوك القديم: فإذا كان مجال عمود الساعات هو [0,23]، يجب أن يقف التدوير عند الحد عند تجاوزه لا أن يلتف إلى الطرف الآخر؛ ولا يحدث الالتفاف إلا عند تحديد فترة جزئية صراحةً (مثل [9, 18]). أما `clampTimeValue` فعلى العكس من ذلك، يكلِّئ دائماً داخل المجال، ويُستخدم لجلب القيمة المختارة سلفاً إلى المجال الصالح.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `padNumber` | `(n: number) => string` | `'09'` | حشوان بخانتين |
+| `formatTime` | `(hours, minutes, seconds, format?) => string` | `'09:30:00'` | التركيب وفق format |
+| `parseTime` | `(timeStr, format?) => LhTimeData \| null` | بيانات الوقت \| null | تحليل موضعي |
+| `extractTime` | `(date: Date) => LhTimeData` | دقائق وساعات وثواني | استخراج من Date |
+| `generateTimeColumn` | `(type, step?, disabledValues?) => LhTimeColumn[]` | خيارات العمود | يتضمن isDisabled |
+| `createDateTime` | `(baseDate, hours, minutes, seconds) => Date` | Date جديد | يحفظ التاريخ ويبدل الوقت |
+| `isValidTime` | `(hours, minutes, seconds) => boolean` | هل هو صالح | فحص مجال القيم |
+| `formatDateToTimeString` | `(date: Date, format: string) => string` | سلسلة نصية | Date → النص المعروض |
+| `getHourStep` / `getMinuteStep` / `getSecondStep` | `(options?) => number` | الخطوة | احتياطي 1 عند الغياب |
+| `getDisabledHours` / `getDisabledMinutes` / `getDisabledSeconds` | `(options?, …) => number[]` | القيم المعطَّلة | استدعاءات المستدعي |
+| `getHourRange` | `(start, end) => { start, end }` | مجال موحَّد | كلاء إلى [0,23] |
+| `filterTimeColumnByRange` | `(columns, start, end) => LhTimeColumn[]` | عمود مُصفَّى | يبقي ما داخل المجال فقط |
+| `wrapTimeValueInRange` | `(value, start, end) => number` | قيمة ملتَفَّة | التفاف عند التجاوز |
+| `clampTimeValue` | `(value, start, end) => number` | قيمة مكلَّاة | كلاء إلى الحد عند التجاوز |
+| `getTimePickerClassNames` | `(state: { size, disabled, visible }) => string[]` | أسماء أصناف | الحجم/التعطيل/التوسيع |
+| `getTimePickerTriggerAria` | `(visible, panelId?) => LhAriaAttrs` | حزمة سمات aria | haspopup dialog |
+| `getTimePickerPanelAria` | `(id?) => LhAriaAttrs` | حزمة سمات aria | role=dialog |
+| `getTimePickerColumnAria` | `(label?) => LhAriaAttrs` | حزمة سمات aria | role=listbox |
+
+## تعريفات الأنواع
+
+```ts
+export type LhTimePickerMode = 'time' | 'date-time'
+export type LhTimeColumnType = 'hour' | 'minute' | 'second'
+
+export interface LhTimeData {
+  hours: number
+  minutes: number
+  seconds: number
+}
+
+export interface LhTimeColumn {
+  value: number
+  text: string
+  isSelected: boolean
+  isDisabled: boolean
+}
+
+export interface LhTimePickerOptions {
+  hours?:   { step?: number; disabledHours?:   () => number[] }
+  minutes?: { step?: number; disabledMinutes?: (hour: number) => number[] }
+  seconds?: { step?: number; disabledSeconds?: (hour: number, minute: number) => number[] }
+}
+
+export interface LhTimeSelectEventData {
+  column: LhTimeColumnType
+  value: number
+}
+```
+
+## إمكانية الوصول
+
+يظهر لوح الوقت في نافذة **dialog** عائمة (المُطلِق `aria-haspopup="dialog"`)، وكل عمود من أعمدته الثلاثة هو **listbox**. وتأتي هذه الدلالة من `getPopupTriggerAria` في النواة المشتركة:
+
+```ts
+getTimePickerTriggerAria(true, 'lh-time-panel')
+// { 'aria-expanded': true, 'aria-haspopup': 'dialog', 'aria-controls': 'lh-time-panel' }
+
+getTimePickerPanelAria('lh-time-panel')
+// { role: 'dialog', id: 'lh-time-panel' }
+
+getTimePickerColumnAria('الساعات')
+// { role: 'listbox', 'aria-label': 'الساعات' }
+```
+
+- يجب أن تحمل خيارات العمود `role="option"` + `aria-selected` (تُصدِّرها طبقة UI من `LhTimeColumn.isSelected`) + `aria-disabled` (من `isDisabled`).
+- لوحة المفاتيح: بعد تركيز العمود يتنقّل ↑/↓ بين الخيارات **غير المعطَّلة** ويختارها؛ ويغلق Esc اللوحة.
+- تعني دلالة dialog أنه عند توسيع اللوحة يجب تقييد التركيز (`core/shared/focus-trap`)، كي لا يهرب التركيز خارج اللوحة.
+
+## أمثلة الاستخدام
+
+```ts
+import {
+  parseTime, formatTime, generateTimeColumn, isValidTime, createDateTime,
+} from '@lh-ui/share/core/time-picker'
+
+formatTime(9, 30, 5)                    // '09:30:05'
+formatTime(9, 30, 5, 'HH:mm')           // '09:30'
+parseTime('09:30:05')                   // { hours: 9, minutes: 30, seconds: 5 }
+parseTime('09:30:05', 'HH:mm')          // { hours: 9, minutes: 30, seconds: 0 } (تُكمل ss الناقصة بصفر)
+parseTime('99:99:99')                   // null (قيم المجال غير صالحة)
+parseTime('abc', 'HH:mm:ss')            // null (NaN)
+parseTime('09:30', 'YYYY-MM-DD')        // null (لا يحوي format رموز وقت)
+generateTimeColumn('hour', 1)           // 24 عنصراً: 00..23
+generateTimeColumn('minute', 15)        // 4 عناصر: 00 15 30 45
+generateTimeColumn('minute', 0)         // 60 عنصراً (تُوحَّد step 0 إلى 1)
+generateTimeColumn('hour', 1, [0, 1, 2])// العناصر الثلاثة الأولى isDisabled: true
+isValidTime(23, 59, 59)                 // true
+isValidTime(24, 0, 0)                   // false
+createDateTime(new Date('2026-10-12'), 9, 30, 0)  // 2026-10-12 09:30:00
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getTimePickerClassNames({ size, disabled, visible })">
+  <input
+    class="lh-time-picker__input"
+    :value="formatDateToTimeString(value, format)"
+    v-bind="getTimePickerTriggerAria(visible, panelId)"
+    @click="open"
+  />
+  <div v-if="visible" class="lh-time-picker__panel" v-bind="getTimePickerPanelAria(panelId)">
+    <div
+      v-for="col in columns"
+      :key="col.type"
+      class="lh-time-picker__column"
+      v-bind="getTimePickerColumnAria(col.label)"
+    >
+      <div
+        v-for="opt in col.items"
+        :key="opt.value"
+        class="lh-time-picker__option"
+        :class="{ 'is-selected': opt.isSelected, 'is-disabled': opt.isDisabled }"
+        role="option"
+        :aria-selected="opt.isSelected"
+        @click="onSelect(col.type, opt.value)"
+      >
+        {{ opt.text }}
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+```tsx
+// React: توليد الأعمدة
+// const hours = generateTimeColumn('hour', getHourStep(options), getDisabledHours(options))
+// ويعتمد عمود الدقائق على الساعة المختارة: getDisabledMinutes(options, selectedHour)
+```
+
+```ts
+// uniapp: <picker mode="time"> مكوّن مدمج (تنسيق القيم 'HH:mm')،
+// والأعمدة الدوّارة المخصصة تحتاج <picker-view> + <picker-view-column>؛
+// وتُستخدم دوال توليد الأعمدة في core كما هي
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-time-picker` | الصنف الأساسي |
+| `.lh-time-picker--{small\|large}` | درجة الحجم |
+| `.lh-time-picker--disabled` | تعطيل |
+| `.lh-time-picker__input` | حقل إدخال المُطلِق |
+| `.lh-time-picker__panel` | اللوحة المنبثقة |
+| `.lh-time-picker__column` | عمود دوّار واحد |
+| `.lh-time-picker__option` | خيار داخل العمود |
+| `.lh-time-picker__footer` | شريط التأكيد/الإلغاء (في الوضع date-time) |
+
+مشكلة معروفة (مُدرَجة في «مشروع رموز الارتفاع»): ارتفاع عناصر التحكم المتعلقة بtime-picker هو 33px، وهو غير موحَّد مع input (37) و select (32)، والسبب الجذري هو غياب الرموز `--lh-control-height-*`.
+
+## ملاحظات
+
+- **يجوز أن يكون ترتيب رموز format عشوائياً**: فكلٌ من `formatTime` و `parseTime` يأخذ القيم وفق موضع الرمز في format، ويتطابق `'mm:HH` ذهاباً وإياباً بشكل صحيح. لكن عند خلط رموز مع أحرف ليست رموزاً (مثل `'HH时mm分'`)، يأخذ `parseTime` دائماً بخانتين ثابتتي العرض، ولا تؤثر الأحرف الصينية (لأنها ليست رموزاً)، لكن **ستكون فواصل الأرقام في موضع خاطئ** — ففي `'09点30'` يلتقط موضع `mm` السلسلة `'点3'`، فتُحلَّل NaN وتُعاد null. فاحرص على أن يحتوي format على الرموز وفواصل غير رقمية فقط.
+- **سلبيات `parseTime`**: يُعاد null بدلاً من طرح استثناء، وعلى طبقة UI معالجة null عند فقدان تركيز حقل الإدخال (يُحتفظ عادةً بالقيمة الأصلية مع تنبيه).
+- **تفاعل الخطوة مع التعطيل**: تكتفي `disabledValues` بوسم التعطيل دون تصفية — فعلى تنقّل لوحة المفاتيح في طبقة UI تجاوز العناصر `isDisabled` بنفسها.
+- **الوضع `date-time`**: يتولى `date-picker` جزء التاريخ، ويُعاد استخدام هذا الموديل لجزء الوقت؛ وعادةً يُنتقى التاريخ في اللوحة قبل الوقت، ويُدمجهما `createDateTime(baseDate, …)`، مع الانتباه إلى أنه عندما يكون `baseDate` مساوياً null تُؤخذ تاريخ اللحظة الحالية.
+- **الوضع `isRange`**: `rangeStart` / `rangeEnd` هما قيمتا `LhTimeData`، ويعتمد عمود القيم المعطَّلة الثاني على اختيار الأول (مثل اشتراط أن يكون وقت الانتهاء لاحقاً لوقت البداية)، وتحسبه طبقة UI ديناميكياً بالاستدعاءات `getDisabledMinutes` ونحوها.
+- **`SS` بالأحرف الكبيرة ليست الثواني**: الثواني هي `ss` الصغيرة فقط، و `HH` كبيرة و `mm`/`ss` صغيرة هي كتابة ثابتة، تتسق مع اصطلاحات مكتبات مثل day.js.
+
+<FnPlayground module="time-picker" fn="generateTimeColumn" params='{"type": "minute", "step": 15}' />

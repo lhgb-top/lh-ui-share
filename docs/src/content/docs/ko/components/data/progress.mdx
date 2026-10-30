@@ -1,0 +1,205 @@
+---
+title: progress —— 진행률 표시줄
+description: 'clampPercent 클램프, resolveStatus 만점 자동 success, getProgressColor 상태 색상 가져오기, progressbar 의미'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+진행률 표시줄은 '무언가가 얼마나 완료되었는지'를 표현합니다: 업로드, 다운로드, 설치, 심사. 이것은 순수 표시 컴포넌트이며 값이 모든 것을 구동합니다. `core/progress`가 관리하는 것은 백분율 클램프, 상태 도출(만점 자동 success), 원형 진행의 둘레 환산, 그리고 APG progressbar 의미입니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhProgress`를 구현할 때: 파일 업로드 진행률, 작업 실행 진행률, 로딩 소요 시간 알림, 용량 점유.
+- 명확한 '현재 값 / 총량' 비율이 있는 장면.
+- **사용하면 안 되는 곳**: 진행률을 알 수 없는 로딩(`spinner` / `loading` 사용. 그것들은 '어디까지 왔는지'가 아니라 '돌고 있음'을 표현); 단계 내비게이션(`steps` 사용).
+
+## 가져오기
+
+```ts
+import {
+  clampPercent,
+  resolveStatus,
+  getProgressClassNames,
+  getCircleCircumference,
+  getProgressColor,
+  formatPercentText,
+  getProgressAria,
+} from '@lh-ui/share/core/progress'
+import type { LhProgressType, LhProgressStatus, LhProgressState } from '@lh-ui/share/core/progress'
+```
+
+## 설계 의도
+
+**`resolveStatus`의 자동 도출**: `status`가 기본 `'normal'`일 때 `value >= 100`이면 자동으로 `'success'`가 됩니다. 이것은 '설정보다 규약'입니다. 차면 성공인 것이고, 사용자가 모든 진행률 표시줄에 `:status="value >= 100 ? 'success' : 'normal'"`을 쓸 필요가 없습니다. 하지만 **명시적으로 지정된 상태는 덮어쓰지 않습니다**: `warning`을 넘기면 100%여도 계속 warning입니다.
+
+**`clampPercent`의 NaN은 0으로**: NaN은 전파되지 않고 0을 반환합니다. 진행률 값은 비동기 계산에서 오는 경우가 많고(`loaded / total`, total이 0이면 NaN), 0으로 돌려 UI가 `NaN%`를 표시하거나 무너지는 대신 '0%'를 보여주게 합니다.
+
+**원형 둘레의 환산**: `getCircleCircumference(width, strokeWidth)` = `2π × (width - strokeWidth) / 2`. 이것은 SVG `stroke-dasharray`의 표준 알고리즘입니다: `stroke-dasharray = 둘레`, `stroke-dashoffset = 둘레 × (1 - percent/100)`. 반지름은 **먼저 테두리 너비의 절반을 빼야** 합니다. 그렇지 않으면 원이 캔버스보다 한 바퀴 커집니다.
+
+**`getProgressColor`의 3계층 우선순위**: 사용자가 넘긴 color(함수 또는 문자열) > 상태 대응 token > 기본 주색. 함수 형태(`(percentage) => string`)는 **점진 진행률 표시줄**(예: 0-50 녹색, 50-80 노랑, 80+ 빨강)을 지원합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `clampPercent` | `(value: number) => number` | [0,100] | NaN은 0으로 |
+| `resolveStatus` | `(value, status) => LhProgressStatus` | 상태 | normal이고 ≥100 → success |
+| `getProgressClassNames` | `(state: LhProgressState) => string[]` | 클래스명 | 유형/상태/글자 |
+| `getCircleCircumference` | `(width, strokeWidth) => number` | 둘레 | SVG dash 계산 |
+| `getProgressColor` | `(status, color?, percentage?) => string` | 색 | 3계층 우선 |
+| `formatPercentText` | `(percentage) => string` | `'50%'` | 반올림 문구 |
+| `getProgressAria` | `(options: { percentage, label? }) => LhAriaAttrs` | aria 속성 묶음 | progressbar 의미 |
+
+## 타입 정의
+
+```ts
+export type LhProgressType = 'line' | 'circle'
+export type LhProgressStatus = 'normal' | 'success' | 'warning' | 'exception'
+
+export interface LhProgressState {
+  type: LhProgressType
+  status: LhProgressStatus
+  showText: boolean
+  strokeWidth: number   // line은 높이 px, circle은 SVG stroke 너비
+  width: number         // 원형 캔버스 너비 px
+}
+```
+
+## 접근성
+
+```ts
+getProgressAria({ percentage: 60, label: '업로드 진행률' })
+// { role: 'progressbar', 'aria-valuenow': 60, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-label': '업로드 진행률' }
+
+getProgressAria({ percentage: 100 })
+// { role: 'progressbar', 'aria-valuenow': 100, 'aria-valuemin': 0, 'aria-valuemax': 100 }
+```
+
+- `role="progressbar"`는 APG의 표준 역할이며, 스크린 리더가 '진행률 표시줄 60%'를 읽어줍니다.
+- **`aria-label`은 보이는 글자가 없을 때 필수**: `showText: false`인 진행률 표시줄은 스크린 리더 사용자에게 완전히 보이지 않으므로 접근 가능한 이름이 있어야 합니다. 보이는 글자가 있을 때는 생략해도 됩니다(글자 자체가 이름).
+- 진행률 표시줄은 `aria-readonly`입니다(기본적으로 내재), 별도로 선언할 필요 없습니다.
+- **동적 진행의 읽기 절제**: 초당 수십 번 업데이트되는 진행률 표시줄은 `aria-valuenow`가 빈번하게 변해 스크린 리더가 화면을 새로고침합니다. UI 계층이 `aria-valuenow`를 업데이트하는 빈도는 초당 약 한 번으로 낮춰야 합니다(시각 애니메이션은 영향받지 않고, aria 업데이트 빈도만 낮춤).
+
+## 사용 예
+
+```ts
+import { clampPercent, resolveStatus, getProgressColor, getCircleCircumference } from '@lh-ui/share/core/progress'
+
+clampPercent(50)       // 50
+clampPercent(150)      // 100
+clampPercent(-10)      // 0
+clampPercent(NaN)      // 0
+
+resolveStatus(100, 'normal')    // 'success' (만점 자동)
+resolveStatus(100, 'warning')   // 'warning' (명시 상태는 덮어쓰지 않음)
+resolveStatus(50, 'normal')     // 'normal'
+
+getProgressColor('normal')                 // 'var(--lh-primary-color)'
+getProgressColor('success')                // 'var(--lh-success-color)'
+getProgressColor('warning')                // 'var(--lh-warning-color)'
+getProgressColor('exception')              // 'var(--lh-danger-color)'
+getProgressColor('normal', '#f00')         // '#f00' (문자열 우선)
+getProgressColor('normal', (p) => p > 80 ? 'var(--lh-danger-color)' : 'var(--lh-success-color)', 90)
+// 'var(--lh-danger-color)' (함수가 현재 백분율로 색을 선택)
+
+getCircleCircumference(120, 8)  // 2π × 56 ≈ 351.86
+formatPercentText(49.6)         // '50%' (반올림)
+```
+
+```ts
+// 점진 색상 설정(함수 color)
+const color = (percentage: number) =>
+  percentage < 30 ? 'var(--lh-success-color)'
+  : percentage < 70 ? 'var(--lh-warning-color)'
+  : 'var(--lh-danger-color)'
+```
+
+```vue
+<!-- Vue3: 선형 -->
+<div :class="getProgressClassNames({ type: 'line', status, showText, strokeWidth, width })">
+  <div
+    class="lh-progress__bar"
+    role="progressbar"
+    :aria-valuenow="clamped"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    :aria-label="showText ? undefined : label"
+  >
+    <div
+      class="lh-progress__fill"
+      :style="{ width: clamped + '%', height: strokeWidth + 'px', background: barColor }"
+    />
+  </div>
+  <span v-if="showText" class="lh-progress__text">{{ formatPercentText(clamped) }}</span>
+</div>
+```
+
+```vue
+<!-- Vue3: 원형 -->
+<div :class="getProgressClassNames({ type: 'circle', status, showText, strokeWidth, width })">
+  <svg :width="width" :height="width" :viewBox="`0 0 ${width} ${width}`">
+    <circle
+      :cx="width / 2" :cy="width / 2"
+      :r="(width - strokeWidth) / 2"
+      :stroke-width="strokeWidth"
+      fill="none"
+      class="lh-progress__circle-track"
+    />
+    <circle
+      :cx="width / 2" :cy="width / 2"
+      :r="(width - strokeWidth) / 2"
+      :stroke-width="strokeWidth"
+      fill="none"
+      :stroke="barColor"
+      stroke-linecap="round"
+      :stroke-dasharray="circumference"
+      :stroke-dashoffset="circumference * (1 - clamped / 100)"
+      :transform="`rotate(-90 ${width / 2} ${width / 2})`"
+    />
+  </svg>
+  <span v-if="showText" class="lh-progress__circle-text">{{ formatPercentText(clamped) }}</span>
+</div>
+```
+
+```ts
+const clamped = computed(() => clampPercent(props.percentage))
+const status = computed(() => resolveStatus(clamped.value, props.status))
+const barColor = computed(() => getProgressColor(status.value, props.color, clamped.value))
+const circumference = computed(() => getCircleCircumference(props.width, props.strokeWidth))
+```
+
+```tsx
+// React: 원형은 stroke-dashoffset 애니메이션 사용(CSS transition이 이 속성에 적용)
+```
+
+```ts
+// uniapp: 선형은 <view> 너비 백분율; 원형은 <canvas> 또는 SVG 필요(일부 단말 지원 제한),
+// 단순화 방안으로 선형 진행률 표시줄로 원형을 대체
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-progress` / `--line` / `--circle` | 기본 클래스 / 유형 |
+| `.lh-progress--success` / `--warning` / `--exception` | 상태(글자색 + 채우기 색) |
+| `.lh-progress--no-text` | 글자 없음(오른쪽 글자 자리 제거) |
+| `.lh-progress__bar` | 트랙 |
+| `.lh-progress__fill` | 채우기(너비 백분율) |
+| `.lh-progress__text` | 선형 글자 |
+| `.lh-progress__circle-track` | 원형 트랙 |
+| `.lh-progress__circle-text` | 원형 중앙 글자 |
+
+트랙 색 `--lh-fill-color`, 채우기 기본 `--lh-primary-color`, 상태 색은 `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`.
+
+## 주의사항
+
+- **`strokeWidth`의 이중 의미**: line 모드에서는 채우기의 **높이**(px), circle 모드에서는 SVG의 **테두리 너비**. 같은 prop에 두 가지 의미가 있으며 UI 계층이 `type`에 따라 각각 소비합니다.
+- **원형의 `width`와 `strokeWidth` 관계**: `strokeWidth`는 `width`보다 클 수 없습니다. 그렇지 않면 반지름이 음수가 되고 둘레가 음수로 계산되어 `stroke-dashoffset`의 동작이 정의되지 않습니다.
+- **`showText: false`일 때 반드시 `aria-label`을 주어야** 합니다. 이것은 접근성의 강제 요구 사항이지 선택 사항이 아닙니다.
+- **애니메이션의 경계**: 채우기 너비가 0에서 80%로 뛰면 CSS transition이 보간 애니메이션을 만듭니다; 하지만 `clamped`가 NaN에서 0으로 돌아가는 순간 한 번 깜빡이며, UI 계층은 값이 안정될 때까지 렌더링하지 않을 수 있습니다.
+- **`resolveStatus`와 UI 계층 상태 연동**: 비즈니스가 '100%이지만 여전히 처리 중'을 normal으로 유지하기를 원한다면, 명시적으로 `status="normal"`을 넘기면 자동으로 덮어쓰입니다(자동 도출은 normal일 때만 발생하고 normal → success는 단방향이므로). 이때는 `exception`이나 커스텀 색으로 우회하세요.
+- **백분율이 100을 넘는 비즈니스 의미**: `clampPercent`는 100으로 바로 클램프합니다. 비즈니스가 '초과 달성'(예: 120%)을 표현하려면 progress를 쓰지 말고 `statistic`으로 숫자를 보여주세요.
+- **`formatPercentText`의 반올림**: `49.6`은 `50%`로 표시되고 정밀도를 잃습니다; 소수가 필요한 비즈니스는 직접 형식화하세요(core는 매개변수를 제공하지 않고 함수를 최소로 유지).
+
+<FnPlayground module="progress" fn="getProgressColor" params='{"status": "normal", "percentage": 90}' />

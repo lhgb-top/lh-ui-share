@@ -1,0 +1,163 @@
+---
+title: Jetons de conception
+description: "185 jetons clairs + 118 surcharges sombres + 183 variables SCSS : la valeur, la hiérarchie et les relations de surcharge des trois couches de jetons"
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+Un jeton (token) est la mise en variable du langage de conception : couleurs, tailles de police, espacements, angles arrondis, ombres et durées d'animation sont nommés en variables CSS `--lh-*` ; les composants ne consomment que des noms, jamais de valeur codée en dur. Changer de peau, c'est changer de jetons.
+
+## Les trois couches de jetons
+
+| Couche | Emplacement | Quantité | Le moment de l'évaluation | Surcharge possible |
+| --- | --- | --- | --- | --- |
+| Variables CSS · clair | Le `:root` de `styles/theme/common/var.scss` | **185 entrées** | À l'exécution | ✅ Surcharge libre |
+| Variables CSS · sombre | Le `[data-theme='dark'], .dark` de `styles/theme/common/var-dark.scss` | **118 entrées** | À l'exécution | ✅ |
+| Variables SCSS | `styles/theme/common/variables.scss` | **183 variables** | **À la compilation** | ⚠️ Seulement en modifiant la source et en recompilant |
+
+### Les jetons clairs (var.scss)
+
+```scss
+:root {
+  --lh-primary-color: #2B4C7C;
+  --lh-text-primary: rgba(0, 0, 0, 0.88);
+  --lh-bg-color: #FAF6F0;
+  --lh-border-color: #e5e6eb;
+  --lh-radius-base: 6px;
+  --lh-spacing-base: 8px;
+  // ... 185 entrées
+}
+```
+
+### Les surcharges sombres (var-dark.scss)
+
+```scss
+[data-theme='dark'],
+.dark {
+  --lh-bg-color: #2A2520;
+  --lh-text-primary: #E8E0D8;
+  --lh-border-color: #3A3530;
+  // ... 118 entrées
+}
+```
+
+Le mode sombre est une **couche de surcharge**, et non un jeu indépendant : on n'écrit que les 118 entrées qui doivent se retourner, les autres conservent la valeur claire.
+
+### Les variables SCSS (variables.scss)
+
+```scss
+$lh-primary-color: #2B4C7C !default;
+$lh-border-radius-base: 6px !default;
+// ... 183 variables
+```
+
+L'usage des variables SCSS est de **participer aux calculs de compilation** : le mélange de couleurs (`mix()` / `shade()`), la composition des ombres (l'addition de plusieurs couches de shadow), ce que les variables CSS ne peuvent pas faire. Le prix à payer est la **cuisson à la compilation** — aucun retournement automatique en mode sombre.
+
+## La structure hiérarchique des jetons
+
+Les jetons sont répartis en trois paliers : les deux premiers dans les fichiers globaux du thème, le troisième dans les styles propres de chaque composant :
+
+```scss
+// 1. Les variables SCSS (variables.scss, à la compilation)
+$lh-primary: #2B4C7C !default;
+$lh-text-primary: #2C2C2C !default;
+
+// 2. Les variables CSS globales (le :root de var.scss, 190 entrées)
+--lh-primary-color: #{$lh-primary};
+--lh-text-primary: #{$lh-text-primary};
+--lh-bg-color: #FAF6F0;
+
+// 3. Les variables au niveau du composant (le scss du composant lui-même ; la portée est la racine BEM du composant)
+.lh-card {
+  --lh-card-bg: var(--lh-bg-color, #FAF6F0);
+  --lh-card-border-radius: calc(var(--lh-border-radius-base, 2px) + 2px);
+}
+```
+
+Les mécanismes clés :
+
+- **Entre les paliers 1 et 2, il s'agit d'une interpolation à la compilation, et non d'une chaîne de références var()** : la valeur de `--lh-primary-color` est cuite à partir de `$lh-primary` au moment de la construction ; modifier la variable SCSS à l'exécution est sans effet (il faut recompiler). Il n'y a **pas** de couche intermédiaire « palette de base » dans le projet — pas de variables de gamme de couleurs du type `--lh-blue-6` ; les jetons sémantiques sont directement générés à partir des variables SCSS.
+- **Les deux leviers du changement de peau** : modifier la variable SCSS de `variables.scss` et recompiler (cela affecte tous les jetons sémantiques), ou surcharger à l'exécution les variables CSS du `:root` (c'est la voie qu'empruntent les themeVars du `ConfigProvider`, qui prend effet immédiatement).
+- **Le palier 3 référence le palier 2 par défaut** : la valeur par défaut d'une variable au niveau du composant est généralement une référence `var()` vers un jeton global (avec repli), ce qui maintient la liaison avec le thème tout en permettant à themeVars de surcharger un seul composant de façon ciblée.
+
+## Les domaines sémantiques
+
+Les principaux domaines sémantiques (le regroupement complet est dans la table des jetons ci-dessous) :
+
+| Domaine | Les jetons typiques | Usage |
+| --- | --- | --- |
+| La couleur primaire | `--lh-primary-color` / `-hover` / `-active` / `-bg` / `-border` | Le quintette de la couleur primaire de marque |
+| Le texte | `--lh-text-primary` / `-secondary` / `-tertiary` / `-disabled` | Les quatre niveaux de hiérarchie du texte |
+| Le fond | `--lh-bg-color` / `-page` / `-secondary` / `-overlay` | La page / les conteneurs / le voile |
+| La bordure | `--lh-border-color` / `-light` / `-dark` | Les traits |
+| Les états | `--lh-success-color` / `-warning` / `-error` / `-danger` / `-info` | Les cinq couleurs sémantiques |
+| Les angles arrondis | `--lh-radius-small` / `-base` / `-large` / `-circle` | Les quatre paliers d'arrondi |
+| Les espacements | `--lh-spacing-*` | La graduation sur la base de 8px |
+| Les tailles de police | `--lh-font-size-*` | L'échelle des tailles de police |
+| Les ombres | `--lh-shadow-*` | La hiérarchie des ombres |
+| Les animations | `--lh-animation-duration-*` / `-timing-function` | Le rythme des transitions |
+| L'ornement | `--lh-decoration-color` | La couleur d'ornement style chinois |
+
+## La table complète des jetons
+
+<TokenTable />
+
+(Les données sont générées par `scripts/gen-docs-data.mjs` en analysant les trois fichiers de jetons, avec des assertions de quantité : 190 clairs, 118 sombres, 188 SCSS ; tout écart fait échouer.)
+
+## Surcharger les jetons
+
+### À l'exécution (recommandé)
+
+```ts
+// Les themeVars du ConfigProvider (les clés abrégées reçoivent automatiquement le préfixe --lh-)
+<lh-config-provider :theme-vars="{ 'primary-color': '#1677ff' }">
+```
+
+Ou écrire du CSS à l'entrée de l'application :
+
+```css
+:root {
+  --lh-primary-color: #1677ff;
+  --lh-primary-color-hover: #4096ff;
+  --lh-primary-color-active: #0958d9;
+}
+```
+
+Voir [Personnalisation à l'exécution](/fr/theme/customization).
+
+### À la compilation (les variables SCSS)
+
+```scss
+// Le scss d'entrée du projet ; la surcharge se fait avant le @use
+$lh-primary-color: #1677ff;
+
+@use '@lh-ui/share/styles';
+```
+
+La sémantique de `!default` est « ne pas surcharger si une valeur existe déjà » ; il suffit donc d'assigner avant le `@use`. **À noter** : cela n'affecte que la partie cuite à la compilation ; les variables CSS à l'exécution doivent encore être surchargées par ailleurs.
+
+## Les lacunes connues des jetons
+
+Le « chantier des jetons de hauteur » a été livré (ajout des `--lh-control-height-mini/small/medium/large/x-large`,
+button / select / input-number / cascader / tree-select / date-picker / time-picker /
+input référencent tous les jetons, input passe d'une hauteur dérivée du padding à une hauteur fixe, et le `padding-top: 16px` asymétrique
+des has-label, le décalage fixe de la coche de checkbox, ou encore la répétition codée en dur
+du `translate(-50%,-50%)` de switch ont été corrigés en même temps). Ce qui reste à traiter :
+
+1. Les paliers de taille ne sont pas alignés entre spinner et icon (small 16 contre 14, medium 24 contre 16, etc.). Modifier un côté ou l'autre impacte toute la bibliothèque (message / notification / loading / toutes les icônes) ; déclencheur : une remontée visuelle de mélange LhIcon / LhSpinner dans un même emplacement ; le cas échéant, un sujet dédié sera ouvert.
+2. Les paliers de size sont inégaux : select / switch n'ont que 3 paliers, le validator de date / time-picker est verrouillé, tree-select / rate / segmented / pagination n'ont pas de size, et mini / x-large sont presque jamais tracés dans la couche CSS (sur toute la bibliothèque, seul avatar possède x-large). C'est un changement de la couche API, découplé des jetons de hauteur.
+
+## Points d'attention
+
+- **Un composant n'a pas le droit de déclarer lui-même un `--lh-*`** : il ne peut que consommer via `var(--lh-*, fallback)` (ligne rouge du AGENTS.md racine). Les nouveaux jetons s'ajoutent dans `var.scss`.
+- **Le fallback est obligatoire** : `var(--lh-primary-color, #1677ff)` — en l'absence du jeton, une valeur par défaut acceptable subsiste ; la vérification 2 de `verify:styles` (var fallback) veille.
+- **L'exhaustivité du mode sombre** : pour tout nouveau jeton, se demander « doit-il se retourner en mode sombre ? » et, si oui, ajouter la surcharge dans `var-dark.scss` ; la vérification 7 de `verify:styles` veille.
+- **Un jeton dont la valeur est de la forme `#{$lh-foo}` est cuit à la compilation** : il ne se retourne pas automatiquement en mode sombre et doit être explicitement redirigé (voir [Mode sombre](/fr/theme/dark-mode#le-piège-de-la-cuisson-à-la-compilation)).
+
+## Documentation connexe
+
+- [Vue d'ensemble du système de thèmes](/fr/theme/overview)
+- [Préréglages de thème](/fr/theme/presets)
+- [Personnalisation à l'exécution](/fr/theme/customization)
+- [Mode sombre](/fr/theme/dark-mode)
+- [La source des styles](/fr/reference/styles)

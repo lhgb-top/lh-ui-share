@@ -1,0 +1,126 @@
+---
+title: space —— 間距
+description: 'resolveSpaceGaps 把預設檔位/數字/陣列歸一為 CSS gap 並標記是否走令牌，getSpaceClassNames 算版面配置類'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+`space` 解決元件庫裡最常見的一個問題：把一組元素按固定間距排開。它不是版面配置框架（那是 `LhGrid`），而是「間距語義化」——`small` / `medium` / `large` 是設計令牌，數字是臨時微調，陣列是分別控制行/列間距。
+
+## 何時使用
+
+- 各端實作 `LhSpace`：按鈕群組、表單項排列、卡片內元素版面配置。
+- 需要在元件內部表達「這些元素之間隔開」的任何地方。
+- **不該用它**：需要二維網格（用 `LhGrid`）、需要 flex 的高階對齊（直接寫樣式）。space 只管間距，對齊由 `align` 透傳。
+
+## 匯入方式
+
+```ts
+import { getSpaceClassNames, resolveSpaceGaps, resolveSpaceAlignment } from '@lh-ui/share/core/space'
+import type { LhSpaceState, LhSpaceSizeInput, LhSpaceAlignment } from '@lh-ui/share/core/space'
+```
+
+## 設計意圖
+
+`resolveSpaceGaps` 的核心是**區分「令牌」與「字面量」**：
+
+- 預設檔位（`small` / `medium` / `large`）輸出 `var(--lh-spacing-*)`，傳回 `usesTokens: true`——間距隨主題客製變化。
+- 數字視為 px 字面量，傳回 `usesTokens: false`——間距是呼叫方的一次性決定。
+- 陣列 `[columnGap, rowGap]` 分別控制兩軸。
+
+為什麼要把 `usesTokens` 暴露出來？因為 UI 層的渲染策略不同：走令牌時類別名可以省略（gap 直接由 CSS 變數驅動），走字面量時必須寫內聯樣式。這個旗標讓 UI 層不必再正則匹配輸出值。
+
+檔位只引用 `var.scss` **實際註冊的** spacing token，且 fallback 值與令牌預設值一致——使用者覆蓋 `--lh-spacing-*` 才有實際效果，這個一致性由 `verify:styles` 保證。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getSpaceClassNames` | `(state: LhSpaceState) => string[]` | 類別名陣列 | 方向、換行、尺寸修飾類 |
+| `resolveSpaceGaps` | `(size: LhSpaceSizeInput) => { columnGap: string; rowGap: string; usesTokens: boolean }` | gap 描述 | size 歸一化為 CSS gap |
+| `resolveSpaceAlignment` | `(alignment: string) => string` | CSS 值 | 對齊值透傳 |
+
+`resolveSpaceGaps` 的映射：
+
+| 輸入 | columnGap / rowGap | usesTokens |
+| --- | --- | --- |
+| `'small'` | `var(--lh-spacing-sm, 8px)` | true |
+| `'medium'` | `var(--lh-spacing-base, 16px)` | true |
+| `'large'` | `var(--lh-spacing-xl, 24px)` | true |
+| `24`（數字） | `24px` | false |
+| `[16, 8]` | `16px` / `8px` | false |
+
+邊界：陣列缺項或非有限值回退 `0`（避免 `"undefinedpx"`）；不支援混合預設與數字（如 `['medium', 8]`）。
+
+## 類型定義
+
+```ts
+export type LhSpaceAlignment = 'start' | 'center' | 'end' | 'baseline'
+export type LhSpaceSizeInput = 'small' | 'medium' | 'large' | number | [number, number]
+
+export interface LhSpaceState {
+  direction: 'horizontal' | 'vertical'
+  wrap: boolean
+  size: string    // 類別名計算只接受預設檔位
+}
+```
+
+注意類型上的分工：`LhSpaceState.size`（類別名用）只吃預設檔位字串；`LhSpaceSizeInput`（gap 計算用）額外接受數字與陣列。類別名裡不可能出現 `lh-space--16px`。
+
+## 無障礙
+
+`space` 是純版面配置元素，不輸出 aria 屬性，本身對讀屏軟體不可見。它包裹的內容各自保留原有語義——這是 space 相對 `<button>` 之類容器的區別：它不引入任何語義層。
+
+## 使用範例
+
+```ts
+import { getSpaceClassNames, resolveSpaceGaps } from '@lh-ui/share/core/space'
+
+getSpaceClassNames({ direction: 'horizontal', wrap: true, size: 'small' })
+// ['lh-space', 'lh-space--horizontal', 'lh-space--small', 'lh-space--wrap']
+
+resolveSpaceGaps('medium')
+// { columnGap: 'var(--lh-spacing-base, 16px)', rowGap: 'var(--lh-spacing-base, 16px)', usesTokens: true }
+
+resolveSpaceGaps([16, 8])
+// { columnGap: '16px', rowGap: '8px', usesTokens: false }
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSpaceClassNames({ direction, wrap, size })" :style="gapStyle">
+  <slot />
+</div>
+```
+
+```tsx
+// React
+const gaps = resolveSpaceGaps(size)
+const style = { columnGap: gaps.columnGap, rowGap: gaps.rowGap }
+return <div className={getSpaceClassNames({ direction, wrap, size }).join(' ')} style={style}>{children}</div>
+```
+
+```ts
+// uniapp：gap 在非 h5 端支援良好（nvue/uvue 均支援）；
+// 若個別端不支援 gap，UI 層降級為給子項加 margin
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-space` | 基礎類：flex 容器 |
+| `.lh-space--horizontal` / `.lh-space--vertical` | 方向（flex-direction） |
+| `.lh-space--wrap` | 允許換行 |
+| `.lh-space--{small\|medium\|large}` | 檔位類（配合 `--lh-spacing-*` 令牌） |
+
+檔位類與 `resolveSpaceGaps` 的預設輸出是**同一份令牌的兩種表達**：類別名走 `@use` 的 SCSS 變數（編譯期），gap 走 CSS 變數（執行時）。兩者值一致，由 `verify:styles` 驗證。
+
+## 注意事項
+
+- **不要混用**：`resolveSpaceGaps(['medium', 8])` 不被支援（實作上不識別混合），需要不同軸間距請全用數字 `[16, 8]`。
+- **數字與令牌的選擇**：元件庫內部預設值應當走檔位（隨主題變），業務呼叫點的臨時微調用數字。
+- 換行（`wrap`）只在 horizontal 下有意義；vertical + wrap 無效。
+- `resolveSpaceAlignment` 目前是直傳，具體的 flex 關鍵字映射在樣式層（類別名驅動）。
+
+<FnPlayground module="space" fn="resolveSpaceGaps" params='{"size": "medium"}' />

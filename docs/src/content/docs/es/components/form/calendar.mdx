@@ -1,0 +1,175 @@
+---
+title: calendar —— Calendario
+description: 'normalización entre meses con shiftCalendarMonth, normalización de intervalos con normalizeCalendarSpan, conmutación multiselección con toggleCalendarDate, aria-current=date'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+El calendario es un **panel de fechas permanente**: date-picker esconde el panel en una capa emergente; calendar lo despliega en la página. Admite tres modos de selección — única, intervalo, múltiple — y la restricción por un rango de fechas seleccionables. `core/calendar` reutiliza el algoritmo de la cuadrícula de date-picker (`generateCalendarDays`) y, por encima, añade desplazamiento, restricción de rango y conmutación del estado de selección.
+
+## Cuándo usarlo
+
+- Cada framework implementa `LhCalendar`: vistas de agenda, registros de asistencia, páginas de selección de fechas de hotel o vuelos.
+- Escenarios en los que la fecha debe estar **permanentemente visible** y noelegida en una capa emergente.
+- **No usarlo para**: dentro de formularios con espacio limitado (usa `date-picker`, la capa emergente ocupa menos); cuando solo se elige una fecha y la página ya está saturada.
+
+## Importación
+
+```ts
+import {
+  getCalendarClassNames,
+  shiftCalendarDate,
+  shiftCalendarMonth,
+  isCalendarDateDisabled,
+  clampDateToRange,
+  isCalendarSelected,
+  normalizeCalendarSpan,
+  isCalendarInSpan,
+  toggleCalendarDate,
+  getCalendarCellAria,
+  generateCalendarDays,
+  isSameDay,
+} from '@lh-ui/share/core/calendar'
+import type { LhCalendarRange, LhCalendarSelection } from '@lh-ui/share/core/calendar'
+```
+
+## Intención de diseño
+
+**La dirección de la dependencia es semántica**: calendar importa `generateCalendarDays` de `date-picker` en lugar de reimplementarlo desde `core/shared/date` — el algoritmo de la cuadrícula del calendario es responsabilidad de date-picker y calendar es su vista de calendario. En cambio, las primitivas genéricas (`compareDate` / `isDateDisabled` / `isSameDay`) van directamente al núcleo compartido; calendar no depende en sentido inverso de la lógica de date-picker. Es el convenio de capas de «las primitivas generales se hunden, los algoritmos de dominio se quedan en su sitio».
+
+**La tolerancia a intervalos invertidos**: tanto `isCalendarDateDisabled` como `clampDateToRange` llaman primero a `normalizeCalendarSpan` para normalizar el intervalo — que el usuario pase `[end, start]` (invertido) no provoca que todo se desactive ni un pinzado erróneo. La capa UI no obliga al llamador a ordenar primero.
+
+**La normalización de `shiftCalendarMonth`**: `year * 12 + month + delta` y luego se vuelve a descomponer en año y mes; `((total % 12) + 12) % 12` maneja el módulo de números negativos — cuando el delta negativo cruza el año (por ejemplo, enero -2), el mes no se convierte en -1.
+
+**La conmutación inmutable de la multiselección**: `toggleCalendarDate` elimina si ya está y, si no, lo añade y ordena cronológicamente — devuelve un array nuevo, utilizable directamente para una actualización reactiva, y con un orden estable (evita saltos visuales en la UI).
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Función |
+| --- | --- | --- | --- |
+| `getCalendarClassNames` | `() => string[]` | `['lh-calendar']` | clase del contenedor |
+| `shiftCalendarDate` | `(date, days) => Date` | nuevo Date | desplazar días (seguro entre meses) |
+| `shiftCalendarMonth` | `(year, month, delta) => { year, month }` | año y mes | desplazar meses |
+| `isCalendarDateDisabled` | `(date, range?) => boolean` | si está desactivado | sin restricción, siempre false |
+| `clampDateToRange` | `(date, range?) => Date` | fecha pinzada | fuera de rango se lleva al borde |
+| `isCalendarSelected` | `(date, selected) => boolean` | si está seleccionado | comparación del mismo día |
+| `normalizeCalendarSpan` | `(a, b) => [Date, Date]` | intervalo normalizado | garantiza start ≤ end |
+| `isCalendarInSpan` | `(date, start, end) => boolean` | si está en el intervalo cerrado | con cualquier extremo null devuelve false |
+| `toggleCalendarDate` | `(dates, date) => Date[]` | array nuevo | si está, lo elimina; si no, lo añade y ordena |
+| `getCalendarCellAria` | `(options: { date, selected, range? }) => LhAriaAttrs` | bolsa de atributos aria | aria-current / aria-disabled |
+
+## Definiciones de tipos
+
+```ts
+export type LhCalendarRange = [Date, Date]
+export type LhCalendarSelection = 'single' | 'range' | 'multiple'
+```
+
+La estructura de datos de la cuadrícula reutiliza `LhDatePickerDayData` (véase date-picker).
+
+## Accesibilidad
+
+La salida de `getCalendarCellAria` es contenida — **solo emite atributos cuando hay estado** (el convenio de `LhAriaAttrs` de omitir los valores falsos):
+
+```ts
+getCalendarCellAria({ date: selectedDate, selected: selectedDate, range: undefined })
+// { 'aria-current': 'date' }
+
+getCalendarCellAria({ date: new Date(2026, 0, 1), selected: null, range: [new Date(2026, 2, 1), new Date(2026, 3, 1)] })
+// { 'aria-disabled': true }
+
+getCalendarCellAria({ date: someDate, selected: null })
+// {} (objeto vacío cuando no hay estado)
+```
+
+- El día seleccionado usa `aria-current="date"` (en lugar de `aria-selected`) — el calendario es un control de navegación y el convenio de APG usa current para expresar «la posición actual».
+- Los días desactivados usan `aria-disabled`; los clics y la navegación por teclado de la capa UI deben saltarse esas casillas.
+- Interacción de teclado: tras enfocar una casilla, ↑/↓/←/→ se mueven con `shiftCalendarDate(date, ±1|±7)` y Enter/Space disparan la selección.
+- La cuadrícula completa debe llevar `role="grid"`, la misma estructura que el panel de date-picker.
+
+## Ejemplos de uso
+
+```ts
+import {
+  shiftCalendarMonth, normalizeCalendarSpan, toggleCalendarDate, isCalendarInSpan,
+} from '@lh-ui/share/core/calendar'
+
+shiftCalendarMonth(2026, 0, -2)   // { year: 2025, month: 10 } (módulo negativo correcto)
+shiftCalendarMonth(2026, 11, 1)   // { year: 2027, month: 0 }
+normalizeCalendarSpan(new Date(2026, 3, 1), new Date(2026, 2, 1))
+// [2026-03-01, 2026-04-01] (el intervalo invertido se normaliza solo)
+isCalendarInSpan(new Date(2026, 2, 15), new Date(2026, 2, 1), new Date(2026, 2, 28))  // true
+isCalendarInSpan(new Date(2026, 2, 15), null, null)  // false (con cualquier extremo null)
+toggleCalendarDate([new Date(2026, 2, 1)], new Date(2026, 2, 5))
+// [2026-03-01, 2026-03-05] (añadido y ordenado)
+toggleCalendarDate([new Date(2026, 2, 1), new Date(2026, 2, 5)], new Date(2026, 2, 1))
+// [2026-03-05] (al coincidir, se elimina)
+```
+
+```vue
+<!-- Vue3: modo intervalo -->
+<div :class="getCalendarClassNames()">
+  <div class="lh-calendar__header">
+    <button type="button" @click="shift(-1)">‹</button>
+    <span class="lh-calendar__title">{{ year }} / {{ month + 1 }}</span>
+    <button type="button" @click="shift(1)">›</button>
+  </div>
+  <div class="lh-calendar__body" role="grid">
+    <div v-for="row in weekRows(days)" :key="row[0].date.getTime()" class="lh-calendar__row" role="row">
+      <button
+        v-for="cell in row"
+        :key="cell.date.getTime()"
+        type="button"
+        class="lh-calendar__cell"
+        :class="cellClass(cell)"
+        role="gridcell"
+        v-bind="getCalendarCellAria({ date: cell.date, selected: selected, range: allowedRange })"
+        @click="onPick(cell.date)"
+      >
+        {{ cell.day }}
+      </button>
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// La selección en dos pasos del modo intervalo (regla de la capa UI, core no la integra):
+// if (!rangeStart || (rangeStart && rangeEnd)) { rangeStart = date; rangeEnd = null }
+// else rangeEnd = date  (si es anterior a rangeStart, normalizeCalendarSpan normaliza)
+```
+
+```tsx
+// React: modo multiselección
+// const [dates, setDates] = useState<Date[]>([])
+// onClick: setDates(toggleCalendarDate(dates, cell.date))
+```
+
+```ts
+// uniapp: cuadrícula de <view> + @touchstart; las funciones de core de restricción de
+// rango y conmutación de selección se usan tal cual
+```
+
+## Estilos y tokens
+
+| Clase | Semántica |
+| --- | --- |
+| `.lh-calendar` | clase base |
+| `.lh-calendar__header` / `__title` | navegación de la cabecera |
+| `.lh-calendar__body` | zona de la cuadrícula |
+| `.lh-calendar__row` | una semana |
+| `.lh-calendar__cell` | casilla de día |
+| `.lh-calendar__cell.is-today` / `.is-selected` / `.is-in-range` / `.is-start` / `.is-end` / `.is-disabled` / `.is-other-month` | modificadores de estado |
+
+Selección `--lh-primary-color`; el tramo del intervalo, el color primario con baja opacidad; el día de hoy con contorno; desactivado `--lh-text-disabled`.
+
+## Advertencias
+
+- **month empieza en 0**: igual que date-picker y el `Date` nativo; la UI muestra `+1`.
+- **La relación entre los tres modos de selección y core**: `LhCalendarSelection` es solo una declaración de tipos; las funciones de core son independientes del modo — `isCalendarSelected` gestiona single; `isCalendarInSpan`, range; `toggleCalendarDate`, multiple. El cableado del cambio de modo está en la capa UI.
+- **El estado de medio intervalo**: cuando `rangeStart` ya está fijado y `rangeEnd` aún no, la casilla sobre la que pasa el cursor debe resaltar el tramo intermedio en tiempo real (la capa UI renderiza con un extremo temporal); el `generateCalendarDays` de core admite un rangeEnd nulo y no error.
+- **El uso de `clampDateToRange`**: cuando el valor llega de fuera (por ejemplo, un `v-model` con una fecha fuera de rango), lo reconduce al intervalo legal; la capa UI lo llama una vez al observar el cambio del valor.
+- **El rendimiento del panel permanente**: a diferencia de date-picker, que solo calcula la cuadrícula al abrir, calendar recalcula al cambiar de mes; no recalcules `generateCalendarDays` en cada fotograma (crea 35~42 objetos Date).
+- **La frontera con date-picker**: ambos comparten los datos de la cuadrícula, pero **no el modelo de estado** — el `LhDatePickerState` de date-picker está orientado a la interacción de la capa emergente; calendar no tiene estado de visibilidad.
+
+<FnPlayground module="calendar" fn="shiftCalendarMonth" params='{"year": 2026, "month": 0, "delta": -2}' />

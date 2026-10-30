@@ -1,0 +1,151 @@
+---
+title: types —— 公共類型
+description: 'LhLocaleType / LhLeaves / LhBaseProps / LhTypes 泛型與 ambient 全域宣告'
+---
+
+`src/types/` 是對外暴露的公共類型層。與 [core/shared/types](/core/types)（core 內部聯合類型）的區別：這裡是**給各 UI 庫元件 Props 用的基礎形狀**。
+
+## 匯入方式
+
+```ts
+import type {
+  LhLocaleType,
+  LhLocaleMessages,
+  LhLocaleMessageValue,
+  LhLeaves,
+  LhBaseProps,
+  LhTypes,
+  LhSizes,
+  LhLanguages,
+} from '@lh-ui/share/types'
+```
+
+## 匯出結構
+
+```ts
+// src/types/index.ts
+export * from './locale'           // 語言包相關
+export * from './components/base'  // 元件基礎屬性
+```
+
+`global.d.ts`、`theme.ts`、`scss.d.ts` 是 ambient 宣告，隨 tsconfig 的 `include` 參與編譯，**不在此顯式匯出**。
+
+## locale 相關類型
+
+| 類型 | 定義 | 用途 |
+| --- | --- | --- |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | 六門語言程式碼聯合 |
+| `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | 語言包葉節點（遞迴唯讀） |
+| `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | 語言包整體 |
+| `LhLeaves<T, Prefix extends string = ''>` | 遞迴映射類型 | 推導所有「字串葉子」的點號路徑聯合 |
+| `LhLocaleOptions` | `{ locale: LhLocaleType; messages: LhLocaleMessages }` | `lhlocale.use()` 的入參形狀 |
+
+### LhLeaves 的行為
+
+```ts
+type ZhLeaves = LhLeaves<typeof zhCN>
+// 'common.loading' | 'input.placeholder' | 'input.password' | 'pagination.total' | …
+```
+
+- **字串葉子** → 完整路徑（`'input.placeholder'`）。
+- **陣列鍵**（如 `datepicker.months`）→ `never`。陣列不按鍵定址，`t()` 無法命中，`tm()` 才能取。
+- **物件** → 遞迴子鍵。
+
+`LhLocalePath = LhLeaves<typeof zhCN>` 給 `lhlocale.t()` 提供字面量自動補全與拼寫驗證。
+
+## 元件基礎屬性
+
+三個帶泛型的聯合（允許業務側擴充自訂值）：
+
+```ts
+export type LhTypes<T extends string | undefined = undefined> =
+  T extends string ? LhComponentType | T : LhComponentType
+
+export type LhSizes<T extends string | undefined = undefined> =
+  T extends string ? LhComponentSize | T : LhComponentSize
+
+export type LhLanguages<T extends string | undefined = undefined> =
+  T extends string ? LhComponentLanguage | T : LhComponentLanguage
+```
+
+用法：
+
+```ts
+type MyType = LhTypes<'brand' | 'dangerous'>
+// LhComponentType | 'brand' | 'dangerous'
+```
+
+### LhBaseProps —— 元件 Props 的基礎形狀
+
+```ts
+export interface LhBaseProps<
+  T extends string | undefined = undefined,
+  S extends string | undefined = undefined,
+  L extends string | undefined = undefined,
+> {
+  type?: T extends string ? LhTypes<T> : LhTypes
+  size?: S extends string ? LhSizes<S> : LhSizes
+  disabled?: boolean
+  loading?: boolean
+  plain?: boolean
+  block?: boolean
+  icon?: string
+  nativeType?: string
+  href?: string
+  target?: string
+  title?: string
+  alt?: string
+  lang?: L extends string ? LhLanguages<L> : LhLanguages
+  langPath?: string
+  old?: boolean      // 老年人專用
+}
+```
+
+各 UI 庫的元件 Props `extends LhBaseProps`，自動獲得 `type` / `size` / `disabled` / `lang` 這套公共欄位——保證全家族元件的公共 prop 名字一致（使用者不用記「這個庫叫 `disabled` 那個庫叫 `disabled` 沒有」）。
+
+| 欄位 | 語義 |
+| --- | --- |
+| `type` | 語義色（`LhTypes`） |
+| `size` | 尺寸檔（`LhSizes`） |
+| `disabled` | 停用 |
+| `loading` | 載入中 |
+| `plain` | 樸素樣式（無底色描邊款） |
+| `block` | 區塊級寬度 100% |
+| `icon` | 圖示名（內建圖示集，見 [圖示](/theme/tokens) 的圖示部分） |
+| `nativeType` | 原生按鈕 `type`（`submit` / `reset` / `button`） |
+| `href` / `target` | 渲染為 `<a>` 時的連結 |
+| `title` / `alt` | 標題與替代文字（無障礙） |
+| `lang` | 元件級語言覆蓋 |
+| `langPath` | 自訂文案鍵路徑前綴 |
+| `old` | 老年人模式開關（配合 `size="x-large"`，見 [constants](/reference/constants)） |
+
+## ambient 全域宣告
+
+隨 tsconfig `include` 生效，不需要 import：
+
+```ts
+// src/types/global.d.ts
+interface CSSVariable { [key: string]: string }
+
+interface LhUIConfig {
+  prefix?: string
+  theme?: Record<string, string>
+  locale?: string
+}
+
+interface InstallOptions {
+  prefix?: string
+  theme?: Record<string, string>
+  locale?: string
+  components?: any[]
+}
+```
+
+這些是給「`app.use(LhUI, { prefix: 'x' })`」這類全域設定項用的 ambient 類型。`theme.ts` 目前為空佔位（主題類型在 `src/theme/types.ts`）；`scss.d.ts` 宣告 `.scss` 模組。
+
+## 注意事項
+
+- **`LhBaseProps` 是可選欄位**：所有欄位都可空，元件按自己需要 extends 並收緊（比如 `type` 在 button 上必填）。
+- **`lang` 與全域語言的關係**：`lang` 是元件級覆蓋（`<lh-button lang="en-US">`），不調 `lhlocale.setLocale`，由元件內部選語言包。
+- **泛型預設值的坑**：`LhTypes<undefined>` 落到 `LhComponentType`——傳 `undefined` 泛型參數和傳 `string` 字面量結果不同，這是刻意的（`extends string ? ... : ...` 分支）。
+- **`LH_LANGUAGE_CONST` 不在 types 公共匯出面**：`types/locale.ts` 內部 `import` 它做推導，但 `types/index.ts` 只匯出 `./locale` 與 `./components/base`，要用常數從 `@lh-ui/share/constants` 匯。

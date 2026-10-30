@@ -1,0 +1,122 @@
+---
+title: tag —— Тег
+description: 'getTagClassNames вычисляет модификаторы типа/размера/скругления/закрываемости/отключения/контура'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Теги используются для отметки, классификации и выбора. `core/tag` делает ровно одно: превращает состояние тега в массив классов. Он проще кнопки — нет проверки интерактивности, нет отката размера, все визуальные варианты ложатся напрямую в классы.
+
+## Когда использовать
+
+- При реализации `LhTag` на каждой платформе: классы полностью выдаёт `getTagClassNames`.
+- Когда нужно переиспользовать визуал тега без подключения компонента (например, статусная отметка в ячейке таблицы) — можно подключить функции core напрямую + классы из `styles/tag`.
+- **Не следует использовать**: сценарии, требующие точечной подгонки `sx` или кастомных цветов. Цвет тега — это семантический токен; для кастомизации используйте componentTheme из ConfigProvider, а не правку core.
+
+## Импорт
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+import type { LhTagState, LhTagType } from '@lh-ui/share/core/tag'
+```
+
+## Замысел
+
+Все состояния тега — это «визуальные переключатели» без какой-либо вычислительной логики. Принцип `getTagClassNames` — **добавлять только когда истинно**: при ложных `type` и `size` не создаётся даже модификатор, а `closable` / `disabled` / `round` / `hit` оцениваются каждый самостоятельно. Это гарантирует, что массив классов всегда остаётся «минимально достаточным множеством» и в нём не появляется грязных классов вроде `lh-tag--undefined`.
+
+`hit` (контур) — семантика, уникальная для тега по сравнению с кнопкой: тегу часто нужно «лёгкое присутствие», и контур подходит больше, чем заливка.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getTagClassNames` | `(state: LhTagState) => string[]` | массив классов | вычисляет все классы тега |
+
+Пример вывода:
+
+```ts
+getTagClassNames({ type: 'success', size: 'small', closable: true, disabled: false, round: false, hit: true })
+// ['lh-tag', 'lh-tag--success', 'lh-tag--small', 'lh-tag--closable', 'lh-tag--hit']
+```
+
+## Определения типов
+
+```ts
+export type LhTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'default'
+
+export interface LhTagState {
+  type: LhTagType
+  size: LhComponentSize        // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
+  closable: boolean            // закрываемый (отрисовка кнопки ×)
+  disabled: boolean            // отключён (кнопка закрытия тоже не отвечает)
+  round: boolean               // скруглённый
+  hit: boolean                 // контур, а не заливка
+}
+```
+
+## Доступность
+
+`core/tag` не выводит пакет aria-атрибутов: тег — чисто демонстрационный элемент, и для скринридера достаточно отдавать его текстовое содержимое. **Кнопка закрытия** должна быть нативным `<button>` (или эквивалентом на платформе) с `aria-label` (например, «Удалить») — это ответственность UI-слоя.
+
+Один легко упускаемый момент: если тег используется как условие фильтрации (например, множественный выбор тегов в `LhSelect`), он обретает интерактивную семантику, и всей кликабельной области следует дать `role="button"` — это обрабатывается в UI-слое каждой платформы, core в этом не участвует.
+
+## Примеры использования
+
+```ts
+import { getTagClassNames } from '@lh-ui/share/core/tag'
+
+getTagClassNames({ type: 'primary', size: 'medium', closable: false, disabled: false, round: false, hit: false })
+// ['lh-tag', 'lh-tag--primary', 'lh-tag--medium']
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getTagClassNames({ type, size, closable, disabled, round, hit })">
+  <slot />
+  <button v-if="closable" class="lh-tag__close" aria-label="Закрыть" @click="!disabled && emit('close')">
+    <LhIcon name="close" :size="12" />
+  </button>
+</span>
+```
+
+```tsx
+// React
+const cls = getTagClassNames({ type, size, closable, disabled, round, hit })
+return (
+  <span className={cls.join(' ')}>
+    {children}
+    {closable && <CloseButton disabled={disabled} />}
+  </span>
+)
+```
+
+```ts
+// uniapp: классы те же; кнопка close делается на view + @tap,
+// поддержка aria-label различается по платформам — можно деградировать
+// до отрисовки без семантики чтения (на не-h5 платформах возможности
+// скринридеров и так ограничены)
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-tag` | базовый класс: inline-flex, внутренние отступы, размер шрифта, скругление |
+| `.lh-tag--{primary\|success\|warning\|danger\|info\|default}` | семантический тип (цвет фона + цвет текста) |
+| `.lh-tag--{mini\|small\|medium\|large\|x-large}` | размерная шкала |
+| `.lh-tag--round` | сильное скругление (форма капсулы) |
+| `.lh-tag--hit` | контурный стиль |
+| `.lh-tag--closable` | зарезервированный отступ справа для кнопки закрытия |
+| `.lh-tag--disabled` | отключённое состояние: сниженная прозрачность + запрещающий курсор |
+| `.lh-tag__text` | узел с текстом (многоточие при переполнении) |
+| `.lh-tag__close` | кнопка закрытия |
+
+Все цвета — `var(--lh-*)`, в тёмной теме инвертируется `var-dark.scss`.
+
+## Замечания
+
+- При ложных `type` и `size` **модификатор не создаётся** (отката к default не происходит); если UI-слой рассчитывает на наличие `lh-tag--default`, нужно явно передать `type: 'default'`.
+- Проверку отключения кнопки закрытия делает UI-слой (`disabled` блокирует click), а `--disabled` в core отвечает только за визуал.
+- `round` и `hit` могут сосуществовать, давая «контурную капсулу».
+
+<FnPlayground module="tag" fn="getTagClassNames" params='{"state": {"type": "warning", "size": "small", "closable": true, "disabled": false, "round": true, "hit": false}}' />

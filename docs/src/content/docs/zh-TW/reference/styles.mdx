@@ -1,0 +1,116 @@
+---
+title: styles —— 樣式源
+description: 'styles/ 目錄結構、BEM 約定、令牌三層（var.scss 明色 / var-dark.scss 暗色 / variables.scss SCSS 變數）'
+---
+
+import TokenTable from '../../../../components/TokenTable.astro'
+
+`styles/` 是全家族元件 BEM 樣式的**唯一源**（[紅線 2](/development/contribution#六條紅線)）：58 個元件目錄 + `theme/common/` 令牌層。任何 UI 庫都不得把樣式拷出去手改。
+
+## 目錄結構
+
+```
+styles/
+├── index.scss                  # 全量聚合（令牌 + 全部元件），一行引入
+├── theme/
+│   ├── common/
+│   │   ├── var.scss            # 明色令牌（:root，185 條 CSS 變數）
+│   │   ├── var-dark.scss       # 暗色覆蓋（[data-theme='dark'], .dark，118 條）
+│   │   ├── variables.scss      # SCSS 變數層（183 個 $lh-*，編譯期常數）
+│   │   ├── patterns.scss       # 國風花紋系統（6 紋理）
+│   │   ├── transition.scss     # 跨端過渡類別名單源（3 個 mixin）
+│   │   └── …                   # mixin / function 公共層
+│   └── index.scss              # 主題聚合入口
+├── button/index.scss           # 元件樣式（58 個目錄）
+├── dialog/index.scss
+└── …
+```
+
+**每個元件目錄就是一個 `index.scss`**，按 `@lh-ui/share/styles/<name>` 匯入（vite 目錄解析到 index）。
+
+## 引入方式
+
+```ts
+// 四種引法（詳見快速開始）
+import '@lh-ui/share/styles/button'        // 單個元件
+import '@lh-ui/share/styles'                // 全量（styles/index.scss）
+import '@lh-ui/share/styles/theme'          // 僅主題令牌
+import '@lh-ui/share/styles/theme/common/var-dark'  // 細到具體檔案
+```
+
+各 UI 庫的注入策略不同：plus 在庫入口全量注入，vue2 由使用者按需引（見 [注入策略](/guide/injection)）。
+
+## BEM 約定
+
+類別名一律 `lh-` 前綴 + BEM 三層：
+
+```scss
+.lh-button {                    // Block
+  &__text { }                   // Element
+  &--primary { }                // Modifier
+  &__text--disabled { }         // Element + Modifier
+  &.is-loading { }              // 狀態類（is- 前綴，不帶命名空間）
+}
+```
+
+- 命名由 [createNamespace](/reference/utils#createnamespace--bem-命名空間) 生成，保證全家族一致。
+- **狀態類用 `is-` 前綴**（`is-loading` / `is-disabled` / `is-open`），不是 BEM 修飾符。
+- 新增類別名需同步更新 `docs/src/data/classes.json`（由 `scripts/gen-docs-data.mjs` 掃描 `styles/*/index.scss` 生成）。
+
+## 令牌三層
+
+| 層 | 檔案 | 數量 | 特性 |
+| --- | --- | --- | --- |
+| CSS 變數（明色） | `var.scss` | 185 條 | `:root { --lh-*: ... }`，執行時可覆蓋 |
+| CSS 變數（暗色） | `var-dark.scss` | 118 條 | `[data-theme='dark'], .dark { ... }` 覆蓋明色 |
+| SCSS 變數 | `variables.scss` | 183 個 | `$lh-*`，**編譯期烤死** |
+
+### 元件只能消費 CSS 變數
+
+```scss
+// ✅ 正確：var() 鏈式回落，執行時求值
+.lh-button--primary {
+  color: var(--lh-color-on-primary, #fff);
+  background: var(--lh-primary-color, #1677ff);
+}
+
+// ❌ 錯誤：直接引用 SCSS 變數，暗色下不會翻轉
+.lh-button--primary {
+  background: #{$lh-primary-color};
+}
+```
+
+### 編譯期烤死陷阱
+
+`var.scss` 裡值形如 `#{$lh-foo}` 的令牌，SCSS 變數在**編譯期被替換成具體明色值**，暗色下不會自動翻轉。這類令牌必須在 `var-dark.scss` 裡顯式重新指向暗色語義令牌：
+
+```scss
+// var-dark.scss
+[data-theme='dark'],
+.dark {
+  --lh-menu-item-color: var(--lh-text-primary);   // ← 顯式重指向
+}
+```
+
+此類缺口曾導致暗色下選單 / 表格 / 時間軸文字沿用明色值而不可見。`pnpm verify:styles` 第 7 項（暗色可達性）專門把關。相對地，元件裡 `var(--lh-foo, var(--lh-bar, #x))` 的**鏈式回落是執行時求值**，只要鏈上令牌有暗色覆蓋即安全，無需重複宣告。詳見 [暗色模式](/theme/dark-mode)。
+
+## `styles/index.scss` 是生成的
+
+全量聚合檔案由 `scripts/build-styles.mjs` **按元件目錄掃描生成**，`verify:styles` 驗證一致性——**不要手改**。新增元件目錄會自動被聚合覆蓋。
+
+## 已廢止的 hairline 標記
+
+~~1px 細邊框宣告必須帶 `/* hairline */` 行級標記~~ —— 這條紅線已**廢止**（uniapp v3 px 直出，不再轉譯 rpx，標記失去用途；見 `docs/bugfix-log.md` D-02）。`styles/` 內既有的 65 處歷史標記保留為普通註解，**新增 1px 邊框無需再標記**。結構性邊框（2px / 3px）原本就不標記。
+
+## 主題令牌全表
+
+<TokenTable />
+
+（令牌資料由 `scripts/gen-docs-data.mjs` 解析 `var.scss` / `var-dark.scss` / `variables.scss` 生成，帶數量斷言。）
+
+## 注意事項
+
+- **改樣式只在本倉庫**：任何 UI 庫不得持有元件 scss 副本。跨端過渡類別名差異用 [transition mixin](/reference/transition-mixins) 收編。
+- **顏色一律 `var(--lh-*, fallback)`**，不新增硬編碼色值（verify:styles 的 var fallback 項把關）。
+- **新增元件必須有 `styles/<name>/index.scss`**，否則該元件在某一端無樣式產物（構建腳本靜默跳過，不會報錯）。
+- **暗色完備性是硬要求**：所有元件預設支援明暗兩色，暗色缺口由 verify:styles 第 7 項攔截。

@@ -1,0 +1,196 @@
+---
+title: pagination —— Pagination
+description: 'Algorithme de rétractation de fenêtre de getPaginationRange (première et dernière pages toujours présentes + ellipses des deux côtés), clampPage normalise les hors-limites, aria-current=page'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La pagination est la navigation standard « quand le volume de données dépasse un écran ». Sa difficulté centrale n'est pas de tourner les pages, mais **l'affichage de l'intervalle de numéros de page** : avec 100 pages, on ne peut pas dessiner 100 boutons ; comment, avec la première et la dernière page + la fenêtre courante + les ellipses, exprimer la position tout en offrant un saut rapide — chaque bibliothèque a son algorithme. `core/pagination` implémente l'algorithme courant de « rétractation de fenêtre », avec une normalisation de toutes les entrées illégales.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhPagination` : pagination en bas de tableau, pagination des résultats de recherche, pagination d'un album.
+- Scénarios où les données sont paginables et où l'utilisateur doit contrôler explicitement le numéro de page.
+- **À ne pas utiliser pour** : le chargement à défilement infini (utilisez `virtual-list` ou l'écoute du défilement) ; un volume de données tenant sur un seul écran (ne pas paginer est plus simple).
+
+## Importation
+
+```ts
+import {
+  getPageCount,
+  clampPage,
+  getPaginationRange,
+  getPaginationItemAria,
+  formatMessage,
+} from '@lh-ui/share/core/pagination'
+import type {
+  LhPaginationRangeItem,
+  LhPaginationRangeState,
+  LhPaginationMessageParams,
+} from '@lh-ui/share/core/pagination'
+```
+
+## Intentions de conception
+
+**L'assainissement à deux paramètres de `getPageCount`** : `total` et `pageSize` passent tous deux par `shared/sanitize.sanitizeNumber` — NaN / Infinity ne filtrent pas jusqu'à produire un nombre de pages NaN. Cette défense n'est pas superflue : `total` provient souvent d'une interface asynchrone et peut être undefined pendant le chargement ; `Math.ceil(undefined / 10)` vaut NaN, et NaN ferait échouer `clampPage` comme l'algorithme d'intervalle.
+
+**Le traitement différencié de NaN et Infinity par `clampPage`** : NaN est considéré comme illégal et replie sur la première page ; **±Infinity est laissé au clampage** — `Infinity` tombe sur la dernière page, `-Infinity` sur la première. Cette distinction a un sens pratique : en mode contrôlé, une valeur illégale extérieure (NaN) doit revenir à une position sûre, tandis qu'exprimer « sauter à la dernière page » par Infinity est un usage légitime.
+
+**La logique d'attraction de l'algorithme d'intervalle** : le `current` de `getPaginationRange` passe d'abord par `clampPage` — les commentaires relatent un cas réel : le `innerCurrent` transmis par la couche UI peut brièvement dépasser les limites (en mode contrôlé, désynchronisation entre la valeur extérieure et la valeur interne, ou current non resynchronisé après une diminution du total), et sans clampage la page courante sortirait de la fenêtre affichée, avec une inversion de la décision d'ellipse.
+
+**L'ellipse n'est émise que lorsqu'elle produit un véritable écart** : `showLeftEllipsis = leftSibling > 2` et non `> 1` — lorsque la fenêtre est collée à la première page (par exemple current=3, siblingCount=1), un seul numéro de page, « 2 », est omis à gauche, et afficher la suite continue 1,2,3,4,5 est plus clair que d'insérer une ellipse.
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getPageCount` | `(total, pageSize) => number` | Nombre total de pages (minimum 1) | Assainissement des deux paramètres |
+| `clampPage` | `(page, pageCount) => number` | Numéro de page clampé | NaN→1, Infinity→dernière page |
+| `getPaginationRange` | `(state: LhPaginationRangeState) => LhPaginationRangeItem[]` | Tableau d'éléments d'intervalle | Algorithme de rétractation de fenêtre |
+| `getPaginationItemAria` | `(options: { page, current, labelTemplate? }) => LhAriaAttrs` | Paquet d'attributs aria | aria-current / aria-label |
+| `formatMessage` | Réexporté depuis `shared/format` | Texte interpolé | Conserver le chemin d'import existant |
+
+## Définitions de types
+
+```ts
+export type LhPaginationRangeItemType = 'page' | 'ellipsis'
+
+export interface LhPaginationRangeItem {
+  type: LhPaginationRangeItemType
+  page: number    // L'élément d'ellipse vaut toujours 0, la position est la sémantique
+}
+
+export interface LhPaginationRangeState {
+  current: number       // Page courante (à partir de 1)
+  pageCount: number
+  siblingCount?: number // Nombre de numéros de page de chaque côté de la page courante, 1 par défaut
+}
+
+export type LhPaginationMessageParams = Record<string, string | number>
+```
+
+## Accessibilité
+
+```ts
+getPaginationItemAria({ page: 3, current: 3, labelTemplate: 'Page {page}' })
+// { 'aria-current': 'page', 'aria-label': 'Page 3' }
+
+getPaginationItemAria({ page: 5, current: 3, labelTemplate: 'Page {page}' })
+// { 'aria-label': 'Page 5' }
+
+getPaginationItemAria({ page: 5, current: 3 })
+// {} (sans modèle, pas d'aria-label ; le chiffre contenu dans le bouton est lisible)
+```
+
+- La page courante émet `aria-current="page"` — c'est la convention APG standard de la pagination : le lecteur d'écran annonce « page courante » au lieu de traiter le numéro comme un simple lien.
+- **Le bouton d'ellipse** doit avoir un `aria-label` (par exemple « Avancer de 5 pages ») ou être `disabled` — un texte `…` pur n'apporte aucune information au lecteur d'écran, et c'est le défaut d'accessibilité le plus courant des paginations.
+- La pagination dans son ensemble devrait être enveloppée dans un `<nav aria-label="Pagination">`, pour la distinguer des autres navigations de la page.
+- `labelTemplate` provient du paquet de langues (`pagination.page` etc.), et l'espace réservé `{page}` est remplacé par cette fonction.
+
+## Exemples d'utilisation
+
+```ts
+import { getPageCount, clampPage, getPaginationRange } from '@lh-ui/share/core/pagination'
+
+getPageCount(100, 10)    // 10
+getPageCount(105, 10)    // 11
+getPageCount(0, 10)      // 1 (au minimum 1 page)
+getPageCount(NaN, 10)    // 1 (total assaini à 0, puis remonté à 1 par Math.max(1, …))
+getPageCount(100, NaN)   // 100 (pageSize assaini à la valeur par défaut 1, soit 1 élément par page)
+
+clampPage(5, 10)    // 5
+clampPage(0, 10)    // 1
+clampPage(15, 10)   // 10
+clampPage(NaN, 10)  // 1
+clampPage(Infinity, 10)  // 10 (Infinity tombe sur la dernière page)
+
+// siblingCount vaut 1 par défaut, nombre total d'emplacements = 1*2 + 5 = 7
+getPaginationRange({ current: 1, pageCount: 10 })
+// [1, 2, 3, …, 10]
+getPaginationRange({ current: 5, pageCount: 10 })
+// [1, …, 4, 5, 6, …, 10]
+getPaginationRange({ current: 10, pageCount: 10 })
+// [1, …, 8, 9, 10]
+getPaginationRange({ current: 5, pageCount: 5 })
+// [1, 2, 3, 4, 5] (nombre de pages inférieur aux emplacements, on affiche tout, sans ellipse)
+getPaginationRange({ current: 99, pageCount: 10 })
+// [1, …, 8, 9, 10] (current hors limites, clampé)
+```
+
+```vue
+<!-- Vue3 -->
+<nav class="lh-pagination" aria-label="Pagination">
+  <button type="button" class="lh-pagination__prev" :disabled="current <= 1" @click="go(current - 1)">
+    Précédent
+  </button>
+  <template v-for="(item, i) in range" :key="i">
+    <span v-if="item.type === 'ellipsis'" class="lh-pagination__ellipsis">…</span>
+    <button
+      v-else
+      type="button"
+      class="lh-pagination__item"
+      :class="{ 'is-active': item.page === current }"
+      v-bind="getPaginationItemAria({ page: item.page, current, labelTemplate: t('pagination.page') })"
+      @click="go(item.page)"
+    >
+      {{ item.page }}
+    </button>
+  </template>
+  <button type="button" class="lh-pagination__next" :disabled="current >= pageCount" @click="go(current + 1)">
+    Suivant
+  </button>
+  <select v-model="pageSize" class="lh-pagination__sizes">
+    <option :value="10">10 / page</option>
+    <option :value="20">20 / page</option>
+    <option :value="50">50 / page</option>
+  </select>
+  <span class="lh-pagination__total">Total : {{ total }} éléments</span>
+</nav>
+```
+
+```ts
+const pageCount = computed(() => getPageCount(props.total, pageSize.value))
+const range = computed(() =>
+  getPaginationRange({ current: current.value, pageCount: pageCount.value }),
+)
+function go(page: number) {
+  const next = clampPage(page, pageCount.value)
+  if (next !== current.value) emit('update:current', next)
+}
+```
+
+```tsx
+// React : pagination contrôlée, current est détenu par le composant parent ;
+// dans go, on appelle clampPage avant le callback
+```
+
+```ts
+// uniapp : <view> + <view> parcourant les éléments de l'intervalle ;
+// le saut de page utilise <input type="number"> + un bouton de saut
+```
+
+## Styles et jetons
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-pagination` | Classe de base (flex centré) |
+| `.lh-pagination__prev` / `__next` | Boutons page précédente / suivante |
+| `.lh-pagination__item` | Bouton de numéro de page |
+| `.lh-pagination__item.is-active` | Page courante (fond de couleur principale) |
+| `.lh-pagination__ellipsis` | Ellipse |
+| `.lh-pagination__sizes` | Sélecteur du nombre d'éléments par page |
+| `.lh-pagination__total` / `__jump` | Texte du total / champ de saut |
+
+Page courante : fond `--lh-primary-color` + texte `--lh-color-on-primary` ; bouton désactivé `--lh-text-disabled` ; l'espacement des boutons est contrôlé par `--lh-gap-small`.
+
+## Remarques
+
+- **Les numéros de page commencent à 1** : `current`, `page`, `pageCount` commencent tous à 1, contrairement aux indices de ligne de `table` (à partir de 0) — les mélanger est une source d'erreurs.
+- **La relation entre `pageCount` et `total`** : la couche UI le calcule généralement avec `getPageCount(total, pageSize)`, mais `pageCount` peut aussi être transmis directement (lorsque le serveur connaît déjà le nombre total de pages). N'utilisez pas les deux sources simultanément, sous peine d'incohérence.
+- **La convergence de `current` lors d'un changement de `pageSize`** : en passant de 50 à 10 éléments par page, la page courante peut dépasser le nouveau `pageCount` — appelez une fois `clampPage` dans le `watch(pageSize)`, sinon une page vide s'affiche.
+- **L'interaction de l'ellipse** : cliquer sur l'ellipse fait généralement sauter 5 pages (`current ± 5`) ; core n'intègre pas ce comportement, la couche UI l'implémente elle-même en munissant le bouton d'ellipse d'un `aria-label`.
+- **`siblingCount` et le nombre d'emplacements** : `totalSlots = siblingCount * 2 + 5` (première et dernière pages + page courante + deux emplacements d'ellipse + les frères des deux côtés). Lorsque `pageCount <= totalSlots`, on affiche tout sans ellipse — avec `siblingCount: 2`, le seuil est de 9 pages.
+- **Le dépassement temporaire en mode contrôlé** : `getPaginationRange` clamp `current` en interne, le rendu ne peut donc pas être erroné ; mais `aria-current` tombe sur la page clampée, et tout rentre dans l'ordre une fois l'état extérieur resynchronisé.
+- **La réexportation de `formatMessage`** : ce module réexporte `formatMessage` depuis `shared/format` à l'identique, uniquement afin de préserver le chemin d'import existant de l'aval (interpolation de textes comme `pagination.total` contenant un espace réservé `{total}`) ; le nouveau code importera directement depuis `core/shared/format`.
+
+<FnPlayground module="pagination" fn="getPaginationRange" params='{"state": {"current": 5, "pageCount": 20, "siblingCount": 1}}' />

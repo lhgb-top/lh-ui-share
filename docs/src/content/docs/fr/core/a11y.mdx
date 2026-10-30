@@ -1,0 +1,174 @@
+---
+title: "a11y —— Bâtisseurs d'attributs aria"
+description: "Des bâtisseurs atomiques d'attributs aria unifiés et la sémantique d'omission des valeurs fausses, des paquets d'attributs prêts à l'emploi pour les déclencheurs de couches flottantes et les éléments décoratifs"
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+L'écriture et la valorisation des attributs aria sont une corvée : `aria-haspopup` ou `ariaHaspopup` ? `'true'` ou `true` ? Faut-il rendre la valeur fausse ? Chaque composant qui les assemble lui-même finit par se tromper, ou par oublier d'omettre la propriété lorsque la valeur est vide (le lecteur d'écran se retrouve devant une flopée de `aria-controls="undefined"`). `shared/a11y` fige ces conventions dans un ensemble de fonctions pures.
+
+## Convention centrale : omission des valeurs fausses
+
+Tous les bâtisseurs aria booléens respectent la même règle :
+
+| Attribut | Comportement à faux | Raison |
+| --- | --- | --- |
+| `aria-required: false` | renvoie `{}`, non rendu | une déclaration explicite de « non obligatoire » est du bruit pour le lecteur d'écran |
+| `aria-haspopup: false` | renvoie `{}`, non rendu | idem |
+| `aria-current: false` | ne se présente jamais | le type du bâtisseur n'accepte pas `false` (la plupart des lecteurs d'écran l'ignorent) |
+| `aria-controls` / `aria-labelledby` / `aria-describedby` | id vide → renvoie `{}` | rendre `aria-controls="undefined"` est un bug classique |
+| **`aria-expanded: false`** | **renvoyé tel quel** | l'état replié doit être annoncé explicitement |
+| **`aria-invalid: false`** | **renvoyé tel quel** | « validation réussie » doit être annoncé explicitement |
+
+Les deux « exceptions » sont délibérées : les valeurs fausses de `aria-expanded` / `aria-invalid` portent de l'information sémantique, et le lecteur d'écran dira en conséquence « replié » ou « saisie valide ».
+
+## Import
+
+```ts
+import {
+  generateAriaId,
+  ariaExpanded,
+  ariaControls,
+  ariaLabelledby,
+  ariaDescribedby,
+  ariaInvalid,
+  ariaRequired,
+  ariaCurrent,
+  ariaHaspopup,
+  getPopupTriggerAria,
+  getDecorativeAria,
+  type LhAriaAttrs,
+  type LhAriaHaspopup,
+} from '@lh-ui/share/core/shared/a11y'
+```
+
+## Types
+
+```ts
+// Forme du paquet d'attributs aria : les clés sont 'aria-*' ou 'role', à utiliser directement en v-bind / {...spread}
+export type LhAriaAttrs = Record<string, string | number | boolean | undefined>
+
+// Valeurs légales d'aria-haspopup (APG)
+export type LhAriaHaspopup =
+  | 'false' | 'true' | 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog' | 'combobox'
+```
+
+## Tableau des fonctions
+
+| Fonction | Signature | Rôle |
+| --- | --- | --- |
+| `generateAriaId` | `(prefix = 'lh-aria') => string` | génère un id unique pour les liaisons aria |
+| `ariaExpanded` | `(expanded: boolean) => LhAriaAttrs` | état déployé / replié |
+| `ariaControls` | `(id: string \| undefined) => LhAriaAttrs` | référence au panneau contrôlé |
+| `ariaLabelledby` | `(id: string \| undefined) => LhAriaAttrs` | référence à un texte visible comme nom accessible |
+| `ariaDescribedby` | `(id: string \| undefined) => LhAriaAttrs` | référence à une description complémentaire |
+| `ariaInvalid` | `(invalid: boolean) => LhAriaAttrs` | marqueur d'échec de validation |
+| `ariaRequired` | `(required: boolean) => LhAriaAttrs` | sémantique de champ obligatoire |
+| `ariaCurrent` | `(current: 'page' \| 'step' \| 'location' \| 'date' \| 'time' \| true \| undefined) => LhAriaAttrs` | marqueur de position courante |
+| `ariaHaspopup` | `(kind: LhAriaHaspopup \| boolean) => LhAriaAttrs` | déclare quelle couche flottante va surgir |
+| `getPopupTriggerAria` | `(options: { expanded; popupId?; haspopup? }) => LhAriaAttrs` | **paquet d'attributs commun** au déclencheur de couche flottante |
+| `getDecorativeAria` | `(decorative = true) => LhAriaAttrs` | masque un élément décoratif aux technologies d'assistance |
+
+## Les deux paquets combinés
+
+### getPopupTriggerAria
+
+Les déclencheurs de popover / popconfirm / select / cascader / date-picker / dropdown l'utilisent **tous**, et obtiennent trois choses d'un seul coup :
+
+```ts
+getPopupTriggerAria({ expanded: true, popupId: 'lh-popover-1' })
+// {
+//   'aria-expanded': true,
+//   'aria-controls': 'lh-popover-1',
+//   'aria-haspopup': 'true',      // valeur par défaut
+// }
+
+getPopupTriggerAria({ expanded: false, popupId: 'lh-popover-1', haspopup: 'menu' })
+// { 'aria-expanded': false, 'aria-controls': 'lh-popover-1', 'aria-haspopup': 'menu' }
+
+getPopupTriggerAria({ expanded: false })   // popupId non transmis
+// { 'aria-expanded': false, 'aria-haspopup': 'true' }   —— pas d'aria-controls produit
+```
+
+`haspopup` vaut `'true'` par défaut. Une valeur sémantiquement plus précise (`listbox` pour un sélecteur, `menu` pour un sélecteur en cascade, `dialog` pour un calendrier) rendra l'annonce du lecteur d'écran plus exacte ; chaque composant la transmet selon sa propre sémantique.
+
+### getDecorativeAria
+
+```ts
+getDecorativeAria()       // { 'aria-hidden': true }
+getDecorativeAria(false)  // {}   —— démasquage explicite
+```
+
+Les éléments décoratifs (un simple trait de séparation, la décoration d'un loading, les formes géométriques d'un squelette de chargement) sont du bruit pour les technologies d'assistance. Attention, **à réserver aux éléments véritablement dépourvus d'information** — appliquer `aria-hidden` à un élément contenant du texte est une violation d'accessibilité. Transmettre `false` renvoie un objet vide, pour les branches conditionnelles « masqué par défaut, visible dans certains cas ».
+
+## generateAriaId
+
+```ts
+const id = generateAriaId('lh-popover')  // 'lh-popover-1', 'lh-popover-2' ……
+```
+
+Le préfixe est fixé à la valeur transmise, et un compteur interne au module s'incrémente pour garantir l'absence de collisions entre plusieurs instances dans un même processus. Sans risque en SSR (aucun accès au DOM).
+
+**Note** : le compteur est un **état mutable de niveau module**, cette fonction n'est donc pas pure — une même entrée renvoie des sorties différentes à des instants différents du processus. Lors du rendu côté serveur, le compteur part de 0 ; lors de l'hydratation côté client, il part également de 0 : tant que l'ordre de rendu est identique, les id le sont aussi ; mais si l'ordre de rendu SSR / CSR diffère (composants asynchrones, différences de rendu conditionnel), des inadéquations d'id peuvent apparaître. Les composants à couche flottante des différentes bibliothèques UI génèrent les id côté client uniquement (après `onMounted`), ce qui évite le problème.
+
+## Exemples d'utilisation
+
+### Vue3
+
+```vue
+<template>
+  <button
+    v-bind="getPopupTriggerAria({ expanded: open, popupId: panelId, haspopup: 'dialog' })"
+    @click="toggle"
+  >
+    Ouvrir
+  </button>
+  <div :id="panelId" role="dialog" v-show="open">……</div>
+</template>
+
+<script setup lang="ts">
+const panelId = generateAriaId('lh-popover')
+</script>
+```
+
+Faire un `v-bind` sur une fonction renvoyant un objet est une écriture idiomatique de Vue — les valeurs `undefined` du paquet d'attributs sont automatiquement ignorées par Vue, ce qui correspond naturellement à la convention d'omission des valeurs fausses.
+
+### React
+
+```tsx
+const panelId = generateAriaId('lh-popover')
+
+return (
+  <>
+    <button {...getPopupTriggerAria({ expanded: open, popupId: panelId })} onClick={toggle} />
+    {open && <div id={panelId} role="dialog">……</div>}
+  </>
+)
+```
+
+### La validation de formulaires
+
+```ts
+// composant input
+const aria = {
+  ...ariaRequired(props.required),      // champ non obligatoire : l'attribut n'est pas du tout rendu
+  ...ariaInvalid(!!errorMessage.value), // validation réussie également annoncée explicitement
+  ...ariaDescribedby(errorMessage.value ? errorId : undefined),
+}
+```
+
+### La position courante de la pagination / du fil d'Ariane
+
+```ts
+ariaCurrent(isActive ? 'page' : undefined)   // pas d'attribut émis pour la page non courante, pour éviter le bruit
+ariaCurrent(isActive ? 'page' : undefined)   // 'page' pour la pagination, 'step' pour la barre d'étapes, 'date' pour les dates
+```
+
+## Points d'attention
+
+- **L'id référencé par `aria-controls` doit vraiment exister** : ce module ne fait qu'assembler les attributs, la validité de l'id relève de la responsabilité du composant. Lorsqu'une couche flottante est rendue en différé par `v-if`, le panneau n'est pas dans le DOM à l'état fermé — `aria-controls` pointe alors vers un élément inexistant : c'est acceptable (le lecteur d'écran l'ignorera), et préférable à un pointage vers un mauvais élément.
+- **Ne pas mettre `aria-hidden` sur un élément contenant du texte** : c'est une violation absolue d'accessibilité.
+- **Choisir la valeur d'`ariaCurrent` selon la sémantique** : `'page'` pour la pagination, `'step'` pour la barre d'étapes, `'location'` pour le fil d'Ariane, `'date'` pour le calendrier. Le type accepte ces littéraux + `true`.
+- **Les paquets combinés ne se mélangent pas avec les fonctions atomiques** : `getPopupTriggerAria` contient déjà `aria-haspopup` ; étendre `ariaHaspopup(...)` ensuite serait écrasé par la propriété étalée en dernier — choisissez l'une des deux selon le besoin.
+
+<FnPlayground module="a11y" fn="getPopupTriggerAria" params='{"options": {"expanded": true, "popupId": "lh-popover-demo", "haspopup": "menu"}}' />

@@ -1,0 +1,166 @@
+---
+title: 'anchor アンカー —— ナビゲーション'
+description: 'flattenAnchorItems の深さ優先の平坦化（祖先チェインで循環を防止）、resolveActiveAnchor のスクロール連動ハイライト、level による階層のインデント'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+アンカーは「長いドキュメントの目次サイドバー」です：ドキュメントサイトの右側にある「基本的な使い方 / API / 注意事項」のように、クリックすると対応する見出しまでスクロールし、スクロール中は現在いるセクションをハイライトします。`menu` との違いは——アンカーが関連付けるのは**同一ページ内のコンテンツの位置**であり、異なるページではないことです。
+
+## いつ使うか
+
+- 各端の `<LhAnchor>` 実装：ドキュメントサイトの目次、長文の読書ナビ、API ドキュメントの章ナビゲーション、ランディングページのブロックナビゲーション。
+- ページのコンテンツが**早くジャンプが必要なほど長く**、かつブロックに明確な見出しがある。
+- **使うべきでない**：サイト内のページ間ナビゲーション（`menu` / `breadcrumb` を使います）；短いページ（1 画面以内で目次は不要）；ブロックに見出しがない（アンカーはリンクのメッセージとして見出しテキストに依存します）。
+
+## インポート方法
+
+```ts
+import {
+  flattenAnchorItems,
+  collectAnchorIds,
+  resolveActiveAnchor,
+  getAnchorClassNames,
+  getAnchorLinkClassNames,
+} from '@lh-ui/share/core/anchor'
+import type { LhAnchorItem, LhFlatAnchorItem } from '@lh-ui/share/core/anchor'
+```
+
+## 設計意図
+
+**ツリー構造 → 平坦なリスト**：アンカーの設定はツリー（章の中に小節）ですが、レンダリングは 1 次元のリスト（インデント付き）です。`flattenAnchorItems` は深さ優先で走査し、**ドキュメントの順序を保ちます**——順序が乱れた目次は、目次がないよりも悪いです。`level` が元の深さを記録し、インデントのスタイルを駆動します。
+
+**祖先チェイン seen による循環参照防止**：`seen` は**現在の DFS パス上の祖先の集合**です（グローバルな集合ではない）。コメントにも「祖先チェインベースの重複排除で循環参照を保護する」と明記されています——もしデータの中で A の children が A 自身を含んでいたら（ダーティーデータ）、グローバルな seen は重複を取り除くことしかできませんが、祖先チェインなら再帰を直接断ち切り、無限ループに陥りません。これはツリーデータの構造的エラーに対するフォールバックです。
+
+**`resolveActiveAnchor` の「しきい値を越えた最後の項」**：ドキュメント順に並んだオフセットの中で**最後の `offset <= currentTop` を満たすアンカー**を探します。重要なディテール：**最初の `offset > currentTop` に遭遇した時点で break します**——offsets はソートされているため、後ろのものは必ず更大であり、走査を続けるのは無駄だからです。O(n) ながら早期終了を伴う書き方です。
+
+**未ヒット時は先頭項に戻る**：すべてのアンカーより前までスクロールしたとき（ページトップ）は `ids[0]` を返します——先頭項が常にハイライトされ、「ハイライト項がない」という混乱した状態を避けます。空配列の場合は空文字列を返します（UI 層はハイライトをレンダリングしません）。
+
+**`offsets` と `ids` は同じ順序でなければならない**：関数のシグネチャは 2 つの配列を要求します——オフセットは UI 層が `getBoundingClientRect()` で 1 つずつ測定し、同じ順序で渡します。順序がずれると誤ったハイライト項が得られます。これは呼び出し側の契約で、core は検証できません。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `flattenAnchorItems` | `(items, level?, seen?) => LhFlatAnchorItem[]` | 平坦なリスト | 深さ優先で順序を保持 |
+| `collectAnchorIds` | `(items) => string[]` | id リスト | 平坦化順序の id 配列 |
+| `resolveActiveAnchor` | `(ids, offsets, currentTop) => string` | アクティブ id | スクロール連動の判定 |
+| `getAnchorClassNames` | `(state: { direction }) => string[]` | クラス名 | コンテナの方向 |
+| `getAnchorLinkClassNames` | `(state: { active, level }) => string[]` | クラス名 | アクティブ状態 + 階層のインデント |
+
+## 型定義
+
+```ts
+export interface LhAnchorItem {
+  id: string          // 対象要素の id
+  title: string       // 表示テキスト
+  children?: LhAnchorItem[]
+}
+
+export interface LhFlatAnchorItem {
+  id: string
+  title: string
+  level: number       // 元の深さ（ルートは 0）、インデントを駆動
+}
+```
+
+## アクセシビリティ
+
+アンカーリンクは**同一ページ内のアンカー**を指すため、標準的なやり方はネイティブの `<a href="#section">` です：
+
+```html
+<a href="#usage" class="lh-anchor__link">使用例</a>
+...
+<section id="usage" tabindex="-1">…</section>
+```
+
+- **ネイティブのアンカージャンプ + tabindex="-1"**：`<a href="#id">` をクリックするとブラウザはスクロールし、対象へのフォーカスを試みます。対象がフォーカス不可能な要素のときはジャンプ後もフォーカスが動きません——対象に `tabindex="-1"` を付けてプログラムによるフォーカスを受け取れるようにすると、ジャンプ後にスクリーンリーダーがそこから読み始めます。これは WAI-ARIA が推奨するアクセシブルなアンカーパターンです。
+- **aria-current で現在のセクションを示す**：`getAnchorLinkClassNames` の `--active` は視覚的なクラスですが、アクセシビリティ上は UI 層がアクティブなリンクに `aria-current="location"` を補うことが推奨されます（同ページ内の位置というセマンティクスで、`breadcrumb` の `aria-current="page"` と区別します）。
+- **ジャンプで URL hash を変える副作用を避ける**：hash の変化はブラウザ履歴に残り、アンカーを 5 回クリックすれば 5 回「戻る」を押さなければページを抜けられません。UI 層は `history.replaceState` や `scrollIntoView` でデフォルトのジャンプを代替できます——これはインタラクションの取舍で、core は関与しません。
+- **`nav` で包む + aria-label**：`breadcrumb` と同様に、`<nav aria-label="このページの目次">` でそれがナビゲーション領域であることを宣言します。
+
+## 使用例
+
+```ts
+import {
+  flattenAnchorItems, collectAnchorIds, resolveActiveAnchor,
+} from '@lh-ui/share/core/anchor'
+
+const items = [
+  { id: 'intro', title: '紹介', children: [
+    { id: 'why', title: 'なぜ使うのか' },
+  ] },
+  { id: 'usage', title: '使い方' },
+]
+
+flattenAnchorItems(items)
+// [ { id: 'intro', title: '紹介', level: 0 },
+//   { id: 'why', title: 'なぜ使うのか', level: 1 },
+//   { id: 'usage', title: '使い方', level: 0 } ]
+
+collectAnchorIds(items)  // ['intro', 'why', 'usage']
+
+// スクロール連動：offsets は各アンカーのコンテナトップからの相対位置（ids と同順）
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 350)  // 'why'
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 50)   // 'intro'（why を越えていない）
+resolveActiveAnchor(['intro', 'why', 'usage'], [0, 300, 600], 0)    // 'intro'（未ヒット時は先頭項に戻る）
+resolveActiveAnchor([], [], 0)  // ''（空リスト）
+```
+
+```ts
+// UI 層：スクロールのリッスン + オフセットの測定
+const activeId = ref('')
+
+function refresh() {
+  const flat = flattenAnchorItems(props.items)
+  const ids = flat.map((item) => item.id)
+  const offsets = ids.map((id) => {
+    const el = document.getElementById(id)
+    return el ? el.getBoundingClientRect().top - containerTop : Infinity
+  })
+  activeId.value = resolveActiveAnchor(ids, offsets, scrollTop.value)
+}
+
+onMounted(() => window.addEventListener('scroll', refresh, { passive: true }))
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhAnchor :items="items" :offset-top="80" @click="onAnchorClick" />
+</template>
+```
+
+```tsx
+// React：useEffect で scroll リスナーを登録；オフセットの測定は ref 配列 + getBoundingClientRect；
+// スロットリングには requestAnimationFrame か throttle を使う（scroll は高頻度で発火する）
+```
+
+```ts
+// uniapp：<scroll-view scroll-into-view="id"> がミニプログラムネイティブのアンカージャンプ；
+// スクロール連動は scroll-view の scroll イベントから scrollTop を取る
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-anchor` | コンテナ |
+| `.lh-anchor--{vertical\|horizontal}` | 方向（縦置きサイドバー / 横置きトップナビ） |
+| `.lh-anchor__link` | アンカーリンク |
+| `.lh-anchor__link--level-{0..n}` | 階層のインデント（padding-left が漸増） |
+| `.lh-anchor__link--active` | アクティブ状態（主色 + 左側のインジケーター） |
+
+アクティブ色は `--lh-primary-color`；通常のリンクは `--lh-text-regular`；階層のインデントの単位は `--lh-anchor-indent`（12px / 階層など）です。
+
+## 注意事項
+
+- **オフセットの測定はコンテナのオフセットを差し引く**：アンカーがスクロールする内部コンテナの中にある場合（window のスクロールではない）、`getBoundingClientRect().top` からコンテナのトップ位置を引かなければなりません。さもなくばハイライトが常にずれます。これが最もよくあるバグです。
+- **`getBoundingClientRect` は強制的なレイアウトを引き起こす**：毎回の scroll イベントの中で N 個の要素に対して呼ぶと N 回のリフローが発生します。改善：オフセットをキャッシュし、コンテンツのサイズが変化したときだけ再計算する；または IntersectionObserver で個別に観察する。
+- **吸着ヘッダーの隠蔽に対するオフセットの補正**：ページに固定ヘッダー（`affix`）があるとき、アンカージャンプ後に対象がヘッダーに隠れる可能性があります。対象要素に `scroll-margin-top`（CSS）を設定するか、UI 層のスクロール量からヘッダーの高さを引いてください——これはレイアウトとの協調ポイントです。
+- **動的なコンテンツでオフセットが無効になる**：コンテンツの高さが変化すれば（展開 / 折りたたみ、画像の読み込み完了）、キャッシュしたオフセットは誤りになります。コンテンツが変化したときに再測定してください。
+- **`seen` の祖先チェインのセマンティクス**：`flattenAnchorItems` の第 3 パラメータ `seen` は**パス上の祖先**で、デフォルトは `new Set()` です。業務側は通常渡しません——これは主にダーティーデータの無限ループを防ぐためのものです。2 つの兄弟サブツリーが同じノードを参照している場合（DAG の共有）、祖先チェインはそれを各パスに 1 回ずつ出現させます（`tree` の祖先チェイン vs `table` のグローバル seen と同じ取舍です）。
+- **空の `id` と重複した `id`**：`id` は全局で一意でなければなりません（HTML アンカーの要件）。`document.getElementById` は最初に一致したものしか返しません——重複 id はジャンプの誤りを招き、core は検証できません。
+- **アンカー vs 目次ルーティング**：アンカーは同一ページ内の位置に関連付けます；もし「目次」の各項目が異なるページなら、それは `anchor` ではなく `menu` です——混用しないでください（アンカーはページを再読み込みせず、ルーティング履歴の管理方式も異なります）。
+
+<FnPlayground module="anchor" fn="resolveActiveAnchor" params='{"ids": ["intro", "why", "usage"], "offsets": [0, 300, 600], "currentTop": 350}' />

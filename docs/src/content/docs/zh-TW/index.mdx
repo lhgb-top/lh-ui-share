@@ -1,0 +1,60 @@
+---
+title: '@lh-ui/share'
+description: lh-ui 家族唯一的框架無關共享層 —— core 純函式 / theme / 樣式源
+template: splash
+hero:
+  title: '@lh-ui/share'
+  tagline: lh-ui 家族唯一的<b>框架無關共享層</b> —— 56 個 core 元件純函式、12 個共享核心、國風主題系統、純 emitter 國際化、58 套元件樣式源。一份邏輯，餵給 Vue3 / Vue2 / React / uniapp 全端 UI 庫。
+  actions:
+    - text: 快速開始
+      link: /lhui/share/zh-TW/guide/getting-started
+      icon: right-arrow
+      variant: primary
+    - text: 主題預設
+      link: /lhui/share/zh-TW/theme/presets
+      icon: sun
+    - text: GitHub
+      link: https://github.com/lhgb-top/lh-ui-share
+      icon: github
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid cols={3}>
+  <Card title="Core 純函式" icon="code-branch">
+    56 個元件的類別名計算、狀態機、無障礙屬性包全部是零依賴純函式。框架層只管接線，邏輯單源、單測唯一份。
+  </Card>
+  <Card title="共享核心" icon="puzzle">
+    popper 定位引擎、虛擬捲動、焦點圈、鍵盤導航、sx 樣式 props、數值淨化——12 個模組直接被各端複用。
+  </Card>
+  <Card title="國風主題" icon="pencil">
+    五個內建預設（青花瓷 / 松花綠 / 朱砂 / 水墨 / 藤黃），CSS 變數 + 暗色 + 花紋系統，AA 對比度腳本把守。
+  </Card>
+  <Card title="純 emitter 國際化" icon="translate">
+    LhLocale 是純事件發射器，不攜帶任何框架響應式；各端用各自的訊號機制訂閱 version。
+  </Card>
+  <Card title="樣式唯一源" icon="open-book">
+    `styles/` 是全家族元件 BEM 樣式的唯一源；過渡類別名三 mixin 收編 Vue2 / Vue3 / React 差異。
+  </Card>
+  <Card title="零框架依賴" icon="padlock">
+    `external: []` 全量零依賴打包，`verify:dts` 門禁產物裡不許出現任何框架匯入。
+  </Card>
+</CardGrid>
+
+## 這份文件是給誰看的
+
+- **各端 UI 庫的開發者**（lh-ui-plus / lh-ui-vue2 / lh-ui-react / lh-ui-uniapp）：查每個純函式的簽名、傳回值、邊界，以及樣式令牌怎麼覆蓋。
+- **直接使用 share 的獨立開發者**：專案只想要無障礙基線 + 國風主題令牌，不引任何 UI 庫。
+- **貢獻者**：了解目錄職責、紅線、驗證與發版流程。
+
+## 五分鐘看懂這個套件
+
+```md
+- `src/core/<元件>/`     —— 純函式邏輯（logic.ts / types.ts），零框架匯入
+- `src/core/shared/`     —— 跨元件共享核心（popper / virtual / sx / keyboard …）
+- `src/theme/`           —— 主題 TS 側：類型 + 五個預設 + 執行時原語
+- `styles/`              —— 元件 BEM 樣式唯一源 + theme/common/*.scss 令牌
+- `src/{constants,locales,types,utils}/` —— 常數 / 語言包 / 類型 / 工具
+```
+
+下一步：[快速開始](/guide/getting-started) 裝套件、引樣式；或直接看[包入口與子路徑](/guide/exports)搞清怎麼按需匯入。

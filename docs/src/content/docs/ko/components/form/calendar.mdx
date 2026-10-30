@@ -1,0 +1,174 @@
+---
+title: calendar —— 캘린더
+description: 'shiftCalendarMonth 월 이동 정규화, normalizeCalendarSpan 구간 정규화, toggleCalendarDate 다중 선택 토글, aria-current=date'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+캘린더는 **상주하는 날짜 패널**입니다: date-picker는 패널을 플로팅 레이어에 숨기고, calendar은 그것을 페이지 위에 펼쳐 놓습니다. 세 가지 선택 모드——단일 선택, 구간, 다중 선택——과 선택 가능한 날짜 범위 제약을 지원합니다. `core/calendar`은 date-picker의 격자 알고리즘 (`generateCalendarDays`)을 재사용하고, 그 위에 평행 이동, 범위 제약, 선택 상태 토글을 겹칩니다.
+
+## 언제 사용할까
+
+- 각 말단 구현 `LhCalendar`: 일정 보기, 출석 체크, 호텔/항공 날짜 선택 페이지.
+- 날짜가 팝업이 아닌 **상주하며 보여야** 하는 상황.
+- **사용하면 안 되는 경우**: 공간이 제한된 폼 안 (`date-picker` 사용, 플로팅 레이어가 공간을 아낌); 날짜 하나만 선택하는데 페이지가 이미 붐빌 때.
+
+## 임포트 방법
+
+```ts
+import {
+  getCalendarClassNames,
+  shiftCalendarDate,
+  shiftCalendarMonth,
+  isCalendarDateDisabled,
+  clampDateToRange,
+  isCalendarSelected,
+  normalizeCalendarSpan,
+  isCalendarInSpan,
+  toggleCalendarDate,
+  getCalendarCellAria,
+  generateCalendarDays,
+  isSameDay,
+} from '@lh-ui/share/core/calendar'
+import type { LhCalendarRange, LhCalendarSelection } from '@lh-ui/share/core/calendar'
+```
+
+## 설계 의도
+
+**의존 방향은 의미적입니다**: calendar은 `core/shared/date`에서 다시 구현하지 않고 date-picker에서 `generateCalendarDays`를 가져옵니다——캘린더 격자 알고리즘은 date-picker의 책임이며, calendar은 그 캘린더 뷰입니다. 반면 범용 원시 (`compareDate` / `isDateDisabled` / `isSameDay`)는 공유 코어로 직접 가며, calendar은 date-picker의 logic을 역으로 의존하지 않습니다. 이것이 "범용 원시는 하위로, 영역 알고리즘은 제자리에"라는 계층화 관례입니다.
+
+**역순 구간의 내결함성**: `isCalendarDateDisabled`와 `clampDateToRange`는 모두 먼저 `normalizeCalendarSpan`으로 구간을 정규화합니다——사용자가 `[end, start]`(역순)를 전달해도 전체 비활성화나 잘못된 클램핑이 일어나지 않습니다. UI 계층은 호출자에게 먼저 정렬을 강요하지 않습니다.
+
+**`shiftCalendarMonth`의 정규화**: `year * 12 + month + delta`를 계산한 뒤 다시 년/월로 나누며, `((total % 12) + 12) % 12`로 음수 모듈러를 처리합니다——delta가 음수로 년을 넘을 때 (예: 1월 -2) 월이 -1이 되지 않습니다.
+
+**다중 선택의 불변 토글**: `toggleCalendarDate`는 hit하면 제거, 그렇지 않으면 추가하고 시간순으로 정렬합니다——새 배열을 반환하여 반응형 업데이트에 직접 쓸 수 있고, 순서도 안정적입니다 (UI가 마구 흔들리지 않도록).
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getCalendarClassNames` | `() => string[]` | `['lh-calendar']` | 컨테이너 클래스명 |
+| `shiftCalendarDate` | `(date, days) => Date` | 새 Date | 일 평행 이동 (월 경계 안전) |
+| `shiftCalendarMonth` | `(year, month, delta) => { year, month }` | 년/월 | 월 평행 이동 |
+| `isCalendarDateDisabled` | `(date, range?) => boolean` | 비활성화 여부 | 제약 없으면 항상 false |
+| `clampDateToRange` | `(date, range?) => Date` | 클램핑된 날짜 | 범위 벗어남 시 경계로 되돌림 |
+| `isCalendarSelected` | `(date, selected) => boolean` | 선택 여부 | 같은 날 판정 |
+| `normalizeCalendarSpan` | `(a, b) => [Date, Date]` | 정규화된 구간 | start ≤ end 보장 |
+| `isCalendarInSpan` | `(date, start, end) => boolean` | 닫힌 구간 내 여부 | 어느 한쪽이 null이면 false |
+| `toggleCalendarDate` | `(dates, date) => Date[]` | 새 배열 | hit하면 제거/그 외 추가 후 정렬 |
+| `getCalendarCellAria` | `(options: { date, selected, range? }) => LhAriaAttrs` | aria 속성 팩 | aria-current / aria-disabled |
+
+## 타입 정의
+
+```ts
+export type LhCalendarRange = [Date, Date]
+export type LhCalendarSelection = 'single' | 'range' | 'multiple'
+```
+
+격자 데이터 구조는 `LhDatePickerDayData`를 재사용합니다 (date-picker 참고).
+
+## 접근성
+
+`getCalendarCellAria`의 출력은 매우 절제되어 있습니다——**상태가 있을 때만 속성을 출력**합니다 (`LhAriaAttrs`의 거짓 값 생략 관례):
+
+```ts
+getCalendarCellAria({ date: selectedDate, selected: selectedDate, range: undefined })
+// { 'aria-current': 'date' }
+
+getCalendarCellAria({ date: new Date(2026, 0, 1), selected: null, range: [new Date(2026, 2, 1), new Date(2026, 3, 1)] })
+// { 'aria-disabled': true }
+
+getCalendarCellAria({ date: someDate, selected: null })
+// {} (상태 없으면 빈 객체)
+```
+
+- 선택된 날은 `aria-selected`가 아닌 `aria-current="date"`를 씁니다——캘린더는 내비게이션형 컨트롤이며, APG 관례대로 current로 "현재 위치"를 표현합니다.
+- 비활성화된 날은 `aria-disabled`를 쓰며, UI 계층의 클릭과 키보드 내비게이션 모두 이 격자를 건너뛰어야 합니다.
+- 키보드 조작: 격자에 포커스한 후 ↑/↓/←/→로 `shiftCalendarDate(date, ±1|±7)`를 이동하고, Enter/Space로 선택합니다.
+- 격자 전체는 여전히 `role="grid"`를 달아야 하며, date-picker 패널과 같은 구조입니다.
+
+## 사용 예시
+
+```ts
+import {
+  shiftCalendarMonth, normalizeCalendarSpan, toggleCalendarDate, isCalendarInSpan,
+} from '@lh-ui/share/core/calendar'
+
+shiftCalendarMonth(2026, 0, -2)   // { year: 2025, month: 10 } (음수 모듈러 정확)
+shiftCalendarMonth(2026, 11, 1)   // { year: 2027, month: 0 }
+normalizeCalendarSpan(new Date(2026, 3, 1), new Date(2026, 2, 1))
+// [2026-03-01, 2026-04-01] (역순 자동 정규화)
+isCalendarInSpan(new Date(2026, 2, 15), new Date(2026, 2, 1), new Date(2026, 2, 28))  // true
+isCalendarInSpan(new Date(2026, 2, 15), null, null)  // false (어느 한쪽이 null)
+toggleCalendarDate([new Date(2026, 2, 1)], new Date(2026, 2, 5))
+// [2026-03-01, 2026-03-05] (추가 후 정렬)
+toggleCalendarDate([new Date(2026, 2, 1), new Date(2026, 2, 5)], new Date(2026, 2, 1))
+// [2026-03-05] (hit하여 제거)
+```
+
+```vue
+<!-- Vue3: 구간 모드 -->
+<div :class="getCalendarClassNames()">
+  <div class="lh-calendar__header">
+    <button type="button" @click="shift(-1)">‹</button>
+    <span class="lh-calendar__title">{{ year }}년 {{ month + 1 }}월</span>
+    <button type="button" @click="shift(1)">›</button>
+  </div>
+  <div class="lh-calendar__body" role="grid">
+    <div v-for="row in weekRows(days)" :key="row[0].date.getTime()" class="lh-calendar__row" role="row">
+      <button
+        v-for="cell in row"
+        :key="cell.date.getTime()"
+        type="button"
+        class="lh-calendar__cell"
+        :class="cellClass(cell)"
+        role="gridcell"
+        v-bind="getCalendarCellAria({ date: cell.date, selected: selected, range: allowedRange })"
+        @click="onPick(cell.date)"
+      >
+        {{ cell.day }}
+      </button>
+    </div>
+  </div>
+</div>
+```
+
+```ts
+// 구간 모드의 두 단계 선택 (UI 계층 규칙, core에 내장되지 않음)
+// if (!rangeStart || (rangeStart && rangeEnd)) { rangeStart = date; rangeEnd = null }
+// else rangeEnd = date  (rangeStart보다 빠르면 normalizeCalendarSpan이 정규화)
+```
+
+```tsx
+// React: 다중 선택 모드
+// const [dates, setDates] = useState<Date[]>([])
+// onClick: setDates(toggleCalendarDate(dates, cell.date))
+```
+
+```ts
+// uniapp: <view> 격자 + @touchstart; core의 range 제약과 선택 토글 함수는 그대로 사용
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-calendar` | 기본 클래스 |
+| `.lh-calendar__header` / `__title` | 헤더 내비게이션 |
+| `.lh-calendar__body` | 격자 영역 |
+| `.lh-calendar__row` | 일주일 |
+| `.lh-calendar__cell` | 날짜 격자 |
+| `.lh-calendar__cell.is-today` / `.is-selected` / `.is-in-range` / `.is-start` / `.is-end` / `.is-disabled` / `.is-other-month` | 상태 수식어 |
+
+선택 `--lh-primary-color`, 구간 단락은 낮은 불투명도의 주 색, 오늘은 테두리, 비활성화는 `--lh-text-disabled`.
+
+## 주의사항
+
+- **month는 0부터**: date-picker와 브라우저 고유 `Date`와 동일하며, UI 표시는 `+1`입니다.
+- **세 가지 선택 모드와 core의 관계**: `LhCalendarSelection`은 타입 선언일 뿐이며, core의 함수는 모드와 무관합니다——`isCalendarSelected`가 single, `isCalendarInSpan`이 range, `toggleCalendarDate`가 multiple를 담당합니다. 모드 전환의 배선은 UI 계층에 있습니다.
+- **구간 모드의 반쪽 선택 상태**: `rangeStart`가 정해지고 `rangeEnd`가 미정일 때, hover하는 격자에 따라 중간 단락이 실시간으로 하이라이트되어야 합니다 (UI 계층이 임시 end로 렌더링), core의 `generateCalendarDays`는 null인 rangeEnd를 받아도 오류를 내지 않습니다.
+- **`clampDateToRange`의 용도**: 외부에서 값을 설정할 때 (예: `v-model`이 범위 밖 날짜를 전달) 합법 구간으로 수렴시키며, UI 계층은 값 변화를 감시할 때 한 번 호출합니다.
+- **상주 패널의 성능**: calendar은 date-picker처럼 열릴 때만 격자를 계산하지 않고, 달을 넘길 때 다시 계산하면 됩니다; 매 프레임 `generateCalendarDays`를 재계산하지 마세요 (35~42개의 Date 객체를 생성합니다).
+- **date-picker와의 경계**: 둘은 격자 데이터를 공유하지만 **상태 모델은 공유하지 않습니다**——date-picker의 `LhDatePickerState`는 플로팅 레이어 조작을 위한 것이고, calendar에는 표시 상태가 없습니다.
+
+<FnPlayground module="calendar" fn="shiftCalendarMonth" params='{"year": 2026, "month": 0, "delta": -2}' />

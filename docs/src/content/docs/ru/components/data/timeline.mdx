@@ -1,0 +1,161 @@
+---
+title: timeline —— Хронология
+description: 'getTimelineSide чередование сторон, четыре семантических типа узлов, двухколоночная раскладка alternate'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Хронология визуализирует «события, упорядоченные по времени»: вертикальная линия соединяет ряд узлов, каждый узел несёт время, заголовок и содержание. Это часто встречается в логистических треках, журналах операций и записях обновлений версий. `core/timeline` очень лёгкий — основная работа сводится к расчёту чередования сторон и сборке имен классов.
+
+## Когда использовать
+
+- Реализация `<LhTimeline>` на каждой платформе: логистические треки, записи согласования, журналы обновлений версий, потоки аудита операций.
+- Сценарии, где события **упорядочены по времени** и нужно подчеркнуть ощущение оси времени.
+- **Не следует использовать**: шаги без временного измерения (используйте `steps`, он подчёркивает прогресс, а не время); события, которые нужно фильтровать/искать (используйте список с фильтрацией).
+
+## Импорт
+
+```ts
+import {
+  getTimelineItemClassNames,
+  getTimelineClassNames,
+  getTimelineSide,
+} from '@lh-ui/share/core/timeline'
+import type { LhTimelineMode, LhTimelineType, LhTimelineItemState } from '@lh-ui/share/core/timeline'
+```
+
+## Замысел
+
+**Два режима раскладки**:
+
+- `left` (по умолчанию): осевая линия слева, всё содержимое в одной правой колонке. Просто, высокая плотность информации.
+- `alternate`: осевая линия по центру, содержимое **чередуется слева и справа** — `getTimelineSide(index)` определяет сторону через `index % 2` (чётные слева, нечётные справа). Этот режим визуально симметричнее и подходит, когда блоки содержимого крупные, а хронология является основным элементом страницы.
+
+**Почему `getTimelineSide` живёт в core, а не в стилях**: сторона определяет не только CSS-класс, но и **порядок дочерних компонентов содержимого** (когда метка времени в левой колонке, она идёт до содержимого, а когда в правой — после). Чистая функция даёт одинаковую логику рендеринга на всех концах, и не возникает расхождения «у Vue стороны чередуются, а у React всё слева».
+
+**Четыре семантических типа**: `primary` / `success` / `warning` / `danger`, задают цвет точки-узла. Семантику назначает вызывающий по сути события (успешная операция — success, предупреждение — warning), core лишь отображает имена классов и не толкует бизнес-смысл.
+
+**Зачем нужно `isLast`**: у последнего узла **осевая линия не рисуется** (модификатор `--last` убирает сегмент линии `::before`), иначе ось выйдет за последний узел на лишний отрезок.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getTimelineItemClassNames` | `(state: LhTimelineItemState) => string[]` | классы | тип/полая точка/сторона/последний элемент |
+| `getTimelineClassNames` | `(mode: LhTimelineMode) => string[]` | классы | модификатор alternate |
+| `getTimelineSide` | `(index: number) => 'left' \| 'right'` | сторона | чётные слева, нечётные справа |
+
+## Определения типов
+
+```ts
+export type LhTimelineMode = 'left' | 'alternate'
+export type LhTimelineType = 'primary' | 'success' | 'warning' | 'danger'
+
+export interface LhTimelineItemState {
+  type: LhTimelineType | undefined
+  hollow: boolean       // полый узел (только рамка, для событий «ещё не наступило»)
+  side: 'left' | 'right'  // сторона в режиме alternate
+  isLast: boolean
+}
+```
+
+## Доступность
+
+timeline — **чисто презентационный компонент**, без интерактивных ролей APG. Содержимое по сути является нумерованным списком, рекомендуется оборачивать в `<ol>`:
+
+```html
+<ol class="lh-timeline">
+  <li class="lh-timeline__item">
+    <time datetime="2026-10-12T10:00">10:00</time> Заказ доставлен
+  </li>
+</ol>
+```
+
+- Элемент `<time>` позволяет скринридерам и поисковым системам распознать время; атрибут `datetime` использует формат ISO 8601.
+- Точки узлов чисто декоративны — `aria-hidden="true"` или реализация через псевдоэлементы (псевдоэлементы изначально не попадают в дерево доступности).
+- Если хронология отражает **прогресс** (например, «сейчас выполняется шаг 3»), рассмотрите `steps` с `aria-current`.
+
+## Примеры использования
+
+```ts
+import { getTimelineSide, getTimelineClassNames } from '@lh-ui/share/core/timeline'
+
+getTimelineSide(0)  // 'left'
+getTimelineSide(1)  // 'right'
+getTimelineSide(2)  // 'left'
+getTimelineClassNames('alternate')  // ['lh-timeline', 'lh-timeline--alternate']
+getTimelineClassNames('left')       // ['lh-timeline']
+```
+
+```vue
+<!-- Vue3: режим alternate -->
+<ol :class="getTimelineClassNames(mode)">
+  <li
+    v-for="(item, index) in items"
+    :key="item.id"
+    :class="getTimelineItemClassNames({
+      type: item.type,
+      hollow: item.hollow,
+      side: getTimelineSide(index),
+      isLast: index === items.length - 1,
+    })"
+  >
+    <template v-if="mode === 'alternate'">
+      <!-- Левая колонка -->
+      <div v-if="getTimelineSide(index) === 'left'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+        <p class="lh-timeline__desc">{{ item.desc }}</p>
+      </div>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <!-- Правая колонка -->
+      <div v-if="getTimelineSide(index) === 'right'" class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+    <template v-else>
+      <div class="lh-timeline__dot" aria-hidden="true" />
+      <div class="lh-timeline__content">
+        <time class="lh-timeline__time" :datetime="item.iso">{{ item.time }}</time>
+        <h4 class="lh-timeline__title">{{ item.title }}</h4>
+      </div>
+    </template>
+  </li>
+</ol>
+```
+
+```tsx
+// React: в режиме alternate сторона определяет порядок рендеринга, используем ветвление через getTimelineSide(index)
+```
+
+```ts
+// uniapp: <view> в цикле; двухколоночный alternate — абсолютное позиционирование + раскладка 50/50
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-timeline` | базовый класс (сброс `<ol>`) |
+| `.lh-timeline--alternate` | режим чередования (ось по центру) |
+| `.lh-timeline__item` | отдельный узел |
+| `.lh-timeline__item--{primary\|success\|warning\|danger}` | семантический тип (цвет точки) |
+| `.lh-timeline__item--hollow` | полая точка (ещё не наступило) |
+| `.lh-timeline__item--right` | правая колонка alternate |
+| `.lh-timeline__item--last` | последний элемент (нижний сегмент оси не рисуется) |
+| `.lh-timeline__dot` | точка (`::before` рисует осевую линию) |
+| `.lh-timeline__content` / `__time` / `__title` / `__desc` | область содержимого |
+
+Цвет оси `--lh-border-color`; четыре цвета точек — `--lh-primary-color` / `--lh-success-color` / `--lh-warning-color` / `--lh-danger-color`; полые узлы — рамка + прозрачный фон.
+
+## Замечания
+
+- **`isLast` нужно передавать обязательно**: иначе ось выйдет за последний узел и визуально будет похожа на обрезанный индикатор прогресса.
+- **Порядок данных в режиме `alternate`**: чередование сторон считается **по index** и совпадает с временным порядком данных — не сортируйте данные на UI-слое перед расчётом side, иначе стороны разъедутся.
+- **Семантика полого узла `hollow`**: означает «событие ещё не наступило» (например, «ожидаем получения» в логистике). Он ортогонален `type`: полая точка + warning означает «ещё не наступило и есть риск».
+- **Переполнение содержимым**: в режиме alternate каждая колонка занимает лишь половину ширины, длинный текст много раз переносится; когда содержимого много, используйте режим `left` или задайте области содержимого `max-height` с развёрткой.
+- **Форматирование времени**: core не форматирует время, UI-слой использует `core/shared/date.formatDate` или обрабатывает самостоятельно; `<time datetime>` должен быть в формате ISO, чтобы его могли разобрать машины.
+- **Обратная хронология**: в некоторых сценариях свежие события должны быть сверху — достаточно сделать reverse на уровне данных, core не знает о направлении.
+
+<FnPlayground module="timeline" fn="getTimelineSide" params='{"index": 3}' />

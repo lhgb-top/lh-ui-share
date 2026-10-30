@@ -1,0 +1,175 @@
+---
+title: popover —— ポップオーバー
+description: 'インタラクティブな内容を承载する浮層：hover で入る際の 100ms の非表示遅延、role=dialog + aria-labelledby、aria-haspopup のトリガーセマンティクス'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Popover は「ものを置ける tooltip」です：ヒントの中にボタン、フォーム、メニュー、画像を置けます。tooltip の代わりにはなりません——tooltip は純テキストしか置けずインタラクションを禁じます；dialog の代わりにもなりません——dialog はモーダルで、フォーカスを奪います。`core/popover` は tooltip と同様に薄く、差異はすべて**インタラクションの重さ**にあります。
+
+## いつ使うか
+
+- 各端末で `<LhPopover>` を実装：カード式の詳細、絞り込みパネル、インラインフォーム、操作ボタンのグループ。
+- ユーザーが浮層の中に**留まってインタラクションする**必要があるシーン。
+- **使うべきでないケース**：純テキストの一文提示（`tooltip` を使う、より軽く控えめ）；ユーザーの流れを中断する必要がある強い確認（`dialog` を使う、モーダル）；二次確認の操作（`popconfirm` を使う、セマンティクスがより正確）。
+
+## インポート方法
+
+```ts
+import {
+  LH_POPOVER_TRIGGERS,
+  LH_POPOVER_PLACEMENT_DEFAULT,
+  getPopoverClass,
+  getPopoverWidthStyle,
+  getPopoverTriggerAria,
+  getPopoverPopperAria,
+  getDefaultDelay,
+  canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+import type { LhPopoverTrigger, LhPopoverState } from '@lh-ui/share/core/popover'
+```
+
+## 設計意図
+
+**非表示遅延 100ms が存在する理由**：tooltip の非表示は 0ms（外れたら即座に消える）ですが、popover は 100ms 残します——**ポインタがトリガーから浮層に入れるようにするため**です。マウスがトリガーから浮層へ移動する途中でトリガー要素から一時的に離れ、0ms 遅延だと途中で浮層が閉じられ、ユーザーは入れません。これは popover がインタラクティブであることによる直接的な制約です。
+
+**`LH_POPOVER_TRIGGERS` を校験定数として扱う**：トリガー方式は有限の列挙（click/hover/focus/manual）で、readonly 配列としてエクスポートし UI 層が props の校験（Vue の validator、React のランタイムアサーション）に使います。同時に TS 型のランタイム対応物でもあります。
+
+**`role="dialog"` であって `"tooltip"` ではない**：WAI-ARIA は tooltip の中にインタラクティブな要素を置いてはならないと定めており、インタラクティブな浮層は dialog セマンティクスでなければなりません。`aria-labelledby` でタイトル要素を指し、スクリーンリーダーは開いた際に内容全体ではなくタイトルを読み上げます。
+
+**`canCloseOnEscape` の disabled インターセプト**：デフォルトは Esc でのクローズを許可し、`disabled` の時は阻止します——無効化状態では浮層は本来トリガーされるべきではないため、この守衛はコンポーネントが無効化された後も既に開いている浮層が Esc で閉じられるのを防ぎます（業務セマンティクス上、disabled は通常「操作のロック」を意味します）。
+
+**矢印はオプション**：`arrow !== false` のときだけ `--arrow` クラス名を追加します——矢印には追加の位置計算（`shared/popper` の `computeArrowOffset`）が必要で、純粋な情報型のポップオーバーでは省けます。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getDefaultDelay` | `(showAfter?, hideAfter?) => { show, hide }` | 遅延 | デフォルト 200 / 100 |
+| `getPopoverClass` | `(state: { placement, arrow?, popperClass? }) => string[]` | クラス名 | 方位 + 矢印 + カスタム |
+| `getPopoverWidthStyle` | `(width?: string \| number) => Record<string, string>` | インラインスタイル | 幅の正規化 |
+| `getPopoverTriggerAria` | `(visible, popperId?) => LhAriaAttrs` | aria バッグ | aria-expanded/controls/haspopup |
+| `getPopoverPopperAria` | `(id?, titleId?) => LhAriaAttrs` | aria バッグ | role=dialog + aria-labelledby |
+| `canCloseOnEscape` | `(state: { disabled }) => boolean` | 許可するか | disabled 時にインターセプト |
+
+定数：`LH_POPOVER_TRIGGERS`（4 種のトリガー）、`LH_POPOVER_PLACEMENT_DEFAULT = 'top'`。
+
+## 型定義
+
+```ts
+export type LhPopoverTrigger = 'click' | 'hover' | 'focus' | 'manual'
+
+export interface LhPopoverState {
+  placement?: LhPlacement        // 12 方位（shared/popper）
+  trigger?: LhPopoverTrigger
+  width?: string | number        // ポップオーバーの幅
+  title?: string
+  visible?: boolean
+  disabled?: boolean
+  arrow?: boolean                // デフォルト true
+  showAfter?: number
+  hideAfter?: number
+}
+```
+
+## アクセシビリティ
+
+```ts
+getPopoverTriggerAria(true, 'pop-1')
+// { 'aria-expanded': true, 'aria-controls': 'pop-1', 'aria-haspopup': 'true' }
+getPopoverTriggerAria(false)  // { 'aria-expanded': false, 'aria-haspopup': 'true' }
+
+getPopoverPopperAria('pop-1', 'pop-1-title')
+// { role: 'dialog', id: 'pop-1', 'aria-labelledby': 'pop-1-title' }
+```
+
+- **トリガーの三種の神器**：`aria-haspopup` は「何かをポップアップする」ことを宣言し、`aria-expanded` は「今開いているか」を宣言し、`aria-controls` は「ポップアップしたのはどの要素か」を指します。キーボードのユーザーは expanded 状態によって現在の状況を判断します。
+- **`aria-controls` は浮層が存在していることを要する**：浮層が `v-if` でレンダリングされて初めて id が存在します；popperId を渡さない場合は expanded/haspopup だけを出力します。**controls がアンマウントされた要素を指さないように**——閉じた後の浮層が取り除かれると、トリガーの controls は宙に浮きます（スクリーンリーダーは許容するが、厳格な校験ではエラーになる）。
+- **タイトルが窓口**：`aria-labelledby` は `<div class="lh-popover__title" :id="titleId">` を指します。タイトルにはこのポップオーバーが何であるかを明記してください（「絞り込み条件」「注文詳細」）。「ここをクリック」のような動詞は書かないでください。
+- **フォーカス管理は UI 層の仕事**：`role="dialog"` は自動的にフォーカストラップをもたらしません——トラップするか否か、初期フォーカスをどこに置くかは UI 層が `shared/focus-trap` で決めます。非モーダルな popover は通常**トラップしません**（ユーザーはページの他の部分を操作できる）が、外側をクリックしたら閉じるようにします。
+- **キーボードで開く**：click トリガーの場合、トリガーがボタンであれば Enter/Space で開けます；hover トリガーはキーボードのユーザーには到達できません——**重要な操作を hover トリガーだけで提供しないでください**。
+
+## 使用例
+
+```ts
+import {
+  getDefaultDelay, getPopoverClass, getPopoverWidthStyle, canCloseOnEscape,
+} from '@lh-ui/share/core/popover'
+
+getDefaultDelay(undefined, undefined)  // { show: 200, hide: 100 }
+getDefaultDelay(0, 0)                   // { show: 0, hide: 0 }（明示的に即時）
+
+getPopoverClass({ placement: 'bottom' })
+// ['lh-popover__popper', 'lh-popover__popper--bottom', 'lh-popover__popper--arrow']
+getPopoverClass({ placement: 'top', arrow: false })
+// ['lh-popover__popper', 'lh-popover__popper--top']
+getPopoverClass({ placement: 'top', popperClass: 'my-pop' })
+// ['lh-popover__popper', '…--top', '…--arrow', 'my-pop']
+
+getPopoverWidthStyle(240)     // { width: '240px' }
+getPopoverWidthStyle('50%')   // { width: '50%' }
+getPopoverWidthStyle(undefined) // {}
+
+canCloseOnEscape({ disabled: false })  // true
+canCloseOnEscape({ disabled: true })   // false
+```
+
+```vue
+<!-- Vue3 -->
+<template>
+  <LhPopover :width="280" trigger="click" title="絞り込み条件">
+    <template #reference>
+      <LhButton>絞り込み</LhButton>
+    </template>
+    <div class="filter-body">
+      <LhCheckbox v-model="form.active">有効のみ</LhCheckbox>
+      <LhButton type="primary" @click="apply">適用</LhButton>
+    </div>
+  </LhPopover>
+</template>
+```
+
+```ts
+// 外側をクリックして閉じる（UI 層）：document で click を監視し、target がトリガーと浮層のどちらでもないかを判定
+function onDocumentClick(e: MouseEvent) {
+  if (!triggerEl.value?.contains(e.target as Node) && !popperEl.value?.contains(e.target as Node)) {
+    state.visible = false
+  }
+}
+watch(() => state.visible, (v) => {
+  v ? document.addEventListener('click', onDocumentClick) : document.removeEventListener('click', onDocumentClick)
+})
+```
+
+```tsx
+// React：useRef でトリガーと浮層のノードを取得；外側のクリックは自作の useClickOutside hook を使う；
+// 浮層は document.body にポータル化し、親の overflow:hidden に切り取られないようにする
+```
+
+```ts
+// uniapp：<view> の浮層；「外側をクリックして閉じる」はミニプログラム側で catchtouchstart の全局マスクで実装
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-popover__popper` | ポップオーバーコンテナ |
+| `.lh-popover__popper--{top\|top-start\|…}` | 12 方位（反転後の実際の方位を含む） |
+| `.lh-popover__popper--arrow` | 矢印あり |
+| `.lh-popover__title` | タイトル |
+| `.lh-popover__body` | 内容領域 |
+
+背景色 `--lh-bg-color`、ボーダー `--lh-border-color`、シャドウ `--lh-box-shadow-popover`、角丸 `--lh-border-radius-base`、z-index `--lh-z-index-popover`。
+
+## 注意事項
+
+- **浮層は body にテレポートする**：元の DOM 位置に残すと、親の `overflow: hidden`、`transform`、`z-index` のスタッキングコンテキストに罠にはめられます。テレポート後の位置座標は `shared/popper` の `computePosition` がビューポートを基準に計算します。
+- **反転後の方位クラス名**：`getPopoverClass` が消費するのは**実際に有効な placement**（popper の flip 後の値）で、prop の元の値ではありません——さもないと矢印の向きと視覚が一致しません。UI 層は popper が返した真の方位を渡さなければなりません。
+- **`width` と内容の自适应**：固定幅を設定すると狭い内容が引っ張られます；設定しないと内容がビューポートを押し出すことがあります。複雑な内容には `width` ではなく `min-width`（popperClass でカスタムスタイルを指定）を推奨します。
+- **hover トリガーのモバイル**：タッチスクリーンに hover はなく、hover トリガーの popover はモバイルではワンクリックで「ホバー状態」になり、別の場所をクリックしてやっと閉じる——体験が悪いです。クロス端末のコンポーネントでは端末ごとにトリガー方式を切り替えることを推奨します。
+- **ネストした popover**：A の浮層の中でさらに B を開く場合、A を閉じる際は B もカスケードに閉じないと B が宙に浮きます。popper の状態を共有する際は注意してください。
+- **`manual` トリガー**：完全に外部の `v-model:visible` で制御します——「行を選択したら展開する」のようなロジックとよく組み合わされます。このとき外側をクリックして閉じるロジックは自作する必要があります（core の外側クリックによるクローズも UI 層の実装です）。
+- **tooltip とのコード再利用**：两者は `shared/popper` と `shared/delay` を共有しますが、**aria ロールは混用できない**——再利用のために tooltip の `role="tooltip"` をインタラクティブな浮層に使わないでください、ARIA 違反でありスクリーンリーダーの挙動が予測不能になります。
+
+<FnPlayground module="popover" fn="getDefaultDelay" params='{"showAfter": null, "hideAfter": null}' />

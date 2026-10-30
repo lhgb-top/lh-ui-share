@@ -1,0 +1,141 @@
+---
+title: virtual —— التمرير الافتراضي
+description: 'مجال التمرير الافتراضي بارتفاع ثابت عبر computeRange / computeWindow، يشترك virtual-list وtable في الخوارزمية نفسها'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+كان التمرير الافتراضي بارتفاع ثابت مُنفَّذًا نسختين، واحدة في `virtual-list` وأخرى في `table`—حتى قيمة التجاوز الافتراضية كانت مختلفة (2 و3)، فإذا أُصلح حدٌّ في إحداهما فات الآخر. واستخرج `shared/virtual` الخوارزمية في نسخة واحدة، فلم يبقَ في الموضعين سوى تغليف رفيع.
+
+## متى يُستخدم
+
+- **القوائم الافتراضية / الجداول**: آلاف الصفوف من البيانات، لا يُعرض منها سوى بضعة عشر صفًّا داخل إطار العرض.
+- **التمرير الأفقي الافتراضي**: فـ `computeWindow` مستقل عن المحور، ويصلح كذلك للجدول الزمني الأفقي وشريط tabs الأفقي.
+- **لا ينبغي استخدامه**: سيناريوهات الارتفاع غير الثابت لا تتوفر فيها سوى قدرة «أخذ الإزاحة» (`getItemOffsetAt`)، بلا خوارزمية مجال للارتفاع المتغير—فالتمرير الافتراضي بارتفاع ديناميكي يستلزم من طبقة واجهة المستخدم الحفاظ على جدول الارتفاعات التراكمي، وهذه الوحدة لا تقدم سوى خطوة أخذ الإزاحة.
+
+## طريقة الاستيراد
+
+```ts
+import {
+  computeRange,
+  computeWindow,
+  getItemOffsetAt,
+  LH_VIRTUAL_OVERSCAN,
+  type LhVirtualRange,
+} from '@lh-ui/share/core/shared/virtual'
+```
+
+## الأنواع والثوابت
+
+```ts
+export interface LhVirtualRange {
+  start: number        // فهرس بداية مجال العرض (شامل)
+  end: number          // فهرس نهاية مجال العرض (غير شامل)
+  offsetY: number      // إزاحة عنصر البداية بالنسبة إلى قمة الحاوية (نقطة البداية السالبة لكمية التمدد)
+  totalHeight: number  // الارتفاع الكلي لجميع البيانات (لتمديد الحاوية)
+}
+
+export interface LhAxisRange {
+  start: number
+  end: number
+  offset: number
+  totalSize: number
+}
+
+export const LH_VIRTUAL_OVERSCAN = 2   // عدد صفوف التجاوز الافتراضي
+```
+
+## جدول الدوال
+
+| الدالة | التوقيع | الدور |
+| --- | --- | --- |
+| `computeRange` | `(scrollTop, viewportHeight, itemHeight, total, overscan?) => LhVirtualRange` | المجال الافتراضي الرأسي بارتفاع ثابت |
+| `computeWindow` | `(scrollOffset, viewportSize, itemSize, total, overscan?) => LhAxisRange` | مجال بارتفاع ثابت مستقل عن المحور (للاستخدام الأفقي) |
+| `getItemOffsetAt` | `(items: { offset: number }[], index: number) => number` | أخذ إزاحة التمرير لعنصر محدد في وضع الارتفاع الديناميكي |
+
+## منطق الحساب
+
+جواهر `computeRange` ثلاث خطوات:
+
+1. **فهرس العنصر الأول**: `first = floor(scrollTop / itemHeight)`، ثم التوسيع `overscan` صفوف في كلا الاتجاهين.
+2. **فهرس العنصر الأخير**: `end = min(total, start + visible + overscan × 2)`، حيث `visible = ceil(viewportHeight / itemHeight)`.
+3. **الارتفاع الكلي**: `totalHeight = total × itemHeight`، ليُمدَّ الحاوية إلى ارتفاعها الحقيقي، فيكون نسبة شريط التمرير صحيحة.
+
+و`offsetY` المُعادة هي «موضع بداية العرض ضمن الارتفاع الكلي»، تستخدمها طبقة واجهة المستخدم قيمةً لـ `translateY` (أو padding-top) لحاوية المحتوى.
+
+## الحماية عند الحدود
+
+يدفع هذا المجال الدفاع أساسًا ضد **الإطار الذي تتقلص فيه البيانات**: فالمستخدم يقرأ السطر 500، وإذا بالبيانات تنكمش فجأة إلى 10 سجلات، وقبل أن يلحق المتصفح باحتجاز `scrollTop`، يكون الخوارزم البسيط قد حسب `start = 490 > end`، فتُعيد `slice()` مصفوفة فارغة ← شاشة بيضاء.
+
+طريقة المعالجة: يُحتجَز `first` إلى `total - 1`، ليظل `start <= end` قائمًا دائمًا. ومن الحراس من النوع نفسه:
+
+| المدخل السيئ | السلوك |
+| --- | --- |
+| `itemHeight` غير منتهٍ / ≤ 0 | مجال صفري بالكامل (بلا عرض، وبلا خطأ) |
+| `total` غير منتهٍ / ≤ 0 | مجال صفري بالكامل |
+| `scrollTop` غير منتهٍ | الرجوع إلى 0 |
+| `viewportHeight` غير منتهٍ | الرجوع إلى 0 (← لا يُعرض سوى جزء overscan، بلا شاشة بيضاء) |
+| `overscan` غير منتهٍ | الرجوع إلى `LH_VIRTUAL_OVERSCAN` |
+
+## أمثلة الاستخدام
+
+### دالة نقية
+
+```ts
+computeRange(400, 300, 40, 1000)
+// first = 10, visible = 8, overscan = 2
+// start = 10 - 2 = 8, end = min(1000, 10 + 8 + 4) = 22
+// offsetY = 8 * 40 = 320, totalHeight = 40000
+// ← يُعرض العنصران 8~21، وحاوية translateY بقيمة 320px
+```
+
+### التوصيل في Vue3
+
+```vue
+<template>
+  <div class="lh-virtual-list" @scroll="onScroll" :style="{ height: `${viewportHeight}px` }">
+    <div :style="{ height: `${range.totalHeight}px` }">
+      <div :style="{ transform: `translateY(${range.offsetY}px)` }">
+        <LhVirtualItem v-for="i in visibleItems" :key="i.index" :data="i.data" />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+const range = ref<LhVirtualRange>({ start: 0, end: 0, offsetY: 0, totalHeight: 0 })
+
+function onScroll(e: Event) {
+  range.value = computeRange(
+    (e.target as HTMLElement).scrollTop,
+    viewportHeight.value,
+    props.itemHeight,
+    props.data.length,
+  )
+}
+</script>
+```
+
+### التمرير الأفقي
+
+```ts
+// الخوارزمية نفسها، مع تغيير المحور
+const window = computeWindow(scrollLeft, viewportWidth, itemWidth, total)
+```
+
+### التمرير إلى عنصر محدد (ارتفاع ديناميكي)
+
+```ts
+// تحتفظ طبقة واجهة المستخدم بجدول الإزاحات التراكمي [{ offset: 0 }, { offset: 40 }, ...]
+const offset = getItemOffsetAt(itemOffsets, targetIndex)
+container.scrollTop = offset
+```
+
+## ملاحظات
+
+- **الارتفاع الثابت شرط مسبق**: تفترض `computeRange` تساوي ارتفاع كل عنصر بدقة. فإن تغيّرت ارتفاعات عناصر القائمة، فعلى طبقة واجهة المستخدم أن تحافظ على جدول الارتفاعات بنفسها، وتستخدم `getItemOffsetAt` للقفز—وهذه الوحدة لا تقدم خوارزمية مجال بارتفاع متغير.
+- **`getItemOffsetAt` يُعيد 0 عند تجاوز النطاق**: فالقائمة الفارغة والفهرس خارج النطاق كلاهما يعيد 0، دون أن يرفع خطأً.
+- **الموازنة في قيمة التجاوز**: `LH_VIRTUAL_OVERSCAN = 2` هو نقطة التوازن بين «عدم الوميض عند التمرير السريع» و«زيادة الصفوف المعروضة»؛ فأثناء التمرير السريع يضمن مجال `overscan` أن محتوى الإطار التالي جاهز للعرض. ويمكن تغطيته بمعامل، لكن القيمة الأقل من 1 تسبب الوميض عند التمرير.
+- **`computeWindow` و`computeRange` من مصدر واحد**: فالأول يُفوِّض إلى الثاني داخليًا ثم يُعيد تسمية الحقول، والسلوك متطابق تمامًا، ففي السيناريوهات الرأسية يصح استخدام أي منهما.
+
+<FnPlayground module="virtual" fn="computeRange" params='{"scrollTop": 400, "viewportHeight": 300, "itemHeight": 40, "total": 1000}' />

@@ -1,0 +1,172 @@
+---
+title: segmented —— المتحكم المجزّأ
+description: 'normalizeSegmentedOptions لتوحيد الخيارات، و moveSegmentedIndex لتنقّل لوحة المفاتيح، وحزمة سمات radiogroup'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+المتحكم المجزّأ هو **اختيار فردي مُدمج**: تُفرَد الخيارات في شريط من الأزرار مع إبراز العنصر المحدد بواسطة كتلة منزلقة. مقارنةً بمجموعة radio يوفّر المساحة العمودية ويبدو أكثر حداثة؛ ومقارنةً بـ select يكشف جميع الخيارات، فيوفّر نقرة واحدة. ويتولّى `core/segmented` توحيد طريقتي كتابة الخيارات، والحكم على التعطيل على مستوى المجموعة، وتنقّل لوحة المفاتيح، إضافة إلى دلالة APG radiogroup.
+
+## متى يُستخدم
+
+- تُنجزه الأطراف على هيئة `LhSegmented`: تبديل العرض (قائمة/شبكة/بطاقات)، والمدى الزمني (يوم/أسبوع/شهر)، والإعدادات المُعدَّدة المُدمجة.
+- عدد الخيارات قليل (2~5) و**متنافٍ**.
+- **لا ينبغي استخدامه**: إذا تجاوزت الخيارات 6 (انتقل إلى select أو مجموعة radio)؛ للاختيار المتعدد (مجموعة checkbox)؛ إذا كانت نصوص الخيارات طويلة جداً (يلتف النص ويبدو قبيحاً).
+
+## طريقة الاستيراد
+
+```ts
+import {
+  normalizeSegmentedOptions,
+  isSegmentedDisabled,
+  getSegmentedClassNames,
+  moveSegmentedIndex,
+  getSegmentedAria,
+  getSegmentedItemAria,
+} from '@lh-ui/share/core/segmented'
+import type {
+  LhSegmentedInput,
+  LhSegmentedNormalized,
+  LhSegmentedState,
+} from '@lh-ui/share/core/segmented'
+```
+
+## القصد التصميمي
+
+يقبل `normalizeSegmentedOptions` طريقتي كتابة — `['يوم', 'أسبوع', 'شهر']` أو `[{ label: 'يوم', value: 'day' }]` — ويوحِّدهما في شكل واحد. وهذا اختيار «مدخلات متسامحة، وداخل صارم»: كلما كانت خصائص مكوّن UI أكثر تسامحاً، قلّ عبء الدماغ على المستخدم؛ وبعد التوحيد الداخلي إلى `LhSegmentedNormalized`، لا تواجه خطوات الحكم على التعطيل والتنقّق والعرض سوى بنية واحدة.
+
+يقوم `isSegmentedDisabled(options, disabled)` بدمج **التعطيل على مستويين**: تعطيل المجموعة `disabled` أو تعطيل أي خيار نفسه `disabled` كلاهما يجعل المجموعة بأكملها غير متاحة — لأن كتلة التحديد في المتحكم المجزّأ تنزلق بشكل مرتبط مع البقية، ووجود مجموعة «نصف معطّلة» سيُجمِّد الكتلة المنزلقة.
+
+يُفوِّض `moveSegmentedIndex` الأمر إلى النواة المشتركة `getNextListIndex` (في `core/shared/keyboard`)، فيتنقّل تنقّلاً دائرياً متجاوزاً العناصر المعطَّلة، ويُعيد current في حال المصفوفة الفارغة.
+
+## جدول الدوال
+
+| الدالة | التوقيع | الإرجاع | الوظيفة |
+| --- | --- | --- | --- |
+| `normalizeSegmentedOptions` | `(options: LhSegmentedInput[]) => LhSegmentedNormalized[]` | خيارات موحَّدة | توحيد الكتابة السريعة بالنصوص |
+| `isSegmentedDisabled` | `(options: LhSegmentedNormalized[], disabled?: boolean) => boolean` | هل هو معطَّل | دمج مستوى المجموعة + مستوى الخيار |
+| `getSegmentedClassNames` | `(state: LhSegmentedState) => string[]` | أسماء أصناف | disabled/block |
+| `moveSegmentedIndex` | `(options, current: number, direction: 1 \| -1) => number` | الفهرس الهدف | تنقّل دائري متجاوزاً المعطَّل |
+| `getSegmentedAria` | `(options?: { disabled?; label? }) => LhAriaAttrs` | حزمة سمات aria | دلالة radiogroup |
+| `getSegmentedItemAria` | `(options: { selected; disabled? }) => LhAriaAttrs` | حزمة سمات aria | دلالة radio |
+
+## تعريفات الأنواع
+
+```ts
+export type LhSegmentedValue = string | number
+
+export interface LhSegmentedOption {
+  label: string
+  value: LhSegmentedValue
+  disabled?: boolean
+}
+
+/** خيار الإدخال (الكتابة السريعة بالنص أو الكائن) */
+export type LhSegmentedInput = LhSegmentedValue | LhSegmentedOption
+
+export interface LhSegmentedNormalized {
+  label: string
+  value: LhSegmentedValue
+  disabled: boolean
+}
+
+export interface LhSegmentedState {
+  disabled: boolean
+  block: boolean   // ملء عرض الحاوية (مقاطع متساوية العرض)
+}
+```
+
+## إمكانية الوصول
+
+المتحكم المجزّأ على مستوى إمكانية الوصول هو **مجموعة اختيار فردي**: الحاوية `role="radiogroup"`، وكل مقطع `role="radio"` + `aria-checked`. وتأتي الدلالة كاملةً من دالتي حزمة السمات:
+
+```ts
+getSegmentedAria({ disabled: false, label: 'العرض' })
+// { role: 'radiogroup', 'aria-label': 'العرض' }
+
+getSegmentedItemAria({ selected: true })
+// { role: 'radio', 'aria-checked': true }
+
+getSegmentedItemAria({ selected: false, disabled: true })
+// { role: 'radio', 'aria-checked': false, 'aria-disabled': true }
+```
+
+- إذا لم تكن الحاوية تحمل وسيماً مرئياً، استخدم المعلمة `label` لتوفير `aria-label` (الاسم المُتاح).
+- تفاعل لوحة المفاتيح (طبقة UI): يُستخدم `moveSegmentedIndex` مع ←/↑ و →/↓ للتحرك والتحديد المباشر (نمط radio هو «التحرك هو التحديد»، لا نمط button «التحرك + Enter»).
+- `roving tabindex`: فقط العنصر المحدد (أو العنصر الأول) يحمل `tabindex="0"`، وما عداه `-1`، كي لا يتوقّف Tab عند كل عنصر داخل المجموعة.
+
+## أمثلة الاستخدام
+
+```ts
+import { normalizeSegmentedOptions, moveSegmentedIndex, isSegmentedDisabled } from '@lh-ui/share/core/segmented'
+
+normalizeSegmentedOptions(['يوم', 'أسبوع', 'شهر'])
+// [{ label: 'يوم', value: 'يوم', disabled: false }, ...]
+
+normalizeSegmentedOptions([{ label: 'يوم', value: 'day' }, 'أسبوع'])
+// [{ label: 'يوم', value: 'day', disabled: false }, { label: 'أسبوع', value: 'أسبوع', disabled: false }]
+
+const opts = normalizeSegmentedOptions([
+  { label: 'يوم', value: 'day' },
+  { label: 'أسبوع', value: 'week', disabled: true },
+  { label: 'شهر', value: 'month' },
+])
+moveSegmentedIndex(opts, 0, 1)   // 2 (يتجاوز week المعطَّل)
+moveSegmentedIndex(opts, 2, 1)   // 0 (دائري)
+moveSegmentedIndex([], 0, 1)     // 0 (مصفوفة فارغة)
+isSegmentedDisabled(opts, false) // true (week معطَّل → المجموعة كلها معطَّلة)
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getSegmentedClassNames({ disabled, block })" v-bind="getSegmentedAria({ disabled, label })">
+  <div class="lh-segmented__indicator" :style="{ transform: `translateX(${index * 100}%)`, width: `${100 / normalized.length}%` }" />
+  <button
+    v-for="(opt, i) in normalized"
+    :key="String(opt.value)"
+    type="button"
+    class="lh-segmented__item"
+    :class="{ 'lh-segmented__item--active': i === index, 'lh-segmented__item--disabled': opt.disabled }"
+    :tabindex="i === index ? 0 : -1"
+    v-bind="getSegmentedItemAria({ selected: i === index, disabled: opt.disabled })"
+    @click="onSelect(i)"
+    @keydown.left.prevent="onMove(-1)"
+    @keydown.right.prevent="onMove(1)"
+  >
+    {{ opt.label }}
+  </button>
+</div>
+```
+
+```tsx
+// React: تنزلق indicator بانتقال CSS؛
+// في onMove: onChange(normalized[moveSegmentedIndex(normalized, index, dir)].value)
+```
+
+```ts
+// uniapp: <view> + <view> بالطواف؛ وأحداث لوحة المفاتيح غير متاحة خارج h5، فيُنتقى باللمس مباشرة
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-segmented` | الصنف الأساسي (حاوية بزوايا دائرية + حشو داخلي) |
+| `.lh-segmented--disabled` | تعطيل |
+| `.lh-segmented--block` | ملء عرض الحاوية، ومقاطع متساوية العرض |
+| `.lh-segmented__indicator` | كتلة الإبراز المنزلقة (تموضع مطلق + transform) |
+| `.lh-segmented__item` | مقطع واحد |
+| `.lh-segmented__item--active` | العنصر المحدد (نص بلون رئيسي) |
+| `.lh-segmented__item--disabled` | عنصر معطَّل |
+
+لون خلفية الحاوية `--lh-fill-color` (مجرى رمادي فاتح)، و indicator لونه `--lh-bg-color` (أبيض) مع ظل، والنص المحدد `--lh-primary-color`.
+
+## ملاحظات
+
+- **تموضع indicator**: تستخدم طبقة UI `transform: translateX(index * 100%)` + `width: 100/count%`؛ ويجب أن يكون count هو طول الخيارات **بعد التوحيد** (نتيجة `normalizeSegmentedOptions`)، وإلا انحرفت الكتلة المنزلقة عند زيادة الخيارات أو نقصانها.
+- **قيمة value في الكتابتين النصية والكائنية**: في الكتابة النصية `value === label`؛ وربط `v-model` في طبقة UI يكون مع `value` لا مع label، فانتبه لمصدر القيمة عند خلط الطريقتين.
+- **توقيت الحكم على تعطيل المجموعة**: يعتمد `isSegmentedDisabled` على options، وفي حال تغيُّر الخيارات ديناميكياً يُعاد حسابه، وإلا لم تتحدّث حالة التعطيل.
+- **المقايضة مع radio**: كتلة التحديد في المتحكم المجزّأ **تنزلق بصرياً**، ويعتمد التحريك على تموضع indicator عبر JS؛ وإذا كان الهدف النهائي لا يدعم تحريك transform (بعض البرامج المصغّرة)، فالتراجع إلى مجموعة radio أأمن.
+- **خيارات فارغة**: تُعيد `normalizeSegmentedOptions([])` القيمة `[]`، ويعيد `moveSegmentedIndex` القيمة current — فعلى طبقة UI معالجة الحالة الفارغة، وألا تُعرض مجموعة مقاطع فارغة.
+
+<FnPlayground module="segmented" fn="moveSegmentedIndex" params='{"options": [{"label": "يوم", "value": "day", "disabled": false}, {"label": "أسبوع", "value": "week", "disabled": true}, {"label": "شهر", "value": "month", "disabled": false}], "current": 0, "direction": 1}' />

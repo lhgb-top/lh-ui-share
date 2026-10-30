@@ -1,0 +1,196 @@
+---
+title: pagination —— Пагинация
+description: 'getPaginationRange: алгоритм сжимающегося окна (первая и последняя страницы постоянны + двустороннее многоточие), clampPage нормализует выход за границы, aria-current=page'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Пагинация — стандартная навигация для случая «данных больше одного экрана». Главная трудность здесь не в перелистывании, а в **отображении интервала номеров страниц**: при 100 страницах невозможно нарисовать все 100 кнопок, и то, как с помощью первой/последней страницы, текущего окна и многоточия выразить положение и дать быстрый переход, каждая библиотека решает по-своему. `core/pagination` реализует распространённый алгоритм «сжимающегося окна» и нормализует любые некорректные входные данные.
+
+## Когда использовать
+
+- При реализации `LhPagination` на каждой платформе: пагинация внизу таблицы, разбивка результатов поиска, пагинация фотоальбома.
+- Сценарии, где данные разбиты на страницы и пользователь должен явно управлять номером страницы.
+- **Не следует использовать**: бесконечная подгрузка при прокрутке (используйте `virtual-list` или слежение за прокруткой); данных так мало, что хватает одного экрана (без пагинации проще).
+
+## Импорт
+
+```ts
+import {
+  getPageCount,
+  clampPage,
+  getPaginationRange,
+  getPaginationItemAria,
+  formatMessage,
+} from '@lh-ui/share/core/pagination'
+import type {
+  LhPaginationRangeItem,
+  LhPaginationRangeState,
+  LhPaginationMessageParams,
+} from '@lh-ui/share/core/pagination'
+```
+
+## Замысел
+
+**Очистка двух параметров в `getPageCount`**: и `total`, и `pageSize` проходят `shared/sanitize.sanitizeNumber` — NaN / Infinity не пробьются сквозь как NaN-овое число страниц. Эта защита не лишняя: `total` часто приходит из асинхронного API и во время загрузки может быть undefined, а `Math.ceil(undefined / 10)` — это NaN, и NaN инвалидирует и `clampPage`, и алгоритм интервала.
+
+**Разное отношение `clampPage` к NaN и Infinity**: NaN считается некорректным и откатывается к первой странице; **±Infinity передаётся ограничению** — `Infinity` попадает на последнюю страницу, `-Infinity` — на первую. Это разделение имеет практический смысл: в управляемом режиме некорректное значение снаружи (NaN) должно вернуться в безопасную позицию, а «перейти на последнюю страницу», выраженная через Infinity — допустимое использование.
+
+**Логика притяжения в алгоритме интервала**: `current` в `getPaginationRange` сначала проходит `clampPage` — в комментариях зафиксирован реальный сценарий: `innerCurrent`, пробрасываемый из UI-слоя, может кратковременно выходить за границы (в управляемом режиме внешнее и внутреннее значения рассинхронизированы, либо `current` не успел синхронизироваться после уменьшения total), и без ограничения текущая страница окажется вне окна отображения, а условие многоточия перевернётся.
+
+**Многоточие выводится только при возникновении реального разрыва**: `showLeftEllipsis = leftSibling > 2`, а не `> 1` — когда окно вплотную прилегает к первой странице (например, current=3, siblingCount=1), слева пропускается всего одна страница «2», и в этом случае непрерывный ряд 1,2,3,4,5 читается яснее, чем вставка многоточия.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getPageCount` | `(total, pageSize) => number` | общее число страниц (минимум 1) | очистка двух параметров |
+| `clampPage` | `(page, pageCount) => number` | ограниченный номер страницы | NaN→1, Infinity→последняя |
+| `getPaginationRange` | `(state: LhPaginationRangeState) => LhPaginationRangeItem[]` | массив элементов интервала | алгоритм сжимающегося окна |
+| `getPaginationItemAria` | `(options: { page, current, labelTemplate? }) => LhAriaAttrs` | пакет aria-атрибутов | aria-current / aria-label |
+| `formatMessage` | реэкспорт из `shared/format` | интерполированный текст | сохранить прежний путь импорта |
+
+## Определения типов
+
+```ts
+export type LhPaginationRangeItemType = 'page' | 'ellipsis'
+
+export interface LhPaginationRangeItem {
+  type: LhPaginationRangeItemType
+  page: number    // для элемента ellipsis всегда 0, положение и есть семантика
+}
+
+export interface LhPaginationRangeState {
+  current: number       // текущая страница (с 1)
+  pageCount: number
+  siblingCount?: number // число страниц по бокам от текущей, по умолчанию 1
+}
+
+export type LhPaginationMessageParams = Record<string, string | number>
+```
+
+## Доступность
+
+```ts
+getPaginationItemAria({ page: 3, current: 3, labelTemplate: 'Страница {page}' })
+// { 'aria-current': 'page', 'aria-label': 'Страница 3' }
+
+getPaginationItemAria({ page: 5, current: 3, labelTemplate: 'Страница {page}' })
+// { 'aria-label': 'Страница 5' }
+
+getPaginationItemAria({ page: 5, current: 3 })
+// {} (без шаблона aria-label не выводится; само число в кнопке читаемо)
+```
+
+- Текущая страница выводит `aria-current="page"` — стандартное соглашение APG для пагинации; скринридер благодаря этому объявляет «текущая страница», а не читает номер как обычную ссылку.
+- **Кнопка-многоточие** должна иметь `aria-label` (например, «перепрыгнуть на 5 страниц вперёд») или `disabled` — текст «…» несёт для скринридера ноль информации; это самый частый дефект доступности пагинации.
+- Пагинация целиком оборачивается в `<nav aria-label="Пагинация">`, чтобы отделить её от остальной навигации страницы.
+- `labelTemplate` приходит из языкового пакета (`pagination.page` и т. п.), а плейсхолдер `{page}` заменяется этой функцией.
+
+## Примеры использования
+
+```ts
+import { getPageCount, clampPage, getPaginationRange } from '@lh-ui/share/core/pagination'
+
+getPageCount(100, 10)    // 10
+getPageCount(105, 10)    // 11
+getPageCount(0, 10)      // 1 (минимум 1 страница)
+getPageCount(NaN, 10)    // 1 (total очищается до 0 и поднимается до 1 через Math.max(1, …))
+getPageCount(100, NaN)   // 100 (pageSize очищается до значения по умолчанию 1, то есть 1 элемент на страницу)
+
+clampPage(5, 10)    // 5
+clampPage(0, 10)    // 1
+clampPage(15, 10)   // 10
+clampPage(NaN, 10)  // 1
+clampPage(Infinity, 10)  // 10 (Infinity попадает на последнюю страницу)
+
+// siblingCount по умолчанию 1, всего слотов = 1*2 + 5 = 7
+getPaginationRange({ current: 1, pageCount: 10 })
+// [1, 2, 3, …, 10]
+getPaginationRange({ current: 5, pageCount: 10 })
+// [1, …, 4, 5, 6, …, 10]
+getPaginationRange({ current: 10, pageCount: 10 })
+// [1, …, 8, 9, 10]
+getPaginationRange({ current: 5, pageCount: 5 })
+// [1, 2, 3, 4, 5] (страниц меньше, чем слотов, — показываем все, без многоточия)
+getPaginationRange({ current: 99, pageCount: 10 })
+// [1, …, 8, 9, 10] (вышедший за границы current ограничивается)
+```
+
+```vue
+<!-- Vue3 -->
+<nav class="lh-pagination" aria-label="Пагинация">
+  <button type="button" class="lh-pagination__prev" :disabled="current <= 1" @click="go(current - 1)">
+    Назад
+  </button>
+  <template v-for="(item, i) in range" :key="i">
+    <span v-if="item.type === 'ellipsis'" class="lh-pagination__ellipsis">…</span>
+    <button
+      v-else
+      type="button"
+      class="lh-pagination__item"
+      :class="{ 'is-active': item.page === current }"
+      v-bind="getPaginationItemAria({ page: item.page, current, labelTemplate: t('pagination.page') })"
+      @click="go(item.page)"
+    >
+      {{ item.page }}
+    </button>
+  </template>
+  <button type="button" class="lh-pagination__next" :disabled="current >= pageCount" @click="go(current + 1)">
+    Далее
+  </button>
+  <select v-model="pageSize" class="lh-pagination__sizes">
+    <option :value="10">10 на странице</option>
+    <option :value="20">20 на странице</option>
+    <option :value="50">50 на странице</option>
+  </select>
+  <span class="lh-pagination__total">Всего {{ total }}</span>
+</nav>
+```
+
+```ts
+const pageCount = computed(() => getPageCount(props.total, pageSize.value))
+const range = computed(() =>
+  getPaginationRange({ current: current.value, pageCount: pageCount.value }),
+)
+function go(page: number) {
+  const next = clampPage(page, pageCount.value)
+  if (next !== current.value) emit('update:current', next)
+}
+```
+
+```tsx
+// React: управляемая пагинация, current хранится у родителя;
+// в go сначала clampPage, затем колбэк
+```
+
+```ts
+// uniapp: <view> + обход элементов интервала в <view>;
+// переход на страницу — через <input type="number"> + кнопку «перейти»
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-pagination` | базовый класс (flex-центрирование) |
+| `.lh-pagination__prev` / `__next` | кнопки назад/далее |
+| `.lh-pagination__item` | кнопка номера страницы |
+| `.lh-pagination__item.is-active` | текущая страница (фон основного цвета) |
+| `.lh-pagination__ellipsis` | многоточие |
+| `.lh-pagination__sizes` | выбор размера страницы |
+| `.lh-pagination__total` / `__jump` | текст с общим числом / поле перехода |
+
+Текущая страница: фон `--lh-primary-color` + текст `--lh-color-on-primary`; отключённые кнопки `--lh-text-disabled`; расстояние между кнопками управляется `--lh-gap-small`.
+
+## Замечания
+
+- **Нумерация страниц с 1**: `current`, `page` и `pageCount` начинаются с 1, в отличие от индексов строк в `table` (с 0) — смешивание чревато ошибками.
+- **Связь `pageCount` и `total`**: UI-слой обычно вычисляет через `getPageCount(total, pageSize)`, но можно передать и `pageCount` напрямую (когда сервер уже знает число страниц). Не используйте два источника одновременно — это приведёт к рассогласованию.
+- **Сходимость `current` при изменении `pageSize`**: при переключении с 50 на страницу на 10 элементов текущая страница может выйти за новый `pageCount` — в `watch(pageSize)` вызовите `clampPage`, иначе отрисуется пустая страница.
+- **Взаимодействие с многоточием**: клик по многоточию обычно перепрыгивает на 5 страниц (`current ± 5`); core не встраивает это поведение, UI-слой реализует сам и даёт кнопке-многоточию `aria-label`.
+- **`siblingCount` и слоты**: `totalSlots = siblingCount * 2 + 5` (первая и последняя страницы + текущая + два слота под многоточия + братья с двух сторон). Если `pageCount <= totalSlots`, всё показывается без многоточия — при `siblingCount: 2` порог равен 9 страницам.
+- **Кратковременный выход за границы в управляемом режиме**: `getPaginationRange` ограничивает `current` внутри, поэтому отрисовка не сломается; но `aria-current` попадёт на ограниченную страницу, и после синхронизации внешнего состояния всё естественно совпадёт.
+- **Реэкспорт `formatMessage`**: модуль повторно экспортирует `formatMessage` из `shared/format` с тем же связыванием — исключительно ради сохранения прежнего пути импорта вниз по течению (интерполяция текстов вроде `pagination.total` с плейсхолдером `{total}`); новый код подключает `core/shared/format` напрямую.
+
+<FnPlayground module="pagination" fn="getPaginationRange" params='{"state": {"current": 5, "pageCount": 20, "siblingCount": 1}}' />

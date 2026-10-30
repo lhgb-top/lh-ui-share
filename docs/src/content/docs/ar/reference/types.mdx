@@ -1,0 +1,168 @@
+---
+title: types —— الأنواع العامة
+description: 'LhLocaleType / LhLeaves / LhBaseProps / الأنواع العامة LhTypes والإعلادات العالمية ambient'
+---
+
+`src/types/` هي طبقة الأنواع العامة المكشوفة للخارج. والفرق عن
+[core/shared/types](/ar/core/types) (الأنواع الموحَّدة الداخلية في core): هنا
+**الأشكال الأساسية لخصائص (Props) مكوّنات مكتبات واجهة المستخدم**.
+
+## طريقة الاستيراد
+
+```ts
+import type {
+  LhLocaleType,
+  LhLocaleMessages,
+  LhLocaleMessageValue,
+  LhLeaves,
+  LhBaseProps,
+  LhTypes,
+  LhSizes,
+  LhLanguages,
+} from '@lh-ui/share/types'
+```
+
+## بنية التصدير
+
+```ts
+// src/types/index.ts
+export * from './locale'           // ما يتعلق بحزمة اللغة
+export * from './components/base'  // الخصائص الأساسية للمكوّن
+```
+
+أما `global.d.ts` و `theme.ts` و `scss.d.ts` فهي إعلانات ambient، تُؤخَذ في الحسبان عبر
+`include` في tsconfig، **ولا تُصدَّر بشكل صريح هنا**.
+
+## الأنواع المتعلقة بـ locale
+
+| النوع | التعريف | الاستخدام |
+| --- | --- | --- |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | اتحاد رموز اللغات الست |
+| `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | العقد الورقية لحزمة اللغة (قراءة فقط بشكل تعاودي) |
+| `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | حزمة اللغة كاملةً |
+| `LhLeaves<T, Prefix extends string = ''>` | نوع استخراج عودي | يشتق اتحاد مسارات النقاط لجميع «الأوراق النصية» |
+| `LhLocaleOptions` | `{ locale: LhLocaleType; messages: LhLocaleMessages }` | شكل مدخل `lhlocale.use()` |
+
+### سلوك LhLeaves
+
+```ts
+type ZhLeaves = LhLeaves<typeof zhCN>
+// 'common.loading' | 'input.placeholder' | 'input.password' | 'pagination.total' | …
+```
+
+- **الورقة النصية** → المسار الكامل (`'input.placeholder'`).
+- **مفتاح المصفوفة** (مثل `datepicker.months`) → `never`. فالمصفوفة لا تُخاطَب بالمفتاح،
+  ولا يستطيع `t()` بلوغها، أما `tm()` فيستطيع.
+- **الكائن** → الاستخراج العودي للمفاتيح الفرعية.
+
+يوفِّر `LhLocalePath = LhLeaves<typeof zhCN>` لـ `lhlocale.t()` الإكمال التلقائي للحرفية
+والتحقق من الإملاء.
+
+## الخصائص الأساسية للمكوّن
+
+ثلاثة اتحادات تحمل أنواعًا عامة (تتيح لجانب العمل توسيع قيم مخصصة):
+
+```ts
+export type LhTypes<T extends string | undefined = undefined> =
+  T extends string ? LhComponentType | T : LhComponentType
+
+export type LhSizes<T extends string | undefined = undefined> =
+  T extends string ? LhComponentSize | T : LhComponentSize
+
+export type LhLanguages<T extends string | undefined = undefined> =
+  T extends string ? LhComponentLanguage | T : LhComponentLanguage
+```
+
+طريقة الاستخدام:
+
+```ts
+type MyType = LhTypes<'brand' | 'dangerous'>
+// LhComponentType | 'brand' | 'dangerous'
+```
+
+### LhBaseProps —— الشكل الأساسي لخصائص المكوّن
+
+```ts
+export interface LhBaseProps<
+  T extends string | undefined = undefined,
+  S extends string | undefined = undefined,
+  L extends string | undefined = undefined,
+> {
+  type?: T extends string ? LhTypes<T> : LhTypes
+  size?: S extends string ? LhSizes<S> : LhSizes
+  disabled?: boolean
+  loading?: boolean
+  plain?: boolean
+  block?: boolean
+  icon?: string
+  nativeType?: string
+  href?: string
+  target?: string
+  title?: string
+  alt?: string
+  lang?: L extends string ? LhLanguages<L> : LhLanguages
+  langPath?: string
+  old?: boolean      // مخصَّص لكبار السن
+}
+```
+
+تتوسع خصائص المكوّنات في كل مكتبة واجهة من `LhBaseProps`، فتحصل تلقائيًا على مجموعة
+الحقول المشتركة `type` / `size` / `disabled` / `lang` —— لضمان اتساق أسماء الخصائص
+المشتركة في مكوّنات العائلة بأكملها (لا يحتاج المستخدم إلى تذكُّر «هذه المكتبة تسميه
+`disabled` وتلك لا تسميه»).
+
+| الحقل | الدلالة |
+| --- | --- |
+| `type` | اللون الدلالي (`LhTypes`) |
+| `size` | درجة الحجم (`LhSizes`) |
+| `disabled` | معطَّل |
+| `loading` | في حالة التحميل |
+| `plain` | نمط بسيط (شكل بحدود دون لون خلفية) |
+| `block` | عرض كتلي 100% |
+| `icon` | اسم الأيقونة (مجموعة الأيقونات المدمجة، انظر قسم الأيقونات في [رموز التصميم](/ar/theme/tokens)) |
+| `nativeType` | `type` الأصلي للزر (`submit` / `reset` / `button`) |
+| `href` / `target` | الرابط عند التصيير كـ `<a>` |
+| `title` / `alt` | العنوان والنص البديل (إمكانية الوصول) |
+| `lang` | تجاوز اللغة على مستوى المكوّن |
+| `langPath` | بادئة مسار مفتاح النصوص المخصَّص |
+| `old` | مفتاح تبديل وضع كبار السن (يقترن مع `size="x-large"`، انظر [constants](/ar/reference/constants)) |
+
+## الإعلانات العالمية ambient
+
+تأخذ مفعولها عبر `include` في tsconfig، دون الحاجة إلى استيراد:
+
+```ts
+// src/types/global.d.ts
+interface CSSVariable { [key: string]: string }
+
+interface LhUIConfig {
+  prefix?: string
+  theme?: Record<string, string>
+  locale?: string
+}
+
+interface InstallOptions {
+  prefix?: string
+  theme?: Record<string, string>
+  locale?: string
+  components?: any[]
+}
+```
+
+هذه أنواع ambient للإعدادات العالمية مثل `app.use(LhUI, { prefix: 'x' })`. أما
+`theme.ts` فهو حاليًا عنصر نائب فارغ (أنواع السمة في `src/theme/types.ts`)؛ ويُعلِن
+`scss.d.ts` عن وحدات `.scss`.
+
+## ملاحظات
+
+- **خصائص `LhBaseProps` اختيارية**: يمكن أن تكون جميع الحقول فارغة، ويتوسعها كل مكوّن
+  ويُضيِّقها حسب حاجته (مثلًا `type` إلزامي على button).
+- **علاقة `lang` باللغة العامة**: `lang` تجاوز على مستوى المكوّن
+  (`<lh-button lang="en-US">`)، ولا تستدعي `lhlocale.setLocale`، بل يختار المكوّن حزمة
+  اللغة داخليًا.
+- **فخّ القيمة الافتراضية للنوع العام**: يقع `LhTypes<undefined>` في `LhComponentType`
+  —— فتمرير `undefined` كمعامل نوع يختلف عن تمرير سلسلة نصية، وهذا مقصود (نتيجة
+  الفرع `extends string ? ... : ...`).
+- **`LH_LANGUAGE_CONST` ليس على سطح التصدير العام لـ types**: يستورده `types/locale.ts`
+  داخليًا للاشتقاق، لكن `types/index.ts` يُصدِّر `./locale` و `./components/base` فقط،
+  وللحصول على الثابت استورده من `@lh-ui/share/constants`.

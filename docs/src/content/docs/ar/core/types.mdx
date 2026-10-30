@@ -1,0 +1,110 @@
+---
+title: types —— الأنواع المشتركة
+description: 'LhComponentSize / LhComponentLanguage / LhComponentType / LhPosition، مُشتقة من ثوابت constants'
+---
+
+تُشكِّل أربعة أنواع موحدة مشتركة بين مكوّنات core. وقيمها ليست اتحادًا مكتوبًا يدويًا من القيم الحرفية، بل **مُشتقة من الثوابت المُعلَن عليها بـ `as const` في `src/constants/`**—فإذا أردت إضافة حجم جديد أو لغة جديدة، غيِّر الثابت فقط، ويتبع النوع تلقائيًا.
+
+## طريقة الاستيراد
+
+```ts
+import type {
+  LhComponentSize,
+  LhComponentLanguage,
+  LhComponentType,
+  LhPosition,
+} from '@lh-ui/share/core/shared/types'
+```
+
+## الأنواع الأربعة
+
+| النوع | التعريف | القيم الفعلية |
+| --- | --- | --- |
+| `LhComponentSize` | `(typeof LH_SIZE_CONST)[keyof typeof LH_SIZE_CONST]` | `'small' \| 'medium' \| 'large' \| 'mini' \| 'x-large'` |
+| `LhComponentLanguage` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | `'zh-CN' \| 'en-US' \| 'ja-JP' \| 'ko-KR' \| 'de-DE' \| 'fr-FR'` |
+| `LhComponentType` | `(typeof LH_TYPES_CONST)[keyof typeof LH_TYPES_CONST] \| 'default' \| 'primary'` | `'success' \| 'warning' \| 'error' \| 'info' \| 'danger' \| 'default' \| 'primary'` |
+| `LhPosition` | اتحاد حرفي | `'top' \| 'top-left' \| 'top-right' \| 'bottom' \| 'bottom-left' \| 'bottom-right' \| 'left' \| 'right'` |
+
+### القيمة `'x-large'` في LhComponentSize
+
+وهي **حجم مخصص لكبار السن** (خط كبير، ومنطقة لمس كبيرة). وانتبه إلى البنية داخل الثابت:
+
+```ts
+// src/constants/index.ts
+export const LH_SIZE_CONST = {
+  small: 'small',
+  medium: 'medium',
+  large: 'large',
+  mini: 'mini',
+  old: 'x-large',   // المفتاح old والقيمة 'x-large'؛ // مخصص لكبار السن
+} as const
+```
+
+**المفتاح والقيمة غير متطابقين** (`old` ↔ `'x-large'`)، وما يظهر في اتحاد النوع هو **القيمة** `'x-large'`. أما مفتاح تفعيل وضع كبار السن في خصائص المكوّن فهو حقل منطقي آخر `old?: boolean` (راجع [LhBaseProps](/ar/reference/types))—فقيمة تعداد الحجم وprop المفتاح أمران مختلفان، لا تخلط بينهما.
+
+### اللونان الأساسيان في LhComponentType
+
+لا تنتمي `'default'` / `'primary'` إلى `LH_TYPES_CONST` (الذي يضم خمسة **ألوان دلالية**: النجاح / التحذير / الخطأ / المعلومات / الخطر)، وإنما تُضاف عند مستوى النوع عبر `| 'default' | 'primary'`. وليستا «دلالة حالة»، بل لونا المظهر الأساسي لمكوّنات مثل الأزرار.
+
+### LhPosition وLhPlacement نموذجان مختلفان
+
+| | `LhPosition` | `LhPlacement` ([popper](/ar/core/popper)) |
+| --- | --- | --- |
+| الاستخدام | تحديد موضع الإلصاق بالحافة (affix / backtop) | تحديد موضع الطبقة المنبثقة (tooltip / popover) |
+| القيم | `'top'` / `'top-left'` / `'top-right'` / `'bottom'` / `'bottom-left'` / `'bottom-right'` / `'left'` / `'right'` | `'top'` / `'top-start'` / `'top-end'` / `'bottom'` / `'bottom-start'` / `'bottom-end'` / `'left'` / `'left-start'` / `'left-end'` / `'right'` / `'right-start'` / `'right-end'` |
+| لاحقة المحاذاة | `-left` / `-right` (الطرفان فقط) | `-start` / `-end` (محاذاة دلالية، تدعم القلب في RTL) |
+
+فلاحقة `-left` / `-right` في `LhPosition` هي **اتجاه فيزيائي**، ولاحقة `-start` / `-end` في `LhPlacement` هي **اتجاه منطقي** (يُقلب تلقائيًا في تخطيط RTL). فلا تستخدمهما بطريق التبديل المتبادل.
+
+## لماذا الاشتقاق من الثوابت
+
+```ts
+// مثال سلبي: اتحاد مكتوب يدويًا، فإضافة لغة تتطلب تعديل موضعين
+type LhComponentLanguage = 'zh-CN' | 'en-US'  // ← يميل إلى فقدان التزامن مع الثابت
+
+// نهج هذا المستودع: الثابت هو المصدر الوحيد
+type LhComponentLanguage = (typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]
+```
+
+فإضافة لغة جديدة تقع في سطر واحد داخل `LH_LANGUAGE_CONST`، فيتحدث النوع، و`LhLocaleType`، والتحقق من معاملات `setLocale` جميعها تلقائيًا. وهذه إحدى تجليات التدرج «الثوابت `LH_XXX`، والأنواع `LhXxx`» الواردة في [اصطلاحات التسمية](/ar/guide/naming).
+
+## أمثلة الاستخدام
+
+### خصائص المكوّن
+
+```ts
+import type { LhComponentSize, LhComponentType } from '@lh-ui/share/core/shared/types'
+
+interface LhButtonProps {
+  type?: LhComponentType   // إكمال تلقائي 'primary' | 'success' | …
+  size?: LhComponentSize   // إكمال تلقائي 'small' | 'medium' | …
+}
+```
+
+### نسخة عامة لامتداد الأعمال
+
+يحتاج جانب الأعمال غالبًا إلى «نوع المكوّن + بضعة أنواع خاصة بنا»، وتوفر `src/types/components/base.ts` نسخة عامة (راجع [مرجع types](/ar/reference/types)):
+
+```ts
+import type { LhTypes } from '@lh-ui/share/types'
+
+type MyButtonType = LhTypes<'brand' | 'dangerous'>
+// → LhComponentType | 'brand' | 'dangerous'
+```
+
+### التحقق وقت التشغيل
+
+النوع ذاته لا يقوم بالتحقق وقت التشغيل. ومن داخل المكوّن تُجرى قيمة الثابت:
+
+```ts
+import { LH_SIZE_CONST } from '@lh-ui/share/constants'
+
+const isValidSize = (v: string): v is LhComponentSize =>
+  Object.values(LH_SIZE_CONST).includes(v as LhComponentSize)
+```
+
+## ملاحظات
+
+- **تصدير الأنواع فقط**: تستورد هذه الوحدة الثوابت عبر `import type`، فلا ينتج عن الترجمة أي كود وقت تشغيل (بخلاف الثابت ذاته). فاستيراد الأنواع الصرف لا يؤثر في حجم الحزمة.
+- **`'mini'` و`'x-large'` درجتان موسعتان**: فالثلاث درجات المعتادة هي `small / medium / large`؛ و`mini` للسيناريوهات المدمجة المضمنة (أزرار العمليات داخل الجداول)، و`x-large` درجة كبار السن لأغراض accessibility. وليست كل المكوّنات تدعم الدرجات الخمس جميعها، فلترجع إلى وثائق كل مكوّن.
+- **`LhPosition` غير مُدرَج في واجهة التصدير العامة لـ `src/types`**: فهو في `core/shared/types`، ويجب استيراده من `@lh-ui/share/core/shared/types`، وليس موجودًا في `@lh-ui/share/types`.

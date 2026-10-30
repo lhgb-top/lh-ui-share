@@ -1,0 +1,167 @@
+---
+title: locales —— 국제화
+description: 'lhlocale 싱글톤의 t / tm / use / add / setLocale / subscribe, 38개의 최상위 문구 키와 10개 언어'
+---
+
+import LocaleInspector from '../../../../components/LocaleInspector.astro'
+
+lh-ui 패밀리의 국제화는 **순수 이벤트 에미터**입니다: `lhlocale`은 어떤 프레임워크의 반응성도 가지지 않으며, 각 UI 라이브러리의 적응 계층이 그 `version` 버전 번호를 각자 프레임워크의 다시 렌더링 신호로 변환합니다. 이렇게 하나의 언어 팩을 Vue3 / Vue2 / React / uniapp에 동시에 쓰면서도, core 계층은 어떤 프레임워크에도 의존하지 않습니다.
+
+## 싱글톤과 import
+
+```ts
+import { lhlocale, zhCN, enUS, formatMessage } from '@lh-ui/share/locales'
+import type { LhLocalePath, LhLocaleType, LhLocaleMessages } from '@lh-ui/share/locales'
+```
+
+## 멤버 표
+
+| 멤버 | 시그니처 | 역할 |
+| --- | --- | --- |
+| `version` | `get version(): number` | 버전 번호: 언어가 바뀔 때마다 자동 증가(UI 적응 계층이 이것을 구독하여 다시 렌더링을 발동) |
+| `subscribe` | `(listener: LhLocaleListener) => () => void` | 언어 변경을 구독; 구독 해제 함수를 반환 |
+| `use` | `(options: { locale: LhLocaleType; messages: LhLocaleMessages }) => void` | 언어를 등록하고 전환 |
+| `t` | `(path: LhLocalePath, fallbackOrParams?) => string` | 경로에서 번역 문구를 가져옴 |
+| `tm` | `(path: string, fallback?: string[]) => string[]` | 배열 문구를 가져옴(월 이름 / 요일 이름) |
+| `getLocale` | `() => LhLocaleType` | 현재 언어를 가져옴 |
+| `setLocale` | `(locale: LhLocaleType) => void` | 현재 언어를 전환 |
+| `add` | `(locale: string, messages: LhLocaleMessages) => void` | 커스텀 언어 팩을 추가(깊은 병합) |
+
+## 각 메서드의 동작 세부
+
+### t —— 리터럴 키 자동 보완
+
+```ts
+const t = lhlocale.t   // 화살표 함수 프로퍼티, 분해해도 this를 잃지 않음
+
+t('pagination.total')                       // '共 {total} 条'
+t('pagination.total', { total: 42 })        // '共 42 条'
+t('not.exists', '대체 문구')                  // '대체 문구'
+t('not.exists')                             // 'not.exists'(경로 자체로 폴백)
+```
+
+`path`의 타입은 `LhLocalePath`입니다 —— `zh-CN` 언어 팩의 `as const` 구조에서 도출되는 **모든 문자열 잎 경로의 유니온 타입**(예: `'input.placeholder'`). 키 이름을 잘못 쓰면 에디터가 오류를 냅니다. 경로를 동적으로 조립할 때(`t(\`pagination.\${key}\`)`)는 느슨한 오버로드로 넘어가고, 타입은 `string`으로 느슨해집니다.
+
+두 번째 매개변수의 두 가지 형태: **문자열**은 폴백 값; **객체**는 `{key}` 보간 매개변수입니다(내부적으로는 [formatMessage](/ko/core/format)를 거칩니다).
+
+### tm —— 배열 문구
+
+```ts
+lhlocale.tm('datepicker.months')
+// ['1月', '2月', …, '12月']
+
+lhlocale.tm('datepicker.weeks')   // ← 틀림: weeks는 배열이 아니라 객체
+lhlocale.tm('datepicker.weeks.sun', ['日'])   // ← 이것도 틀림: 객체의 문자열 잎에는 t()로만 도달할 수 있음
+```
+
+`t()`는 문자열만 반환합니다; 배열 잎(`months`)은 `tm()`으로 접근합니다. 미존재이거나 배열이 아니면 `fallback`을 반환합니다(생략 시 `[]`).
+
+### use vs add —— 혼동하기 쉬운 두 가지
+
+| | `use` | `add` |
+| --- | --- | --- |
+| 동작 | 등록 **하고 전환** | 등록만(현재 언어일 때만 브로드캐스트) |
+| messages 저장 | 사용자 등록표 `userLocales`에 등록, **내장 등록표를 덮어쓰지 않음** | 왼쪽과 같음 |
+| 병합 방식 | 팩 전체를 설정 | "현재 유효한 팩"에 **깊은 병합** |
+
+`add`가 깊은 병합인 이유: 사용하는 측은 대개 몇 개의 키만 바꾸고 싶어 합니다("확인"을 "제출"로). 나머지 키는 내장 팩을 그대로 쓰고 싶은 것이죠. 옛 구현은 팩 전체를 교체했기에, 전달을 잊은 키가 모두 사라졌습니다.
+
+`use`가 내장 등록표를 덮어쓰지 않는 이유: 옛 구현의 `locales[locale] = messages`는 **내장 언어 팩을 영구히 파괴**했습니다(이후 `setLocale`로 되돌릴 수 없음). 지금은 내장 팩이 읽기 전용이고, 사용자 팩이 우선합니다.
+
+### setLocale의 "어긋나지 않음" 의미
+
+```ts
+lhlocale.setLocale('en-US')   // 언어 팩이 등록된 적 없음
+lhlocale.getLocale()          // 'en-US'  ← 요청된 언어를 보고함
+lhlocale.t('pagination.total')// 내장 기본 팩의 문구이지, en-US의 것이 아님
+```
+
+모순되어 보이지만 의도적인 것입니다: 해결 순서는 `userLocales ?? 내장 locales ?? 기본 팩`입니다. 미등록일 때 `getLocale()`은 요청된 언어를 보고하고, `t()`는 기본 팩의 내용을 씁니다 —— **양자가 어긋나지 않습니다**("영어를 보고 있는데 문구는 중국어" 같은 기묘한 조합이 되지 않으므로), 사용하는 측은 자신이 `add` 또는 `use`를 해야 한다는 것을 알 수 있습니다.
+
+### version과 subscribe
+
+```ts
+const unsubscribe = lhlocale.subscribe((version: number) => {
+  // 언어가 바뀜, 다시 렌더링을 발동
+})
+unsubscribe()   // 컴포넌트 언마운트 시 호출
+```
+
+`subscribe`는 구독 해제 함수를 반환합니다(RxJS 스타일). `bump()`는 내부적으로 try/catch로 나쁜 구독자를 격리하고 `[lhlocale] listener error:`를 출력하므로, 어떤 컴포넌트의 리스너가 예외를 던져도 다른 컴포넌트에 영향을 주지 않습니다.
+
+## 각 단말이 version을 구독하는 방법
+
+```ts
+// Vue3 / Vue2 / uniapp
+const version = ref(lhlocale.version)
+lhlocale.subscribe(() => (version.value = lhlocale.version))
+// 템플릿에서 version에 의존시키면, 변화하면 다시 렌더링
+
+// React
+useSyncExternalStore(lhlocale.subscribe, () => lhlocale.version)
+```
+
+## 언어 파일
+
+| 파일 | 상태 |
+| --- | --- |
+| `zh-CN.ts` | ✅ 기본 언어(`as const`, `LhLocalePath`의 도출 근거), 원본 |
+| `zh-TW.ts` / `en-US.ts` / `ja-JP.ts` / `ko-KR.ts` / `es.ts` / `ar.ts`(RTL) / `fr-FR.ts` / `ru.ts` | ✅ 완전(9개 언어, 각 문서 사이트와 일치, 용어는 가족 `docs/i18n/glossary.md`에 따름) |
+| `de-DE.ts` | ✅ 완전(**런타임 확장** 언어 팩: 컴포넌트 라이브러리 런타임만 제공, 문서 사이트에는 독일어 콘텐츠 없음) |
+
+하위 경로 import: `@lh-ui/share/locales/lang/zh-CN`. 각 언어 팩의 키 구조는
+`zh-CN.ts`와 완전히 일치(`tests/unit/locales.spec.ts`의 미러 테스트가 강제 검증),
+어느 것이든 `setLocale`로 바로 전환 가능.
+
+### 38개의 최상위 키
+
+`common` / `input` / `datepicker` / `timepicker` / `cascader` / `tag` / `badge` / `select` / `form` / `switch` / `slider` / `progress` / `avatar` / `descriptions` / `empty` / `alert` / `dialog` / `message` / `breadcrumb` / `pagination` / `tabs` / `steps` / `popconfirm` / `drawer` / `notification` / `loading` / `collapse` / `rate` / `backtop` / `image` / `menu` / `table` / `tree` / `treeSelect` / `transfer` / `upload` / `anchor` / `ariaLabels`
+
+10개 언어 파일은 최상위 키 수가 일치하며(각 38개), 구조가 맞춰져 있습니다. 그중 `ariaLabels`는 접근성 문구 키(약 40개)로, 각 컴포넌트가 이것을 읽어 aria-label을 생성합니다.
+
+전형적인 보간 문구:
+
+```ts
+pagination.total: '共 {total} 条'
+pagination.sizeChanger: '{size} 条/页'
+pagination.page: '第 {page} 页'
+steps.step: '第 {index} 步'
+rate.stars: '{n} 星'
+cascader.columnLabel: '第 {n} 级'
+collapse.toggle: '展开或折叠 {title}'
+datepicker.panelTitle: '{year}年{month}'
+menu.submenuLabel: '子菜单 {title}'
+```
+
+## 새 언어 추가
+
+3단계(`src/locales/lang/README.md`에 동일한 설명이 있습니다):
+
+1. `src/locales/lang/<lang>.ts`를 만들고, `LhLocaleMessages` 구조를 내보냅니다(최상위 키를 38개에 맞춰야 하며, `satisfies`로 검증 가능).
+2. `src/constants/index.ts`의 `LH_LANGUAGE_CONST`에 상수를 추가합니다.
+3. `src/locales/locale.ts`의 내장 등록표 `locales`에 마운트합니다.
+
+그 다음 `pnpm test`를 실행합니다(`theme.spec`과 locale 관련 케이스에 구조 일치성 회귀 테스트가 있습니다).
+
+## 관련 타입
+
+| 타입 | 정의 | 용도 |
+| --- | --- | --- |
+| `LhLocaleType` | `LH_LANGUAGE_CONST`에서 도출 | 지원되는 언어 코드 유니온 |
+| `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | 언어 팩 전체의 타입 |
+| `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | 언어 팩의 잎 노드(재귀적으로 읽기 전용) |
+| `LhLeaves<T>` | 재귀 도출 | 언어 팩 구조에서 모든 문자열 잎의 점 경로 유니온을 도출 |
+| `LhLocalePath` | `LhLeaves<typeof zhCN>` | `t()`의 리터럴 키 타입 |
+| `LhTranslate` | 오버로드 타입 | `t()`의 호출 시그니처 |
+| `LhTranslateArray` | `(path: string, fallback?: string[]) => string[]` | `tm()`의 호출 시그니처 |
+| `LhLocaleListener` | `(version: number) => void` | 언어 변경 리스너 |
+| `LhLocaleOptions` | `{ locale: LhLocaleType; messages: LhLocaleMessages }` | `use()`의 입력 |
+
+## 주의 사항
+
+- **`LhLeaves`는 배열 키에 대해 `never`를 반환합니다**: `datepicker.months`는 배열로 키 단위 주소 지정이 불가능하며, `t()`의 점 경로로는 도달할 수 없습니다 —— 배열은 항상 `tm()`을 거칩니다.
+- **`t`는 분해 가능합니다**: 화살표 함수 프로퍼티이므로, `const t = lhlocale.t`로 해도 this를 잃지 않습니다.
+- **core 컴포넌트는 `lhlocale`을 직접 호출하지 않습니다**: rate / pagination은 [formatMessage](/ko/core/format)로 보간을 처리하고, 문구 키의 탐색은 여전히 UI 계층에서 완료됩니다 —— core는 싱글톤의 부작용에 의존하지 않습니다.
+- **`add`는 깊은 병합입니다**: 전달한 키만 덮어쓰고, 나머지는 그대로 보존합니다.
+
+<LocaleInspector />
