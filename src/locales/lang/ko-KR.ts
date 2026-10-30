@@ -1,171 +1,313 @@
 /**
  * 한국어 (Korean)
- * 当前为骨架文件，默认使用英文作为兜底翻译。
- * 已在 src/locales/locale.ts 注册、src/constants/index.ts 登记，
- * 可直接 `lhlocale.setLocale('ko-KR')` 切换（当前返回英文兜底文案，翻译补全后生效）。
+ * 완전한 한국어 번역입니다. 모든 키는 zh-CN.ts와 동일한 구조를 가지며,
+ * src/locales/locale.ts에 등록되어 있고 src/constants/index.ts에 명시되어 있어
+ * `lhlocale.setLocale('ko-KR')`로 바로 전환할 수 있습니다.
  */
 export default {
-  common: { loading: 'Loading' },
-  input: { placeholder: 'Please input', password: 'Password' },
-  datepicker: { now: 'Now', today: 'Today', prevMonth: 'Previous month', nextMonth: 'Next month', placeholder: 'Select date', cancel: 'Cancel', clear: 'Clear', confirm: 'OK', dateTableConfirm: 'Confirm', dateTableDeConfirm: 'Temporarily', year: 'Y', month: 'M', month1: 'Jan', month2: 'Feb', month3: 'Mar', month4: 'Apr', month5: 'May', month6: 'Jun', month7: 'Jul', month8: 'Aug', month9: 'Sep', month10: 'Oct', month11: 'Nov', month12: 'Dec', weeks: { sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' }, months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] },
-  timepicker: { now: 'Now', placeholder: 'Select time', confirm: 'OK', cancel: 'Cancel', hour: 'H', minute: 'M', second: 'S' },
-  cascader: { noMatch: 'No matching data', placeholder: 'Please select' },
-  tag: { close: 'Close' },
-  badge: { other: 'Others' },
-  select: { noMatch: 'No matching data', noData: 'No data', placeholder: 'Please select' },
-  form: { validateFailed: 'Validation failed', required: 'This field is required' },
-  switch: { on: 'On', off: 'Off' },
-  slider: { range: 'Range' },
-  progress: { percent: '%' },
-  avatar: { icon: 'User icon' },
-  descriptions: { operation: 'Operation' },
-  dialog: { close: 'Close dialog' },
-  message: { close: 'Close message' },
-  empty: { description: 'No data' },
-  alert: { close: 'Dismiss alert' },
-  breadcrumb: { label: 'Breadcrumb', more: 'More' },
-  pagination: { total: 'Total {total} items', prev: 'Previous page', next: 'Next page', page: 'Page {page}', goto: 'Go to', pageSuffix: '', sizeChanger: '{size} / page', sizeChangerLabel: 'Items per page' },
-  tabs: { add: 'Add tab' },
-  steps: { step: 'Step {index}', finish: 'Completed', error: 'Error' },
-  popconfirm: { confirm: 'OK', cancel: 'Cancel' },
-  drawer: { title: 'Drawer', close: 'Close drawer' },
-  // Notification
+  // 공통
+  common: {
+    loading: '불러오는 중',
+  },
+  // 입력 컴포넌트
+  input: {
+    placeholder: '입력해 주세요',
+    password: '비밀번호',
+  },
+  // 날짜 선택기 (예약)
+  datepicker: {
+    now: '현재',
+    today: '오늘',
+    prevMonth: '이전 달',
+    nextMonth: '다음 달',
+    placeholder: '날짜를 선택해 주세요',
+    cancel: '취소',
+    clear: '지우기',
+    confirm: '확인',
+    dateTableConfirm: '확인',
+    dateTableDeConfirm: '나중에 선택',
+    panelLabel: '날짜 선택',
+    monthPanelLabel: '월 선택',
+    yearPanelLabel: '연도 선택',
+    year: '년',
+    month: '월',
+    // 달력 패널 제목: {month}는 이미 '10월'과 같이 단위가 붙은 이름이며, 템플릿은 연도와 월의 순서와 연결자만 담당합니다
+    panelTitle: '{year}년 {month}',
+    month1: '1월',
+    month2: '2월',
+    month3: '3월',
+    month4: '4월',
+    month5: '5월',
+    month6: '6월',
+    month7: '7월',
+    month8: '8월',
+    month9: '9월',
+    month10: '10월',
+    month11: '11월',
+    month12: '12월',
+    weeks: {
+      sun: '일',
+      mon: '월',
+      tue: '화',
+      wed: '수',
+      thu: '목',
+      fri: '금',
+      sat: '토',
+    },
+    months: ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'],
+  },
+  // 시간 선택기
+  timepicker: {
+    now: '현재',
+    placeholder: '시간을 선택해 주세요',
+    confirm: '확인',
+    cancel: '취소',
+    hour: '시',
+    minute: '분',
+    second: '초',
+    panelLabel: '시간 선택',
+    hourLabel: '시간',
+    minuteLabel: '분',
+    secondLabel: '초',
+  },
+  // 단계별 선택기
+  cascader: {
+    noMatch: '일치하는 데이터가 없습니다',
+    placeholder: '선택해 주세요',
+    panelLabel: '단계별 옵션을 선택해 주세요',
+    columnLabel: '{n}단계',
+  },
+  // 태그
+  tag: {
+    close: '닫기',
+  },
+  // 배지
+  badge: {
+    other: '기타',
+  },
+  // 선택기
+  select: {
+    noMatch: '일치하는 데이터가 없습니다',
+    noData: '데이터가 없습니다',
+    placeholder: '선택해 주세요',
+  },
+  // 폼
+  form: {
+    validateFailed: '유효성 검사 실패',
+    required: '필수 입력 항목입니다',
+  },
+  // 스위치
+  switch: {
+    on: '켜짐',
+    off: '꺼짐',
+  },
+  // 슬라이더
+  slider: {
+    range: '범위',
+    thumb: '슬라이더',
+    thumbStart: '시작 슬라이더',
+    thumbEnd: '끝 슬라이더',
+  },
+  // 진행률 표시줄
+  progress: {
+    percent: '%',
+  },
+  // 아바타
+  avatar: {
+    icon: '사용자 아이콘',
+  },
+  // 설명 목록
+  descriptions: {
+    operation: '작업',
+  },
+  // 빈 상태
+  empty: {
+    description: '데이터가 없습니다',
+  },
+  // 경고
+  alert: {
+    close: '경고 닫기',
+  },
+  // 대화상자
+  dialog: {
+    close: '대화상자 닫기',
+  },
+  // 메시지
+  message: {
+    close: '메시지 닫기',
+  },
+  // 이동 경로
+  breadcrumb: {
+    label: '이동 경로 탐색',
+    more: '더보기',
+  },
+  // 페이지네이션
+  pagination: {
+    total: '총 {total}개',
+    prev: '이전 페이지',
+    next: '다음 페이지',
+    page: '{page}페이지',
+    goto: '이동',
+    pageSuffix: '페이지',
+    sizeChanger: '{size}개/페이지',
+    sizeChangerLabel: '페이지당 개수',
+  },
+  // 탭
+  tabs: {
+    add: '탭 추가',
+  },
+  // 단계
+  steps: {
+    step: '{index}단계',
+    finish: '완료됨',
+    error: '오류',
+  },
+  // 팝오버 확인
+  popconfirm: {
+    confirm: '확인',
+    cancel: '취소',
+  },
+  // 드로어
+  drawer: {
+    title: '드로어',
+    close: '드로어 닫기',
+  },
+  // 알림
   notification: {
-    close: 'Close notification',
-    closeAll: 'Close all',
+    close: '알림 닫기',
+    closeAll: '모두 닫기',
   },
-  // Loading
+  // 불러오기
   loading: {
-    text: 'Loading…',
+    text: '불러오는 중…',
   },
 
-  // Collapse
+  // 접기/펼치기
   collapse: {
-    toggle: 'Toggle {title}',
+    toggle: '{title} 펼치기/접기',
   },
-  // Rate
+  // 평점
   rate: {
-    stars: '{n} stars',
+    stars: '{n}개의 별',
   },
-  // BackTop
+  // 맨 위로
   backtop: {
-    label: 'Back to top',
+    label: '맨 위로',
   },
-  // Image
+  // 이미지
   image: {
-    preview: 'Preview image',
-    error: 'Failed to load',
-    zoomIn: 'Zoom in',
-    zoomOut: 'Zoom out',
-    rotate: 'Rotate',
-    prev: 'Previous',
-    next: 'Next',
-    close: 'Close image preview',
+    preview: '이미지 미리보기',
+    error: '불러오기 실패',
+    zoomIn: '확대',
+    zoomOut: '축소',
+    rotate: '회전',
+    prev: '이전 이미지',
+    next: '다음 이미지',
+    close: '이미지 미리보기 닫기',
   },
 
-  // Menu
+  // 메뉴
   menu: {
-    submenuLabel: 'Submenu {title}',
+    submenuLabel: '하위 메뉴 {title}',
   },
 
-  // Table
+  // 표
   table: {
-    empty: 'No data',
+    empty: '데이터가 없습니다',
     filterTitle: '필터',
     filterConfirm: '확인',
     filterReset: '초기화',
     resizeLabel: '열 너비 조정',
   },
-  // Tree
+  // 트리
   tree: {
-    empty: 'No data',
+    empty: '데이터가 없습니다',
   },
-  // TreeSelect
+  // 트리 선택
   treeSelect: {
-    triggerLabel: 'Tree select',
+    triggerLabel: '트리 선택',
   },
-  // Transfer
+  // 트랜스퍼
   transfer: {
-    sourceTitle: 'List 1',
-    targetTitle: 'List 2',
-    moveRight: 'Move right',
-    moveLeft: 'Move left',
-    searchPlaceholder: 'Search',
-    empty: 'No data',
+    sourceTitle: '목록 1',
+    targetTitle: '목록 2',
+    moveRight: '오른쪽으로 이동',
+    moveLeft: '왼쪽으로 이동',
+    searchPlaceholder: '검색어를 입력해 주세요',
+    empty: '데이터가 없습니다',
   },
-  // Upload
+  // 업로드
   upload: {
-    select: 'Select file',
-    drag: 'Drop files here or click to upload',
-    list: 'File list',
-    remove: 'Remove',
-    fail: 'Upload failed',
-    exceedSize: 'File exceeds the size limit',
-    exceedCount: 'Exceeds the count limit',
-    rejectType: 'File type not allowed',
+    select: '파일 선택',
+    drag: '파일을 여기로 끌어다 놓거나 클릭하여 업로드하세요',
+    list: '파일 목록',
+    remove: '제거',
+    fail: '업로드 실패',
+    exceedSize: '파일 크기 제한을 초과했습니다',
+    exceedCount: '개수 제한을 초과했습니다',
+    rejectType: '허용되지 않는 파일 형식입니다',
   },
-  // Anchor
+  // 앵커
   anchor: {
-    label: 'Anchor navigation',
+    label: '앵커 탐색',
   },
 
-  // Accessibility labels (aria-label / screen reader announcements)
-  // 骨架文件：默认使用英文兜底，翻译补全后生效
+  // 접근성 라벨 (aria-label / 화면 읽기용, 각 UI 레이어에서 t('ariaLabels.xxx')로 사용)
   ariaLabels: {
-    close: 'Close',
-    expand: 'Expand',
-    collapse: 'Collapse',
-    clear: 'Clear',
-    confirm: 'Confirm',
-    cancel: 'Cancel',
-    openDropdown: 'Open dropdown',
-    closeDropdown: 'Close dropdown',
-    openDialog: 'Open dialog',
-    closeDialog: 'Close dialog',
-    openMenu: 'Open menu',
-    closeMenu: 'Close menu',
-    previous: 'Previous',
-    next: 'Next',
-    previousMonth: 'Previous month',
-    nextMonth: 'Next month',
-    previousYear: 'Previous year',
-    nextYear: 'Next year',
-    selectDate: 'Select date',
-    selectTime: 'Select time',
-    hour: 'Hour',
-    minute: 'Minute',
-    second: 'Second',
-    page: 'Page {page}',
-    currentPage: 'Current page, page {page}',
-    previousPage: 'Previous page',
-    nextPage: 'Next page',
-    currentStep: 'Current step, step {step}: {title}',
-    step: 'Step {step}',
-    loading: 'Loading',
-    upload: 'Upload',
-    uploading: 'Uploading',
-    uploadSuccess: 'Upload succeeded',
-    uploadFailed: 'Upload failed',
-    removeFile: 'Remove file',
-    previewImage: 'Preview image',
-    previousImage: 'Previous image',
-    nextImage: 'Next image',
-    zoomIn: 'Zoom in',
-    zoomOut: 'Zoom out',
-    rotate: 'Rotate',
-    reset: 'Reset',
-    switchOn: 'On',
-    switchOff: 'Off',
-    rating: 'Rating',
-    stars: '{n} stars',
-    sortAscending: 'Sort ascending',
-    sortDescending: 'Sort descending',
-    sort: 'Sort',
-    selectAll: 'Select all',
-    partialSelected: 'Partially selected',
-    moveToTarget: 'Move to target',
-    moveToSource: 'Move to source',
-    search: 'Search',
-    empty: 'No data',
+    close: '닫기',
+    expand: '펼치기',
+    collapse: '접기',
+    clear: '지우기',
+    confirm: '확인',
+    cancel: '취소',
+    openDropdown: '드롭다운 펼치기',
+    closeDropdown: '드롭다운 접기',
+    openDialog: '대화상자 열기',
+    closeDialog: '대화상자 닫기',
+    openMenu: '메뉴 열기',
+    closeMenu: '메뉴 접기',
+    previous: '이전 항목',
+    next: '다음 항목',
+    previousMonth: '이전 달',
+    nextMonth: '다음 달',
+    previousYear: '이전 연도',
+    nextYear: '다음 연도',
+    selectDate: '날짜 선택',
+    selectTime: '시간 선택',
+    hour: '시간',
+    minute: '분',
+    second: '초',
+    page: '{page}페이지',
+    currentPage: '현재 페이지, {page}페이지',
+    previousPage: '이전 페이지',
+    nextPage: '다음 페이지',
+    currentStep: '현재 단계, {step}단계: {title}',
+    step: '{step}단계',
+    loading: '불러오는 중',
+    upload: '업로드',
+    uploading: '업로드 중',
+    uploadSuccess: '업로드 성공',
+    uploadFailed: '업로드 실패',
+    removeFile: '파일 제거',
+    previewImage: '이미지 미리보기',
+    previousImage: '이전 이미지',
+    nextImage: '다음 이미지',
+    zoomIn: '확대',
+    zoomOut: '축소',
+    rotate: '회전',
+    reset: '초기화',
+    switchOn: '켜짐',
+    switchOff: '꺼짐',
+    rating: '평점',
+    stars: '{n}개의 별',
+    sortAscending: '오름차순 정렬',
+    sortDescending: '내림차순 정렬',
+    sort: '정렬',
+    selectAll: '전체 선택',
+    partialSelected: '일부 선택됨',
+    moveToTarget: '오른쪽으로 이동',
+    moveToSource: '왼쪽으로 이동',
+    search: '검색',
+    empty: '데이터가 없습니다',
   },
 } as const;

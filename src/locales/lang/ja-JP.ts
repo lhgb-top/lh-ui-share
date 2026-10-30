@@ -1,300 +1,313 @@
 /**
  * 日本語 (Japanese)
- * 当前为骨架文件，默认使用英文作为兜底翻译。
- * 已在 src/locales/locale.ts 注册、src/constants/index.ts 登记，
- * 可直接 `lhlocale.setLocale('ja-JP')` 切换（当前返回英文兜底文案，翻译补全后生效）。
+ * 完全な日本語翻訳（英語フォールバックなし）。
+ * src/locales/locale.ts に登録、src/constants/index.ts に整理済み、
+ * `lhlocale.setLocale('ja-JP')` で切り替えて使用可能。
  */
 export default {
-  // General
+  // 共通
   common: {
-    loading: 'Loading',
+    loading: '読み込み中',
   },
-  // Input
+  // 入力コンポーネント
   input: {
-    placeholder: 'Please input',
-    password: 'Password',
+    placeholder: '入力してください',
+    password: 'パスワード',
   },
-  // Datepicker
+  // 日付ピッカー（予約）
   datepicker: {
-    now: 'Now',
-    today: 'Today',
-    prevMonth: 'Previous month',
-    nextMonth: 'Next month',
-    placeholder: 'Select date',
-    cancel: 'Cancel',
-    clear: 'Clear',
-    confirm: 'OK',
-    dateTableConfirm: 'Confirm',
-    dateTableDeConfirm: 'Temporarily',
-    year: 'Y',
-    month: 'M',
-    month1: 'Jan',
-    month2: 'Feb',
-    month3: 'Mar',
-    month4: 'Apr',
-    month5: 'May',
-    month6: 'Jun',
-    month7: 'Jul',
-    month8: 'Aug',
-    month9: 'Sep',
-    month10: 'Oct',
-    month11: 'Nov',
-    month12: 'Dec',
+    now: '現在',
+    today: '今日',
+    prevMonth: '前の月',
+    nextMonth: '翌月',
+    placeholder: '日付を選択',
+    cancel: 'キャンセル',
+    clear: 'クリア',
+    confirm: '確定',
+    dateTableConfirm: '確認',
+    dateTableDeConfirm: '後で決める',
+    panelLabel: '日付を選択',
+    monthPanelLabel: '月を選択',
+    yearPanelLabel: '年を選択',
+    year: '年',
+    month: '月',
+    // カレンダーパネルタイトル：{month} はすでに「10月」のような単位付きの名称、テンプレートは年と月の順序と接続辞のみを担当
+    panelTitle: '{year}年{month}',
+    month1: '1月',
+    month2: '2月',
+    month3: '3月',
+    month4: '4月',
+    month5: '5月',
+    month6: '6月',
+    month7: '7月',
+    month8: '8月',
+    month9: '9月',
+    month10: '10月',
+    month11: '11月',
+    month12: '12月',
     weeks: {
-      sun: 'Sun',
-      mon: 'Mon',
-      tue: 'Tue',
-      wed: 'Wed',
-      thu: 'Thu',
-      fri: 'Fri',
-      sat: 'Sat',
+      sun: '日',
+      mon: '月',
+      tue: '火',
+      wed: '水',
+      thu: '木',
+      fri: '金',
+      sat: '土',
     },
-    months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+    months: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
   },
-  // TimePicker
+  // タイムピッカー
   timepicker: {
-    now: 'Now',
-    placeholder: 'Select time',
-    confirm: 'OK',
-    cancel: 'Cancel',
-    hour: 'H',
-    minute: 'M',
-    second: 'S',
+    now: '現在',
+    placeholder: '時間を選択',
+    confirm: '確定',
+    cancel: 'キャンセル',
+    hour: '時',
+    minute: '分',
+    second: '秒',
+    panelLabel: '時間を選択',
+    hourLabel: '時間',
+    minuteLabel: '分',
+    secondLabel: '秒',
   },
-  // Cascader
+  // カスケードセレクター
   cascader: {
-    noMatch: 'No matching data',
-    placeholder: 'Please select',
+    noMatch: '該当するデータがありません',
+    placeholder: '選択してください',
+    panelLabel: 'カスケードオプションを選択',
+    columnLabel: '第{n}階層',
   },
-  // Tag
+  // タグ
   tag: {
-    close: 'Close',
+    close: '閉じる',
   },
-  // Badge
+  // バッジ
   badge: {
-    other: 'Others',
+    other: 'その他',
   },
-  // Select
+  // セレクター
   select: {
-    noMatch: 'No matching data',
-    noData: 'No data',
-    placeholder: 'Please select',
+    noMatch: '該当するデータがありません',
+    noData: 'データがありません',
+    placeholder: '選択してください',
   },
-  // Form
+  // フォーム
   form: {
-    validateFailed: 'Validation failed',
-    required: 'This field is required',
+    validateFailed: '検証に失敗しました',
+    required: 'この項目は必須です',
   },
-  // Switch
+  // トグル
   switch: {
-    on: 'On',
-    off: 'Off',
+    on: 'オン',
+    off: 'オフ',
   },
-  // Slider
+  // スライダー
   slider: {
-    range: 'Range',
+    range: '範囲',
+    thumb: 'スライダー',
+    thumbStart: '開始スライダー',
+    thumbEnd: '終了スライダー',
   },
-  // Progress
+  // プログレスバー
   progress: {
     percent: '%',
   },
-  // Avatar
+  // アバター
   avatar: {
-    icon: 'User icon',
+    icon: 'ユーザーアイコン',
   },
-  // Descriptions
+  // ディスクリプション
   descriptions: {
-    operation: 'Operation',
+    operation: '操作',
   },
-  // Dialog
-  dialog: {
-    close: 'Close dialog',
-  },
-  // Message
-  message: {
-    close: 'Close message',
-  },
-  // Empty
+  // 空の状態
   empty: {
-    description: 'No data',
+    description: 'データがありません',
   },
-  // Alert
+  // アラート
   alert: {
-    close: 'Dismiss alert',
+    close: 'アラートを閉じる',
   },
-  // Breadcrumb
+  // ダイアログ
+  dialog: {
+    close: 'ダイアログを閉じる',
+  },
+  // メッセージ
+  message: {
+    close: 'メッセージを閉じる',
+  },
+  // パンくず
   breadcrumb: {
-    label: 'Breadcrumb',
-    more: 'More',
+    label: 'パンくずナビゲーション',
+    more: 'もっと見る',
   },
-  // Pagination
+  // ページネーション
   pagination: {
-    total: 'Total {total} items',
-    prev: 'Previous page',
-    next: 'Next page',
-    page: 'Page {page}',
-    goto: 'Go to',
-    pageSuffix: '',
-    sizeChanger: '{size} / page',
-    sizeChangerLabel: 'Items per page',
+    total: '合計 {total} 件',
+    prev: '前のページ',
+    next: '次のページ',
+    page: '第{page}ページ',
+    goto: '移動',
+    pageSuffix: 'ページ',
+    sizeChanger: '{size} 件/ページ',
+    sizeChangerLabel: 'ページあたりの件数',
   },
-  // Tabs
+  // タブ
   tabs: {
-    add: 'Add tab',
+    add: 'タブを追加',
   },
-  // Steps
+  // ステップ
   steps: {
-    step: 'Step {index}',
-    finish: 'Completed',
-    error: 'Error',
+    step: 'ステップ {index}',
+    finish: '完了',
+    error: 'エラー',
   },
-  // Popconfirm
+  // ポップコンファーム
   popconfirm: {
-    confirm: 'OK',
-    cancel: 'Cancel',
+    confirm: '確定',
+    cancel: 'キャンセル',
   },
-  // Drawer
+  // ドロワー
   drawer: {
-    title: 'Drawer',
-    close: 'Close drawer',
+    title: 'ドロワー',
+    close: 'ドロワーを閉じる',
   },
-  // Notification
+  // 通知
   notification: {
-    close: 'Close notification',
-    closeAll: 'Close all',
+    close: '通知を閉じる',
+    closeAll: 'すべて閉じる',
   },
-  // Loading
+  // ローディング
   loading: {
-    text: 'Loading…',
+    text: '読み込み中…',
   },
 
-  // Collapse
+  // 折りたたみパネル
   collapse: {
-    toggle: 'Toggle {title}',
+    toggle: '{title} を展開または折りたたむ',
   },
-  // Rate
+  // 評価
   rate: {
-    stars: '{n} stars',
+    stars: '{n}つ星',
   },
-  // BackTop
+  // トップに戻る
   backtop: {
-    label: 'Back to top',
+    label: 'トップに戻る',
   },
-  // Image
+  // 画像
   image: {
-    preview: 'Preview image',
-    error: 'Failed to load',
-    zoomIn: 'Zoom in',
-    zoomOut: 'Zoom out',
-    rotate: 'Rotate',
-    prev: 'Previous',
-    next: 'Next',
-    close: 'Close image preview',
+    preview: '画像をプレビュー',
+    error: '読み込みに失敗しました',
+    zoomIn: '拡大',
+    zoomOut: '縮小',
+    rotate: '回転',
+    prev: '前の画像',
+    next: '次の画像',
+    close: '画像プレビューを閉じる',
   },
 
-  // Menu
+  // ナビゲーションメニュー
   menu: {
-    submenuLabel: 'Submenu {title}',
+    submenuLabel: 'サブメニュー {title}',
   },
 
-  // Table
+  // テーブル
   table: {
-    empty: 'No data',
+    empty: 'データがありません',
     filterTitle: 'フィルター',
     filterConfirm: '確認',
     filterReset: 'リセット',
     resizeLabel: '列幅を調整',
   },
-  // Tree
+  // ツリー
   tree: {
-    empty: 'No data',
+    empty: 'データがありません',
   },
-  // TreeSelect
+  // ツリーセレクト
   treeSelect: {
-    triggerLabel: 'Tree select',
+    triggerLabel: 'ツリーセレクト',
   },
-  // Transfer
+  // トランスファー
   transfer: {
-    sourceTitle: 'List 1',
-    targetTitle: 'List 2',
-    moveRight: 'Move right',
-    moveLeft: 'Move left',
-    searchPlaceholder: 'Search',
-    empty: 'No data',
+    sourceTitle: 'リスト1',
+    targetTitle: 'リスト2',
+    moveRight: '右に移動',
+    moveLeft: '左に移動',
+    searchPlaceholder: '検索キーワードを入力',
+    empty: 'データがありません',
   },
-  // Upload
+  // アップロード
   upload: {
-    select: 'Select file',
-    drag: 'Drop files here or click to upload',
-    list: 'File list',
-    remove: 'Remove',
-    fail: 'Upload failed',
-    exceedSize: 'File exceeds the size limit',
-    exceedCount: 'Exceeds the count limit',
-    rejectType: 'File type not allowed',
+    select: 'ファイルを選択',
+    drag: 'ここにファイルをドラッグするか、クリックしてアップロード',
+    list: 'ファイルリスト',
+    remove: '削除',
+    fail: 'アップロードに失敗しました',
+    exceedSize: 'ファイルサイズが上限を超えています',
+    exceedCount: 'ファイル数が上限を超えています',
+    rejectType: '許可されていないファイル形式です',
   },
-  // Anchor
+  // アンカー
   anchor: {
-    label: 'Anchor navigation',
+    label: 'アンカーナビゲーション',
   },
 
-  // Accessibility labels (aria-label / screen reader announcements)
-  // 骨架文件：默认使用英文兜底，翻译补全后生效
+  // アクセシビリティラベル（aria-label / スクリーンリーダー読み上げ用、各 UI 層が t('ariaLabels.xxx') で参照）
   ariaLabels: {
-    close: 'Close',
-    expand: 'Expand',
-    collapse: 'Collapse',
-    clear: 'Clear',
-    confirm: 'Confirm',
-    cancel: 'Cancel',
-    openDropdown: 'Open dropdown',
-    closeDropdown: 'Close dropdown',
-    openDialog: 'Open dialog',
-    closeDialog: 'Close dialog',
-    openMenu: 'Open menu',
-    closeMenu: 'Close menu',
-    previous: 'Previous',
-    next: 'Next',
-    previousMonth: 'Previous month',
-    nextMonth: 'Next month',
-    previousYear: 'Previous year',
-    nextYear: 'Next year',
-    selectDate: 'Select date',
-    selectTime: 'Select time',
-    hour: 'Hour',
-    minute: 'Minute',
-    second: 'Second',
-    page: 'Page {page}',
-    currentPage: 'Current page, page {page}',
-    previousPage: 'Previous page',
-    nextPage: 'Next page',
-    currentStep: 'Current step, step {step}: {title}',
-    step: 'Step {step}',
-    loading: 'Loading',
-    upload: 'Upload',
-    uploading: 'Uploading',
-    uploadSuccess: 'Upload succeeded',
-    uploadFailed: 'Upload failed',
-    removeFile: 'Remove file',
-    previewImage: 'Preview image',
-    previousImage: 'Previous image',
-    nextImage: 'Next image',
-    zoomIn: 'Zoom in',
-    zoomOut: 'Zoom out',
-    rotate: 'Rotate',
-    reset: 'Reset',
-    switchOn: 'On',
-    switchOff: 'Off',
-    rating: 'Rating',
-    stars: '{n} stars',
-    sortAscending: 'Sort ascending',
-    sortDescending: 'Sort descending',
-    sort: 'Sort',
-    selectAll: 'Select all',
-    partialSelected: 'Partially selected',
-    moveToTarget: 'Move to target',
-    moveToSource: 'Move to source',
-    search: 'Search',
-    empty: 'No data',
+    close: '閉じる',
+    expand: '展開',
+    collapse: '折りたたむ',
+    clear: 'クリア',
+    confirm: '確定',
+    cancel: 'キャンセル',
+    openDropdown: 'ドロップダウンを開く',
+    closeDropdown: 'ドロップダウンを閉じる',
+    openDialog: 'ダイアログを開く',
+    closeDialog: 'ダイアログを閉じる',
+    openMenu: 'メニューを開く',
+    closeMenu: 'メニューを閉じる',
+    previous: '前の項目',
+    next: '次の項目',
+    previousMonth: '前の月',
+    nextMonth: '翌月',
+    previousYear: '前年',
+    nextYear: '翌年',
+    selectDate: '日付を選択',
+    selectTime: '時間を選択',
+    hour: '時間',
+    minute: '分',
+    second: '秒',
+    page: '第{page}ページ',
+    currentPage: '現在のページ、第{page}ページ',
+    previousPage: '前のページ',
+    nextPage: '次のページ',
+    currentStep: '現在のステップ、ステップ {step}：{title}',
+    step: 'ステップ {step}',
+    loading: '読み込み中',
+    upload: 'アップロード',
+    uploading: 'アップロード中',
+    uploadSuccess: 'アップロード成功',
+    uploadFailed: 'アップロード失敗',
+    removeFile: 'ファイルを削除',
+    previewImage: '画像をプレビュー',
+    previousImage: '前の画像',
+    nextImage: '次の画像',
+    zoomIn: '拡大',
+    zoomOut: '縮小',
+    rotate: '回転',
+    reset: 'リセット',
+    switchOn: 'オン',
+    switchOff: 'オフ',
+    rating: '評価',
+    stars: '{n}つ星',
+    sortAscending: '昇順で並べ替え',
+    sortDescending: '降順で並べ替え',
+    sort: '並べ替え',
+    selectAll: 'すべて選択',
+    partialSelected: '一部選択済み',
+    moveToTarget: '右に移動',
+    moveToSource: '左に移動',
+    search: '検索',
+    empty: 'データがありません',
   },
 } as const;

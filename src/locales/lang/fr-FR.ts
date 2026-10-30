@@ -1,171 +1,315 @@
 /**
  * Français (French)
- * 当前为骨架文件，默认使用英文作为兜底翻译。
- * 已在 src/locales/locale.ts 注册、src/constants/index.ts 登记，
- * 可直接 `lhlocale.setLocale('fr-FR')` 切换（当前返回英文兜底文案，翻译补全后生效）。
+ * Traduction française complète.
+ * Inscrit dans src/locales/locale.ts et répertorié dans src/constants/index.ts,
+ * directement activable via `lhlocale.setLocale('fr-FR')`.
  */
 export default {
-  common: { loading: 'Loading' },
-  input: { placeholder: 'Please input', password: 'Password' },
-  datepicker: { now: 'Now', today: 'Today', prevMonth: 'Previous month', nextMonth: 'Next month', placeholder: 'Select date', cancel: 'Cancel', clear: 'Clear', confirm: 'OK', dateTableConfirm: 'Confirm', dateTableDeConfirm: 'Temporarily', year: 'Y', month: 'M', month1: 'Jan', month2: 'Feb', month3: 'Mar', month4: 'Apr', month5: 'May', month6: 'Jun', month7: 'Jul', month8: 'Aug', month9: 'Sep', month10: 'Oct', month11: 'Nov', month12: 'Dec', weeks: { sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' }, months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] },
-  timepicker: { now: 'Now', placeholder: 'Select time', confirm: 'OK', cancel: 'Cancel', hour: 'H', minute: 'M', second: 'S' },
-  cascader: { noMatch: 'No matching data', placeholder: 'Please select' },
-  tag: { close: 'Close' },
-  badge: { other: 'Others' },
-  select: { noMatch: 'No matching data', noData: 'No data', placeholder: 'Please select' },
-  form: { validateFailed: 'Validation failed', required: 'This field is required' },
-  switch: { on: 'On', off: 'Off' },
-  slider: { range: 'Range' },
-  progress: { percent: '%' },
-  avatar: { icon: 'User icon' },
-  descriptions: { operation: 'Operation' },
-  dialog: { close: 'Close dialog' },
-  message: { close: 'Close message' },
-  empty: { description: 'No data' },
-  alert: { close: 'Dismiss alert' },
-  breadcrumb: { label: 'Breadcrumb', more: 'More' },
-  pagination: { total: 'Total {total} items', prev: 'Previous page', next: 'Next page', page: 'Page {page}', goto: 'Go to', pageSuffix: '', sizeChanger: '{size} / page', sizeChangerLabel: 'Items per page' },
-  tabs: { add: 'Add tab' },
-  steps: { step: 'Step {index}', finish: 'Completed', error: 'Error' },
-  popconfirm: { confirm: 'OK', cancel: 'Cancel' },
-  drawer: { title: 'Drawer', close: 'Close drawer' },
+  // Général
+  common: {
+    loading: 'Chargement',
+  },
+  // Champ de saisie
+  input: {
+    placeholder: 'Saisir',
+    password: 'Mot de passe',
+  },
+  // Sélecteur de date (réservé)
+  datepicker: {
+    now: 'Maintenant',
+    today: 'Aujourd’hui',
+    prevMonth: 'Mois précédent',
+    nextMonth: 'Mois suivant',
+    placeholder: 'Sélectionner une date',
+    cancel: 'Annuler',
+    clear: 'Effacer',
+    confirm: 'OK',
+    dateTableConfirm: 'Confirmer',
+    dateTableDeConfirm: 'Pas pour l’instant',
+    panelLabel: 'Sélectionner une date',
+    monthPanelLabel: 'Sélectionner un mois',
+    yearPanelLabel: 'Sélectionner une année',
+    year: 'Année',
+    month: 'Mois',
+    // Titre du panneau calendaire : {month} est déjà un nom de mois (ex. « oct. »),
+    // le modèle ne gère que l’ordre et le séparateur entre l’année et le mois
+    panelTitle: '{month} {year}',
+    month1: 'janv.',
+    month2: 'févr.',
+    month3: 'mars',
+    month4: 'avr.',
+    month5: 'mai',
+    month6: 'juin',
+    month7: 'juil.',
+    month8: 'août',
+    month9: 'sept.',
+    month10: 'oct.',
+    month11: 'nov.',
+    month12: 'déc.',
+    weeks: {
+      sun: 'dim.',
+      mon: 'lun.',
+      tue: 'mar.',
+      wed: 'mer.',
+      thu: 'jeu.',
+      fri: 'ven.',
+      sat: 'sam.',
+    },
+    months: ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'],
+  },
+  // Sélecteur d’heure
+  timepicker: {
+    now: 'Maintenant',
+    placeholder: 'Sélectionner l’heure',
+    confirm: 'OK',
+    cancel: 'Annuler',
+    hour: 'h',
+    minute: 'min',
+    second: 's',
+    panelLabel: 'Sélectionner l’heure',
+    hourLabel: 'Heure',
+    minuteLabel: 'Minute',
+    secondLabel: 'Seconde',
+  },
+  // Sélecteur en cascade
+  cascader: {
+    noMatch: 'Aucune donnée correspondante',
+    placeholder: 'Sélectionner',
+    panelLabel: 'Sélectionner une option en cascade',
+    columnLabel: 'Niveau {n}',
+  },
+  // Étiquette
+  tag: {
+    close: 'Fermer',
+  },
+  // Badge
+  badge: {
+    other: 'Autres',
+  },
+  // Sélecteur
+  select: {
+    noMatch: 'Aucune donnée correspondante',
+    noData: 'Aucune donnée',
+    placeholder: 'Sélectionner',
+  },
+  // Formulaire
+  form: {
+    validateFailed: 'Échec de la validation',
+    required: 'Ce champ est obligatoire',
+  },
+  // Interrupteur
+  switch: {
+    on: 'Activé',
+    off: 'Désactivé',
+  },
+  // Curseur
+  slider: {
+    range: 'Plage',
+    thumb: 'Curseur',
+    thumbStart: 'Curseur de début',
+    thumbEnd: 'Curseur de fin',
+  },
+  // Barre de progression
+  progress: {
+    percent: '%',
+  },
+  // Avatar
+  avatar: {
+    icon: 'Icône utilisateur',
+  },
+  // Liste de descriptions
+  descriptions: {
+    operation: 'Opération',
+  },
+  // État vide
+  empty: {
+    description: 'Aucune donnée',
+  },
+  // Alerte
+  alert: {
+    close: 'Fermer l’alerte',
+  },
+  // Boîte de dialogue
+  dialog: {
+    close: 'Fermer la boîte de dialogue',
+  },
+  // Message
+  message: {
+    close: 'Fermer le message',
+  },
+  // Fil d’Ariane
+  breadcrumb: {
+    label: 'Fil d’Ariane',
+    more: 'Plus',
+  },
+  // Pagination
+  pagination: {
+    total: 'Total : {total} éléments',
+    prev: 'Page précédente',
+    next: 'Page suivante',
+    page: 'Page {page}',
+    goto: 'Aller à',
+    pageSuffix: '',
+    sizeChanger: '{size} / page',
+    sizeChangerLabel: 'Éléments par page',
+  },
+  // Onglets
+  tabs: {
+    add: 'Ajouter un onglet',
+  },
+  // Étapes
+  steps: {
+    step: 'Étape {index}',
+    finish: 'Terminé',
+    error: 'Erreur',
+  },
+  // Bulle de confirmation
+  popconfirm: {
+    confirm: 'OK',
+    cancel: 'Annuler',
+  },
+  // Tiroir
+  drawer: {
+    title: 'Tiroir',
+    close: 'Fermer le tiroir',
+  },
   // Notification
   notification: {
-    close: 'Close notification',
-    closeAll: 'Close all',
+    close: 'Fermer la notification',
+    closeAll: 'Tout fermer',
   },
-  // Loading
+  // Chargement
   loading: {
-    text: 'Loading…',
+    text: 'Chargement…',
   },
 
-  // Collapse
+  // Panneau repliable
   collapse: {
-    toggle: 'Toggle {title}',
+    toggle: 'Déplier ou replier {title}',
   },
-  // Rate
+  // Évaluation
   rate: {
-    stars: '{n} stars',
+    stars: '{n} étoiles',
   },
-  // BackTop
+  // Retour en haut
   backtop: {
-    label: 'Back to top',
+    label: 'Retour en haut',
   },
   // Image
   image: {
-    preview: 'Preview image',
-    error: 'Failed to load',
-    zoomIn: 'Zoom in',
-    zoomOut: 'Zoom out',
-    rotate: 'Rotate',
-    prev: 'Previous',
-    next: 'Next',
-    close: 'Close image preview',
+    preview: 'Aperçu de l’image',
+    error: 'Échec du chargement',
+    zoomIn: 'Agrandir',
+    zoomOut: 'Réduire',
+    rotate: 'Pivoter',
+    prev: 'Précédent',
+    next: 'Suivant',
+    close: 'Fermer l’aperçu de l’image',
   },
 
-  // Menu
+  // Menu de navigation
   menu: {
-    submenuLabel: 'Submenu {title}',
+    submenuLabel: 'Sous-menu {title}',
   },
 
-  // Table
+  // Tableau
   table: {
-    empty: 'No data',
+    empty: 'Aucune donnée',
     filterTitle: 'Filtrer',
     filterConfirm: 'Appliquer',
     filterReset: 'Réinitialiser',
     resizeLabel: 'Redimensionner la colonne',
   },
-  // Tree
+  // Arbre
   tree: {
-    empty: 'No data',
+    empty: 'Aucune donnée',
   },
-  // TreeSelect
+  // Sélecteur d’arborescence
   treeSelect: {
-    triggerLabel: 'Tree select',
+    triggerLabel: 'Sélecteur d’arborescence',
   },
-  // Transfer
+  // Transfert
   transfer: {
-    sourceTitle: 'List 1',
-    targetTitle: 'List 2',
-    moveRight: 'Move right',
-    moveLeft: 'Move left',
-    searchPlaceholder: 'Search',
-    empty: 'No data',
+    sourceTitle: 'Liste 1',
+    targetTitle: 'Liste 2',
+    moveRight: 'Déplacer vers la droite',
+    moveLeft: 'Déplacer vers la gauche',
+    searchPlaceholder: 'Saisir pour rechercher',
+    empty: 'Aucune donnée',
   },
-  // Upload
+  // Téléversement
   upload: {
-    select: 'Select file',
-    drag: 'Drop files here or click to upload',
-    list: 'File list',
-    remove: 'Remove',
-    fail: 'Upload failed',
-    exceedSize: 'File exceeds the size limit',
-    exceedCount: 'Exceeds the count limit',
-    rejectType: 'File type not allowed',
+    select: 'Sélectionner un fichier',
+    drag: 'Glissez les fichiers ici, ou cliquez pour téléverser',
+    list: 'Liste des fichiers',
+    remove: 'Supprimer',
+    fail: 'Échec du téléversement',
+    exceedSize: 'Le fichier dépasse la taille maximale',
+    exceedCount: 'Nombre maximum de fichiers dépassé',
+    rejectType: 'Type de fichier non autorisé',
   },
-  // Anchor
+  // Navigation par ancres
   anchor: {
-    label: 'Anchor navigation',
+    label: 'Navigation par ancres',
   },
 
-  // Accessibility labels (aria-label / screen reader announcements)
-  // 骨架文件：默认使用英文兜底，翻译补全后生效
+  // Textes d’accessibilité (aria-label / annonces des lecteurs d’écran,
+  // utilisés par chaque couche UI via t('ariaLabels.xxx'))
   ariaLabels: {
-    close: 'Close',
-    expand: 'Expand',
-    collapse: 'Collapse',
-    clear: 'Clear',
-    confirm: 'Confirm',
-    cancel: 'Cancel',
-    openDropdown: 'Open dropdown',
-    closeDropdown: 'Close dropdown',
-    openDialog: 'Open dialog',
-    closeDialog: 'Close dialog',
-    openMenu: 'Open menu',
-    closeMenu: 'Close menu',
-    previous: 'Previous',
-    next: 'Next',
-    previousMonth: 'Previous month',
-    nextMonth: 'Next month',
-    previousYear: 'Previous year',
-    nextYear: 'Next year',
-    selectDate: 'Select date',
-    selectTime: 'Select time',
-    hour: 'Hour',
+    close: 'Fermer',
+    expand: 'Déplier',
+    collapse: 'Replier',
+    clear: 'Effacer',
+    confirm: 'Confirmer',
+    cancel: 'Annuler',
+    openDropdown: 'Ouvrir la liste déroulante',
+    closeDropdown: 'Réduire la liste déroulante',
+    openDialog: 'Ouvrir la boîte de dialogue',
+    closeDialog: 'Fermer la boîte de dialogue',
+    openMenu: 'Ouvrir le menu',
+    closeMenu: 'Réduire le menu',
+    previous: 'Précédent',
+    next: 'Suivant',
+    previousMonth: 'Mois précédent',
+    nextMonth: 'Mois suivant',
+    previousYear: 'Année précédente',
+    nextYear: 'Année suivante',
+    selectDate: 'Sélectionner une date',
+    selectTime: 'Sélectionner l’heure',
+    hour: 'Heure',
     minute: 'Minute',
-    second: 'Second',
+    second: 'Seconde',
     page: 'Page {page}',
-    currentPage: 'Current page, page {page}',
-    previousPage: 'Previous page',
-    nextPage: 'Next page',
-    currentStep: 'Current step, step {step}: {title}',
-    step: 'Step {step}',
-    loading: 'Loading',
-    upload: 'Upload',
-    uploading: 'Uploading',
-    uploadSuccess: 'Upload succeeded',
-    uploadFailed: 'Upload failed',
-    removeFile: 'Remove file',
-    previewImage: 'Preview image',
-    previousImage: 'Previous image',
-    nextImage: 'Next image',
-    zoomIn: 'Zoom in',
-    zoomOut: 'Zoom out',
-    rotate: 'Rotate',
-    reset: 'Reset',
-    switchOn: 'On',
-    switchOff: 'Off',
-    rating: 'Rating',
-    stars: '{n} stars',
-    sortAscending: 'Sort ascending',
-    sortDescending: 'Sort descending',
-    sort: 'Sort',
-    selectAll: 'Select all',
-    partialSelected: 'Partially selected',
-    moveToTarget: 'Move to target',
-    moveToSource: 'Move to source',
-    search: 'Search',
-    empty: 'No data',
+    currentPage: 'Page courante, page {page}',
+    previousPage: 'Page précédente',
+    nextPage: 'Page suivante',
+    currentStep: 'Étape courante, étape {step} : {title}',
+    step: 'Étape {step}',
+    loading: 'Chargement',
+    upload: 'Téléverser',
+    uploading: 'Téléversement en cours',
+    uploadSuccess: 'Téléversement réussi',
+    uploadFailed: 'Échec du téléversement',
+    removeFile: 'Supprimer le fichier',
+    previewImage: 'Aperçu de l’image',
+    previousImage: 'Image précédente',
+    nextImage: 'Image suivante',
+    zoomIn: 'Agrandir',
+    zoomOut: 'Réduire',
+    rotate: 'Pivoter',
+    reset: 'Réinitialiser',
+    switchOn: 'Activé',
+    switchOff: 'Désactivé',
+    rating: 'Évaluation',
+    stars: '{n} étoiles',
+    sortAscending: 'Tri croissant',
+    sortDescending: 'Tri décroissant',
+    sort: 'Trier',
+    selectAll: 'Tout sélectionner',
+    partialSelected: 'Sélection partielle',
+    moveToTarget: 'Déplacer vers la liste cible',
+    moveToSource: 'Déplacer vers la liste source',
+    search: 'Rechercher',
+    empty: 'Aucune donnée',
   },
 } as const;

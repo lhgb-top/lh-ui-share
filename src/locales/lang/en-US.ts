@@ -114,14 +114,6 @@ export default {
   descriptions: {
     operation: 'Operation',
   },
-  // Dialog
-  dialog: {
-    close: 'Close dialog',
-  },
-  // Message
-  message: {
-    close: 'Close message',
-  },
   // Empty
   empty: {
     description: 'No data',
@@ -129,6 +121,14 @@ export default {
   // Alert
   alert: {
     close: 'Dismiss alert',
+  },
+  // Dialog
+  dialog: {
+    close: 'Close dialog',
+  },
+  // Message
+  message: {
+    close: 'Close message',
   },
   // Breadcrumb
   breadcrumb: {

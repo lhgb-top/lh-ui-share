@@ -3,21 +3,42 @@ import { lhlocale, zhCN } from '../../src/locales'
 import { LH_LANGUAGE_CONST } from '../../src/constants'
 
 describe('lhlocale', () => {
-  // 语言常量与 registry 必须一致：常量里开放的语言，share 都已注册了骨架包
-  it('exposes six locales matching the language constant', () => {
+  // 语言常量与 registry 必须一致：常量里开放的语言，share 都已注册了语言包
+  it('exposes ten locales matching the language constant', () => {
     expect(LH_LANGUAGE_CONST).toEqual({
       zhCN: 'zh-CN',
+      zhTW: 'zh-TW',
       enUS: 'en-US',
       jaJP: 'ja-JP',
       koKR: 'ko-KR',
       deDE: 'de-DE',
       frFR: 'fr-FR',
+      es: 'es',
+      ar: 'ar',
+      ru: 'ru',
     })
     for (const code of Object.values(LH_LANGUAGE_CONST)) {
       expect(() => lhlocale.setLocale(code)).not.toThrow()
     }
     // 还原默认语言，避免影响后续用例
     lhlocale.setLocale(LH_LANGUAGE_CONST.zhCN)
+  })
+  // 九语 + 德语语言包必须与中文真源键结构完全一致（防翻译漏键 / 漂移）
+  it('every registered pack mirrors the zh-CN key tree', async () => {
+    const { default: zhCN } = await import('../../src/locales/lang/zh-CN')
+    const flat = (obj: unknown, prefix = ''): string[] => {
+      if (obj === null || typeof obj !== 'object') return []
+      if (Array.isArray(obj)) return [`${prefix}[]`]
+      return Object.entries(obj as Record<string, unknown>).flatMap(([k, v]) => {
+        const path = prefix ? `${prefix}.${k}` : k
+        return typeof v === 'object' && v !== null ? flat(v, path) : [path]
+      })
+    }
+    const source = flat(zhCN)
+    for (const file of ['en-US', 'zh-TW', 'ja-JP', 'ko-KR', 'de-DE', 'fr-FR', 'es', 'ar', 'ru']) {
+      const { default: pack } = await import(`../../src/locales/lang/${file}`)
+      expect(flat(pack)).toEqual(source)
+    }
   })
   // 回归：`const t = lhlocale.t` 解构使用时不得丢失 this（Cascader 曾因此崩溃）
   it('t() works when detached from the instance', () => {
@@ -37,6 +58,25 @@ describe('lhlocale', () => {
     // 还原默认语言，避免影响其他用例
     lhlocale.setLocale('zh-CN')
     expect(lhlocale.t('cascader.noMatch')).toBe('无匹配数据')
+  })
+
+  // 各语言包已是真翻译（不再是英文兜底）：每语取一句代表性文案校验
+  it('setLocale yields genuinely translated messages for every language', () => {
+    const samples: [string, string][] = [
+      ['zh-TW', '暫無資料'],
+      ['ja-JP', 'データがありません'],
+      ['ko-KR', '데이터가 없습니다'],
+      ['de-DE', 'Keine Daten'],
+      ['fr-FR', 'Aucune donnée'],
+      ['es', 'Sin datos'],
+      ['ar', 'لا توجد بيانات'],
+      ['ru', 'Нет данных'],
+    ]
+    for (const [code, expected] of samples) {
+      lhlocale.setLocale(code as never)
+      expect(lhlocale.t('select.noData')).toBe(expected)
+    }
+    lhlocale.setLocale('zh-CN')
   })
 
   it('use() registers a custom locale pack', () => {

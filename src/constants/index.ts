@@ -47,6 +47,8 @@ export const LH_SIZE_DEFAULT = LH_SIZE_CONST.medium;
 export const LH_LANGUAGE_CONST = {
     /** @alias 简体中文 */
     zhCN: 'zh-CN',
+    /** @alias 繁體中文 */
+    zhTW: 'zh-TW',
     /** @alias 英文 */
     enUS: 'en-US',
     /** @alias 日本語 */
@@ -57,6 +59,12 @@ export const LH_LANGUAGE_CONST = {
     deDE: 'de-DE',
     /** @alias Français */
     frFR: 'fr-FR',
+    /** @alias Español */
+    es: 'es',
+    /** @alias العربية（RTL） */
+    ar: 'ar',
+    /** @alias Русский */
+    ru: 'ru',
 } as const;
 
 /**

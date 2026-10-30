@@ -1,171 +1,313 @@
 /**
  * Deutsch (German)
- * 当前为骨架文件，默认使用英文作为兜底翻译。
- * 已在 src/locales/locale.ts 注册、src/constants/index.ts 登记，
- * 可直接 `lhlocale.setLocale('de-DE')` 切换（当前返回英文兜底文案，翻译补全后生效）。
+ * Vollständige deutsche Übersetzung.
+ * Registriert in src/locales/locale.ts, gelistet in src/constants/index.ts,
+ * direkt per `lhlocale.setLocale('de-DE')` umschaltbar.
  */
 export default {
-  common: { loading: 'Loading' },
-  input: { placeholder: 'Please input', password: 'Password' },
-  datepicker: { now: 'Now', today: 'Today', prevMonth: 'Previous month', nextMonth: 'Next month', placeholder: 'Select date', cancel: 'Cancel', clear: 'Clear', confirm: 'OK', dateTableConfirm: 'Confirm', dateTableDeConfirm: 'Temporarily', year: 'Y', month: 'M', month1: 'Jan', month2: 'Feb', month3: 'Mar', month4: 'Apr', month5: 'May', month6: 'Jun', month7: 'Jul', month8: 'Aug', month9: 'Sep', month10: 'Oct', month11: 'Nov', month12: 'Dec', weeks: { sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' }, months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] },
-  timepicker: { now: 'Now', placeholder: 'Select time', confirm: 'OK', cancel: 'Cancel', hour: 'H', minute: 'M', second: 'S' },
-  cascader: { noMatch: 'No matching data', placeholder: 'Please select' },
-  tag: { close: 'Close' },
-  badge: { other: 'Others' },
-  select: { noMatch: 'No matching data', noData: 'No data', placeholder: 'Please select' },
-  form: { validateFailed: 'Validation failed', required: 'This field is required' },
-  switch: { on: 'On', off: 'Off' },
-  slider: { range: 'Range' },
-  progress: { percent: '%' },
-  avatar: { icon: 'User icon' },
-  descriptions: { operation: 'Operation' },
-  dialog: { close: 'Close dialog' },
-  message: { close: 'Close message' },
-  empty: { description: 'No data' },
-  alert: { close: 'Dismiss alert' },
-  breadcrumb: { label: 'Breadcrumb', more: 'More' },
-  pagination: { total: 'Total {total} items', prev: 'Previous page', next: 'Next page', page: 'Page {page}', goto: 'Go to', pageSuffix: '', sizeChanger: '{size} / page', sizeChangerLabel: 'Items per page' },
-  tabs: { add: 'Add tab' },
-  steps: { step: 'Step {index}', finish: 'Completed', error: 'Error' },
-  popconfirm: { confirm: 'OK', cancel: 'Cancel' },
-  drawer: { title: 'Drawer', close: 'Close drawer' },
-  // Notification
+  // Allgemein
+  common: {
+    loading: 'Wird geladen',
+  },
+  // Eingabe
+  input: {
+    placeholder: 'Bitte eingeben',
+    password: 'Passwort',
+  },
+  // Datepicker (reserviert)
+  datepicker: {
+    now: 'Jetzt',
+    today: 'Heute',
+    prevMonth: 'Vorheriger Monat',
+    nextMonth: 'Nächster Monat',
+    placeholder: 'Datum auswählen',
+    cancel: 'Abbrechen',
+    clear: 'Leeren',
+    confirm: 'OK',
+    dateTableConfirm: 'Bestätigen',
+    dateTableDeConfirm: 'Vorläufig offen',
+    panelLabel: 'Datum auswählen',
+    monthPanelLabel: 'Monat auswählen',
+    yearPanelLabel: 'Jahr auswählen',
+    year: 'J',
+    month: 'M',
+    // Kalenderpanel-Titel: {month} ist bereits ein Monatsname wie 'Okt.', die Vorlage bestimmt nur Reihenfolge und Verknüpfung von Jahr und Monat
+    panelTitle: '{month} {year}',
+    month1: 'Jan.',
+    month2: 'Feb.',
+    month3: 'März',
+    month4: 'Apr.',
+    month5: 'Mai',
+    month6: 'Juni',
+    month7: 'Juli',
+    month8: 'Aug.',
+    month9: 'Sept.',
+    month10: 'Okt.',
+    month11: 'Nov.',
+    month12: 'Dez.',
+    weeks: {
+      sun: 'So',
+      mon: 'Mo',
+      tue: 'Di',
+      wed: 'Mi',
+      thu: 'Do',
+      fri: 'Fr',
+      sat: 'Sa',
+    },
+    months: ['Jan.', 'Feb.', 'März', 'Apr.', 'Mai', 'Juni', 'Juli', 'Aug.', 'Sept.', 'Okt.', 'Nov.', 'Dez.'],
+  },
+  // TimePicker
+  timepicker: {
+    now: 'Jetzt',
+    placeholder: 'Zeit auswählen',
+    confirm: 'OK',
+    cancel: 'Abbrechen',
+    hour: 'h',
+    minute: 'm',
+    second: 's',
+    panelLabel: 'Zeit auswählen',
+    hourLabel: 'Stunde',
+    minuteLabel: 'Minute',
+    secondLabel: 'Sekunde',
+  },
+  // Cascader
+  cascader: {
+    noMatch: 'Keine passenden Daten',
+    placeholder: 'Bitte auswählen',
+    panelLabel: 'Kaskadenoption auswählen',
+    columnLabel: 'Ebene {n}',
+  },
+  // Tag
+  tag: {
+    close: 'Schließen',
+  },
+  // Badge
+  badge: {
+    other: 'Sonstige',
+  },
+  // Select
+  select: {
+    noMatch: 'Keine passenden Daten',
+    noData: 'Keine Daten',
+    placeholder: 'Bitte auswählen',
+  },
+  // Formular
+  form: {
+    validateFailed: 'Validierung fehlgeschlagen',
+    required: 'Dieses Feld ist erforderlich',
+  },
+  // Switch
+  switch: {
+    on: 'Ein',
+    off: 'Aus',
+  },
+  // Slider
+  slider: {
+    range: 'Bereich',
+    thumb: 'Schieber',
+    thumbStart: 'Startschieber',
+    thumbEnd: 'Endschieber',
+  },
+  // Progress
+  progress: {
+    percent: '%',
+  },
+  // Avatar
+  avatar: {
+    icon: 'Benutzersymbol',
+  },
+  // Beschreibungen
+  descriptions: {
+    operation: 'Aktion',
+  },
+  // Leer
+  empty: {
+    description: 'Keine Daten',
+  },
+  // Hinweis
+  alert: {
+    close: 'Hinweis schließen',
+  },
+  // Dialog
+  dialog: {
+    close: 'Dialog schließen',
+  },
+  // Nachricht
+  message: {
+    close: 'Nachricht schließen',
+  },
+  // Breadcrumb
+  breadcrumb: {
+    label: 'Breadcrumb-Navigation',
+    more: 'Mehr',
+  },
+  // Paginierung
+  pagination: {
+    total: 'Gesamt: {total}',
+    prev: 'Vorherige Seite',
+    next: 'Nächste Seite',
+    page: 'Seite {page}',
+    goto: 'Gehe zu',
+    pageSuffix: 'Seite',
+    sizeChanger: '{size} / Seite',
+    sizeChangerLabel: 'Einträge pro Seite',
+  },
+  // Tabs
+  tabs: {
+    add: 'Tab hinzufügen',
+  },
+  // Schritte
+  steps: {
+    step: 'Schritt {index}',
+    finish: 'Abgeschlossen',
+    error: 'Fehler',
+  },
+  // Popconfirm
+  popconfirm: {
+    confirm: 'OK',
+    cancel: 'Abbrechen',
+  },
+  // Drawer
+  drawer: {
+    title: 'Drawer',
+    close: 'Drawer schließen',
+  },
+  // Benachrichtigung
   notification: {
-    close: 'Close notification',
-    closeAll: 'Close all',
+    close: 'Benachrichtigung schließen',
+    closeAll: 'Alle schließen',
   },
   // Loading
   loading: {
-    text: 'Loading…',
+    text: 'Wird geladen…',
   },
 
   // Collapse
   collapse: {
-    toggle: 'Toggle {title}',
+    toggle: '{title} ausklappen oder einklappen',
   },
-  // Rate
+  // Bewertung
   rate: {
-    stars: '{n} stars',
+    stars: '{n} Sterne',
   },
   // BackTop
   backtop: {
-    label: 'Back to top',
+    label: 'Nach oben',
   },
-  // Image
+  // Bild
   image: {
-    preview: 'Preview image',
-    error: 'Failed to load',
-    zoomIn: 'Zoom in',
-    zoomOut: 'Zoom out',
-    rotate: 'Rotate',
-    prev: 'Previous',
-    next: 'Next',
-    close: 'Close image preview',
+    preview: 'Bildvorschau',
+    error: 'Laden fehlgeschlagen',
+    zoomIn: 'Vergrößern',
+    zoomOut: 'Verkleinern',
+    rotate: 'Drehen',
+    prev: 'Vorheriges',
+    next: 'Nächstes',
+    close: 'Bildvorschau schließen',
   },
 
-  // Menu
+  // Menü
   menu: {
-    submenuLabel: 'Submenu {title}',
+    submenuLabel: 'Untermenü {title}',
   },
 
-  // Table
+  // Tabelle
   table: {
-    empty: 'No data',
+    empty: 'Keine Daten',
     filterTitle: 'Filtern',
     filterConfirm: 'Übernehmen',
     filterReset: 'Zurücksetzen',
     resizeLabel: 'Spaltenbreite anpassen',
   },
-  // Tree
+  // Baum
   tree: {
-    empty: 'No data',
+    empty: 'Keine Daten',
   },
   // TreeSelect
   treeSelect: {
-    triggerLabel: 'Tree select',
+    triggerLabel: 'Baumauswahl',
   },
   // Transfer
   transfer: {
-    sourceTitle: 'List 1',
-    targetTitle: 'List 2',
-    moveRight: 'Move right',
-    moveLeft: 'Move left',
-    searchPlaceholder: 'Search',
-    empty: 'No data',
+    sourceTitle: 'Liste 1',
+    targetTitle: 'Liste 2',
+    moveRight: 'Nach rechts verschieben',
+    moveLeft: 'Nach links verschieben',
+    searchPlaceholder: 'Suchbegriff eingeben',
+    empty: 'Keine Daten',
   },
   // Upload
   upload: {
-    select: 'Select file',
-    drag: 'Drop files here or click to upload',
-    list: 'File list',
-    remove: 'Remove',
-    fail: 'Upload failed',
-    exceedSize: 'File exceeds the size limit',
-    exceedCount: 'Exceeds the count limit',
-    rejectType: 'File type not allowed',
+    select: 'Datei auswählen',
+    drag: 'Dateien hierher ziehen oder klicken zum Hochladen',
+    list: 'Dateiliste',
+    remove: 'Entfernen',
+    fail: 'Hochladen fehlgeschlagen',
+    exceedSize: 'Datei überschreitet die Größenbeschränkung',
+    exceedCount: 'Anzahlbeschränkung überschritten',
+    rejectType: 'Dateityp nicht erlaubt',
   },
-  // Anchor
+  // Anker
   anchor: {
-    label: 'Anchor navigation',
+    label: 'Anker-Navigation',
   },
 
-  // Accessibility labels (aria-label / screen reader announcements)
-  // 骨架文件：默认使用英文兜底，翻译补全后生效
+  // Barrierefreiheitstexte (aria-label / Bildschirmlese-Ansagen, für die UI-Schichten über t('ariaLabels.xxx'))
   ariaLabels: {
-    close: 'Close',
-    expand: 'Expand',
-    collapse: 'Collapse',
-    clear: 'Clear',
-    confirm: 'Confirm',
-    cancel: 'Cancel',
-    openDropdown: 'Open dropdown',
-    closeDropdown: 'Close dropdown',
-    openDialog: 'Open dialog',
-    closeDialog: 'Close dialog',
-    openMenu: 'Open menu',
-    closeMenu: 'Close menu',
-    previous: 'Previous',
-    next: 'Next',
-    previousMonth: 'Previous month',
-    nextMonth: 'Next month',
-    previousYear: 'Previous year',
-    nextYear: 'Next year',
-    selectDate: 'Select date',
-    selectTime: 'Select time',
-    hour: 'Hour',
+    close: 'Schließen',
+    expand: 'Ausklappen',
+    collapse: 'Einklappen',
+    clear: 'Leeren',
+    confirm: 'Bestätigen',
+    cancel: 'Abbrechen',
+    openDropdown: 'Dropdown öffnen',
+    closeDropdown: 'Dropdown schließen',
+    openDialog: 'Dialog öffnen',
+    closeDialog: 'Dialog schließen',
+    openMenu: 'Menü öffnen',
+    closeMenu: 'Menü schließen',
+    previous: 'Vorheriges',
+    next: 'Nächstes',
+    previousMonth: 'Vorheriger Monat',
+    nextMonth: 'Nächster Monat',
+    previousYear: 'Vorheriges Jahr',
+    nextYear: 'Nächstes Jahr',
+    selectDate: 'Datum auswählen',
+    selectTime: 'Zeit auswählen',
+    hour: 'Stunde',
     minute: 'Minute',
-    second: 'Second',
-    page: 'Page {page}',
-    currentPage: 'Current page, page {page}',
-    previousPage: 'Previous page',
-    nextPage: 'Next page',
-    currentStep: 'Current step, step {step}: {title}',
-    step: 'Step {step}',
-    loading: 'Loading',
-    upload: 'Upload',
-    uploading: 'Uploading',
-    uploadSuccess: 'Upload succeeded',
-    uploadFailed: 'Upload failed',
-    removeFile: 'Remove file',
-    previewImage: 'Preview image',
-    previousImage: 'Previous image',
-    nextImage: 'Next image',
-    zoomIn: 'Zoom in',
-    zoomOut: 'Zoom out',
-    rotate: 'Rotate',
-    reset: 'Reset',
-    switchOn: 'On',
-    switchOff: 'Off',
-    rating: 'Rating',
-    stars: '{n} stars',
-    sortAscending: 'Sort ascending',
-    sortDescending: 'Sort descending',
-    sort: 'Sort',
-    selectAll: 'Select all',
-    partialSelected: 'Partially selected',
-    moveToTarget: 'Move to target',
-    moveToSource: 'Move to source',
-    search: 'Search',
-    empty: 'No data',
+    second: 'Sekunde',
+    page: 'Seite {page}',
+    currentPage: 'Aktuelle Seite, Seite {page}',
+    previousPage: 'Vorherige Seite',
+    nextPage: 'Nächste Seite',
+    currentStep: 'Aktueller Schritt, Schritt {step}: {title}',
+    step: 'Schritt {step}',
+    loading: 'Wird geladen',
+    upload: 'Hochladen',
+    uploading: 'Wird hochgeladen',
+    uploadSuccess: 'Hochladen erfolgreich',
+    uploadFailed: 'Hochladen fehlgeschlagen',
+    removeFile: 'Datei entfernen',
+    previewImage: 'Bildvorschau',
+    previousImage: 'Vorheriges Bild',
+    nextImage: 'Nächstes Bild',
+    zoomIn: 'Vergrößern',
+    zoomOut: 'Verkleinern',
+    rotate: 'Drehen',
+    reset: 'Zurücksetzen',
+    switchOn: 'Eingeschaltet',
+    switchOff: 'Ausgeschaltet',
+    rating: 'Bewertung',
+    stars: '{n} Sterne',
+    sortAscending: 'Aufsteigend sortieren',
+    sortDescending: 'Absteigend sortieren',
+    sort: 'Sortieren',
+    selectAll: 'Alle auswählen',
+    partialSelected: 'Teilweise ausgewählt',
+    moveToTarget: 'Nach rechts verschieben',
+    moveToSource: 'Nach links verschieben',
+    search: 'Suchen',
+    empty: 'Keine Daten',
   },
 } as const;

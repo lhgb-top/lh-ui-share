@@ -1,11 +1,14 @@
 import zh_CN from './lang/zh-CN'
+import zh_TW from './lang/zh-TW'
 import en_US from './lang/en-US'
-// 以下为预留语言骨架（当前以英文作为兜底翻译）
-// 导入即可在 lhlocale.setLocale() 中切换
+// 以下语言均已完整翻译，可直接 lhlocale.setLocale() 切换
 import ja_JP from './lang/ja-JP'
 import ko_KR from './lang/ko-KR'
 import de_DE from './lang/de-DE'
 import fr_FR from './lang/fr-FR'
+import es from './lang/es'
+import ar from './lang/ar'
+import ru from './lang/ru'
 import type { LhLeaves, LhLocaleMessages, LhLocaleType } from '../types/locale'
 import { LH_LANGUAGE_DEFAULT } from '../constants'
 import { deepMerge } from '../utils'
@@ -57,12 +60,16 @@ export type LhLocaleListener = (version: number) => void
  */
 const locales: Record<string, LhLocaleMessages> = {
   [LH_LANGUAGE_DEFAULT]: zh_CN,
+  'zh-TW': zh_TW,
   'en-US': en_US,
-  // 预留语言（已注册，可直接切换但翻译为英文兜底）
+  // 其余语言均已完整翻译并注册，可直接切换
   'ja-JP': ja_JP,
   'ko-KR': ko_KR,
   'de-DE': de_DE,
   'fr-FR': fr_FR,
+  es,
+  ar,
+  ru,
 }
 
 /**
