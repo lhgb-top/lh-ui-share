@@ -3,9 +3,10 @@ node_modules/
 .pnpm-store/
 
 # ---------- 构建产物（pnpm build 生成，es/ 与 lib/ 为镜像结构，不入库）----------
-es/
-lib/
-dist/
+# 锚定根目录：裸 es/ 会误伤 docs/es/ 等语言目录（2026-10-15 修正）
+/es/
+/lib/
+/dist/
 coverage/
 *.tsbuildinfo
 tsconfig.build.tsbuildinfo

@@ -412,6 +412,7 @@
     "prepublishOnly": "pnpm run build && pnpm run verify:dts && pnpm run verify:styles"
   },
   "devDependencies": {
+    "@astrojs/markdown-satteri": "^0.4.3",
     "@astrojs/mdx": "^8.0.3",
     "@astrojs/starlight": "^0.42.6",
     "@changesets/cli": "^3.0.3",
