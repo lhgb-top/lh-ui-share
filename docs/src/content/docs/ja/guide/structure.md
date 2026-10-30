@@ -15,7 +15,7 @@ lh-ui-share/
 │   │   └── shared/            コンポーネント横断の共有コア（12 モジュール、<name>/index.ts に正規化済み）
 │   ├── theme/                 テーマ TS 側：types + 5 つのプリセット + ランタイムプリミティブ
 │   ├── constants/             LH_* 定数（LH_SIZE_DEFAULT / LH_LANGUAGE_DEFAULT …）
-│   ├── locales/               LhLocale（純 emitter）+ lang/ 6 言語の骨組み
+│   ├── locales/               LhLocale（純 emitter）+ lang/ 10 個の完全な言語パック
 │   ├── types/                 パブリック型（locale / components）
 │   ├── utils/                 純ユーティリティ（createNamespace / deepMerge …）
 │   └── index.ts               全体集約エントリ

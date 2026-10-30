@@ -83,22 +83,26 @@ export const LH_SIZE_CONST = {
 
 **不是所有元件都支援全部五檔**：`mini` / `x-large` 只在部分元件上實作，以各元件文件為準。
 
-## LH_LANGUAGE_CONST —— 六門語言
+## LH_LANGUAGE_CONST —— 十門語言
 
 ```ts
 export const LH_LANGUAGE_CONST = {
-  zhCN: 'zh-CN',
-  enUS: 'en-US',
-  jaJP: 'ja-JP',
-  koKR: 'ko-KR',
-  deDE: 'de-DE',
-  frFR: 'fr-FR',
+  zhCN: 'zh-CN', // 简体中文（真源）
+  zhTW: 'zh-TW', // 繁體中文
+  enUS: 'en-US', // English
+  jaJP: 'ja-JP', // 日本語
+  koKR: 'ko-KR', // 한국어
+  deDE: 'de-DE', // Deutsch（运行时扩展，文档站无德语内容）
+  frFR: 'fr-FR', // Français
+  es: 'es', // Español
+  ar: 'ar', // العربية（RTL）
+  ru: 'ru', // Русский
 } as const
 ```
 
 鍵名是 [zhCN / enUS 這類約定俗成的 locale 命名](/guide/naming#豁免登記)，值是 BCP 47 語言程式碼。`LhLocaleType` 與 `LhComponentLanguage` 均由此推導。
 
-**注意語言檔案的啟用狀態**：`ja-JP` / `ko-KR` / `de-DE` / `fr-FR` 目前是**預留語言骨架，以英文兜底翻譯**（見 [locales](/reference/locales)）。常數裡登記了不等於文案完備。
+**十門語言均為完整語言包**：鍵結構逐鍵鏡像 `zh-CN`（單測強制校驗，見 [locales](/reference/locales)）。其中 `de-DE` 為**執行時擴充**（各文件站無德語內容），其餘九種與文件站九語言一致。
 
 ## 為什麼用常數而不是列舉
 

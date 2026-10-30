@@ -94,25 +94,27 @@ claves y `Object.values(...)` devuelve los valores del enumerado de tipos; no lo
 **No todos los componentes soportan las cinco escalas**: `mini` / `x-large` solo están implementados en algunos
 componentes; la documentación de cada componente es la referencia.
 
-## LH_LANGUAGE_CONST —— seis idiomas
+## LH_LANGUAGE_CONST —— diez idiomas
 
 ```ts
 export const LH_LANGUAGE_CONST = {
-  zhCN: 'zh-CN',
-  enUS: 'en-US',
-  jaJP: 'ja-JP',
-  koKR: 'ko-KR',
-  deDE: 'de-DE',
-  frFR: 'fr-FR',
+  zhCN: 'zh-CN', // 简体中文（真源）
+  zhTW: 'zh-TW', // 繁體中文
+  enUS: 'en-US', // English
+  jaJP: 'ja-JP', // 日本語
+  koKR: 'ko-KR', // 한국어
+  deDE: 'de-DE', // Deutsch（运行时扩展，文档站无德语内容）
+  frFR: 'fr-FR', // Français
+  es: 'es', // Español
+  ar: 'ar', // العربية（RTL）
+  ru: 'ru', // Русский
 } as const
 ```
 
 Los nombres de las claves siguen el [naming de locale convencional, tipo zhCN / enUS](/es/guide/naming#registro-de-exenciones),
 y los valores son códigos de idioma BCP 47. `LhLocaleType` y `LhComponentLanguage` se deducen ambos a partir de aquí.
 
-**Ten en cuenta el estado de uso de los archivos de idioma**: `ja-JP` / `ko-KR` / `de-DE` / `fr-FR` son de momento
-**esqueletos de idioma reservados, con traducción de respaldo al inglés** (véase [locales](/es/reference/locales)).
-Que estén registrados en la constante no significa que los textos estén completos.
+**Los diez paquetes de idioma están completos**: la estructura de claves de cada uno se verifica en espejo con `zh-CN` mediante pruebas unitarias (véase [locales](/es/reference/locales)). `de-DE` es una **extensión en tiempo de ejecución** (los sitios de documentación no tienen contenido en alemán); los otros nueve coinciden con los nueve idiomas de los sitios de documentación.
 
 ## Por qué constantes en lugar de enumerados
 

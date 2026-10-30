@@ -83,22 +83,26 @@ export const LH_SIZE_CONST = {
 
 **不是所有组件都支持全部五档**：`mini` / `x-large` 只在部分组件上实现，以各组件文档为准。
 
-## LH_LANGUAGE_CONST —— 六门语言
+## LH_LANGUAGE_CONST —— 十门语言
 
 ```ts
 export const LH_LANGUAGE_CONST = {
-  zhCN: 'zh-CN',
-  enUS: 'en-US',
-  jaJP: 'ja-JP',
-  koKR: 'ko-KR',
-  deDE: 'de-DE',
-  frFR: 'fr-FR',
+  zhCN: 'zh-CN', // 简体中文（真源）
+  zhTW: 'zh-TW', // 繁體中文
+  enUS: 'en-US', // English
+  jaJP: 'ja-JP', // 日本語
+  koKR: 'ko-KR', // 한국어
+  deDE: 'de-DE', // Deutsch（运行时扩展，文档站无德语内容）
+  frFR: 'fr-FR', // Français
+  es: 'es', // Español
+  ar: 'ar', // العربية（RTL）
+  ru: 'ru', // Русский
 } as const
 ```
 
 键名是 [zhCN / enUS 这类约定俗成的 locale 命名](/guide/naming#豁免登记)，值是 BCP 47 语言代码。`LhLocaleType` 与 `LhComponentLanguage` 均由此推导。
 
-**注意语言文件的启用状态**：`ja-JP` / `ko-KR` / `de-DE` / `fr-FR` 目前是**预留语言骨架，以英文兜底翻译**（见 [locales](/reference/locales)）。常量里登记了不等于文案完备。
+**十门语言均为完整语言包**：键结构逐键镜像 `zh-CN`（单测强制校验，见 [locales](/reference/locales)）。其中 `de-DE` 为**运行时扩展**（各文档站无德语内容），其余九种与文档站九语言一致。
 
 ## 为什么用常量而不是枚举
 

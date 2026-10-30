@@ -34,7 +34,7 @@ export * from './components/base'  // Базовые свойства компо
 
 | Тип | Определение | Назначение |
 | --- | --- | --- |
-| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | Объединение кодов шести языков |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | Объединение кодов десяти языков |
 | `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | Листовой узел языкового пакета (рекурсивно только для чтения) |
 | `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | Языковой пакет целиком |
 | `LhLeaves<T, Prefix extends string = ''>` | Рекурсивный отображаемый тип | Выводит объединение точечных путей всех «строковых листьев» |

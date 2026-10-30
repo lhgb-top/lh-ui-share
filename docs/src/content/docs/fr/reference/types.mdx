@@ -34,7 +34,7 @@ export * from './components/base'  // Les attributs de base des composants
 
 | Type | Définition | Usage |
 | --- | --- | --- |
-| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | L'union des six codes de langue |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | L'union des dix codes de langue |
 | `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | Les feuilles du paquet de langues (récursivement en lecture seule) |
 | `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | Le paquet de langues dans son ensemble |
 | `LhLeaves<T, Prefix extends string = ''>` | Type de mapping récursif | Déduit l'union des chemins pointillés de toutes les « feuilles chaînes » |

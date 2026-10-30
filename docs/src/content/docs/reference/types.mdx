@@ -34,7 +34,7 @@ export * from './components/base'  // 组件基础属性
 
 | 类型 | 定义 | 用途 |
 | --- | --- | --- |
-| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | 六门语言代码联合 |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | 十门语言代码联合 |
 | `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | 语言包叶节点（递归只读） |
 | `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | 语言包整体 |
 | `LhLeaves<T, Prefix extends string = ''>` | 递归映射类型 | 推导所有「字符串叶子」的点号路径联合 |

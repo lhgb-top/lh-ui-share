@@ -94,25 +94,27 @@ export const LH_SIZE_CONST = {
 **ليست كل المكوّنات تدعم الدرجات الخمس جميعها**: تُطبَّق `mini` / `x-large` على جزء من
 المكوّنات فقط، والمرجع هو وثائق كل مكوّن.
 
-## LH_LANGUAGE_CONST —— ست لغات
+## LH_LANGUAGE_CONST —— عشر لغات
 
 ```ts
 export const LH_LANGUAGE_CONST = {
-  zhCN: 'zh-CN',
-  enUS: 'en-US',
-  jaJP: 'ja-JP',
-  koKR: 'ko-KR',
-  deDE: 'de-DE',
-  frFR: 'fr-FR',
+  zhCN: 'zh-CN', // 简体中文（真源）
+  zhTW: 'zh-TW', // 繁體中文
+  enUS: 'en-US', // English
+  jaJP: 'ja-JP', // 日本語
+  koKR: 'ko-KR', // 한국어
+  deDE: 'de-DE', // Deutsch（运行时扩展，文档站无德语内容）
+  frFR: 'fr-FR', // Français
+  es: 'es', // Español
+  ar: 'ar', // العربية（RTL）
+  ru: 'ru', // Русский
 } as const
 ```
 
 أسماء المفاتيح هي [تسميات locale متفق عليها مثل zhCN / enUS](/ar/guide/naming#تسجيل-الإعفاءات)،
 أما القيم فهي رموز اللغات وفق BCP 47. ويُشتق منها كل من `LhLocaleType` و`LhComponentLanguage`.
 
-**انتبه لحالة تفعيل ملفات اللغات**: `ja-JP` / `ko-KR` / `de-DE` / `fr-FR` هي حاليًا
-**هياكل لغات احتياطية، تُترجَم إلى fallback إنجليزي** (انظر [locales](/ar/reference/locales)).
-تسجيلها في الثوابت لا يعني اكتمال النصوص.
+**جميع حزم اللغات العشر كاملة**: هيكل مفاتيح كل حزمة يُطابق `zh-CN` عبر اختبارات الوحدة (انظر [locales](/ar/reference/locales)). `de-DE` هي **امتداد وقت التشغيل** (لا توجد محتويات ألمانية في مواقع التوثيق)، أما اللغات التسع الأخرى فتطابق لغات مواقع التوثيق التسع.
 
 ## لماذا ثوابت وليست enums
 

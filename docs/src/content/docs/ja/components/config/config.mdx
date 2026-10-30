@@ -59,14 +59,14 @@ import type { LhConfigState } from '@lh-ui/share/core/config'
 export interface LhConfigState {
   size: LhComponentSize | undefined    // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
   zIndex: number                       // ポップアップ層のベースライン
-  locale: LhComponentLanguage          // 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR' | 'de-DE' | 'fr-FR'
+  locale: LhComponentLanguage          // 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR' | 'es' | 'ar' | 'fr-FR' | 'ru' | 'de-DE'
   theme: LhThemePresetName             // プリセット名（registerTheme が登録したカスタム名も同様に合法）
 }
 ```
 
 `size` の 5 段階は `LH_SIZE_CONST`（`src/constants`）から来ており、そのうち `old: 'x-large'` は**高齢者向け段階**のセマンティクスエイリアス（大きな文字とコントロール）で、値は `x-large` と同じです——適老化のケースにセマンティクスを持った設定の入口を与えます。
 
-`locale` の 6 言語は `LH_LANGUAGE_CONST` から来ており、デフォルトは `LH_LANGUAGE_DEFAULT = 'zh-CN'` です。
+`locale` の 10 言語は `LH_LANGUAGE_CONST` から来ており、デフォルトは `LH_LANGUAGE_DEFAULT = 'zh-CN'` です。
 
 ## アクセシビリティ
 

@@ -34,7 +34,7 @@ export * from './components/base'  // コンポーネントの基礎属性
 
 | 型 | 定義 | 用途 |
 | --- | --- | --- |
-| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | 6 言語のコードのユニオン |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | 10 言語のコードのユニオン |
 | `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | 言語パックのリーフノード（再帰的に読み取り専用） |
 | `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | 言語パック全体 |
 | `LhLeaves<T, Prefix extends string = ''>` | 再帰マップ型 | すべての「文字列リーフ」のドットパスのユニオンを導出する |

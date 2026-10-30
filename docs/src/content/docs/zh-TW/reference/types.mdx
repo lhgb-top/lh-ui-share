@@ -34,7 +34,7 @@ export * from './components/base'  // 元件基礎屬性
 
 | 類型 | 定義 | 用途 |
 | --- | --- | --- |
-| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | 六門語言程式碼聯合 |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | 十門語言程式碼聯合 |
 | `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | 語言包葉節點（遞迴唯讀） |
 | `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | 語言包整體 |
 | `LhLeaves<T, Prefix extends string = ''>` | 遞迴映射類型 | 推導所有「字串葉子」的點號路徑聯合 |

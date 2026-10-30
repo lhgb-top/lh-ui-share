@@ -15,7 +15,7 @@ lh-ui-share/
 │   │   └── shared/            النواة المشتركة بين المكوّنات (12 وحدة، مُوحَّدة في <name>/index.ts)
 │   ├── theme/                 جانب السمة بلغة TS: types + 5 مسبقات إعداد + بدائيع وقت التشغيل
 │   ├── constants/             ثوابت LH_* (LH_SIZE_DEFAULT / LH_LANGUAGE_DEFAULT …)
-│   ├── locales/               LhLocale (باعث خالص) + lang/ هياكل لغات الست
+│   ├── locales/               LhLocale (باعث خالص) + lang/ عشر حزم لغات كاملة
 │   ├── types/                 الأنواع العامة (locale / components)
 │   ├── utils/                 أدوات نقية (createNamespace / deepMerge …)
 │   └── index.ts               مدخل التجميع الكامل

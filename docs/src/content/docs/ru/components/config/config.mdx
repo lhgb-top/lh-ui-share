@@ -59,7 +59,7 @@ import type { LhConfigState } from '@lh-ui/share/core/config'
 export interface LhConfigState {
   size: LhComponentSize | undefined    // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
   zIndex: number                       // база для попапов
-  locale: LhComponentLanguage          // 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR' | 'de-DE' | 'fr-FR'
+  locale: LhComponentLanguage          // 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR' | 'es' | 'ar' | 'fr-FR' | 'ru' | 'de-DE'
   theme: LhThemePresetName             // имя пресета (зарегистрированные через registerTheme
                                        // пользовательские имена тоже допустимы)
 }
@@ -67,7 +67,7 @@ export interface LhConfigState {
 
 Пять ступеней `size` берутся из `LH_SIZE_CONST` (`src/constants`), где `old: 'x-large'` — семантический псевдоним **ступени для пожилых пользователей** (крупный шрифт и крупные элементы управления), значение совпадает с `x-large`; это даёт повододоступному сценарию семантическую точку входа в конфигурацию.
 
-Шесть языков `locale` берутся из `LH_LANGUAGE_CONST`, по умолчанию `LH_LANGUAGE_DEFAULT = 'zh-CN'`.
+Десять языков `locale` берутся из `LH_LANGUAGE_CONST`, по умолчанию `LH_LANGUAGE_DEFAULT = 'zh-CN'`.
 
 ## Доступность
 

@@ -32,7 +32,7 @@ lh-ui-vue2 / lh-ui-react / lh-ui-uniapp）發布態以 npm 依賴消費本套件
 | `src/core/shared/` | 跨元件共享核心（popper / virtual / sx / keyboard / focus-trap …） | 12 個模組 |
 | `src/theme/` | 主題 TS 側：類型 + 5 個預設 + 執行時原語 | — |
 | `styles/` | 元件 BEM 樣式**唯一源** + `theme/common/*.scss` 令牌 | 58 套元件樣式 |
-| `src/locales/` | 國際化（LhLocale 為純事件發射器）+ 6 語言骨架 | — |
+| `src/locales/` | 國際化（LhLocale 為純事件發射器）+ 10 個完整語言包 | — |
 | `src/constants/` `src/types/` `src/utils/` | 常數 / 類型 / 純工具（含 createNamespace） | — |
 
 > **計數口徑**：core 是 56 個元件目錄，styles 是 58 套——`layout` / `tree-select` 有

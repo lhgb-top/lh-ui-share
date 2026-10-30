@@ -34,7 +34,7 @@ export * from './components/base'  // 컴포넌트 기본 속성
 
 | 타입 | 정의 | 용도 |
 | --- | --- | --- |
-| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | 6개 언어 코드 유니온 |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | 10개 언어 코드 유니온 |
 | `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | 언어 팩의 잎 노드(재귀적 읽기 전용) |
 | `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | 언어 팩 전체 |
 | `LhLeaves<T, Prefix extends string = ''>` | 재귀 매핑 타입 | 모든 "문자열 잎"의 점 경로 유니온을 도출 |

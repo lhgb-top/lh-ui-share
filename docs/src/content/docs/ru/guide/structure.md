@@ -15,7 +15,7 @@ lh-ui-share/
 │   │   └── shared/            Общее ядро для компонентов (12 модулей, унифицированы в виде <name>/index.ts)
 │   ├── theme/                 TS-сторона темы: types + 5 пресетов + runtime-примитивы
 │   ├── constants/             Константы LH_* (LH_SIZE_DEFAULT / LH_LANGUAGE_DEFAULT …)
-│   ├── locales/               LhLocale (чистый emitter) + lang/ — скелеты шести языков
+│   ├── locales/               LhLocale (чистый emitter) + lang/ — десять полных языковых пакетов
 │   ├── types/                 Публичные типы (locale / components)
 │   ├── utils/                 Чистые утилиты (createNamespace / deepMerge …)
 │   └── index.ts               Полный агрегированный вход

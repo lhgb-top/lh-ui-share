@@ -35,7 +35,7 @@ functions' output to templates and feed user input back into them.
 | `src/core/shared/` | Cross-component shared kernel (popper / virtual / sx / keyboard / focus-trap …) | 12 modules |
 | `src/theme/` | Theme TS side: types + 5 presets + runtime primitives | — |
 | `styles/` | The **single source** of component BEM styles + `theme/common/*.scss` tokens | 58 style suites |
-| `src/locales/` | Internationalization (LhLocale is a pure event emitter) + 6-language skeleton | — |
+| `src/locales/` | Internationalization (LhLocale is a pure event emitter) + ten complete language packs | — |
 | `src/constants/` `src/types/` `src/utils/` | Constants / types / pure utilities (incl. createNamespace) | — |
 
 > **Counting convention**: `core` holds 56 component directories while `styles` ships 58 suites —

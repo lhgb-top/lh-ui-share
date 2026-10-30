@@ -83,22 +83,26 @@ Ce que perçoit l'utilisateur extérieur, c'est `size="x-large"` (ou l'interrupt
 
 **Tous les composants ne prennent pas en charge les cinq paliers** : `mini` / `x-large` ne sont implémentés que sur une partie des composants ; la référence est la documentation de chaque composant.
 
-## LH_LANGUAGE_CONST —— six langues
+## LH_LANGUAGE_CONST —— dix langues
 
 ```ts
 export const LH_LANGUAGE_CONST = {
-  zhCN: 'zh-CN',
-  enUS: 'en-US',
-  jaJP: 'ja-JP',
-  koKR: 'ko-KR',
-  deDE: 'de-DE',
-  frFR: 'fr-FR',
+  zhCN: 'zh-CN', // 简体中文（真源）
+  zhTW: 'zh-TW', // 繁體中文
+  enUS: 'en-US', // English
+  jaJP: 'ja-JP', // 日本語
+  koKR: 'ko-KR', // 한국어
+  deDE: 'de-DE', // Deutsch（运行时扩展，文档站无德语内容）
+  frFR: 'fr-FR', // Français
+  es: 'es', // Español
+  ar: 'ar', // العربية（RTL）
+  ru: 'ru', // Русский
 } as const
 ```
 
 Les clés sont des [noms de locale consacrés par l'usage, comme zhCN / enUS](/fr/guide/naming#registre-des-exemptions) ; les valeurs sont des codes de langue BCP 47. `LhLocaleType` et `LhComponentLanguage` en sont tous deux déduits.
 
-**Notez l'état d'activation des fichiers de langue** : `ja-JP` / `ko-KR` / `de-DE` / `fr-FR` sont actuellement des **squelettes de langues réservés, qui se replient sur une traduction anglaise** (voir [locales](/fr/reference/locales)). Être enregistré dans les constantes ne signifie pas que les libellés sont complets.
+**Les dix paquets de langue sont complets** : la structure des clés de chacun est vérifiée en miroir avec `zh-CN` par des tests unitaires (voir [locales](/fr/reference/locales)). `de-DE` est une **extension d'exécution** (les sites de documentation n'ont pas de contenu allemand) ; les neuf autres correspondent aux neuf langues des sites de documentation.
 
 ## Pourquoi des constantes plutôt qu'une enum
 

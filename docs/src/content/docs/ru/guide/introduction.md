@@ -30,7 +30,7 @@ lh-ui-vue2 / lh-ui-react / lh-ui-uniapp) потребляют этот паке�
 | `src/core/shared/` | Общее ядро для компонентов (popper / virtual / sx / keyboard / focus-trap …) | 12 модулей |
 | `src/theme/` | TS-сторона темы: типы + 5 пресетов + runtime-примитивы | — |
 | `styles/` | **Единый источник** BEM-стиилей компонентов + токены `theme/common/*.scss` | 58 наборов стилей |
-| `src/locales/` | Интернационализация (LhLocale — чистый генератор событий) + 6 языковых скелетов | — |
+| `src/locales/` | Интернационализация (LhLocale — чистый генератор событий) + десять полных языковых пакетов | — |
 | `src/constants/` `src/types/` `src/utils/` | Константы / типы / чистые утилиты (включая createNamespace) | — |
 
 > **Методика подсчёта**: core — это 56 каталогов компонентов, styles — 58 наборов: у `layout` / `tree-select`

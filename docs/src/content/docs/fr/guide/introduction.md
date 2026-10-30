@@ -28,7 +28,7 @@ En sédimentant tout cela en fonctions pures, les quatre plateformes n'ont **pas
 | `src/core/shared/` | Noyau partagé entre composants (popper / virtual / sx / keyboard / focus-trap …) | 12 modules |
 | `src/theme/` | Côté TS du thème : types + 5 préréglages + primitives d'exécution | — |
 | `styles/` | **Source unique** des styles BEM des composants + jetons `theme/common/*.scss` | 58 ensembles de styles |
-| `src/locales/` | Internationalisation (LhLocale est un pur émetteur d'événements) + 6 squelettes de langues | — |
+| `src/locales/` | Internationalisation (LhLocale est un pur émetteur d'événements) + dix paquets de langues complets | — |
 | `src/constants/` `src/types/` `src/utils/` | Constantes / types / utilitaires purs (dont createNamespace) | — |
 
 > **Méthode de comptage** : core compte 56 répertoires de composants, styles en compte 58 — `layout` / `tree-select` ont une source de styles mais toute leur logique est dans la couche UI (conteneur de mise en page, colle côté framework du sélecteur arborescent), et `config` s'appelle `config-provider` dans le répertoire des styles. Voir [Structure du package](/fr/guide/structure).

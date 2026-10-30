@@ -59,14 +59,14 @@ import type { LhConfigState } from '@lh-ui/share/core/config'
 export interface LhConfigState {
   size: LhComponentSize | undefined    // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
   zIndex: number                       // 弹层基线
-  locale: LhComponentLanguage          // 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR' | 'de-DE' | 'fr-FR'
+  locale: LhComponentLanguage          // 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR' | 'es' | 'ar' | 'fr-FR' | 'ru' | 'de-DE'
   theme: LhThemePresetName             // 预设名（registerTheme 注册的自定义名同样合法）
 }
 ```
 
 `size` 的五档来自 `LH_SIZE_CONST`（`src/constants`），其中 `old: 'x-large'` 是**老年人专用档**的语义别名（大字体大控件），值与 `x-large` 相同——给适老化场景一个有语义的配置入口。
 
-`locale` 的六种语言来自 `LH_LANGUAGE_CONST`，默认 `LH_LANGUAGE_DEFAULT = 'zh-CN'`。
+`locale` 的十种语言来自 `LH_LANGUAGE_CONST`，默认 `LH_LANGUAGE_DEFAULT = 'zh-CN'`。
 
 ## 无障碍
 

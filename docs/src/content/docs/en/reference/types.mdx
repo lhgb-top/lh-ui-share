@@ -34,7 +34,7 @@ export * from './components/base'  // component base props
 
 | Type | Definition | Purpose |
 | --- | --- | --- |
-| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | Union of the six language codes |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | Union of the ten language codes |
 | `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | Language pack leaf node (recursively readonly) |
 | `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | The language pack as a whole |
 | `LhLeaves<T, Prefix extends string = ''>` | Recursive mapped type | Derives the dotted-path union of every "string leaf" |

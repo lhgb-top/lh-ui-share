@@ -36,7 +36,7 @@ description: '@lh-ui/share とは何か、どんな問題を解決するか、lh
 | `src/core/shared/` | コンポーネント横断の共有コア（popper / virtual / sx / keyboard / focus-trap …） | 12 モジュール |
 | `src/theme/` | テーマ TS 側：型 + 5 つのプリセット + ランタイムプリミティブ | — |
 | `styles/` | コンポーネント BEM スタイルの**唯一ソース** + `theme/common/*.scss` トークン | 58 セットのコンポーネントスタイル |
-| `src/locales/` | 国際化（LhLocale は純イベントエミッター）+ 6 言語の骨組み | — |
+| `src/locales/` | 国際化（LhLocale は純イベントエミッター）+ 10 個の完全な言語パック | — |
 | `src/constants/` `src/types/` `src/utils/` | 定数 / 型 / 純ユーティリティ（createNamespace を含む） | — |
 
 > **カウントの基準**：core は 56 個のコンポーネントディレクトリ、styles は 58 セット——

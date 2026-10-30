@@ -15,7 +15,7 @@ lh-ui-share/
 │   │   └── shared/            컴포넌트 횡단 공유 코어(12개 모듈, <name>/index.ts로 규격화됨)
 │   ├── theme/                 테마 TS 측: types + 5개 프리셋 + 런타임 원시
 │   ├── constants/             LH_* 상수(LH_SIZE_DEFAULT / LH_LANGUAGE_DEFAULT …)
-│   ├── locales/               LhLocale(순수 에미터) + lang/의 6개 언어 골격
+│   ├── locales/               LhLocale(순수 에미터) + lang/의 10개 완전 언어 팩
 │   ├── types/                 공개 타입(locale / components)
 │   ├── utils/                 순수 유틸리티(createNamespace / deepMerge …)
 │   └── index.ts               전체 집계 진입점

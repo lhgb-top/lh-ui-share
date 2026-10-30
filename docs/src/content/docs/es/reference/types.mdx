@@ -37,7 +37,7 @@ export * from './components/base'  // las props base de los componentes
 
 | Tipo | Definición | Uso |
 | --- | --- | --- |
-| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | Unión de los códigos de seis idiomas |
+| `LhLocaleType` | `(typeof LH_LANGUAGE_CONST)[keyof typeof LH_LANGUAGE_CONST]` | Unión de los códigos de diez idiomas |
 | `LhLocaleMessageValue` | `string \| readonly LhLocaleMessageValue[] \| { readonly [key: string]: LhLocaleMessageValue }` | Hojas del paquete de idioma (recursivamente de solo lectura) |
 | `LhLocaleMessages` | `Record<string, LhLocaleMessageValue>` | El paquete de idioma en su conjunto |
 | `LhLeaves<T, Prefix extends string = ''>` | Tipo de mapeo recursivo | Deduce la unión de rutas de puntos de todas las «hojas de string» |

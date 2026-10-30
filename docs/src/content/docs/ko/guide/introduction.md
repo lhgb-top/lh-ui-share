@@ -28,7 +28,7 @@ description: '@lh-ui/share란 무엇인지, 어떤 문제를 해결하는지, lh
 | `src/core/shared/` | 컴포넌트 횡단 공유 코어(popper / virtual / sx / keyboard / focus-trap …) | 12개 모듈 |
 | `src/theme/` | 테마 TS 측: 타입 + 5개 프리셋 + 런타임 원시 | — |
 | `styles/` | 컴포넌트 BEM 스타일 **유일 소스** + `theme/common/*.scss` 토큰 | 58세트 컴포넌트 스타일 |
-| `src/locales/` | 국제화(LhLocale은 순수 이벤트 에미터) + 6개 언어 골격 | — |
+| `src/locales/` | 국제화(LhLocale은 순수 이벤트 에미터) + 10개 완전 언어 팩 | — |
 | `src/constants/` `src/types/` `src/utils/` | 상수 / 타입 / 순수 유틸리티(createNamespace 포함) | — |
 
 > **집계 기준**: core는 56개 컴포넌트 디렉터리, styles는 58세트입니다 —— `layout` / `tree-select`는 스타일 소스가 있지만 논리는 모두 UI 계층에 있고(레이아웃 컨테이너, 트리 선택기의 프레임워크 측 접착), `config`는 스타일 디렉터리에서 `config-provider`라는 이름을 씁니다. 자세한 내용은 [패키지 구조](/ko/guide/structure)를 참고하세요.

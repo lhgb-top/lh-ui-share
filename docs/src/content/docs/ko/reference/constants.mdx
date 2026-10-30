@@ -83,22 +83,26 @@ export const LH_SIZE_CONST = {
 
 **모든 컴포넌트가 5단계 전부를 지원하는 것은 아닙니다**: `mini` / `x-large`는 일부 컴포넌트에만 구현되어 있으며, 각 컴포넌트의 문서를 기준으로 합니다.
 
-## LH_LANGUAGE_CONST —— 6개 언어
+## LH_LANGUAGE_CONST —— 10개 언어
 
 ```ts
 export const LH_LANGUAGE_CONST = {
-  zhCN: 'zh-CN',
-  enUS: 'en-US',
-  jaJP: 'ja-JP',
-  koKR: 'ko-KR',
-  deDE: 'de-DE',
-  frFR: 'fr-FR',
+  zhCN: 'zh-CN', // 简体中文（真源）
+  zhTW: 'zh-TW', // 繁體中文
+  enUS: 'en-US', // English
+  jaJP: 'ja-JP', // 日本語
+  koKR: 'ko-KR', // 한국어
+  deDE: 'de-DE', // Deutsch（运行时扩展，文档站无德语内容）
+  frFR: 'fr-FR', // Français
+  es: 'es', // Español
+  ar: 'ar', // العربية（RTL）
+  ru: 'ru', // Русский
 } as const
 ```
 
 키 이름은 [zhCN / enUS 같은 관례적인 locale 명명](/ko/guide/naming#예외-등록)이고, 값은 BCP 47 언어 코드입니다. `LhLocaleType`와 `LhComponentLanguage` 모두 여기서 도출됩니다.
 
-**언어 파일의 활성 상태에 주의**: `ja-JP` / `ko-KR` / `de-DE` / `fr-FR`는 현재 **예약된 언어 골격으로, 영어 폴백 번역**입니다([locales](/ko/reference/locales) 참고). 상수에 등록되었다고 해서 문구가 완전한 것은 아닙니다.
+**10개 언어 팩 모두 완전**: 키 구조는 `zh-CN`와 단위 테스트로 미러 검증됩니다([locales](/ko/reference/locales) 참고). `de-DE`는 **런타임 확장**(문서 사이트에 독일어 콘텐츠 없음)이며 나머지 9개는 각 문서 사이트의 9개 언어와 일치합니다.
 
 ## 왜 열거형이 아니라 상수인가
 

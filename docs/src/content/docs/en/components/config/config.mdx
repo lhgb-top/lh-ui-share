@@ -59,14 +59,14 @@ Constant: `LH_THEME_DEFAULT = 'cerblue'`.
 export interface LhConfigState {
   size: LhComponentSize | undefined    // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
   zIndex: number                       // overlay baseline
-  locale: LhComponentLanguage          // 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR' | 'de-DE' | 'fr-FR'
+  locale: LhComponentLanguage          // 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR' | 'es' | 'ar' | 'fr-FR' | 'ru' | 'de-DE'
   theme: LhThemePresetName             // preset name (a custom name registered with registerTheme is also valid)
 }
 ```
 
 The five tiers of `size` come from `LH_SIZE_CONST` (`src/constants`), where `old: 'x-large'` is a semantic alias for the **elderly-accessibility tier** (larger text and controls) with the same value as `x-large` — giving an accessibility-oriented scenario a meaningful configuration entry.
 
-The six languages of `locale` come from `LH_LANGUAGE_CONST`, with the default `LH_LANGUAGE_DEFAULT = 'zh-CN'`.
+The ten languages of `locale` come from `LH_LANGUAGE_CONST`, with the default `LH_LANGUAGE_DEFAULT = 'zh-CN'`.
 
 ## Accessibility
 

@@ -83,22 +83,26 @@ export const LH_SIZE_CONST = {
 
 **すべてのコンポーネントが 5 段階すべてをサポートしているわけではありません**：`mini` / `x-large` は一部のコンポーネントにのみ実装されており、各コンポーネントのドキュメントを優先してください。
 
-## LH_LANGUAGE_CONST —— 6 言語
+## LH_LANGUAGE_CONST —— 10 言語
 
 ```ts
 export const LH_LANGUAGE_CONST = {
-  zhCN: 'zh-CN',
-  enUS: 'en-US',
-  jaJP: 'ja-JP',
-  koKR: 'ko-KR',
-  deDE: 'de-DE',
-  frFR: 'fr-FR',
+  zhCN: 'zh-CN', // 简体中文（真源）
+  zhTW: 'zh-TW', // 繁體中文
+  enUS: 'en-US', // English
+  jaJP: 'ja-JP', // 日本語
+  koKR: 'ko-KR', // 한국어
+  deDE: 'de-DE', // Deutsch（运行时扩展，文档站无德语内容）
+  frFR: 'fr-FR', // Français
+  es: 'es', // Español
+  ar: 'ar', // العربية（RTL）
+  ru: 'ru', // Русский
 } as const
 ```
 
 キー名は [zhCN / enUS のような慣用的な locale 命名](/ja/guide/naming#適用除外の登録)で、値は BCP 47 言語コードです。`LhLocaleType` と `LhComponentLanguage` はどちらもここから導出されます。
 
-**言語ファイルの有効状態に注意**：`ja-JP` / `ko-KR` / `de-DE` / `fr-FR` は現在**予約済みの言語スケルトンで、英語のフォールバック翻訳**です（[locales](/ja/reference/locales) を参照）。定数に登録されていても文案が完成しているとは限りません。
+**10 個の言語パックはすべて完全**：キー構造は `zh-CN` と単体テストでミラーチェックされます（[locales](/ja/reference/locales) を参照）。`de-DE` は**ランタイム拡張**（ドキュメントサイトにドイツ語コンテンツなし）、残り 9 つは各ドキュメントサイトの九言語と一致します。
 
 ## なぜ enum ではなく定数なのか
 

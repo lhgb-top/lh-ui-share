@@ -59,14 +59,14 @@ import type { LhConfigState } from '@lh-ui/share/core/config'
 export interface LhConfigState {
   size: LhComponentSize | undefined    // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
   zIndex: number                       // أساس الطبقات المنبثقة
-  locale: LhComponentLanguage          // 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR' | 'de-DE' | 'fr-FR'
+  locale: LhComponentLanguage          // 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR' | 'es' | 'ar' | 'fr-FR' | 'ru' | 'de-DE'
   theme: LhThemePresetName             // اسم المسبق (الأسماء المخصصة المسجلة عبر registerTheme قانونية كذلك)
 }
 ```
 
 الدرجات الخمس لـ `size` تأتي من `LH_SIZE_CONST` (في `src/constants`)، حيث `old: 'x-large'` **اسم دلالي لدرجة كبار السن** (خط كبير وعناصر تحكم كبيرة)، وقيمته نفس `x-large` — لإعطاء مشاهد الملاءمة لكبار السن مدخلًا ذا دلالة.
 
-اللغات الست لـ `locale` تأتي من `LH_LANGUAGE_CONST`، والافتراضي `LH_LANGUAGE_DEFAULT = 'zh-CN'`.
+اللغات العشر لـ `locale` تأتي من `LH_LANGUAGE_CONST`، والافتراضي `LH_LANGUAGE_DEFAULT = 'zh-CN'`.
 
 ## إمكانية الوصول
 

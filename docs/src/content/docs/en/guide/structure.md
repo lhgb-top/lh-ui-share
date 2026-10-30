@@ -15,7 +15,7 @@ lh-ui-share/
 │   │   └── shared/            cross-component kernel (12 modules, normalized to <name>/index.ts)
 │   ├── theme/                 theme TS side: types + 5 presets + runtime primitives
 │   ├── constants/             LH_* constants (LH_SIZE_DEFAULT / LH_LANGUAGE_DEFAULT …)
-│   ├── locales/               LhLocale (pure emitter) + lang/ six-language skeleton
+│   ├── locales/               LhLocale (pure emitter) + lang/ ten complete language packs
 │   ├── types/                 public types (locale / components)
 │   ├── utils/                 pure utilities (createNamespace / deepMerge …)
 │   └── index.ts               full aggregation entry

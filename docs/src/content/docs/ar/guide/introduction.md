@@ -35,7 +35,7 @@ description: 'ما هو @lh-ui/share، وما المشكلة التي يحلها
 | `src/core/shared/` | النواة المشتركة بين المكوّنات (popper / virtual / sx / keyboard / focus-trap …) | 12 وحدة |
 | `src/theme/` | جانب السمة بلغة TS: الأنواع + 5 مسبقات إعداد + بدائيع وقت التشغيل | — |
 | `styles/` | **المصدر الوحيد** لأنماط مكوّنات BEM + رموز `theme/common/*.scss` | 58 مجموعة أنماط |
-| `src/locales/` | التدويل (LhLocale باعث أحداث خالص) + هيكل لـ 6 لغات | — |
+| `src/locales/` | التدويل (LhLocale باعث أحداث خالص) + عشر حزم لغات كاملة | — |
 | `src/constants/` `src/types/` `src/utils/` | الثوابت / الأنواع / الأدوات النقية (بما فيها createNamespace) | — |
 
 > **منهج العد**: core هو 56 دليل مكوّن، و styles هي 58 مجموعة — `layout` / `tree-select`

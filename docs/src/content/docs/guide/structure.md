@@ -15,7 +15,7 @@ lh-ui-share/
 │   │   └── shared/            跨组件共享内核（12 模块，已规范化为 <name>/index.ts）
 │   ├── theme/                 主题 TS 侧：types + 5 个预设 + 运行时原语
 │   ├── constants/             LH_* 常量（LH_SIZE_DEFAULT / LH_LANGUAGE_DEFAULT …）
-│   ├── locales/               LhLocale（纯 emitter）+ lang/ 六语言骨架
+│   ├── locales/               LhLocale（纯 emitter）+ lang/ 十个完整语言包
 │   ├── types/                 公共类型（locale / components）
 │   ├── utils/                 纯工具（createNamespace / deepMerge …）
 │   └── index.ts               全量聚合入口

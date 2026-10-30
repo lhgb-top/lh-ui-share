@@ -83,22 +83,26 @@ What users see is `size="x-large"` (or the `old` prop toggle); the internal cons
 
 **Not every component supports all five tiers**: `mini` / `x-large` are implemented only on some components; refer to each component's own docs.
 
-## LH_LANGUAGE_CONST — six languages
+## LH_LANGUAGE_CONST — ten languages
 
 ```ts
 export const LH_LANGUAGE_CONST = {
-  zhCN: 'zh-CN',
-  enUS: 'en-US',
-  jaJP: 'ja-JP',
-  koKR: 'ko-KR',
-  deDE: 'de-DE',
-  frFR: 'fr-FR',
+  zhCN: 'zh-CN', // 简体中文（真源）
+  zhTW: 'zh-TW', // 繁體中文
+  enUS: 'en-US', // English
+  jaJP: 'ja-JP', // 日本語
+  koKR: 'ko-KR', // 한국어
+  deDE: 'de-DE', // Deutsch（运行时扩展，文档站无德语内容）
+  frFR: 'fr-FR', // Français
+  es: 'es', // Español
+  ar: 'ar', // العربية（RTL）
+  ru: 'ru', // Русский
 } as const
 ```
 
 The keys are the [conventional locale names like zhCN / enUS](/guide/naming#registered-exemptions); the values are BCP 47 language codes. Both `LhLocaleType` and `LhComponentLanguage` are derived from this.
 
-**Mind the enabled state of the language files**: `ja-JP` / `ko-KR` / `de-DE` / `fr-FR` are currently **reserved language skeletons that fall back to English translations** (see [locales](/reference/locales)). Being registered in the constants does not mean the copy is complete.
+**All ten language packs are complete**: every key structure is mirror-checked against `zh-CN` by unit tests (see [locales](/reference/locales)). `de-DE` is a **runtime extension** (docs sites have no German content); the other nine match the nine languages of the docs sites.
 
 ## Why constants instead of enums
 

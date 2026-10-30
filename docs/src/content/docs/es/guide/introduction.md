@@ -36,7 +36,7 @@ funciones puras a la plantilla y devolver la entrada del usuario a las funciones
 | `src/core/shared/` | Núcleo compartido entre componentes (popper / virtual / sx / keyboard / focus-trap …) | 12 módulos |
 | `src/theme/` | Lado TS del tema: tipos + 5 presets + primitivas en tiempo de ejecución | — |
 | `styles/` | **Única fuente** de los estilos BEM de componentes + tokens de `theme/common/*.scss` | 58 conjuntos de estilos |
-| `src/locales/` | Internacionalización (LhLocale es un emisor de eventos puro) + esqueletos de 6 idiomas | — |
+| `src/locales/` | Internacionalización (LhLocale es un emisor de eventos puro) + diez paquetes de idioma completos | — |
 | `src/constants/` `src/types/` `src/utils/` | Constantes / tipos / utilidades puras (incluye createNamespace) | — |
 
 > **Criterio de conteo**: core son 56 directorios de componentes y styles son 58 conjuntos — `layout` /

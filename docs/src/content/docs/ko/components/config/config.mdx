@@ -59,14 +59,14 @@ import type { LhConfigState } from '@lh-ui/share/core/config'
 export interface LhConfigState {
   size: LhComponentSize | undefined    // 'mini' | 'small' | 'medium' | 'large' | 'x-large'
   zIndex: number                       // 팝업 기준선
-  locale: LhComponentLanguage          // 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR' | 'de-DE' | 'fr-FR'
+  locale: LhComponentLanguage          // 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR' | 'es' | 'ar' | 'fr-FR' | 'ru' | 'de-DE'
   theme: LhThemePresetName             // 프리셋 이름(registerTheme로 등록한 커스텀 이름도 유효)
 }
 ```
 
 `size`의 5단계는 `LH_SIZE_CONST`(`src/constants`)에서 왔으며, 그중 `old: 'x-large'`는 **고령자 전용 단계**의 의미 별칭입니다(큰 글자, 큰 컨트롤). 값은 `x-large`와 같으며, 고령 친화 장면에 의미 있는 설정 입구를 줍니다.
 
-`locale`의 6가지 언어는 `LH_LANGUAGE_CONST`에서 왔으며, 기본은 `LH_LANGUAGE_DEFAULT = 'zh-CN'`입니다.
+`locale`의 10가지 언어는 `LH_LANGUAGE_CONST`에서 왔으며, 기본은 `LH_LANGUAGE_DEFAULT = 'zh-CN'`입니다.
 
 ## 접근성
 
