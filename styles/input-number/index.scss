@@ -66,13 +66,16 @@
   }
 
   &__decrease {
-    border-right: 1px solid var(--lh-border-color-light, #e4e7ed); /* hairline */
-    border-radius: 4px 0 0 4px;
+    /* 按钮组在常规 inline-flex 流中，RTL 下顺序翻转；分隔线与外圆角走 inline 轴自动镜像 */
+    border-inline-end: 1px solid var(--lh-border-color-light, #e4e7ed); /* hairline */
+    border-start-start-radius: 4px;
+    border-end-start-radius: 4px;
   }
 
   &__increase {
-    border-left: 1px solid var(--lh-border-color-light, #e4e7ed); /* hairline */
-    border-radius: 0 4px 4px 0;
+    border-inline-start: 1px solid var(--lh-border-color-light, #e4e7ed); /* hairline */
+    border-start-end-radius: 4px;
+    border-end-end-radius: 4px;
   }
 
   &--small {

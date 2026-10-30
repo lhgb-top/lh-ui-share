@@ -7,7 +7,9 @@
   &__content {
     position: absolute;
     top: 0;
-    right: -9px;
+    /* 角标钉在末尾角（LTR 右上 / RTL 左上）；translate 无逻辑属性等价物，
+       RTL 平移方向由下方 [dir='rtl'] 覆盖块翻转 */
+    inset-inline-end: -9px;
     transform: translate(50%, -50%);
     z-index: 1;
     display: flex;
@@ -81,6 +83,11 @@
   }
 }
 
+/* RTL：角标镜像到左上角，向外平移方向随之翻转（translateX 是物理轴） */
+[dir='rtl'] .lh-badge__content {
+  transform: translate(-50%, -50%);
+}
+
 .lh-badge-zoom-enter-active,
 .lh-badge-zoom-leave-active {
   animation: lh-badge-zoom 0.15s ease-in-out;
@@ -93,4 +100,18 @@
   100% {
     transform: translate(50%, -50%) scale(1);
   }
+}
+
+@keyframes lh-badge-zoom-rtl {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+[dir='rtl'] .lh-badge-zoom-enter-active,
+[dir='rtl'] .lh-badge-zoom-leave-active {
+  animation-name: lh-badge-zoom-rtl;
 }

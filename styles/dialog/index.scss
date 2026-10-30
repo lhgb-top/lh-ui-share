@@ -89,11 +89,11 @@ $lh-dialog-border-color: var(--lh-border-color-light, #E5E0D8) !default;
       user-select: none;
     }
 
-    // 国风装饰 - 左侧竖线
+    // 国风装饰 - 行首竖线
     &::before {
       content: '';
       position: absolute;
-      left: 0;
+      inset-inline-start: 0;
       top: 50%;
       transform: translateY(-50%);
       width: 3px;
@@ -108,7 +108,7 @@ $lh-dialog-border-color: var(--lh-border-color-light, #E5E0D8) !default;
     font-weight: 600;
     color: $lh-dialog-header-color;
     line-height: 1.4;
-    padding-left: 12px;
+    padding-inline-start: 12px;
   }
 
   &__close {
@@ -141,12 +141,12 @@ $lh-dialog-border-color: var(--lh-border-color-light, #E5E0D8) !default;
 
   &__footer {
     padding: 10px $lh-dialog-padding $lh-dialog-padding;
-    text-align: right;
+    text-align: end;
     border-top: 1px solid $lh-dialog-border-color; /* hairline */
     flex-shrink: 0;
 
     > * + * {
-      margin-left: 8px;
+      margin-inline-start: 8px;
     }
   }
 
@@ -160,7 +160,7 @@ $lh-dialog-border-color: var(--lh-border-color-light, #E5E0D8) !default;
       .lh-dialog__close {
         position: absolute;
         top: 15px;
-        right: $lh-dialog-padding;
+        inset-inline-end: $lh-dialog-padding;
       }
     }
 

@@ -28,7 +28,7 @@
 
   &__text {
     flex-shrink: 0;
-    margin-left: var(--lh-spacing-sm, 8px);
+    margin-inline-start: var(--lh-spacing-sm, 8px);
     font-size: var(--lh-font-size-small, 13px);
     color: var(--lh-text-regular, #5A5A5A);
     white-space: nowrap;

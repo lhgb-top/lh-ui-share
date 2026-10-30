@@ -21,14 +21,17 @@
 
   &__label {
     flex: 0 0 auto;
-    padding: 7px 12px 0 0;
+    /* 标签与控件之间的间距走 inline 轴，RTL 下自动镜像 */
+    padding-top: 7px;
+    padding-inline-end: 12px;
     color: var(--lh-text-regular, #5A5A5A);
     line-height: 20px;
-    text-align: right;
+    /* 标签文字贴向控件一侧（LTR 右对齐 / RTL 左对齐） */
+    text-align: end;
   }
 
   &__required {
-    margin-right: 4px;
+    margin-inline-end: 4px;
     color: var(--lh-danger-color, #B23A3A);
   }
 
@@ -51,7 +54,7 @@
     .lh-form-item__label {
       display: block;
       padding: 0 0 6px;
-      text-align: left;
+      text-align: start;
     }
   }
 }

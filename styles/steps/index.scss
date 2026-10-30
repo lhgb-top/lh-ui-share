@@ -89,7 +89,7 @@ ol[role='list'].lh-steps {
       position: absolute;
       top: 28px;
       bottom: 0;
-      left: 13px;
+      inset-inline-start: 13px;
       width: 1px;
       background-color: var(--lh-border-color-base, #D8D3CC);
     }
@@ -161,12 +161,12 @@ ol[role='list'].lh-steps {
 
   &__main {
     min-width: 0;
-    margin-left: var(--lh-spacing-sm, 8px);
+    margin-inline-start: var(--lh-spacing-sm, 8px);
     color: var(--lh-text-regular, #5A5A5A);
   }
 
   &--vertical &__main {
-    margin-left: 0;
+    margin-inline-start: 0;
   }
 
   &__title {

@@ -114,10 +114,10 @@
     min-width: 180px;
     max-height: 300px;
     overflow-y: auto;
-    border-right: 1px solid var(--lh-border-color-lighter, #EEE9E2); /* hairline */
+    border-inline-end: 1px solid var(--lh-border-color-lighter, #EEE9E2); /* hairline */
 
     &:last-child {
-      border-right: none;
+      border-inline-end: none;
     }
   }
 

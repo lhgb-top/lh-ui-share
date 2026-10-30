@@ -81,8 +81,11 @@
     }
   }
 
-  &--small &--checked {
-    &__core::after {
+  /* 修饰符都在根元素上，必须写成复合选择器 `.lh-switch--small.lh-switch--checked`；
+     写成后代组合（&--small &--checked）永不匹配，size 档位移会退化为基础 18px。
+     注意 dart-sass 不允许 `&--small&--checked`（& 只能位于复合选择器开头），故第二段修饰符写全类名 */
+  &--small.lh-switch--checked {
+    .lh-switch__core::after {
       transform: translateX(14px);
     }
   }
@@ -97,10 +100,31 @@
     }
   }
 
-  &--large &--checked {
-    &__core::after {
+  &--large.lh-switch--checked {
+    .lh-switch__core::after {
       transform: translateX(22px);
     }
+  }
+}
+
+/* RTL 镜像：滑块位移由 transform 驱动（无逻辑等价），checked 时滑块改向行首移动。
+   LTR 行为完全不变；此处仅按 [dir='rtl'] 翻转位移与起始边。 */
+[dir='rtl'] {
+  .lh-switch__core::after {
+    left: auto;
+    right: 1px;
+  }
+
+  .lh-switch--checked .lh-switch__core::after {
+    transform: translateX(-18px);
+  }
+
+  .lh-switch--small.lh-switch--checked .lh-switch__core::after {
+    transform: translateX(-14px);
+  }
+
+  .lh-switch--large.lh-switch--checked .lh-switch__core::after {
+    transform: translateX(-22px);
   }
 }
 

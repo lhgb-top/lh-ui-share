@@ -65,15 +65,15 @@
   }
 
   &--border &__label {
-    border-right: none;
+    border-inline-end: none;
   }
 
   &--border &__content {
-    border-right: none;
+    border-inline-end: none;
 
     &:last-child,
     & + .lh-descriptions__filler {
-      border-right: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
+      border-inline-end: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
     }
   }
 
