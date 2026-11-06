@@ -5,6 +5,9 @@ import {
   clampString,
   getInputStyle,
   getInputAria,
+  isInputLabelFloating,
+  getInputLabelClassNames,
+  getInputWrapperModifiers,
 } from '../../../src/core/input/logic'
 
 describe('input/core/logic', () => {
@@ -88,4 +91,78 @@ describe('input accessibility', () => {
       'aria-required': true,
     })
   })
+})
+
+describe('input label position', () => {
+	describe('isInputLabelFloating', () => {
+		it('floats when focused even without value', () => {
+			expect(isInputLabelFloating({ value: '', isFocused: true })).toBe(true)
+		})
+
+		it('floats with value and stays after blur (Material 3 behavior)', () => {
+			expect(isInputLabelFloating({ value: '水墨', isFocused: false })).toBe(true)
+		})
+
+		it('does not float when blurred and empty', () => {
+			expect(isInputLabelFloating({ value: '', isFocused: false })).toBe(false)
+		})
+
+		// 回归：react / uni 挂载前 state.value 可能是 undefined，`!== ''` 会误判为有值
+		it('treats undefined value as empty (pre-mount state)', () => {
+			expect(isInputLabelFloating({ value: undefined as unknown as string, isFocused: false })).toBe(false)
+			expect(getInputWrapperModifiers({ value: undefined as unknown as string, label: '标签', labelPosition: 'float' })).not.toContain('lh-input__wrapper--has-value')
+		})
+	})
+
+	describe('getInputLabelClassNames', () => {
+		it('appends --float only for float position in floating state', () => {
+			expect(getInputLabelClassNames({ value: '', isFocused: true, labelPosition: 'float' })).toEqual([
+				'lh-input__label',
+				'lh-input__label--float',
+			])
+		})
+
+		it('no --float for float position when idle', () => {
+			expect(getInputLabelClassNames({ value: '', isFocused: false, labelPosition: 'float' })).toEqual([
+				'lh-input__label',
+			])
+		})
+
+		it('static positions never float regardless of state', () => {
+			for (const position of ['top', 'left', 'right', 'bottom'] as const) {
+				expect(getInputLabelClassNames({ value: '有值', isFocused: true, labelPosition: position })).toEqual([
+					'lh-input__label',
+				])
+			}
+		})
+	})
+
+	describe('getInputWrapperModifiers', () => {
+		it('emits has-label and position class, no has-value when empty', () => {
+			expect(getInputWrapperModifiers({ value: '', label: '用户名', labelPosition: 'float' })).toEqual([
+				'lh-input__wrapper--has-label',
+				'lh-input__wrapper--label-float',
+			])
+		})
+
+		it('emits has-value when value present', () => {
+			expect(getInputWrapperModifiers({ value: 'x', label: '用户名', labelPosition: 'top' })).toEqual([
+				'lh-input__wrapper--has-label',
+				'lh-input__wrapper--has-value',
+				'lh-input__wrapper--label-top',
+			])
+		})
+
+		it('no has-label without label, static positions map to their class', () => {
+			expect(getInputWrapperModifiers({ value: '', label: '', labelPosition: 'bottom' })).toEqual([
+				'lh-input__wrapper--label-bottom',
+			])
+			expect(getInputWrapperModifiers({ value: '', label: '名', labelPosition: 'left' })).toContain(
+				'lh-input__wrapper--label-left',
+			)
+			expect(getInputWrapperModifiers({ value: '', label: '名', labelPosition: 'right' })).toContain(
+				'lh-input__wrapper--label-right',
+			)
+		})
+	})
 })

@@ -13,6 +13,7 @@ export default {
   input: {
     placeholder: 'Bitte eingeben',
     password: 'Passwort',
+    clear: 'Leeren',
   },
   // Datepicker (reserviert)
   datepicker: {
@@ -76,6 +77,7 @@ export default {
     placeholder: 'Bitte auswählen',
     panelLabel: 'Kaskadenoption auswählen',
     columnLabel: 'Ebene {n}',
+    filter: 'Suchen',
   },
   // Tag
   tag: {
@@ -90,6 +92,40 @@ export default {
     noMatch: 'Keine passenden Daten',
     noData: 'Keine Daten',
     placeholder: 'Bitte auswählen',
+    clear: 'Leeren',
+    filter: 'Suchen',
+    empty: 'Keine Treffer',
+  },
+  // Autovervollständigung
+  autocomplete: {
+    label: 'Autovervollständigung',
+    noMatch: 'Keine passenden Daten',
+    noData: 'Keine Daten',
+    placeholder: 'Bitte eingeben',
+    clear: 'Leeren',
+  },
+  // Erwähnungen
+  mentions: {
+    label: 'Erwähnungen',
+    noMatch: 'Keine passenden Mitglieder',
+    placeholder: 'Tippen Sie @, um jemanden zu erwähnen',
+  },
+  // Text
+  text: {
+    copy: 'Kopieren',
+    copied: 'Kopiert',
+  },
+  // 颜色选择器
+  colorPicker: {
+    label: 'Farbauswahl',
+    placeholder: 'Farbe auswählen',
+    inputLabel: 'Farbwert',
+  },
+  // 标签输入
+  inputTag: {
+    label: 'Tag-Eingabe',
+    placeholder: 'Tag eingeben und Enter drücken',
+    removeTag: 'Tag entfernen',
   },
   // Formular
   form: {
@@ -131,6 +167,9 @@ export default {
   // Dialog
   dialog: {
     close: 'Dialog schließen',
+    confirm: 'OK',
+    cancel: 'Abbrechen',
+    ariaLabel: 'Dialogfeld',
   },
   // Nachricht
   message: {
@@ -309,5 +348,9 @@ export default {
     moveToSource: 'Nach links verschieben',
     search: 'Suchen',
     empty: 'Keine Daten',
+    saturation: 'Sättigung',
+    hue: 'Farbton',
+    alpha: 'Deckkraft',
+    removeTag: 'Tag entfernen',
   },
 } as const;

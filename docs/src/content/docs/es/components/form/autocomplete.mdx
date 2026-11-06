@@ -1,0 +1,161 @@
+---
+title: autocomplete —— Autocompletado
+description: 'filterSuggestions filtra las sugerencias (mayúsculas y minúsculas/trim/matcher personalizado), cuatro constructores de aria ensamblan la semántica combobox de APG'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Autocompletar = campo de entrada + sugerencias desplegables que se filtran con lo tecleado. `core/autocomplete` solo gestiona dos cosas: el **filtrado** y la **semántica de accesibilidad combobox**. El campo de entrada, el panel desplegable, el posicionamiento, el cierre al hacer clic fuera y las transiciones los asume la capa UI de cada plataforma.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhAutocomplete`: la lógica de filtrado y los paquetes de atributos aria los produce íntegramente core; la capa UI no escribe su propio `includes`.
+- Al reutilizar el mismo conjunto de filtrado y semántica combobox sobre un control de entrada personalizado.
+- **No usarlo para**: la entrada de etiquetas usa `core/input-tag`; las menciones @ usan `core/mentions`; la selección desplegable sin filtrado de entrada usa `core/select`.
+
+## Importación
+
+```ts
+import {
+  filterSuggestions,
+  getAutocompleteOptionId,
+  getAutocompleteTriggerAria,
+  getAutocompleteListboxAria,
+  getAutocompleteOptionAria,
+  getAutocompleteOptionValue,
+} from '@lh-ui/share/core/autocomplete'
+import type { LhAutocompleteOption, LhAutocompleteFilterOptions } from '@lh-ui/share/core/autocomplete'
+```
+
+## Intención de diseño
+
+**Los tres límites del filtrado** (`filterSuggestions`):
+
+- Una consulta vacía (vacía tras trim) devuelve **todas las opciones**: el escenario de disparo por focus necesita mostrar todos los candidatos; si se muestra el panel con la consulta vacía lo decide la semántica del trigger en la capa UI, esta función no hace esa evaluación de ocultamiento.
+- `trim` viene activado por defecto: los espacios del inicio y del final no participan en la coincidencia; al pasar `false` explícitamente se conserva la coincidencia tal cual.
+- Los elementos desactivados **se conservan** en el resultado: el filtrado solo gestiona la visibilidad; atenuar e impedir la selección son cosas de la capa UI. Filtrar los disabled haría que el usuario «vea la lista acortarse de la nada».
+
+**Id determinista de las opciones**: `getAutocompleteOptionId(listboxId, index)` compone `{listboxId}-option-{index}`. Cuando cambia el elemento resaltado, el trigger solo necesita actualizar el valor de `aria-activedescendant` para que el lector de pantalla anuncie el nuevo resaltado, sin remontar el DOM. Los índices negativos o no enteros (-1 = sin resaltado) **no producen id**; de lo contrario el trigger referenciaría un elemento inexistente.
+
+**El aria es isomorfo al select**: `getAutocompleteTriggerAria` produce `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant`, en línea con el patrón combobox de APG; el `value` enviado y el texto mostrado en `label` van separados (`getAutocompleteOptionValue` recurre a label cuando no se pasa value).
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `filterSuggestions` | `(options, query, opts?) => LhAutocompleteOption[]` | matriz de opciones | filtra por la consulta (mayúsculas / trim / matcher configurables) |
+| `getAutocompleteOptionId` | `(listboxId?, index) => string \| undefined` | id de opción | composición determinista, para referencia de aria-activedescendant |
+| `getAutocompleteTriggerAria` | `(input: LhAutocompleteTriggerAriaInput) => LhAriaAttrs` | paquete de atributos aria | semántica combobox del trigger |
+| `getAutocompleteListboxAria` | `(id?) => LhAriaAttrs` | paquete de atributos aria | role + id del listbox |
+| `getAutocompleteOptionAria` | `(input: LhAutocompleteOptionAriaInput) => LhAriaAttrs` | paquete de atributos aria | role de la opción + estados seleccionada / desactivada |
+| `getAutocompleteOptionValue` | `(option: LhAutocompleteOption) => string \| number` | valor a enviar | si falta value se recurre a label |
+
+## Definiciones de tipos
+
+```ts
+export interface LhAutocompleteOption {
+  label: string
+  value?: string | number
+  disabled?: boolean
+}
+
+export interface LhAutocompleteFilterOptions {
+  caseSensitive?: boolean
+  trim?: boolean
+  /** Criterio de coincidencia personalizado (por defecto: label contiene la consulta); devolver true significa conservar */
+  matcher?: (option: LhAutocompleteOption, query: string) => boolean
+}
+
+export interface LhAutocompleteTriggerAriaInput {
+  visible: boolean
+  listboxId?: string
+  /** Índice del elemento resaltado actual (-1 = sin resaltado) */
+  highlightedIndex: number
+}
+
+export interface LhAutocompleteOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## Accesibilidad
+
+El patrón combobox completo se ensambla con tres paquetes de atributos:
+
+- Trigger: `role="combobox"`, `aria-expanded` (panel abierto/cerrado), `aria-controls` (id del listbox), `aria-activedescendant` (id del elemento resaltado).
+- Listbox: `role="listbox"` + `id`.
+- Opción: `role="option"`, `aria-selected` (= estado resaltado), `aria-disabled`.
+
+La navegación por teclado (↑↓ mueve el resaltado, Enter selecciona, Esc cierra) la implementa la capa UI y actualiza `highlightedIndex` en sincronía; core garantiza la semántica correcta y la interacción la asume cada plataforma.
+
+## Ejemplos de uso
+
+```ts
+import { filterSuggestions, getAutocompleteTriggerAria } from '@lh-ui/share/core/autocomplete'
+
+filterSuggestions(
+  [{ label: 'Porcelana azul y blanca' }, { label: 'Tinta' }, { label: 'Paisaje azul y verde' }],
+  'azul',
+)
+// [{ label: 'Porcelana azul y blanca' }, { label: 'Paisaje azul y verde' }]
+
+// coincidencia por iniciales: se cubre con un matcher personalizado
+filterSuggestions([{ label: 'Paisaje azul y verde' }], 'pay', {
+  matcher: (option, query) => pinyinAbbr(option.label).startsWith(query),
+})
+```
+
+```vue
+<!-- Vue3: el input lleva el aria del trigger, el desplegable el aria del listbox, el resaltado va por aria-activedescendant -->
+<input
+  role="combobox"
+  :aria-expanded="visible"
+  :aria-controls="listboxId"
+  :aria-activedescendant="highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined"
+  @input="query = $event.target.value"
+/>
+<ul v-bind="getAutocompleteListboxAria(listboxId)">
+  <li
+    v-for="(option, index) in filterSuggestions(options, query)"
+    :key="index"
+    :aria-selected="index === highlightedIndex"
+  >{{ option.label }}</li>
+</ul>
+```
+
+```tsx
+// React: resaltado controlado + expansión del paquete de atributos
+<input {...getAutocompleteTriggerAria({ visible, listboxId, highlightedIndex })} />
+```
+
+```ts
+// uniapp: el miniprograma no tiene referencias reales de id del DOM, los paquetes de atributos aria solo se aplican en h5,
+// en MP se conserva la guardia de desactivado de la navegación por teclado (sin eventos de teclado, ver el registro de diferencias de plataforma del documento de planificación)
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-autocomplete` | clase base: contenedor relative, anchura esperada de 240px |
+| `.lh-autocomplete__inner` | campo de entrada (borde del color primario en focus/hover) |
+| `.lh-autocomplete__prefix` | posición del icono de prefijo |
+| `.lh-autocomplete__clear` | botón de limpiar |
+| `.lh-autocomplete__dropdown` | panel desplegable (`--teleported` es la forma montada en el body) |
+| `.lh-autocomplete__option` | opción (`--highlighted` resaltada / `--disabled` atenuada) |
+| `.lh-autocomplete__empty` | estado vacío |
+| `.lh-autocomplete--small` / `--large` | escalas de tamaño |
+| `.lh-autocomplete--disabled` | estado desactivado |
+
+La apertura y el cierre del desplegable usan la transición `lh-autocomplete-fade` (fundido de entrada + ligero descenso, mismo aspecto que select), con degradación por `prefers-reduced-motion`. Todos los colores pasan por `var(--lh-*)`.
+
+## Notas
+
+- El filtrado en core, las peticiones en la UI: en búsqueda remota pasa un `matcher` o controla por tu cuenta la matriz de options desde la capa UI; core no hace peticiones.
+- La semántica de `aria-selected` es «resaltado» y no «ya enviado»: en el modo de selección única del combobox ambos coinciden; si la capa UI separa los dos estados debe añadir por su cuenta la lógica de `aria-selected`.
+- Los elementos desactivados no se filtran ni se impide resaltarlos (tras resaltar, la capa UI rechaza Enter), garantizando que los usuarios de teclado y de ratón vean la misma lista.
+
+<FnPlayground module="autocomplete" fn="filterSuggestions" params='{"options": [{"label": "Porcelana azul y blanca"}, {"label": "Tinta"}, {"label": "Paisaje azul y verde"}], "query": "azul"}' />

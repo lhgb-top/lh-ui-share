@@ -6,7 +6,7 @@
  * 由 pnpm verify:dts 在构建后兜底，不在此重复。
  */
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -55,5 +55,46 @@ describe('package.json exports', () => {
   it('keeps the types-only subpath free of runtime conditions', () => {
     // ./types 是纯类型入口：挂 import/require 会指向不存在的运行时文件
     expect(exports['./types']).toEqual({ types: './es/types/index.d.ts' })
+  })
+})
+
+/**
+ * src/core 聚合出口的完整性不变量。
+ *
+ * 背景：src/core/index.ts 靠 `export * from './<comp>'` 收录各组件，新增组件
+ * 时只建目录、忘了加导出行，根入口（@lh-ui/share）会静默缺失该组件，
+ * 深路径（@lh-ui/share/core/<comp>）却仍可用——消费方行为分裂且无任何报错。
+ * 此处做双向 diff：有 index.ts 的目录必须被导出，导出行必须对应真实目录。
+ */
+describe('src/core 聚合导出完整性', () => {
+  const coreDir = join(__dirname, '../../src/core')
+  const indexSrc = readFileSync(join(coreDir, 'index.ts'), 'utf8')
+
+  /** index.ts 里全部 re-export 的顶层模块段（star 与显式清单均算；
+   *  './shared/virtual' 这类深路径取首段 'shared'， './popconfirm/types' 取 'popconfirm'）。
+   *  注意：文件为无分号风格，不能用 `[^;]*` 连接 export 与 from——它会贪婪吞到文件尾、
+   *  全局匹配只剩一处。拆成「star 单行」与「显式清单块」两条精确正则。 */
+  const starExports = [...indexSrc.matchAll(/^export\s+\*\s+from\s+'\.\/([^']+)'/gm)].map(
+    (m) => m[1].split('/')[0],
+  )
+  const namedExports = [...indexSrc.matchAll(/^export\s*\{[^}]*\}\s*from\s+'\.\/([^']+)'/gm)].map(
+    (m) => m[1].split('/')[0],
+  )
+  const exportedModules = new Set([...starExports, ...namedExports])
+
+  /** src/core 下含 index.ts 的子目录（即一个可被 star 导出的组件模块） */
+  const moduleDirs = readdirSync(coreDir).filter((name) => {
+    const p = join(coreDir, name)
+    return statSync(p).isDirectory() && statSync(join(p, 'index.ts')).isFile()
+  })
+
+  it('每个 core 模块目录都被 src/core/index.ts star 导出', () => {
+    const missing = moduleDirs.filter((d) => !exportedModules.has(d))
+    expect(missing).toEqual([])
+  })
+
+  it('每条 star 导出行都对应真实存在的模块目录', () => {
+    const dangling = [...exportedModules].filter((m) => !moduleDirs.includes(m))
+    expect(dangling).toEqual([])
   })
 })

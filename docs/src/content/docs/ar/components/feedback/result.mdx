@@ -1,0 +1,119 @@
+---
+title: result —— صفحة النتيجة
+description: 'يحسب getResultClassNames أصناف الحالات الأربع، وgetResultIconName يفكّ الأيقونة الافتراضية للحالة أو الأيقونة المخصصة، وisValidResultStatus حارس الحالة'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+تُستخدم صفحة النتيجة للتغذية الراجعة النهائية لحالة «أُنجزت تدفقة كاملة»: نجاح إرسال نموذج، أو رفض اعتماد، أو صفحة بلا صلاحية. لا يحسب `core/result` سوى أمرين: أصناف الحالات الأربع وأسماء الأيقونات؛ أما تخطيط العنوان والعنوان الفرعي ومنطقة الإجراءات فتتولاها أصناف الأنماط، والمحتوى كله متروك للمستخدِم.
+
+## متى تستخدمه
+
+- عند تنفيذ `LhResult` في كل طرف: خريطة أصناف وأيقونات الحالات الأربع `success` / `warning` / `error` / `info`.
+- المشاهد التي تعيد استخدام مظهر صفحة النتيجة (الحالة الفارغة للرسوم، وصفحة إتمام المعالج، وواجهة الاحتياط لحدود الأخطاء) تستدعي الأصناف مباشرةً.
+- **لا يجب استخدامه**: التنبيهات الخفيفة لتغذية راجعة الإجراء عبر `core/message` / `core/notification` — فـ result حالة نهائية بمستوى الصفحة كاملة، وmessage تغذية راجعة لحظية، والمستويان مختلفان.
+
+## الاستيراد
+
+```ts
+import { isValidResultStatus, getResultClassNames, getResultIconName } from '@lh-ui/share/core/result'
+import type { LhResultState, LhResultStatus } from '@lh-ui/share/core/result'
+```
+
+## نية التصميم
+
+**مجموعة الحالات ثابتة بأربع قيم، بلا فتح للتوسيع**: الفضاء الدلالي لصفحة النتيجة هو النجاح / التحذير / الخطأ / الإرشاد فقط. تمرّ سلسلة status المخصصة أولًا بحارس `isValidResultStatus` قبل أن تهبط إلى الواجهة، والقيمة غير الصالحة يخفّضها الطرف البصري (غالبًا بالارتداد إلى `info`) — فـ «أي سلسلة» تُحدث ثغرات في جدول خريطة الأيقونات.
+
+**تصميم أولوية فكّ الأيقونة** (`getResultIconName`):
+
+- تمرير `icon` صراحةً (**بما في ذلك السلسلة الفارغة**) → تُعتمد كما هي. دلالة السلسلة الفارغة «أريد فعلًا بلا أيقونة»، ومميّزة بدقة عن «لم يُمرَّر فارتد الافتراضي» — وهذا سبب المقارنة `icon !== undefined` لا حكم الصدق.
+- لم يُمرَّر → ترتد إلى أيقونة الحالة الافتراضية: success→`check` وwarning→`warning` وerror→`error` وinfo→`info`، جميعها تستهلك مجموعة أيقونات `LhIcon` القائمة، بلا إضافة أصول أيقونات جديدة.
+
+**أصناف في أبسط صورها** (`getResultClassNames`): صنف أساسي + صنف تعديل الحالة، واحد لكلٍّ، بلا متغيرات مقاس/كثافة — فصفحة النتيجة مكوّن محتوى، ومرونة التخطيط تُترك للمحتوى نفسه و`sx`.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `isValidResultStatus` | `(status: string) => status is LhResultStatus` | حارس | صلاحية الحالة |
+| `getResultClassNames` | `(state: LhResultState) => string[]` | مصفوفة أسماء أصناف | حساب أصناف صفحة النتيجة |
+| `getResultIconName` | `(status, icon?) => LhIconName \| '' \| undefined` | اسم الأيقونة | الأيقونة الصريحة أولًا، والارتداد لافتراضي الحالة |
+
+```ts
+getResultClassNames({ status: 'success' })
+// ['lh-result', 'lh-result--success']
+
+getResultIconName('error')          // 'error' (أيقونة الحالة الافتراضية)
+getResultIconName('error', '')      // '' (بلا أيقونة صراحةً)
+getResultIconName('error', 'smile') // 'smile' (أيقونة مخصصة تتجاوز الافتراضي)
+```
+
+## تعريفات الأنواع
+
+```ts
+export type LhResultStatus = 'success' | 'warning' | 'info' | 'error'
+
+export interface LhResultState {
+  status: LhResultStatus
+}
+```
+
+## إمكانية الوصول
+
+- يُستحسن أن تحمل الحاوية `role="status"` (تنفّذه بعض الأطراف بثًا آليًا): ظهور صفحة النتيجة يعني تغيّر حالة التدفق، فلا ينتظر مستخدم قارئ الشاشة التركيز.
+- الأيقونة دلالة تزيينية، فمن المفترض أن يكون عقد الأيقونة `aria-hidden="true"` — فمعنى الحالة يحمله نص العنوان، ولا يُنقل بلون الأيقونة (لضمان القراءة لمستخدمي ضعف تمييز الألوان).
+- أزرار منطقة الإجراءات تحفظ دلالتها الأصلية، بالمثل مع الأزرار الاعتيادية.
+
+## أمثلة الاستخدام
+
+```ts
+import { getResultClassNames, getResultIconName } from '@lh-ui/share/core/result'
+
+getResultClassNames({ status: 'warning' })
+// ['lh-result', 'lh-result--warning']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getResultClassNames({ status })" role="status">
+  <LhIcon v-if="getResultIconName(status, icon)" class="lh-result__icon" aria-hidden="true" :name="getResultIconName(status, icon)!" />
+  <div class="lh-result__title">{{ title }}</div>
+  <div v-if="subtitle" class="lh-result__subtitle">{{ subtitle }}</div>
+  <div v-if="$slots.extra" class="lh-result__extra"><slot name="extra" /></div>
+</div>
+```
+
+```tsx
+// React
+<div className={getResultClassNames({ status }).join(' ')} role="status">
+  <ResultIcon status={status} icon={icon} />
+  <div className="lh-result__title">{title}</div>
+  {extra}
+</div>
+```
+
+```ts
+// uniapp: الأيقونات عبر خط iconfont (منتج تجميع مسارات SVG من share)،
+// و`role="status"` يتخفض في طرف MP إلى عدم الرندر (بلا قدرة live region لقارئ الشاشة)
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-result` | الحاوية: ترتيب رأسي متمركز، وحشو خاص بالنتيجة |
+| `.lh-result--{success\|warning\|error\|info}` | تعديل الحالة (يقود تلوين الأيقونة) |
+| `.lh-result__icon` | عقد الأيقونة (64px، ولونه يتبع رموز الحالة) |
+| `.lh-result__title` | العنوان (20px بتسمك) |
+| `.lh-result__subtitle` | العنوان الفرعي (لون ثانوي، وارتفاع السطر 1.8) |
+| `.lh-result__extra` | منطقة الإجراءات (فراغ بهامش علوي) |
+
+لون الأيقونة كلها `var(--lh-*)` (رموز دلالية لـ success/warning/danger/info)، ويعكسها `var-dark.scss` في الوضع الداكن؛ والحشو/حجم الخط له رموز على مستوى المكوّن (`--lh-result-*`) قابلة للضبط.
+
+## ملاحظات
+
+- لا تُرجع status غير صالح إلى core بصمت: مرِّره أولًا بـ `isValidResultStatus` ثم قرّر استراتيجية التخفيض — فالحارس لخدمة الطبقة البصرية، وcore لا يتخذ القرارات بالنيابة.
+- تمرير `icon` سلسلة فارغة وعدم تمريره دلالتان (بلا أيقونة صراحةً مقابل الأيقونة الافتراضية)، ويُرمَّز النوع بـ `LhIconName | '' | undefined`.
+- تباين لون الأيقونة بين حالات صفحة النتيجة الأربع يظهر على `__icon` وحده، ولون العنوان/العنوان الفرعي بلا علاقة بالحالة — فلا تصبغ العنوان بالأحمر لحالة error، فذلك يهدم اتساق التخطيط.
+
+<FnPlayground module="result" fn="getResultClassNames" params='{"state": {"status": "success"}}' />

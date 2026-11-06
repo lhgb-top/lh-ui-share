@@ -1,0 +1,146 @@
+---
+title: input-tag —— إدخال الوسوم
+description: 'إدراج غير قابل للتغيير عبر insertInputTag (ثلاثة أسباب رفض: empty/duplicate/max)، وحذف عبر removeInputTag/removeLastInputTag، وحكم مفتاح الإطلاق عبر isInputTagTriggerKey'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+إدخال الوسوم = صندوق إدخال + Enter (أو الفاصلة/الفراغ) لتوليد وسم + Backspace لحذف وسم الذيل. يجعل `core/input-tag` منطق الإضافة والحذف **تحديثًا غير قابل للتغيير** ويقدّم أسباب رفض مقروءة آليًا؛ وصندوق الإدخال ورندر الوسوم وزر الحذف يتولاها الطرف البصري في كل طرف.
+
+## متى تستخدمه
+
+- عند تنفيذ `LhInputTag` في كل طرف: قائمة الوسوم بـ v-model، ومفاتيح الإطلاق (`enter`/`space`/`comma`)، وسقف `max`، وإزالة التكرار، وحذف الذيل بـ Backspace.
+- المشاهد التي تحتاج منطق إضافة الوسوم وحذفها فحسب (بلا اكتراث بصيغة صندوق الإدخال).
+- **لا يجب استخدامه**: اختيار القيمة المفردة عبر `core/select`؛ والتعدد ذو الخيارات الثابتة عبر `core/checkbox-group` — فوسوم إدخال الوسوم تأتي من **إدخال حر**، وهذا هو الحد الفاصل الجوهري بينه وبين مكوّنات الاختيار المتعدد.
+
+## الاستيراد
+
+```ts
+import {
+  isValidInputTagTrigger,
+  isInputTagTriggerKey,
+  getInputTagClassNames,
+  insertInputTag,
+  removeInputTag,
+  removeLastInputTag,
+} from '@lh-ui/share/core/input-tag'
+import type { LhInputTagState, LhInputTagTrigger, LhInputTagInsertResult } from '@lh-ui/share/core/input-tag'
+```
+
+## نية التصميم
+
+**تحديث غير قابل للتغيير**: تُعيد `insertInputTag` / `removeInputTag` / `removeLastInputTag` مصفوفة جديدة كلها، ولا تُعدّل المدخلات في مكانها أبدًا — فيأخذ الطرف البصري النتيجة ويُمرّرها مباشرةً إلى `setData` / `setState` بلا نسخ، ويُستأصل الترابط الضمني «عدّلت المدخل ونسيت الإرسال».
+
+**أسباب رفض مقروءة آليًا**: فشل الإدراج ليس صامتًا، بل تقدّم `LhInputTagInsertResult.reason` ثلاث قيم:
+
+- `empty`: الإدخال بعد trim سلسلة فارغة.
+- `duplicate`: لم يُفعَّل `allowDuplicate` والوسم موجود أصلًا.
+- `max`: قيمة `max` موجبة وبلغ السقف.
+
+يقرّر الطرف البصري بناءً على ذلك أسلوب التنبيه (اهتزاز / toast / بلا تنبيه)، وcore لا يُظهر أي تنبيه — فالتنبيه قرار واجهة، والرفض حقيقة بيانات.
+
+**دلالة max**: العدد غير الموجب يعني بلا سقف؛ وعند بلوغ السقف **الرفض لا استبدال أقدم وسم** — فإسقاط البيانات بصمت مفاجأة لا ميسورة، والتجاوز ينبغي أن يُرى.
+
+**توافق مفاتيح الإطلاق**: تقبل قيمة `space` في `isInputTagTriggerKey` معًا `' '` وقيمة المفتاح التاريخية `'Spacebar'` (قيمة المفتاح في IE القديم وبعض WebView في أندرويد)، و`comma` تطابق `','`.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `isValidInputTagTrigger` | `(trigger: string) => trigger is LhInputTagTrigger` | حارس | صلاحية مفتاح الإطلاق |
+| `getInputTagClassNames` | `(state: LhInputTagState) => string[]` | مصفوفة أسماء أصناف | أصناف الحاوية (`--disabled`/`--readonly`) |
+| `isInputTagTriggerKey` | `(key: string, trigger: LhInputTagTrigger) => boolean` | boolean | حكم ما إذا كان حدث لوحة المفاتيح يُطلق الإرسال |
+| `insertInputTag` | `(tags, input, state?) => LhInputTagInsertResult` | نتيجة الإدراج | إرسال وسم واحد (بلا تغيير الأصل) |
+| `removeInputTag` | `(tags, index) => string[]` | مصفوفة جديدة | حذف الدليل المحدد (ترجع المصفوفة الأصلية عند التجاوز) |
+| `removeLastInputTag` | `(tags) => string[]` | مصفوفة جديدة | حذف الذيل بـ Backspace |
+
+## تعريفات الأنواع
+
+```ts
+export type LhInputTagTrigger = 'enter' | 'space' | 'comma'
+
+export interface LhInputTagState {
+  max?: number
+  allowDuplicate?: boolean
+  readonly?: boolean
+  disabled?: boolean
+}
+
+export interface LhInputTagInsertResult {
+  tags: string[]
+  inserted: boolean
+  reason?: 'empty' | 'duplicate' | 'max'
+}
+```
+
+## إمكانية الوصول
+
+- زر حذف الوسم يُحمَل على `<button>` أصلي (أو عنصر مكافئ) + `aria-label` (مثل «إزالة لوحة»)، وبالمرجعية ذاتها لزر الإغلاق في `core/tag`.
+- تشير `aria-describedby` لصندوق الإدخال إلى نص الإرشاد «اضغط Enter لإضافة وسم»، فلا يحتاج مستخدم لوحة المفاتيح إلى تخمين مفتاح الإطلاق.
+- يُستحسن لحاوية قائمة الوسوم `role="list"` وللوسم `role="listitem"`، فيبثّ قارئ الشاشة «العنصر رقم N».
+
+## أمثلة الاستخدام
+
+```ts
+import { insertInputTag, removeLastInputTag, isInputTagTriggerKey } from '@lh-ui/share/core/input-tag'
+
+insertInputTag(['أزهار', 'طيور'], 'جبال', { max: 5, allowDuplicate: false })
+// { tags: ['أزهار', 'طيور', 'جبال'], inserted: true }
+
+insertInputTag(['أزهار'], 'أزهار', {})
+// { tags: ['أزهار'], inserted: false, reason: 'duplicate' }
+
+insertInputTag(['a', 'b'], 'c', { max: 2 })
+// { tags: ['a', 'b'], inserted: false, reason: 'max' }
+
+isInputTagTriggerKey('Enter', 'enter')   // true
+isInputTagTriggerKey(',', 'comma')       // true
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getInputTagClassNames({ disabled, readonly })">
+  <span v-for="(tag, index) in tags" :key="tag" class="lh-input-tag__tag">
+    {{ tag }}
+    <button class="lh-input-tag__tag-close" aria-label="إزالة" @click="tags = removeInputTag(tags, index)">×</button>
+  </span>
+  <input
+    class="lh-input-tag__input"
+    @keydown="isInputTagTriggerKey($event.key, trigger) && commit()"
+    @keydown.backspace="!input && (tags = removeLastInputTag(tags))"
+  />
+</span>
+```
+
+```tsx
+// React: نتيجة الإدراج تتكفل بالـ state كليًا، وأسباب الرفض تُترك لطبقة التنبيهات
+const result = insertInputTag(tags, input, { max, allowDuplicate })
+if (result.inserted) setTags(result.tags)
+else if (result.reason === 'max') toast('بلغتَ سقف الوسوم')
+```
+
+```ts
+// uniapp: البرنامج المصغّر بلا keydown، فتُعالج مفاتيح الإطلاق إلى confirm-type / @confirm (لـ enter)،
+// ويتخفيض إطلاق comma في طرف MP إلى «التقسيم عند احتواء الإدخال فاصلة»؛ ودلالة Backspace تخفيض مماثل
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-input-tag` | الحاوية: flex-wrap، وحد بلون أساسي عند hover، وتركيز عبر focus-within |
+| `.lh-input-tag--disabled` | حالة التعطيل |
+| `.lh-input-tag--readonly` | حالة القراءة فقط |
+| `.lh-input-tag__tag` | شرائط الوسوم (خلفية فاتحة بحد، بلا التفاف) |
+| `.lh-input-tag__tag-close` | زر حذف الوسم |
+| `.lh-input-tag__input` | صندوق الإدخال المضمّن (بلا حد وخلفية شفافة، ولون placeholder بديل) |
+
+جميع الألوان `var(--lh-*)`، ويعكسها `var-dark.scss` في الوضع الداكن.
+
+## ملاحظات
+
+- الـ trim في `insertInputTag` هو «إزالة الفراغات الطرفية» لا «إزالة الفراغات الداخلية»، و`'a b'` وسم صالح.
+- استدعاء `removeLastInputTag` يحمل دلالة Backspace فقط عندما **صندوق الإدخال فارغ** (وعند وجود إدخال فـ Backspace حذف حرف)، والحكم على ذلك مسؤولية الطرف البصري.
+- عندما يكون مفتاح الإطلاق `comma` يُستحسن أن يقسم الطرف البصري الفواصل في الإدخال فورًا، وإلا لَولّد إدخال المستخدم `a,b` وسمًا كامل السلسلة.
+
+<FnPlayground module="input-tag" fn="insertInputTag" params='{"tags": ["山水", "花鸟"], "input": "人物", "state": {"max": 5, "allowDuplicate": false}}' />

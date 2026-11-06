@@ -72,7 +72,7 @@
   }
 
   &--small {
-    font-size: 12px;
+    font-size: var(--lh-font-size-extra-small, 12px);
     transform: scale(0.9);
     transform-origin: left center;
 
@@ -88,7 +88,7 @@
   }
 
   &--large {
-    font-size: 16px;
+    font-size: var(--lh-font-size-medium, 16px);
 
     .lh-radio__box {
       width: 18px;
@@ -105,14 +105,14 @@
 .lh-radio-group {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--lh-spacing-md, 12px);
 
   &--small {
-    gap: 8px;
+    gap: var(--lh-spacing-sm, 8px);
   }
 
   &--large {
-    gap: 16px;
+    gap: var(--lh-spacing-base, 16px);
   }
 }
 

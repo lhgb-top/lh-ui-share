@@ -1,0 +1,162 @@
+---
+title: autocomplete — Autocomplete
+description: 'filterSuggestions filters suggestion items (case/trim/custom matcher), four aria builders assemble the APG combobox semantics'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Autocomplete = an input box + a dropdown of suggestions filtered as you type. `core/autocomplete` handles exactly two things: **filtering** and **combobox accessibility semantics**. The input box, dropdown panel, positioning, click-outside closing, and transitions are all carried by each platform's UI layer.
+
+## When to use
+
+- Each platform implements `LhAutocomplete`: the filtering logic and aria attribute bundles are produced entirely by core; the UI layer does not hand-write `includes`.
+- When reusing the same filtering and combobox semantics on a custom input control.
+- **Do not use it for**: tag input — use `core/input-tag`; @ mentions — use `core/mentions`; dropdown selection without input filtering — use `core/select`.
+
+## Import
+
+```ts
+import {
+  filterSuggestions,
+  getAutocompleteOptionId,
+  getAutocompleteTriggerAria,
+  getAutocompleteListboxAria,
+  getAutocompleteOptionAria,
+  getAutocompleteOptionValue,
+} from '@lh-ui/share/core/autocomplete'
+import type { LhAutocompleteOption, LhAutocompleteFilterOptions } from '@lh-ui/share/core/autocomplete'
+```
+
+## Design intent
+
+**Three boundaries of filtering** (`filterSuggestions`):
+
+- An empty query string (empty after trim) returns **all options**: focus-triggered scenarios need to show all candidates; whether to show the empty-query panel is decided by the UI layer's trigger semantics — this function makes no hiding judgment.
+- `trim` is on by default: leading and trailing whitespace do not participate in matching; pass `false` explicitly to match the raw string.
+- Disabled options are **kept** in the results: filtering only governs visibility; graying out and blocking selection are the UI layer's business — filtering disabled options out would make users "see the list shrink out of nowhere".
+
+**Deterministic option ids**: `getAutocompleteOptionId(listboxId, index)` assembles `{listboxId}-option-{index}`. When the highlighted option changes, the trigger only needs to update the value of `aria-activedescendant` for screen readers to announce the new highlight — no DOM remounting needed. Negative / non-integer indexes (-1 = no highlight) **produce no id** — otherwise the trigger would reference an element that does not exist.
+
+**aria isomorphic with select**: `getAutocompleteTriggerAria` outputs `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant`, consistent with the APG combobox pattern; the `value` commit value is separated from the `label` display text (`getAutocompleteOptionValue` falls back to the label when no value is provided).
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `filterSuggestions` | `(options, query, opts?) => LhAutocompleteOption[]` | option array | filters by query string (case / trim / matcher configurable) |
+| `getAutocompleteOptionId` | `(listboxId?, index) => string \| undefined` | option id | deterministic assembly, for aria-activedescendant to reference |
+| `getAutocompleteTriggerAria` | `(input: LhAutocompleteTriggerAriaInput) => LhAriaAttrs` | aria attribute bundle | trigger combobox semantics |
+| `getAutocompleteListboxAria` | `(id?) => LhAriaAttrs` | aria attribute bundle | listbox role + id |
+| `getAutocompleteOptionAria` | `(input: LhAutocompleteOptionAriaInput) => LhAriaAttrs` | aria attribute bundle | option role + selected / disabled states |
+| `getAutocompleteOptionValue` | `(option: LhAutocompleteOption) => string \| number` | commit value | falls back to the label when value is absent |
+
+## Type definitions
+
+```ts
+export interface LhAutocompleteOption {
+  label: string
+  value?: string | number
+  disabled?: boolean
+}
+
+export interface LhAutocompleteFilterOptions {
+  caseSensitive?: boolean
+  trim?: boolean
+  /** Custom match predicate (default: the label contains the query string); return true to keep the option */
+  matcher?: (option: LhAutocompleteOption, query: string) => boolean
+}
+
+export interface LhAutocompleteTriggerAriaInput {
+  visible: boolean
+  listboxId?: string
+  /** Index of the currently highlighted option (-1 = no highlight) */
+  highlightedIndex: number
+}
+
+export interface LhAutocompleteOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## Accessibility
+
+The complete combobox pattern is assembled from three attribute bundles:
+
+- Trigger: `role="combobox"`, `aria-expanded` (panel open/closed), `aria-controls` (listbox id), `aria-activedescendant` (highlighted option id).
+- Listbox: `role="listbox"` + `id`.
+- Option: `role="option"`, `aria-selected` (= highlighted state), `aria-disabled`.
+
+Keyboard navigation (↑↓ to move the highlight, Enter to select, Esc to close) is implemented by the UI layer, which keeps `highlightedIndex` in sync — core guarantees correct semantics; interaction is carried by each platform.
+
+## Usage examples
+
+```ts
+import { filterSuggestions, getAutocompleteTriggerAria } from '@lh-ui/share/core/autocomplete'
+
+filterSuggestions(
+  [{ label: 'Blue-and-white porcelain' }, { label: 'Ink wash' }, { label: 'Blue-green landscape' }],
+  'Blue',
+)
+// [{ label: 'Blue-and-white porcelain' }, { label: 'Blue-green landscape' }]
+
+// Custom matching, e.g. pinyin initials of Chinese labels: hand it to the matcher
+filterSuggestions([{ label: '水墨' }], 'sm', {
+  matcher: (option, query) => pinyinAbbr(option.label).startsWith(query),
+})
+```
+
+```vue
+<!-- Vue3: the input carries the trigger aria, the dropdown carries the listbox aria, and the highlighted option goes through aria-activedescendant -->
+<input
+  role="combobox"
+  :aria-expanded="visible"
+  :aria-controls="listboxId"
+  :aria-activedescendant="highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined"
+  @input="query = $event.target.value"
+/>
+<ul v-bind="getAutocompleteListboxAria(listboxId)">
+  <li
+    v-for="(option, index) in filterSuggestions(options, query)"
+    :key="index"
+    :aria-selected="index === highlightedIndex"
+  >{{ option.label }}</li>
+</ul>
+```
+
+```tsx
+// React: controlled highlight + attribute bundle spread
+<input {...getAutocompleteTriggerAria({ visible, listboxId, highlightedIndex })} />
+```
+
+```ts
+// uniapp: mini programs have no real DOM id references; aria attribute bundles are only
+// delivered on h5, while MP keeps the disabled guard for keyboard navigation (no keyboard
+// events there — see the platform difference registry in the plan document)
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-autocomplete` | base class: relative container, expected width 240px |
+| `.lh-autocomplete__inner` | input box (primary-color border on focus/hover) |
+| `.lh-autocomplete__prefix` | prefix icon slot |
+| `.lh-autocomplete__clear` | clear button |
+| `.lh-autocomplete__dropdown` | dropdown panel (`--teleported` is the body-mounted form) |
+| `.lh-autocomplete__option` | option (`--highlighted` highlight / `--disabled` grayed out) |
+| `.lh-autocomplete__empty` | empty state |
+| `.lh-autocomplete--small` / `--large` | size tiers |
+| `.lh-autocomplete--disabled` | disabled state |
+
+The dropdown open/close runs the `lh-autocomplete-fade` transition (fade in + a slight downward shift, the same look as select) and falls back under `prefers-reduced-motion`. Colors are all `var(--lh-*)`.
+
+## Notes
+
+- Filtering lives in core, requests live in the UI: for remote search scenarios, pass a `matcher` or control the options array yourself in the UI layer — core sends no requests.
+- The semantics of `aria-selected` are "highlighted", not "committed" — in the combobox single-select mode the two coincide; if the UI layer splits the two states, it must add its own `aria-selected` logic.
+- Disabled options are not filtered out and are not blocked from being highlighted (Enter on a highlighted one is rejected by the UI layer), so keyboard and mouse users see the same list.
+
+<FnPlayground module="autocomplete" fn="filterSuggestions" params='{"options": [{"label": "Blue-and-white porcelain"}, {"label": "Ink wash"}, {"label": "Blue-green landscape"}], "query": "Blue"}' />

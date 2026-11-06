@@ -87,7 +87,7 @@
   margin-inline: auto;
   width: fit-content;
   padding: 4px;
-  gap: 4px;
+  gap: var(--lh-spacing-xs, 4px);
 }
 
 .lh-image-viewer__tool {
@@ -114,7 +114,7 @@
   inset-inline-end: 16px;
   width: 36px;
   height: 36px;
-  font-size: 16px;
+  font-size: var(--lh-font-size-medium, 16px);
 }
 
 @media (prefers-reduced-motion: reduce) {

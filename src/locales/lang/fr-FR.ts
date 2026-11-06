@@ -13,6 +13,7 @@ export default {
   input: {
     placeholder: 'Saisir',
     password: 'Mot de passe',
+    clear: 'Effacer',
   },
   // Sélecteur de date (réservé)
   datepicker: {
@@ -77,6 +78,7 @@ export default {
     placeholder: 'Sélectionner',
     panelLabel: 'Sélectionner une option en cascade',
     columnLabel: 'Niveau {n}',
+    filter: 'Rechercher',
   },
   // Étiquette
   tag: {
@@ -91,6 +93,40 @@ export default {
     noMatch: 'Aucune donnée correspondante',
     noData: 'Aucune donnée',
     placeholder: 'Sélectionner',
+    clear: 'Effacer',
+    filter: 'Rechercher',
+    empty: 'Aucune correspondance',
+  },
+  // Saisie semi-automatique
+  autocomplete: {
+    label: 'Saisie semi-automatique',
+    noMatch: 'Aucune donnée correspondante',
+    noData: 'Aucune donnée',
+    placeholder: 'Saisir',
+    clear: 'Effacer',
+  },
+  // Mentions
+  mentions: {
+    label: 'Mentions',
+    noMatch: 'Aucun membre correspondant',
+    placeholder: 'Saisissez @ pour mentionner quelqu\'un',
+  },
+  // Texte
+  text: {
+    copy: 'Copier',
+    copied: 'Copié',
+  },
+  // 颜色选择器
+  colorPicker: {
+    label: 'Sélecteur de couleur',
+    placeholder: 'Choisir une couleur',
+    inputLabel: 'Valeur de couleur',
+  },
+  // 标签输入
+  inputTag: {
+    label: 'Saisie de tags',
+    placeholder: 'Saisir un tag puis appuyer sur Entrée',
+    removeTag: 'Supprimer le tag',
   },
   // Formulaire
   form: {
@@ -132,6 +168,9 @@ export default {
   // Boîte de dialogue
   dialog: {
     close: 'Fermer la boîte de dialogue',
+    confirm: 'OK',
+    cancel: 'Annuler',
+    ariaLabel: 'Boîte de dialogue',
   },
   // Message
   message: {
@@ -311,5 +350,9 @@ export default {
     moveToSource: 'Déplacer vers la liste source',
     search: 'Rechercher',
     empty: 'Aucune donnée',
+    saturation: 'Saturation',
+    hue: 'Teinte',
+    alpha: 'Opacité',
+    removeTag: "Supprimer l'étiquette",
   },
 } as const;

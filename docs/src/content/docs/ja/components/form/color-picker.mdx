@@ -1,0 +1,150 @@
+---
+title: color-picker —— カラーピッカー
+description: 'hex/rgb と HSV 空間の対になる変換、parseColorString の寛容な解析、formatColor の format に従った出力、getColorPickerClassNames のコンテナークラス名'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+カラーピッカーの難しさはすべて**色の数学**にあります：彩度パネルのドラッグ、色相/透明度スライダー、hex と rgb() の相互書き換え、プリセットパレット——その背後にあるのは RGB と HSV という二つのカラースペースの往復変換です。`core/color-picker` はこれらの数学を、対になり全クランプされた純関数のセットに収束させます。ドラッグインタラクションとパネルの位置決めは各端の UI 層が担います。
+
+## いつ使うか
+
+- 各端が `LhColorPicker` を実装する：彩度/明度パネル + 色相/透明度スライダーのすべての変換とクランプ。
+- 色変換だけが必要なシナリオ：`parseColorString` / `formatColor` / `rgbToHex` などは単独で使用できる（フォームバリデーション、テーマの動的化など）。
+- **使うべきでない**：固定カラーリストは直接レンダリングすればよく、コンポーネント化は不要。テーマトークンの定義は theme 層であり本コンポーネントではない。
+
+## インポート方法
+
+```ts
+import {
+  isValidColorFormat,
+  hexToRgb,
+  rgbToHex,
+  rgbToHsv,
+  hsvToRgb,
+  parseColorString,
+  formatColor,
+  isSameColor,
+  getColorPickerClassNames,
+} from '@lh-ui/share/core/color-picker'
+import type { LhColorFormat, LhColorRgb, LhColorHsv, LhColorPickerState } from '@lh-ui/share/core/color-picker'
+```
+
+## 設計意図
+
+**二つのカラースペースが役割分担**：インタラクションは **HSV**（彩度パネルの x = 彩度、y = 明度、色相スライダーの h——ドラッグ座標は自然に HSV のセマンティクスです）。保存・出力は **RGB**（hex / rgb() 文字列）。四つの変換関数は厳密に対になります（`hexToRgb`↔`rgbToHex`、`rgbToHsv`↔`hsvToRgb`）。入力も出力も**すべてクランプを通過**します：`clampColorChannel` は 0~255 の整数、`clampColorAlpha` は 0~1 で小数二桁を保持（浮動小数点誤差 `0.30000000000000004` を除去）、`clampColorHue` は 0~360、`clampColorRatio` は 0~1。非有限入力（NaN/Infinity/undefined）は一律で安全なデフォルトにフォールバックし、決して漏れ出しません。
+
+**寛容な解析**（`parseColorString`）：hex は 3/4/6/8 桁をサポート（`#3ab` → `#33aabb`）、rgb()/rgba() は小数とパーセントのチャネルを許容（CSS Color 4 以前の寛容な形態）。不正な入力は例外を投げず `null` を返します——ユーザーが `#2B4` と入力途中なだけでパネルがクラッシュするべきではありません。
+
+**出力契約**（`formatColor`）：`rgb` 形式は `a < 1` のとき `rgba(...)` を出力、`hex` 形式は `a < 1` のとき 8 桁の hex を出力——**alpha に値があるときは決して静かに失われません**。これが hex を 6 桁にするか 8 桁にするかの分岐点です。
+
+**同値ガード**（`isSameColor`）：チャネルと alpha をクランプした後に比較します。UI 層が「値が変わっていなければ change を発行しない」を実装するのに使い、ドラッグの揺れによる重複イベントを避けます。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `isValidColorFormat` | `(format: string) => format is LhColorFormat` | ガード | 形式の正当性（'hex' \| 'rgb'） |
+| `clampColorChannel` | `(value) => number` | 0~255 の整数 | r/g/b チャネルのクランプ |
+| `clampColorAlpha` | `(value) => number` | 0~1 小数二桁 | 透明度のクランプ |
+| `clampColorHue` | `(value) => number` | 0~360 の整数 | 色相のクランプ |
+| `clampColorRatio` | `(value) => number` | 0~1 小数二桁 | 彩度 / 明度のクランプ |
+| `hexToRgb` | `(hex: string) => LhColorRgb \| null` | RGBA \| null | hex を解析（3/4/6/8 桁） |
+| `rgbToHex` | `(color: LhColorRgb) => string` | hex 文字列 | `a < 1` のとき 8 桁 hex を出力 |
+| `rgbToHsv` | `(color: LhColorRgb) => LhColorHsv` | HSVA | RGB → HSV |
+| `hsvToRgb` | `(color: LhColorHsv) => LhColorRgb` | RGBA | HSV → RGB |
+| `parseColorString` | `(input?) => LhColorRgb \| null` | RGBA \| null | hex / rgb() / rgba() を寛容に解析 |
+| `formatColor` | `(color: LhColorRgb, format: LhColorFormat) => string` | 色文字列 | format に従って出力 |
+| `isSameColor` | `(left, right) => boolean` | boolean | クランプ後の実質同値 |
+| `getColorPickerClassNames` | `(state: LhColorPickerState) => string[]` | クラス名配列 | コンテナークラス名（`--{size}`/`--disabled`/`--open`） |
+
+## 型定義
+
+```ts
+export type LhColorFormat = 'hex' | 'rgb'
+
+export interface LhColorRgb {
+  r: number
+  g: number
+  b: number
+  a: number
+}
+
+export interface LhColorHsv {
+  h: number
+  s: number
+  v: number
+  a: number
+}
+
+export interface LhColorPickerState {
+  size?: string
+  disabled?: boolean
+  open?: boolean
+}
+```
+
+## アクセシビリティ
+
+- **スライダー**：色相 / 透明度スライダーには `role="slider"` と `aria-valuenow/min/max` を付けるべきです。方向キーでの微調整（Shift で加速）は UI 層が実装します——ドラッグはキーボードユーザーに届かないため、スライダーのセマンティクスは省略できません。
+- **色値入力**：パネル内の hex/rgb 入力欄は色を変更するキーボード経路です。`aria-label` は言語パックの `colorPicker.inputLabel`（「色の値」）を使います。
+- **プリセットパレット**：各マスはフォーカス可能で、フォーカスリングはスタイル側の `focus-visible` が提供します。マスのアクセシブルな名前はその色値文字列そのものです。
+
+## 使用例
+
+```ts
+import { parseColorString, formatColor, rgbToHsv } from '@lh-ui/share/core/color-picker'
+
+parseColorString('#2B4C7C')        // { r: 43, g: 76, b: 124, a: 1 }
+parseColorString('rgba(43,76,124,0.5)')
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'hex')   // '#2b4c7c80'
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'rgb')   // 'rgba(43, 76, 124, 0.5)'
+
+// ドラッグループ：HSV（インタラクション状態）→ RGB（送信状態）→ HSV（エコー状態）の全行程でクランプ
+rgbToHsv({ r: 43, g: 76, b: 124, a: 1 })  // { h: 215, s: 0.65, v: 0.49, a: 1 }
+```
+
+```vue
+<!-- Vue3：彩度パネルのポインター座標 = HSV セマンティクス -->
+<div
+  class="lh-color-picker__saturation"
+  @pointerdown="onSaturationDrag"
+>
+  <div class="lh-color-picker__saturation-pointer" :style="{ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%` }" />
+</div>
+```
+
+```tsx
+// React：ドラッグ終了後は一貫して hsvToRgb → formatColor で送信
+const commit = (hsv: LhColorHsv) => onChange(formatColor(hsvToRgb(hsv), format))
+```
+
+```ts
+// uniapp：ドラッグは要素レベルの touchstart/move/end を使用（MP はタッチターゲットに沿ってディスパッチ）。
+// パネルの位置決めは adapter popper の 2 フレーム計測。色の数学は本層と完全に一致
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-color-picker` | トリガーコンテナー（inline-flex + スウォッチ + 値テキスト） |
+| `.lh-color-picker--{small\|large}` | サイズ段階 |
+| `.lh-color-picker--disabled` / `--open` / `--empty` | 無効 / パネル展開 / 未選択（値テキストはプレースホルダー色に降格） |
+| `.lh-color-picker__swatch` | スウォッチの色ブロック |
+| `.lh-color-picker__value` | 現在の色値テキスト（等幅フォント） |
+| `.lh-color-picker__panel` | フローティングパネル（popper で位置決め） |
+| `.lh-color-picker__saturation` / `__saturation-pointer` | 彩度明度パネルとポインター |
+| `.lh-color-picker__slider` / `__hue` / `__alpha` / `__slider-thumb` | 色相/透明度スライダー（alpha はチェッカーボード背景） |
+| `.lh-color-picker__input` | hex/rgb 入力欄 |
+| `.lh-color-picker__predefine` / `__predefine-item` | プリセットパレット |
+
+色相グラデーションと alpha のチェッカーボードは固定ビジュアル（テーマ非依存）。それ以外の色はすべて `var(--lh-*)`。
+
+## 注意事項
+
+- 変換の手間を省いてクランプを省略してはいけません：ドラッグで生まれる浮動小数点座標は、必ず先に `clampColorRatio/Hue` を通してから変換します。そうしないと浮動小数点誤差が hex に書き込まれます。
+- `parseColorString` が `null` を返したとき、UI 層は前回の正当な値を保持すべきです（クリアもせず、送信もしない）。「不正な入力」と「クリア」を二つの別個のアクションとして区別します。
+- 色スウォッチの `<span>` がフォーカスできずパネルをトリガーできない形態では、トリガー全体を `<button>` または `role` 付きの等価要素にすべきです——スタイルは見た目だけを受け持ちます。
+
+<FnPlayground module="color-picker" fn="formatColor" params='{"color": {"r": 43, "g": 76, "b": 124, "a": 1}, "format": "hex"}' />

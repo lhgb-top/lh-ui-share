@@ -1,0 +1,157 @@
+---
+title: mentions —— الإشارات
+description: 'تحليل سياق المؤشر عبر getMentionContext (استبعاد بادئة البريد الزائفة/لا خلط في CJK/الفراغ وقف)، والكتابة المرتدة عبر insertMention، والفك العكسي عبر getMentions، والترشيح عبر filterMentionOptions'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الإشارات (@mention) = عنصر إدخال نصي + محرف إطلاق بادئة (الافتراضي `@`) + لوحة اقتراحات + كتابة مرتدة عند الاختيار. لا يفعل `core/mentions` سوى **معالجة النص والدلالة**: تحليل ما إذا كان المؤشر داخل مقطع إشارة ناقص الإتمام، والكتابة المرتدة للإشارة المختارة، وفكّ جميع الإشارات عكسيًا من النص؛ أما العنصر واللوحة وتفاعل لوحة المفاتيح فتتولاها الأطراف البصرية في كل طرف.
+
+## متى تستخدمه
+
+- عند تنفيذ `LhMentions` في كل طرف: إطلاق اقتراحات الأعضاء بـ `@`، والكتابة المرتدة عند الاختيار مثل `@张三 `، وجمع قائمة الإشارات عند الإرسال.
+- إعادة استخدام منطق تحليل الإشارات على أي textarea / input (لا يقيّد core بعنصر بعينه).
+- **لا يجب استخدامه**: المشاهد التي تأتي فيها الاقتراحات من إدخال حر (بلا قيادة محرف البادئة) عبر `core/autocomplete`.
+
+## الاستيراد
+
+```ts
+import {
+  getMentionContext,
+  insertMention,
+  getMentions,
+  filterMentionOptions,
+  getMentionOptionId,
+  getMentionsTriggerAria,
+  getMentionsListboxAria,
+  getMentionOptionAria,
+} from '@lh-ui/share/core/mentions'
+import type { LhMentionOption, LhMentionContext } from '@lh-ui/share/core/mentions'
+```
+
+## نية التصميم
+
+**ثلاث قواعد لتحليل السياق** (`getMentionContext(text, caretIndex, prefix)`): تمسح من المؤشر رجوعًا نحو بداية النص بحثًا عن أقرب محرف prefix —
+
+1. **استبعاد بادئة البريد الزائفة**: إذا التصق قبل prefix محارف الجزء المحلي للبريد الإلكتروني (أرقام وحروف ASCII مع `._%+-`) عُدّت بادئة بريد زائفة (`a@b.com` لا يُطلق)، **فيتخطى ويواصل البحث رجوعًا** — ففي `通知 a@b.com 和 @张三` عندما يكون المؤشر في نهاية الجملة ما يزال يصيب `@张三`.
+2. **لا خلط في CJK**: الاستبعاد البادئي يخص محارف كلمات ASCII فقط، فيُطلق `你好@张三` كالمعتاد.
+3. **الفراغ وقف**: إذا اصطدم المسح بفراغ قبل العثور على prefix استسلم — ففي `@张三 你好` لا يُطلق عندما يكون المؤشر بعد «好» (مقطع الإشارة قد أُغلق).
+
+**المكتوب مرتدًا هو label لا value** (`insertMention`): ما يحتاجه النص هو إشارة مقروءة للإنسان (`@张三`)، أما المعرّف الآلي value فيُمرَّر إلى طبقة التطبيق عبر استدعاء onSelect. صيغة الكتابة المرتدة `prefix + label + فراغ`، ويقع موضع المؤشر الجديد المُعاد بعد الإشارة مباشرة بدقة — فيمكن للمستخدم أن يكتب المتن تِباعًا.
+
+**الفك العكسي والتحليل بالحكم ذاته** (`getMentions`): المقاطع على شاكلة `@张三` (سابقة prefix هي بداية النص أو فراغ)، تُجمع لقائمة @ عند الإرسال، فلا يكتب الطرف البصري regex بنفسه.
+
+**الترشيح** (`filterMentionOptions`): label يحتوي سلسلة البحث بلا حساسية لحالة الأحرف؛ وسلسلة البحث الفارغة تُعيد الكل (إظهار كل المرشحين عند إدخال prefix تواً هو السلوك المعياري)؛ والعناصر المعطلة تبقى (التعتيم شأن الطبقة البصرية).
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getMentionContext` | `(text, caretIndex, prefix?) => LhMentionContext` | السياق | تحليل ما إذا كان المؤشر على إشارة نشطة |
+| `insertMention` | `(text, context, option, prefix?) => { text, caret }` | نص جديد + مؤشر | كتابة الإشارة المختارة مرتدة |
+| `getMentions` | `(text, prefix?) => string[]` | مصفوفة قيم الإشارات | فك جميع الإشارات المكتملة عكسيًا |
+| `filterMentionOptions` | `(options, searchText) => LhMentionOption[]` | مصفوفة الخيارات | ترشيح قائمة الاقتراحات |
+| `getMentionOptionId` | `(listboxId?, index) => string \| undefined` | id الخيار | تُشير إليه aria-activedescendant |
+| `getMentionsTriggerAria` | `(input: { visible, listboxId?, highlightedIndex }) => LhAriaAttrs` | حزمة سمات aria | دلالة combobox لعنصر الإدخال |
+| `getMentionsListboxAria` | `(id?) => LhAriaAttrs` | حزمة سمات aria | role + id لصندوق القائمة |
+| `getMentionOptionAria` | `(input: LhMentionOptionAriaInput) => LhAriaAttrs` | حزمة سمات aria | role للخيار + حالتا الاختيار / التعطيل |
+
+## تعريفات الأنواع
+
+```ts
+export interface LhMentionOption {
+  label: string
+  value?: string
+  disabled?: boolean
+}
+
+export interface LhMentionContext {
+  /** ما إذا كانت ثمة إشارة نشطة (ينبغي إظهار لوحة الاقتراحات) */
+  active: boolean
+  /** دليل prefix في النص؛ وعند عدم النشاط يكون -1 */
+  prefixIndex: number
+  /** سلسلة البحث بين ما بعد prefix والمؤشر */
+  searchText: string
+  /** نهاية المدى الواجب استبداله عند الكتابة المرتدة (= موضع المؤشر؛ وعند عدم النشاط يكون -1) */
+  end: number
+}
+
+export interface LhMentionOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## إمكانية الوصول
+
+- يرتفع عنصر الإدخال إلى دلالة combobox: تُخرج `getMentionsTriggerAria` قيمة `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant` (متوازقة مع autocomplete؛ والفرق أن جسم العنصر textarea/input).
+- قائمة اقتراحات اللوحة: `role="listbox"`، والخيارات `role="option"` + `aria-selected` / `aria-disabled`.
+- وصول ظهور اللوحة واختفائها إلى قارئ الشاشة يعتمد على `aria-expanded`، ويُحدّثه الطرف البصري تزامنًا عند ظهور سياق نشط أو اختفائه.
+
+## أمثلة الاستخدام
+
+```ts
+import { getMentionContext, insertMention, getMentions } from '@lh-ui/share/core/mentions'
+
+getMentionContext('通知 @张三 明天评审', 9)
+// { active: true, prefixIndex: 3, searchText: '张三', end: 9 }
+
+getMentionContext('邮箱是 a@b.com', 13)
+// { active: false, ... } (بادئة البريد الزائفة لا تُطلق)
+
+insertMention('通知 @张 明天评审', ctx, { label: '张三' })
+// { text: '通知 @张三 明天评审', caret: 7 }
+
+getMentions('cc @李四 和 @王五，抄送 a@b.com')
+// ['李四', '王五']
+```
+
+```vue
+<!-- Vue3: يُحلّل السياق بعد keyup/selectionchange ليقود ظهور اللوحة واخفاءها -->
+<textarea
+  :aria-expanded="ctx.active"
+  role="combobox"
+  @keyup="ctx = getMentionContext($event.target.value, $event.target.selectionStart)"
+/>
+<ul v-if="ctx.active" v-bind="getMentionsListboxAria(listboxId)">
+  <li v-for="(option, i) in filterMentionOptions(options, ctx.searchText)" :key="i">
+    {{ option.label }}
+  </li>
+</ul>
+```
+
+```tsx
+// React: تُكتب العنصر المختار مرتدًا ويُستعاد المؤشر
+const { text: next, caret } = insertMention(text, ctx, option)
+setText(next)
+requestAnimationFrame(() => ref.current?.setSelectionRange(caret, caret))
+```
+
+```ts
+// uniapp: موضع المؤشر عبر @blur/@input بـ event.detail.cursor في input/textarea،
+// وطرف MP بلا selectionchange فيتم تحليل المؤشر داخل حدث الإدخال؛ وتموضع اللوحة عبر popper الـ adapter
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-mentions` | الصنف الأساسي: حاوية relative وعرض مرغوب 320px |
+| `.lh-mentions__inner` | عنصر الإدخال (textarea، عُرضه الأفقي مقفول والتمدد الرأسي يقوده rows) |
+| `.lh-mentions__dropdown` | لوحة الاقتراحات (تتوسع **لأعلى** افتراضيًا؛ `--teleported` هي صيغة التعلّق بـ body) |
+| `.lh-mentions__option` | الخيار (`--highlighted` إبراز / `--disabled` تعتيم) |
+| `.lh-mentions__empty` | الحالة الفارغة |
+| `.lh-mentions--disabled` | حالة التعطيل |
+
+فتح المنسدلة وإغلاقها يمرّ بانتقال `lh-mentions-fade` (ظهور تدريجي + صعود خفيف، بما يوافق اتجاه التوسع لأعلى). جميع الألوان `var(--lh-*)`.
+
+## ملاحظات
+
+- prefix الافتراضي `@` ومفترض أن يكون محرفًا واحدًا؛ وعند تغييره يجب تمرير القيمة ذاتها في المواضع الثلاثة `getMentionContext` / `insertMention` / `getMentions`.
+- بعد الكتابة المرتدة في `insertMention` **يجب** ضبط مؤشر العنصر الحقيقي على `caret` المُعاد (واجهة selection لكلٍّ من Vue/React)، وإلا لَارتد المؤشر إلى نهاية النص.
+- محارف استبعاد بادئة البريد الزائفة هي مجموعة فرعية متسامحة من RFC البريد؛ و`user@` متبوعة مباشرةً بـ CJK (مثل `用户@张三`) **تُطلق** — فحكم ASCII لا يصل إلى CJK، وهذا سلوك متوقع مضبوط في السجل.
+- مقطع الإشارة في textarea متعدد الأسطر خاضع كذلك لـ «الفراغ وقف»، والسطر الجديد يُغلق المقطع فورًا.
+
+<FnPlayground module="mentions" fn="getMentionContext" params='{"text": "通知 @张三 明天评审", "caretIndex": 8, "prefix": "@"}' />

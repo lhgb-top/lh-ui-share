@@ -41,7 +41,7 @@
   outline: none;
   background: none;
   width: 100%;
-  font-size: 14px;
+  font-size: var(--lh-font-size-base, 14px);
   /* 显式行高：同 date-picker，normal 随页面字体漂移会顶破令牌外高 */
   line-height: 18px;
   color: var(--lh-text-primary, #2C2C2C);
@@ -49,7 +49,7 @@
 
 .lh-time-picker__value {
   flex: 1;
-  font-size: 14px;
+  font-size: var(--lh-font-size-base, 14px);
   line-height: 18px;
   color: var(--lh-text-primary, #2C2C2C);
 }
@@ -74,7 +74,9 @@
   background: var(--lh-bg-color, #FAF6F0);
   border: 1px solid var(--lh-border-color-base, #D8D3CC); /* hairline */
   border-radius: 4px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  /* card 局部令牌模式：声明在自身规则内，面板被搬出根元素（vue2 手动搬迁等场景）时仍生效 */
+  --lh-time-picker-panel-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--lh-time-picker-panel-shadow);
 }
 
 .lh-time-picker-panel {
@@ -85,7 +87,7 @@
 
 .lh-time-picker-panel__columns {
   display: flex;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
 }
 
 .lh-time-picker-panel__column {
@@ -110,7 +112,7 @@
 }
 
 .lh-time-picker-panel__column-title {
-  font-size: 12px;
+  font-size: var(--lh-font-size-extra-small, 12px);
   color: var(--lh-text-secondary, #8A8A8A);
 }
 
@@ -141,7 +143,7 @@
   height: 32px;
   line-height: 32px;
   text-align: center;
-  font-size: 14px;
+  font-size: var(--lh-font-size-base, 14px);
   color: var(--lh-text-primary, #2C2C2C);
   transition: background 0.2s;
 }

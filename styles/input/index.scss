@@ -32,17 +32,20 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
     border-color: var(--lh-primary-color, #2B4C7C) !important;
   }
 
-  /* 仅 textarea 保留 label 的顶部留白：textarea 无固定高度，label 靠 16px 留白停靠。
-     单行输入框改固定高度后 label 用 calc(令牌 / 2) 定位（见 .lh-input__label），
-     若再保留这 16px，带 label 的输入框会比令牌高 16px，破坏控件高度对齐 */
-  &--has-label:has(.lh-input--textarea) {
+  /* 仅浮动 label（--label-float）需要 textarea 的顶部留白：label 覆盖在控件上、
+     textarea 无固定高度，label 靠 16px 留白停靠。静态位置（top/left/right/bottom）
+     的 label 在控件外部的文档流里，不需要这 16px，也不产生这段 :has 依赖
+     （WXSS 无 :has，小程序端静态位置因此完全可用） */
+  &--label-float:has(.lh-input--textarea) {
     .lh-input {
       padding-top: 16px;
     }
   }
 }
 
-// Label 浮动动画
+// ── 浮动 label（labelPosition="float"，默认）────────────────────────────
+// 交互参考 Material 3 floating label：label 框内作占位 → 聚焦或有值时浮到
+// 左上缺口缩小（0.85）并变主色；有值后失焦不回落。
 .lh-input__label {
   position: absolute;
   inset-inline-start: 12px;
@@ -51,7 +54,7 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
      同渲染 .lh-input__count 时 wrapper 被撑高，50% 会高于输入框中心 */
   top: calc(var(--lh-control-height-medium, 32px) / 2);
   transform: translateY(-50%);
-  font-size: 14px;
+  font-size: var(--lh-font-size-base, 14px);
   color: $lh-input-placeholder-color;
   pointer-events: none;
   transition: all 0.2s ease;
@@ -65,27 +68,105 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
 }
 
 /* label 的垂直基准随 size 档位变化：size 类挂在 .lh-input 上、label 挂在 wrapper 上，
-   只能跨元素用 :has 匹配（与下方 textarea 分支同套路） */
-.lh-input__wrapper:has(.lh-input--mini) .lh-input__label {
+   只能跨元素用 :has 匹配。仅浮动位置需要（静态位置 label 在文档流里） */
+.lh-input__wrapper--label-float:has(.lh-input--mini) .lh-input__label {
   top: calc(var(--lh-control-height-mini, 20px) / 2);
 }
 
-.lh-input__wrapper:has(.lh-input--small) .lh-input__label {
+.lh-input__wrapper--label-float:has(.lh-input--small) .lh-input__label {
   top: calc(var(--lh-control-height-small, 24px) / 2);
 }
 
-.lh-input__wrapper:has(.lh-input--large) .lh-input__label {
+.lh-input__wrapper--label-float:has(.lh-input--large) .lh-input__label {
   top: calc(var(--lh-control-height-large, 40px) / 2);
 }
 
-// Textarea 下的 label 位置调整（放在 wrapper 层级使用 :has）
-.lh-input__wrapper:has(.lh-input--textarea) .lh-input__label {
+// Textarea 下的浮动 label 位置调整（放在 wrapper 层级使用 :has）
+.lh-input__wrapper--label-float:has(.lh-input--textarea) .lh-input__label {
   top: 16px;
   transform: translateY(0);
 
   &--float {
     top: 0;
     transform: translateY(-50%) scale(0.85);
+  }
+}
+
+// ── 静态 label 位置（top / left / right / bottom）────────────────────────
+// label 回到文档流：不绝对定位、不缩放、不随聚焦浮动。布局切换全走 wrapper
+// 修饰类（无 :has、无属性选择器），WXSS 可直接消费。
+// 间距不用 gap（小程序基础库差异），用 label 的逻辑属性 margin（净化管线双发镜像）。
+.lh-input__wrapper--label-top,
+.lh-input__wrapper--label-bottom,
+.lh-input__wrapper--label-left,
+.lh-input__wrapper--label-right {
+  .lh-input__label {
+    position: static;
+    top: auto;
+    inset-inline-start: auto;
+    transform: none;
+    color: var(--lh-text-regular, #5A5A5A);
+    transition: none;
+  }
+}
+
+.lh-input__wrapper--label-top {
+  flex-direction: column;
+  align-items: stretch;
+
+  .lh-input__label {
+    margin-bottom: 6px;
+    /* 静态标签与控件左缘对齐 */
+    text-align: start;
+  }
+}
+
+.lh-input__wrapper--label-bottom {
+  flex-direction: column;
+  align-items: stretch;
+
+  /* DOM 顺序 label 在前（与 float/top 同构），底部位置用 order 调到控件之后；
+     count（字数统计）保持在最末 */
+  .lh-input__label {
+    order: 1;
+    margin-top: 6px;
+    text-align: start;
+  }
+
+  .lh-input__count {
+    order: 2;
+  }
+}
+
+.lh-input__wrapper--label-left,
+.lh-input__wrapper--label-right {
+  flex-direction: row;
+  align-items: center;
+
+  .lh-input__label {
+    /* 行内布局下 label 不抢宽度：labelWidth prop 可经内联样式指定定宽 */
+    max-width: 40%;
+    line-height: 1.4;
+  }
+}
+
+.lh-input__wrapper--label-left {
+  .lh-input__label {
+    margin-inline-end: 8px;
+    /* 标签文字贴向控件一侧（LTR 右对齐 / RTL 左对齐） */
+    text-align: end;
+  }
+}
+
+.lh-input__wrapper--label-right {
+  .lh-input__label {
+    order: 1;
+    margin-inline-start: 8px;
+    text-align: start;
+  }
+
+  .lh-input__count {
+    order: 2;
   }
 }
 
@@ -146,7 +227,7 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
 
     .lh-input__inner {
       padding: 0 8px;
-      font-size: 12px;
+      font-size: var(--lh-font-size-extra-small, 12px);
     }
   }
 
@@ -155,7 +236,7 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
 
     .lh-input__inner {
       padding: 0 10px;
-      font-size: 12px;
+      font-size: var(--lh-font-size-extra-small, 12px);
     }
   }
 
@@ -164,7 +245,7 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
 
     .lh-input__inner {
       padding: 0 12px;
-      font-size: 14px;
+      font-size: var(--lh-font-size-base, 14px);
     }
   }
 
@@ -173,7 +254,7 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
 
     .lh-input__inner {
       padding: 0 16px;
-      font-size: 16px;
+      font-size: var(--lh-font-size-medium, 16px);
     }
   }
 
@@ -253,7 +334,7 @@ $lh-input-disabled-border-color: var(--lh-border-color-light, #E5E0D8) !default;
   &__count {
     display: inline-block;
     margin-top: 4px;
-    font-size: 12px;
+    font-size: var(--lh-font-size-extra-small, 12px);
     color: var(--lh-text-secondary, #8A8A8A);
     text-align: end;
     line-height: 1.2;

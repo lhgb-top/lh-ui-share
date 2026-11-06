@@ -23,9 +23,15 @@ export function getAvatarText(source: string): string {
 }
 
 /**
- * 判断头像图片来源是否可用（空串或非图片扩展名视为不可用，走文字/图标兜底）
+ * 判断头像图片来源是否可用（空串或非图片资源视为不可用，走文字/图标兜底）
+ *
+ * 支持：http(s) / data: URI / 绝对路径 / `.`、`..` 开头的相对路径 /
+ * 裸相对文件名（`me.png`，HTML 中合法）/ 带查询参数或锚点的上述形态。
  */
 export function isImageSource(src: string | undefined): boolean {
   if (!src) return false
-  return /^(https?:\/\/|data:image\/|\/|\.{0,2}\/)/.test(src)
+  // 前缀形态：协议 / data URI / 绝对路径 / ./ ../ 前缀
+  if (/^(https?:\/\/|data:image\/|\/|\.{0,2}\/)/.test(src)) return true
+  // 裸相对文件名：以图片扩展名结尾（允许尾随 ?query 或 #fragment）
+  return /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif)(?:[?#].*)?$/i.test(src)
 }

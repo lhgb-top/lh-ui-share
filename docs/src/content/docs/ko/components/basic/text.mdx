@@ -1,0 +1,147 @@
+---
+title: text —— 텍스트
+description: 'getTextClassNames가 8단계 타이포그래피/의미 색/수정자/생략 클래스를 계산하고, getTextTag가 렌더링 태그를 정하며, getEllipsisRows/Style이 여러 줄 생략을 처리'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+텍스트는 페이지에서 수가 가장 많은 요소이자 인라인 스타일이 가장 흩어지기 쉬운 요소입니다. `core/text`는 타이포그래피 레벨(h1~h6/p/caption), 의미 색상, 굵게/기울임/밑줄/마크/코드 수정자, 한 줄과 여러 줄 생략을 모두 클래스명과 인라인 스타일 기록으로 계산하고, UI 계층은 그것들을 요소에 깔기만 하면 됩니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhText`를 구현할 때: 8단계 타이포그래피, 의미 색상, 다섯 가지 수정자, 생략의 클래스명은 모두 `getTextClassNames`가 산출합니다.
+- 생략 환산만 필요한 시나리오: `getEllipsisRows` / `getEllipsisStyle`는 독립적으로 사용할 수 있습니다(예: 커스텀 카드 설명의 여러 줄 절단).
+- **사용하면 안 되는 곳**: 리치 텍스트 편집(core는 표시 상태만 담당). 제목의 문서 아웃라인 의미는 이 클래스명과 함께 실제 `h1~h6` 요소를 직접 사용하세요.
+
+## 가져오기
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisRows, getEllipsisStyle, getTextAria } from '@lh-ui/share/core/text'
+import type { LhTextLevel, LhTextType, LhTextState } from '@lh-ui/share/core/text'
+```
+
+## 설계 의도
+
+**8단계 타이포그래피, 레벨 클래스는 항상 출력**: `lh-text--{h1..h6|p|caption}`은 무엇을 전달하든 출력됩니다(화이트리스트 폴백: 잘못된 레벨은 `p`로 회귀). 타이포그래피 사양은 스타일 쪽에서 토큰대로 구현됩니다. `caption`은 작은 글씨로 표시되지만 실제 제목 의미를 만들지 않습니다——`getTextTag('caption')`은 `h7`이 아니라 `span`을 반환해, 스크린 리더 소프트웨어의 아웃라인 계층이 보조 텍스트로 오염되는 것을 막습니다.
+
+**생략 3가지 상태**(`getEllipsisRows`가 정규화):
+
+- `ellipsis: true` → 1줄, 클래스명 `lh-text--ellipsis`가 붙습니다(순수 CSS, 인라인 스타일 불필요).
+- 수치 → `[1, 10]`으로 clamp, 클래스명 `lh-text--ellipsis-{n}` + `getEllipsisStyle`의 line-clamp 인라인 기록이 붙습니다.
+- 잘못된 값 → 0(생략하지 않고 어떤 생략 클래스도 산출하지 않음).
+
+행 수 상한 10은 아무렇게나 정한 것이 아닙니다: CSS `line-clamp`는 과하게 큰 값에서 생략 없음으로 퇴화하므로, 초과분은 무의미합니다.
+
+**의미 색상과 수정자**: `secondary/success/warning/danger`는 default가 아닐 때만 수정자 클래스를 산출하고, `strong/italic/underline/mark/code/disabled`는 참일 때만 출력됩니다. `mark`는 mark 요소와 동형인 연한 하이라이트 배경이고, `code`는 고정폭 글꼴 + 연한 배경입니다——둘 다 **시각 수정자**이며 의미 요소 교체를 강제하지 않으므로, `<mark>`를 쓸지 클래스명을 쓸지는 사용 측이 결정합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getEllipsisRows` | `(ellipsis?: boolean \| number) => number` | 행 수 | 생략 행 수 정규화(clamp [1,10]) |
+| `getTextClassNames` | `(state?: Partial<LhTextState>) => string[]` | 클래스명 배열 | 텍스트의 모든 클래스명 계산 |
+| `getTextTag` | `(level?: LhTextLevel) => 'h1'…'h6' \| 'p' \| 'span'` | 태그명 | 레벨 → 실제 렌더링 태그(caption → span) |
+| `getEllipsisStyle` | `(ellipsis?: boolean \| number) => Record<string, string \| number>` | 인라인 스타일 | 여러 줄 생략 line-clamp 스타일 |
+| `getTextAria` | `(input?: LhTextAriaInput) => LhAriaAttrs` | aria 속성 묶음 | 펼치기 가능 / 복사 가능 의미 |
+
+```ts
+getTextClassNames({ level: 'h3', type: 'danger', mark: true, ellipsis: 3 })
+// ['lh-text', 'lh-text--h3', 'lh-text--danger', 'lh-text--mark', 'lh-text--ellipsis-3']
+
+getEllipsisStyle(3)
+// { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden' }
+```
+
+## 타입 정의
+
+```ts
+export type LhTextLevel = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'p' | 'caption'
+
+export type LhTextType = 'default' | 'secondary' | 'success' | 'warning' | 'danger'
+
+export interface LhTextState {
+  level: LhTextLevel
+  type: LhTextType
+  strong: boolean
+  italic: boolean
+  underline: boolean
+  mark: boolean
+  code: boolean
+  ellipsis: boolean | number
+  disabled: boolean
+}
+
+export interface LhTextAriaInput {
+  /** 펼칠 수 있는 생략 시나리오의 펼침 상태(aria-expanded 출력) */
+  expanded?: boolean
+  /** 복사 버튼의 문구 id(aria-labelledby 참조) */
+  copyButtonId?: string
+}
+```
+
+## 접근성
+
+- **제목 의미**: `getTextTag`가 실제 요소를 결정합니다——`h1~h6/p`는 대응 태그를 렌더링해 문서 아웃라인을 제공하고, `caption`은 `span`을 렌더링해 가짜 제목이 계층을 오염시키지 않게 합니다. UI 계층은 `div`로 `lh-text--h2`를 담지 마세요. 그러면 스타일은 맞지만 아웃라인이 사라집니다.
+- **펼칠 수 있는 생략**: '펼치기/접기'버튼이 내용 접기를 제어할 때 `getTextAria({ expanded })`가 `aria-expanded`를 출력해 스크린 리더가 상태를 인지할 수 있습니다.
+- **복사 가능**: 복사 버튼은 독립 컨트롤이며, `copyButtonId`가 `aria-labelledby`로 버튼 문구를 접근 가능 이름에 연결해 스크린 리더가 '버튼'이라는 단어만 읽는 것을 막습니다.
+
+## 사용 예
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisStyle } from '@lh-ui/share/core/text'
+
+getTextClassNames({ level: 'caption', type: 'secondary', ellipsis: true })
+// ['lh-text', 'lh-text--caption', 'lh-text--secondary', 'lh-text--ellipsis']
+
+getTextTag('caption')  // 'span'
+```
+
+```vue
+<!-- Vue3: 동적 태그 + 인라인 생략 스타일 -->
+<component :is="getTextTag(level)" :class="getTextClassNames(state)" :style="getEllipsisStyle(state.ellipsis)">
+  <slot />
+  <button v-if="copyable" class="lh-text__copy" aria-label="복사" @click="copy">
+    {{ copied ? '복사됨' : '복사' }}
+  </button>
+</component>
+```
+
+```tsx
+// React: style 기록은 CSSProperties를 그대로 만족합니다(키는 webkit 접두사를 포함한 카멜 케이스)
+const Tag = getTextTag(level) as React.ElementType
+return (
+  <Tag className={getTextClassNames(state).join(' ')} style={getEllipsisStyle(state.ellipsis)}>
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp: h1~h6 의미 태그는 미니프로그램 단말에 존재하지 않으므로 <text> + 클래스명으로 통일 렌더링하고,
+// 타이포그래피 사양은 모두 클래스명이 받습니다(미니프로그램에서는 문서 아웃라인 의미를 논할 수조차 없음)
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-text` | 기본 클래스: 일반 색, 글자 크기, 행 높이 |
+| `.lh-text--{h1…h6\|p\|caption}` | 8단계 타이포그래피(제목은 serif 국풍 글꼴 + 단계별 글자 크기) |
+| `.lh-text--{secondary\|success\|warning\|danger}` | 의미 색상(default는 수정자 클래스 없음) |
+| `.lh-text--strong` / `--italic` / `--underline` | 굵게 / 기울임 / 밑줄 |
+| `.lh-text--mark` | 마크 하이라이트 배경 |
+| `.lh-text--code` | 인라인 코드(고정폭 글꼴 + 연한 배경) |
+| `.lh-text--disabled` | 비활성 상태 |
+| `.lh-text--ellipsis` | 한 줄 생략 |
+| `.lh-text--ellipsis-{2…10}` | 여러 줄 생략 행 클래스(인라인 line-clamp와 함께) |
+| `.lh-text__copy` | 복사 버튼(`--copied`는 성공 되돌림 상태) |
+
+색상, 글자 크기, 행 높이는 모두 `var(--lh-*)`이며, 다크 모드는 `var-dark.scss`가 뒤집습니다.
+
+## 주의사항
+
+- 여러 줄 생략의 line-clamp 인라인 스타일은 UI 계층이 각자의 규범에 맞게 단언해 내려야 합니다(React `CSSProperties` / Vue `style` 객체). 한 줄 생략은 전부 클래스명이 받으므로 인라인이 필요 없습니다.
+- `mark` / `code`는 시각 수정자이지 의미 대체가 아닙니다. 스크린 리더가 코드를 식별해야 하는 시나리오에서는 실제 `<code>` 요소에 클래스명을 붙여 사용하세요.
+- 복사 성공 되돌림 상태 `lh-text__copy--copied`는 UI 계층이 타이머로 제거하며, core는 타이머에 관여하지 않습니다.
+
+<FnPlayground module="text" fn="getTextClassNames" params='{"state": {"level": "h3", "type": "default", "strong": false, "italic": false, "underline": false, "mark": true, "code": false, "ellipsis": false, "disabled": false}}' />

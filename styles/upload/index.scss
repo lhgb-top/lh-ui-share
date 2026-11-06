@@ -59,7 +59,7 @@
 .lh-upload__file {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
   padding: 6px 8px;
   border-radius: var(--lh-border-radius-small, 6px);
   font-size: var(--lh-font-size-small, 13px);

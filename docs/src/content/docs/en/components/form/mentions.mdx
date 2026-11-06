@@ -1,0 +1,158 @@
+---
+title: mentions — Mentions
+description: 'getMentionContext caret context parsing (email-like pseudo-prefix exclusion / no CJK false positives / stops at whitespace), insertMention write-back, getMentions reverse parsing, filterMentionOptions filtering'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+@ mentions = a text input control + a prefix trigger character (default `@`) + a suggestion panel + write-back on selection. `core/mentions` only does **text processing and semantics**: parsing whether the caret sits inside an unfinished mention fragment, writing back the selected mention, and reverse-parsing all mentions from the text; the control, panel, and keyboard interaction are carried by each platform's UI layer.
+
+## When to use
+
+- Each platform implements `LhMentions`: `@` triggers member suggestions, selection writes back `@Zhang `, and submission collects the mention list.
+- Reusing the mention parsing logic on any textarea / input (core is not bound to a specific control).
+- **Do not use it for**: scenarios where suggestions come from arbitrary input (not driven by a prefix character) — use `core/autocomplete`.
+
+## Import
+
+```ts
+import {
+  getMentionContext,
+  insertMention,
+  getMentions,
+  filterMentionOptions,
+  getMentionOptionId,
+  getMentionsTriggerAria,
+  getMentionsListboxAria,
+  getMentionOptionAria,
+} from '@lh-ui/share/core/mentions'
+import type { LhMentionOption, LhMentionContext } from '@lh-ui/share/core/mentions'
+```
+
+## Design intent
+
+**Three rules of context parsing** (`getMentionContext(text, caretIndex, prefix)`): scan backward from the caret for the nearest prefix character —
+
+1. **Email-like pseudo-prefix exclusion**: when the characters right before the prefix are email local-part characters (ASCII alphanumerics and `._%+-`), it is treated as an email-like pseudo-prefix (`a@b.com` does not trigger) and is **skipped while the scan continues backward** — in `Notify a@b.com and @Zhang`, with the caret at the end of the sentence, `@Zhang` is still matched.
+2. **No CJK false positives**: the prefix exclusion only targets ASCII word characters, so `你好@张三` triggers normally.
+3. **Stops at whitespace**: if the scan hits whitespace before finding the prefix, it gives up — in `@Zhang hello`, with the caret after "hello", it does not trigger (the mention fragment is already closed).
+
+**What is written back is the label, not the value** (`insertMention`): what the text needs is a human-readable mention (`@Zhang`), while the machine identifier `value` is handed to the application layer through the onSelect callback. The write-back format is `prefix + label + a space`, and the returned new caret position lands exactly after the mention — the user can immediately continue typing the body text.
+
+**Reverse parsing shares the same rules as parsing** (`getMentions`): fragments shaped like `@Zhang` (the prefix is preceded by the start of the text or whitespace), for collecting the @ list on submission, so the UI layer does not need to write its own regex.
+
+**Filtering** (`filterMentionOptions`): the label contains the search string, case-insensitive; an empty search string returns all (showing all candidates right after the prefix is typed is standard behavior); disabled options are kept (graying them out is handled by the UI layer).
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getMentionContext` | `(text, caretIndex, prefix?) => LhMentionContext` | context | parses whether there is an active mention at the caret |
+| `insertMention` | `(text, context, option, prefix?) => { text, caret }` | new text + caret | writes back the selected mention |
+| `getMentions` | `(text, prefix?) => string[]` | mention value array | reverse-parses all completed mentions |
+| `filterMentionOptions` | `(options, searchText) => LhMentionOption[]` | option array | filters the suggestion list |
+| `getMentionOptionId` | `(listboxId?, index) => string \| undefined` | option id | for aria-activedescendant to reference |
+| `getMentionsTriggerAria` | `(input: { visible, listboxId?, highlightedIndex }) => LhAriaAttrs` | aria attribute bundle | input control combobox semantics |
+| `getMentionsListboxAria` | `(id?) => LhAriaAttrs` | aria attribute bundle | listbox role + id |
+| `getMentionOptionAria` | `(input: LhMentionOptionAriaInput) => LhAriaAttrs` | aria attribute bundle | option role + selected / disabled states |
+
+## Type definitions
+
+```ts
+export interface LhMentionOption {
+  label: string
+  value?: string
+  disabled?: boolean
+}
+
+export interface LhMentionContext {
+  /** Whether there is an active mention (the suggestion panel should show) */
+  active: boolean
+  /** Index of the prefix in the text; -1 when inactive */
+  prefixIndex: number
+  /** Search string between the prefix and the caret */
+  searchText: string
+  /** End of the range to replace on write-back (= the caret position; -1 when inactive) */
+  end: number
+}
+
+export interface LhMentionOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## Accessibility
+
+- The input control is upgraded to combobox semantics: `getMentionsTriggerAria` outputs `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant` (isomorphic with autocomplete; the difference is that the control itself is a textarea/input).
+- The panel suggestion list: `role="listbox"`, options `role="option"` + `aria-selected` / `aria-disabled`.
+- The panel's show/hide accessibility to screen readers relies on `aria-expanded`; the UI layer keeps it in sync when the active context appears/disappears.
+
+## Usage examples
+
+```ts
+import { getMentionContext, insertMention, getMentions } from '@lh-ui/share/core/mentions'
+
+getMentionContext('Hi @Zhang tomorrow', 9)
+// { active: true, prefixIndex: 3, searchText: 'Zhang', end: 9 }
+
+getMentionContext('Email is a@b.com', 13)
+// { active: false, ... } (the email-like pseudo-prefix does not trigger)
+
+insertMention('Hi @Zha tomorrow', ctx, { label: 'Zhang' })
+// { text: 'Hi @Zhang tomorrow', caret: 10 }
+
+getMentions('cc @Li and @Wang, cc a@b.com')
+// ['Li', 'Wang']
+```
+
+```vue
+<!-- Vue3: parse the context after keyup/selectionchange to drive the panel's visibility -->
+<textarea
+  :aria-expanded="ctx.active"
+  role="combobox"
+  @keyup="ctx = getMentionContext($event.target.value, $event.target.selectionStart)"
+/>
+<ul v-if="ctx.active" v-bind="getMentionsListboxAria(listboxId)">
+  <li v-for="(option, i) in filterMentionOptions(options, ctx.searchText)" :key="i">
+    {{ option.label }}
+  </li>
+</ul>
+```
+
+```tsx
+// React: write back the selected item and restore the caret
+const { text: next, caret } = insertMention(text, ctx, option)
+setText(next)
+requestAnimationFrame(() => ref.current?.setSelectionRange(caret, caret))
+```
+
+```ts
+// uniapp: the caret position comes from input/textarea's @blur/@input event.detail.cursor;
+// MP has no selectionchange, so caret parsing completes within the input event; panel
+// positioning goes through the adapter popper
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-mentions` | base class: relative container, expected width 320px |
+| `.lh-mentions__inner` | input control (textarea, fixed horizontal width, vertical stretch controlled by rows) |
+| `.lh-mentions__dropdown` | suggestion panel (opens **upward** by default; `--teleported` is the body-mounted form) |
+| `.lh-mentions__option` | option (`--highlighted` highlight / `--disabled` grayed out) |
+| `.lh-mentions__empty` | empty state |
+| `.lh-mentions--disabled` | disabled state |
+
+The dropdown open/close runs the `lh-mentions-fade` transition (fade in + a slight upward shift, matching the upward opening direction). Colors are all `var(--lh-*)`.
+
+## Notes
+
+- The prefix defaults to `@` and is assumed to be a single character; when changing the prefix, the same value must be passed at all three of `getMentionContext` / `insertMention` / `getMentions`.
+- After `insertMention` writes back, the real control's caret **must** be set to the returned `caret` (each framework's own selection API in Vue/React); otherwise the caret falls back to the end of the text.
+- The character set for email-like pseudo-prefix exclusion is a lenient subset of the email RFC; CJK right after `user@` (such as `用户@张三`)** will** trigger — the ASCII check cannot cover CJK; this is a registered expected behavior.
+- Mention fragments in a multi-line textarea likewise "stop at whitespace"; a newline closes the fragment.
+
+<FnPlayground module="mentions" fn="getMentionContext" params='{"text": "Hi @Zhang tomorrow", "caretIndex": 8, "prefix": "@"}' />

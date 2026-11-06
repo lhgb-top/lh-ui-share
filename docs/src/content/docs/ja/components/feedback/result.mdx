@@ -1,0 +1,119 @@
+---
+title: result —— 結果ページ
+description: 'getResultClassNames が 4 状態のクラス名を計算し、getResultIconName は状態のデフォルトアイコンまたはカスタムアイコンを解決、isValidResultStatus は状態のガード'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+結果ページは「一連のフローがすべて完了した」ことの最終状態フィードバックに使われます：フォーム送信の成功、承認の却下、ページへの権限がないこと。`core/result` が計算するのは二つだけ：4 状態のクラス名とアイコン名です。タイトル、サブタイトル、アクション領域のタイポグラフィはスタイルクラスが担い、中身はすべて利用者に委ねられます。
+
+## いつ使うか
+
+- 各端が `LhResult` を実装する：`success` / `warning` / `error` / `info` の 4 状態におけるクラス名とアイコンのマッピング。
+- 結果ページの視覚を再利用するシナリオ（チャートの空状態、ウィザード完了ページ、エラーバウンダリのフォールバック UI）ではクラス名を直接 import する。
+- **使うべきでない**：操作フィードバックの軽量な通知には `core/message` / `core/notification` を使う——result はページ全体レベルの最終状態であり、message は瞬時のフィードバックです。階層が異なります。
+
+## インポート方法
+
+```ts
+import { isValidResultStatus, getResultClassNames, getResultIconName } from '@lh-ui/share/core/result'
+import type { LhResultState, LhResultStatus } from '@lh-ui/share/core/result'
+```
+
+## 設計意図
+
+**状態セットは固定 4 値、拡張は開放しない**：結果ページのセマンティクス空間は成功 / 警告 / エラー / お知らせ です。カスタムの status 文字列は UI に落ちる前に `isValidResultStatus` ガードを通し、不正値は UI 層がフォールバックします（通常は `info` へ）——「任意の文字列」を許すとアイコンマッピング表に穴が空きます。
+
+**アイコン解決の優先順位設計**（`getResultIconName`）：
+
+- 明示的に `icon` を渡す（**空文字列を含む**）→ そのまま採用。空文字列のセマンティクスは「意図的にアイコンを付けない」であり、「未渡しでデフォルトに落ちる」と厳密に区別されます——これが真値判定ではなく `icon !== undefined` である理由です。
+- 未渡し → 状態のデフォルトアイコンへフォールバック：success→`check`、warning→`warning`、error→`error`、info→`info`。すべて既存の `LhIcon` アイコンセットを消費し、新しいアイコンアセットは追加しません。
+
+**クラス名はミニマル**（`getResultClassNames`）：ベースクラス + 状態モディファイアクラスの各一つで、サイズ/密度バリアントはありません——結果ページはコンテンツコンポーネントであり、タイポグラフィの柔軟性は内容そのものと `sx` に委ねます。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `isValidResultStatus` | `(status: string) => status is LhResultStatus` | ガード | 状態の正当性 |
+| `getResultClassNames` | `(state: LhResultState) => string[]` | クラス名配列 | 結果ページのクラス名を計算 |
+| `getResultIconName` | `(status, icon?) => LhIconName \| '' \| undefined` | アイコン名 | 明示的 icon を優先、状態デフォルトへフォールバック |
+
+```ts
+getResultClassNames({ status: 'success' })
+// ['lh-result', 'lh-result--success']
+
+getResultIconName('error')          // 'error'（状態のデフォルトアイコン）
+getResultIconName('error', '')      // ''（明示的にアイコンなし）
+getResultIconName('error', 'smile') // 'smile'（カスタムアイコンがデフォルトを上書き）
+```
+
+## 型定義
+
+```ts
+export type LhResultStatus = 'success' | 'warning' | 'info' | 'error'
+
+export interface LhResultState {
+  status: LhResultStatus
+}
+```
+
+## アクセシビリティ
+
+- コンテナーには `role="status"` を付けることを推奨（自動読み上げとして実装している端もあります）：結果ページの出現はフロー状態の変更を意味するため、スクリーンリーダーユーザーはフォーカスを待つ必要がありません。
+- アイコンは装飾的なセマンティクスであり、アイコンノードには `aria-hidden="true"` を付けるべきです——状態の意味はタイトルのテキストが担い、アイコンの色に頼って伝えません（色覚弱者のユーザーにも読めます）。
+- アクション領域のボタンはネイティブのセマンティクスを保ち、通常のボタンと同一です。
+
+## 使用例
+
+```ts
+import { getResultClassNames, getResultIconName } from '@lh-ui/share/core/result'
+
+getResultClassNames({ status: 'warning' })
+// ['lh-result', 'lh-result--warning']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getResultClassNames({ status })" role="status">
+  <LhIcon v-if="getResultIconName(status, icon)" class="lh-result__icon" aria-hidden="true" :name="getResultIconName(status, icon)!" />
+  <div class="lh-result__title">{{ title }}</div>
+  <div v-if="subtitle" class="lh-result__subtitle">{{ subtitle }}</div>
+  <div v-if="$slots.extra" class="lh-result__extra"><slot name="extra" /></div>
+</div>
+```
+
+```tsx
+// React
+<div className={getResultClassNames({ status }).join(' ')} role="status">
+  <ResultIcon status={status} icon={icon} />
+  <div className="lh-result__title">{title}</div>
+  {extra}
+</div>
+```
+
+```ts
+// uniapp：アイコンは iconfont フォント（share の SVG path コンパイル産物）を使用。
+// role="status" は MP 端ではレンダリングしない形に降格（スクリーンリーダーの live region 能力がない）
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-result` | コンテナー：縦方向の中央寄せ、結果用の内側の余白 |
+| `.lh-result--{success\|warning\|error\|info}` | 状態モディファイ（アイコンの着色を駆動） |
+| `.lh-result__icon` | アイコンノード（64px、色は状態トークンに従う） |
+| `.lh-result__title` | タイトル（20px 太字） |
+| `.lh-result__subtitle` | サブタイトル（セカンダリーカラー、行間 1.8） |
+| `.lh-result__extra` | アクション領域（上余白） |
+
+アイコンの色はすべて `var(--lh-*)`（success/warning/danger/info のセマンティクストークン）で、ダークモードは `var-dark.scss` が反転させます。内側の余白/文字サイズにはコンポーネントレベルのトークン（`--lh-result-*`）があり調整できます。
+
+## 注意事項
+
+- 不正な status を静かに core へ返さないでください：まず `isValidResultStatus` を通し、それからフォールバック戦略を決めます——ガードは UI 層のためにあり、core は判断を代行しません。
+- `icon` に空文字列を渡すことと渡さないことは二つの別のセマンティクスです（明示的にアイコンなし vs デフォルトアイコン）。型では `LhIconName | '' | undefined` としてエンコードされます。
+- 結果ページ 4 状態のアイコン色の差異は `__icon` にだけ現れます。タイトル/サブタイトルの色は状態に依存しません——error 状態でタイトルを赤く染めないでください。タイポグラフィの一貫性が壊れます。
+
+<FnPlayground module="result" fn="getResultClassNames" params='{"state": {"status": "success"}}' />

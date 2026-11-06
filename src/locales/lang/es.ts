@@ -11,6 +11,7 @@ export default {
   input: {
     placeholder: 'Introducir',
     password: 'Contraseña',
+    clear: 'Borrar',
   },
   // Selector de fecha (reservado)
   datepicker: {
@@ -75,6 +76,7 @@ export default {
     placeholder: 'Seleccionar',
     panelLabel: 'Seleccionar opción en cascada',
     columnLabel: 'Nivel {n}',
+    filter: 'Buscar',
   },
   // Etiqueta
   tag: {
@@ -89,6 +91,40 @@ export default {
     noMatch: 'Sin datos coincidentes',
     noData: 'Sin datos',
     placeholder: 'Seleccionar',
+    clear: 'Borrar',
+    filter: 'Buscar',
+    empty: 'Sin coincidencias',
+  },
+  // Autocompletado
+  autocomplete: {
+    label: 'Autocompletado',
+    noMatch: 'Sin datos coincidentes',
+    noData: 'Sin datos',
+    placeholder: 'Ingrese',
+    clear: 'Borrar',
+  },
+  // Menciones
+  mentions: {
+    label: 'Menciones',
+    noMatch: 'Sin miembros coincidentes',
+    placeholder: 'Escribe @ para mencionar a alguien',
+  },
+  // Texto
+  text: {
+    copy: 'Copiar',
+    copied: 'Copiado',
+  },
+  // 颜色选择器
+  colorPicker: {
+    label: 'Selector de color',
+    placeholder: 'Seleccionar color',
+    inputLabel: 'Valor del color',
+  },
+  // 标签输入
+  inputTag: {
+    label: 'Entrada de etiquetas',
+    placeholder: 'Escribe una etiqueta y pulsa Intro',
+    removeTag: 'Quitar etiqueta',
   },
   // Formulario
   form: {
@@ -130,6 +166,9 @@ export default {
   // Cuadro de diálogo
   dialog: {
     close: 'Cerrar diálogo',
+    confirm: 'Aceptar',
+    cancel: 'Cancelar',
+    ariaLabel: 'Diálogo',
   },
   // Mensaje
   message: {
@@ -309,5 +348,9 @@ export default {
     moveToSource: 'Mover a la izquierda',
     search: 'Buscar',
     empty: 'Sin datos',
+    saturation: 'Saturación',
+    hue: 'Tono',
+    alpha: 'Opacidad',
+    removeTag: 'Eliminar etiqueta',
   },
 } as const;

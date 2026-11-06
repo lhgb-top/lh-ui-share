@@ -1,0 +1,150 @@
+---
+title: color-picker —— Selector de color
+description: 'conversiones emparejadas entre hex/rgb y el espacio HSV, parseColorString con análisis tolerante, formatColor produce según format, getColorPickerClassNames para las clases del contenedor'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Toda la dificultad del selector de color está en las **matemáticas del color**: arrastrar el panel de saturación, los deslizadores de tono/transparencia, escribir hex y rgb() en ambos sentidos, la paleta predefinida; detrás está la conversión de ida y vuelta entre los dos espacios de color RGB y HSV. `core/color-picker` condensa esas matemáticas en un conjunto de funciones puras emparejadas y con clamp completo; la interacción de arrastre y el posicionamiento del panel los asume la capa UI de cada plataforma.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhColorPicker`: todas las conversiones y clamps del panel de saturación/luminosidad + los deslizadores de tono/transparencia.
+- Escenarios que solo necesitan conversión de color: `parseColorString` / `formatColor` / `rgbToHex` etc. se pueden usar por separado (como validación de formularios o tematización dinámica).
+- **No usarlo para**: una lista fija de valores de color se renderiza directamente, sin necesidad de componente; los tokens de tema se definen en la capa theme, no en este componente.
+
+## Importación
+
+```ts
+import {
+  isValidColorFormat,
+  hexToRgb,
+  rgbToHex,
+  rgbToHsv,
+  hsvToRgb,
+  parseColorString,
+  formatColor,
+  isSameColor,
+  getColorPickerClassNames,
+} from '@lh-ui/share/core/color-picker'
+import type { LhColorFormat, LhColorRgb, LhColorHsv, LhColorPickerState } from '@lh-ui/share/core/color-picker'
+```
+
+## Intención de diseño
+
+**Dos espacios de color, cada uno con su papel**: la interacción usa **HSV** (en el panel de saturación x = saturación, y = luminosidad, y en el deslizador de tono la h; las coordenadas de arrastre son semántica HSV por naturaleza), y el almacenamiento y la salida usan **RGB** (cadenas hex / rgb()). Las cuatro funciones de conversión van estrictamente emparejadas (`hexToRgb`↔`rgbToHex`, `rgbToHsv`↔`hsvToRgb`), y entradas y salidas **pasan todas por clamp**: `clampColorChannel` enteros 0~255, `clampColorAlpha` 0~1 con dos decimales (eliminando colas de coma flotante como `0.30000000000000004`), `clampColorHue` 0~360, `clampColorRatio` 0~1. Las entradas no finitas (NaN/Infinity/undefined) recaen siempre en valores por defecto seguros y nunca se desbordan.
+
+**Análisis tolerante** (`parseColorString`): hex admite 3/4/6/8 dígitos (`#3ab` → `#33aabb`), rgb()/rgba() permiten canales decimales y porcentuales (la forma tolerante anterior a CSS Color 4), y las entradas ilegales devuelven `null` en lugar de lanzar error: un `#2B4` tecleado a medias por el usuario no debería tumbar el panel.
+
+**Contrato de salida** (`formatColor`): el formato `rgb` produce `rgba(...)` cuando `a < 1`, y el formato `hex` produce hex de 8 dígitos cuando `a < 1`: **cuando alpha tiene valor nunca se pierde en silencio**; esa es la línea que decide si el hex sale de 6 u 8 dígitos.
+
+**Guardia de igualdad** (`isSameColor`): compara tras aplicar clamp a los canales y al alpha, para que la capa UI implemente «si el valor no cambió no se emite change», evitando eventos duplicados por el temblor del arrastre.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `isValidColorFormat` | `(format: string) => format is LhColorFormat` | guardia | legalidad del formato ('hex' \| 'rgb') |
+| `clampColorChannel` | `(value) => number` | entero 0~255 | clamp de los canales r/g/b |
+| `clampColorAlpha` | `(value) => number` | 0~1 con dos decimales | clamp de la transparencia |
+| `clampColorHue` | `(value) => number` | entero 0~360 | clamp del tono |
+| `clampColorRatio` | `(value) => number` | 0~1 con dos decimales | clamp de saturación / luminosidad |
+| `hexToRgb` | `(hex: string) => LhColorRgb \| null` | RGBA \| null | analiza hex (3/4/6/8 dígitos) |
+| `rgbToHex` | `(color: LhColorRgb) => string` | cadena hex | con `a < 1` produce hex de 8 dígitos |
+| `rgbToHsv` | `(color: LhColorRgb) => LhColorHsv` | HSVA | RGB → HSV |
+| `hsvToRgb` | `(color: LhColorHsv) => LhColorRgb` | RGBA | HSV → RGB |
+| `parseColorString` | `(input?) => LhColorRgb \| null` | RGBA \| null | análisis tolerante de hex / rgb() / rgba() |
+| `formatColor` | `(color: LhColorRgb, format: LhColorFormat) => string` | cadena de color | produce según format |
+| `isSameColor` | `(left, right) => boolean` | boolean | igualdad perceptual tras el clamp |
+| `getColorPickerClassNames` | `(state: LhColorPickerState) => string[]` | matriz de nombres de clase | clases del contenedor (`--{size}`/`--disabled`/`--open`) |
+
+## Definiciones de tipos
+
+```ts
+export type LhColorFormat = 'hex' | 'rgb'
+
+export interface LhColorRgb {
+  r: number
+  g: number
+  b: number
+  a: number
+}
+
+export interface LhColorHsv {
+  h: number
+  s: number
+  v: number
+  a: number
+}
+
+export interface LhColorPickerState {
+  size?: string
+  disabled?: boolean
+  open?: boolean
+}
+```
+
+## Accesibilidad
+
+- **Deslizadores**: los deslizadores de tono/transparencia deben llevar `role="slider"` + `aria-valuenow/min/max`; el ajuste fino con las teclas de dirección (Shift acelera) lo implementa la capa UI: el arrastre es inalcanzable para los usuarios de teclado, la semántica del deslizador no se puede omitir.
+- **Entrada del valor de color**: el campo hex/rgb dentro del panel es el canal de teclado para modificar el color; el `aria-label` toma del paquete de idiomas `colorPicker.inputLabel` («Valor de color»).
+- **Paleta predefinida**: cada celda es enfocable, el anillo de foco lo aporta el `focus-visible` del lado de los estilos; el nombre accesible de la celda es la propia cadena del valor de color.
+
+## Ejemplos de uso
+
+```ts
+import { parseColorString, formatColor, rgbToHsv } from '@lh-ui/share/core/color-picker'
+
+parseColorString('#2B4C7C')        // { r: 43, g: 76, b: 124, a: 1 }
+parseColorString('rgba(43,76,124,0.5)')
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'hex')   // '#2b4c7c80'
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'rgb')   // 'rgba(43, 76, 124, 0.5)'
+
+// ciclo de arrastre: HSV (estado de interacción) → RGB (estado de envío) → HSV (estado de eco), con clamp todo el camino
+rgbToHsv({ r: 43, g: 76, b: 124, a: 1 })  // { h: 215, s: 0.65, v: 0.49, a: 1 }
+```
+
+```vue
+<!-- Vue3: las coordenadas del puntero del panel de saturación = semántica HSV -->
+<div
+  class="lh-color-picker__saturation"
+  @pointerdown="onSaturationDrag"
+>
+  <div class="lh-color-picker__saturation-pointer" :style="{ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%` }" />
+</div>
+```
+
+```tsx
+// React: al terminar el arrastre siempre se envía por hsvToRgb → formatColor
+const commit = (hsv: LhColorHsv) => onChange(formatColor(hsvToRgb(hsv), format))
+```
+
+```ts
+// uniapp: el arrastre usa touchstart/move/end a nivel de elemento (MP despacha sobre el objetivo táctil),
+// el posicionamiento del panel usa el popper del adapter con medición a dos fotogramas; las matemáticas del color son idénticas a esta capa
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-color-picker` | contenedor del trigger (inline-flex + muestra de color + texto del valor) |
+| `.lh-color-picker--{small\|large}` | escalas de tamaño |
+| `.lh-color-picker--disabled` / `--open` / `--empty` | desactivado / panel abierto / sin color elegido (el texto del valor pasa a color de marcador) |
+| `.lh-color-picker__swatch` | bloque de la muestra de color |
+| `.lh-color-picker__value` | texto del valor actual del color (fuente monoespaciada) |
+| `.lh-color-picker__panel` | panel flotante (posicionado por popper) |
+| `.lh-color-picker__saturation` / `__saturation-pointer` | panel de saturación/luminosidad y su puntero |
+| `.lh-color-picker__slider` / `__hue` / `__alpha` / `__slider-thumb` | deslizadores de tono/transparencia (fondo de tablero de ajedrez para alpha) |
+| `.lh-color-picker__input` | campo de entrada hex/rgb |
+| `.lh-color-picker__predefine` / `__predefine-item` | paleta predefinida |
+
+El degradado de tono y el tablero de ajedrez del alpha son visuales fijos (independientes del tema); el resto de los colores pasan todos por `var(--lh-*)`.
+
+## Notas
+
+- En las conversiones no te saltes el clamp por comodidad: las coordenadas de coma flotante producidas por el arrastre deben pasar primero por `clampColorRatio/Hue` antes de convertir; de lo contrario las colas de coma flotante acabarían escritas en el hex.
+- Cuando `parseColorString` devuelva `null`, la capa UI debe conservar el último valor legal (no limpiar, no enviar), distinguiendo «entrada ilegal» y «limpiar» como dos acciones.
+- En los escenarios donde el `<span>` de la muestra no puede enfocarse para abrir el panel, el trigger completo debería ser un `<button>` o un elemento equivalente con `role`: los estilos solo gestionan el aspecto.
+
+<FnPlayground module="color-picker" fn="formatColor" params='{"color": {"r": 43, "g": 76, "b": 124, "a": 1}, "format": "hex"}' />

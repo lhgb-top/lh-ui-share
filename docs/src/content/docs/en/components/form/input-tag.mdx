@@ -1,0 +1,147 @@
+---
+title: input-tag — InputTag
+description: 'insertInputTag immutable insertion (empty/duplicate/max rejection reasons), removeInputTag/removeLastInputTag removal, isInputTagTriggerKey trigger key decision'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Tag input = an input box + Enter (or comma/space) to create a tag + Backspace to delete the last tag. `core/input-tag` makes the add/remove logic an **immutable update** and hands out machine-readable rejection reasons; the input box, tag rendering, and delete buttons are carried by each platform's UI layer.
+
+## When to use
+
+- Each platform implements `LhInputTag`: a v-model tag list, trigger keys (`enter`/`space`/`comma`), the `max` limit, deduplication, Backspace to delete the last tag.
+- Scenarios that only need the tag add/remove logic (without caring about the input box form).
+- **Do not use it for**: single-value selection — use `core/select`; enumerated multi-select with fixed options — use `core/checkbox-group`. A tag input's tags come from **free input**, and that is its essential dividing line from multi-select components.
+
+## Import
+
+```ts
+import {
+  isValidInputTagTrigger,
+  isInputTagTriggerKey,
+  getInputTagClassNames,
+  insertInputTag,
+  removeInputTag,
+  removeLastInputTag,
+} from '@lh-ui/share/core/input-tag'
+import type { LhInputTagState, LhInputTagTrigger, LhInputTagInsertResult } from '@lh-ui/share/core/input-tag'
+```
+
+## Design intent
+
+**Immutable updates**: `insertInputTag` / `removeInputTag` / `removeLastInputTag` all return new arrays and never mutate their inputs in place — the UI layer can feed the result straight into `setData` / `setState` with no copying, and the implicit coupling of "mutated the input but forgot to dispatch" is eliminated.
+
+**Machine-readable rejection reasons**: insertion failure is not silent; `LhInputTagInsertResult.reason` gives one of three values:
+
+- `empty`: the input is an empty string after trim.
+- `duplicate`: `allowDuplicate` is off and the tag already exists.
+- `max`: `max` is a positive number and the limit has been reached.
+
+The UI layer decides how to notify based on this (shake / toast / nothing); core pops no notification — notification is a UI decision, rejection is a data fact.
+
+**max semantics**: non-positive means unlimited; once the limit is reached it **rejects rather than replacing the earliest tag** — silently dropping data is a surprise, not a convenience; exceeding the limit should be seen.
+
+**Trigger key compatibility**: the `space` trigger of `isInputTagTriggerKey` accepts both `' '` and the legacy key value `'Spacebar'` (the key value of old IE / some Android WebViews), and `comma` matches `','`.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `isValidInputTagTrigger` | `(trigger: string) => trigger is LhInputTagTrigger` | guard | trigger key validity |
+| `getInputTagClassNames` | `(state: LhInputTagState) => string[]` | class name array | container class names (`--disabled`/`--readonly`) |
+| `isInputTagTriggerKey` | `(key: string, trigger: LhInputTagTrigger) => boolean` | boolean | decides whether a keyboard event triggers a commit |
+| `insertInputTag` | `(tags, input, state?) => LhInputTagInsertResult` | insert result | commits one tag (immutable) |
+| `removeInputTag` | `(tags, index) => string[]` | new array | deletes the given index (out-of-range returns the original array) |
+| `removeLastInputTag` | `(tags) => string[]` | new array | Backspace deletes the last tag |
+
+## Type definitions
+
+```ts
+export type LhInputTagTrigger = 'enter' | 'space' | 'comma'
+
+export interface LhInputTagState {
+  max?: number
+  allowDuplicate?: boolean
+  readonly?: boolean
+  disabled?: boolean
+}
+
+export interface LhInputTagInsertResult {
+  tags: string[]
+  inserted: boolean
+  reason?: 'empty' | 'duplicate' | 'max'
+}
+```
+
+## Accessibility
+
+- The tag delete button is hosted on a native `<button>` (or an equivalent element) + `aria-label` (such as "Remove Landscape"), aligned with the close button of `core/tag`.
+- The input's `aria-describedby` points to hint copy like "Press Enter to add a tag", so keyboard users do not have to guess the trigger key.
+- The tag list container should use `role="list"` and tags `role="listitem"`, so screen readers can announce "item N".
+
+## Usage examples
+
+```ts
+import { insertInputTag, removeLastInputTag, isInputTagTriggerKey } from '@lh-ui/share/core/input-tag'
+
+insertInputTag(['Landscape', 'Flower-and-bird'], 'Figures', { max: 5, allowDuplicate: false })
+// { tags: ['Landscape', 'Flower-and-bird', 'Figures'], inserted: true }
+
+insertInputTag(['Landscape'], 'Landscape', {})
+// { tags: ['Landscape'], inserted: false, reason: 'duplicate' }
+
+insertInputTag(['a', 'b'], 'c', { max: 2 })
+// { tags: ['a', 'b'], inserted: false, reason: 'max' }
+
+isInputTagTriggerKey('Enter', 'enter')   // true
+isInputTagTriggerKey(',', 'comma')       // true
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getInputTagClassNames({ disabled, readonly })">
+  <span v-for="(tag, index) in tags" :key="tag" class="lh-input-tag__tag">
+    {{ tag }}
+    <button class="lh-input-tag__tag-close" aria-label="Remove" @click="tags = removeInputTag(tags, index)">×</button>
+  </span>
+  <input
+    class="lh-input-tag__input"
+    @keydown="isInputTagTriggerKey($event.key, trigger) && commit()"
+    @keydown.backspace="!input && (tags = removeLastInputTag(tags))"
+  />
+</span>
+```
+
+```tsx
+// React: the insert result takes over the state wholesale; rejection reasons go to the notification layer
+const result = insertInputTag(tags, input, { max, allowDuplicate })
+if (result.inserted) setTags(result.tags)
+else if (result.reason === 'max') toast('Tag limit reached')
+```
+
+```ts
+// uniapp: mini programs have no keydown; the trigger key maps to confirm-type / @confirm (enter),
+// and comma triggering falls back on MP to "split when the input already contains a comma";
+// Backspace semantics fall back the same way
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-input-tag` | container: flex-wrap, primary-color border on hover, focus-within for focus |
+| `.lh-input-tag--disabled` | disabled state |
+| `.lh-input-tag--readonly` | readonly state |
+| `.lh-input-tag__tag` | tag chip (light background with outline, no wrapping) |
+| `.lh-input-tag__tag-close` | tag delete button |
+| `.lh-input-tag__input` | embedded input (borderless with a transparent background, placeholder color) |
+
+Colors are all `var(--lh-*)`; dark mode is flipped by `var-dark.scss`.
+
+## Notes
+
+- The trim of `insertInputTag` removes leading/trailing whitespace, not internal whitespace; `'a b'` is one valid tag.
+- `removeLastInputTag` only carries Backspace semantics when called while **the input box is empty** (with input present, Backspace deletes characters); the UI layer is responsible for that decision.
+- When the trigger key is `comma`, the UI layer is advised to split commas in the input immediately; otherwise a user typing `a,b` creates one whole tag.
+
+<FnPlayground module="input-tag" fn="insertInputTag" params='{"tags": ["Landscape", "Flower-and-bird"], "input": "Figures", "state": {"max": 5, "allowDuplicate": false}}' />

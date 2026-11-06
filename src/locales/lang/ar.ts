@@ -12,6 +12,7 @@ export default {
   input: {
     placeholder: 'الرجاء الإدخال',
     password: 'كلمة المرور',
+    clear: 'مسح',
   },
   // منتقي التاريخ (محجوز)
   datepicker: {
@@ -75,6 +76,7 @@ export default {
     placeholder: 'الرجاء الاختيار',
     panelLabel: 'الرجاء اختيار خيار متسلسل',
     columnLabel: 'المستوى {n}',
+    filter: 'بحث',
   },
   // الوسم
   tag: {
@@ -89,6 +91,40 @@ export default {
     noMatch: 'لا توجد بيانات مطابقة',
     noData: 'لا توجد بيانات',
     placeholder: 'الرجاء الاختيار',
+    clear: 'مسح',
+    filter: 'بحث',
+    empty: 'لا تطابق',
+  },
+  // الإكمال التلقائي
+  autocomplete: {
+    label: 'الإكمال التلقائي',
+    noMatch: 'لا توجد بيانات مطابقة',
+    noData: 'لا توجد بيانات',
+    placeholder: 'أدخل',
+    clear: 'مسح',
+  },
+  // الإشارات
+  mentions: {
+    label: 'الإشارات',
+    noMatch: 'لا يوجد أعضاء مطابقون',
+    placeholder: 'اكتب @ لذكر شخص ما',
+  },
+  // النص
+  text: {
+    copy: 'نسخ',
+    copied: 'تم النسخ',
+  },
+  // 颜色选择器
+  colorPicker: {
+    label: 'منتقي الألوان',
+    placeholder: 'اختر اللون',
+    inputLabel: 'قيمة اللون',
+  },
+  // 标签输入
+  inputTag: {
+    label: 'إدخال الوسوم',
+    placeholder: 'أدخل وسمًا ثم اضغط Enter',
+    removeTag: 'حذف الوسم',
   },
   // النموذج
   form: {
@@ -130,6 +166,9 @@ export default {
   // مربع الحوار
   dialog: {
     close: 'إغلاق مربع الحوار',
+    confirm: 'تأكيد',
+    cancel: 'إلغاء',
+    ariaLabel: 'مربع الحوار',
   },
   // رسالة
   message: {
@@ -308,5 +347,9 @@ export default {
     moveToSource: 'نقل إلى اليسار',
     search: 'بحث',
     empty: 'لا توجد بيانات',
+    saturation: 'التشبع',
+    hue: 'تدرج اللون',
+    alpha: 'التعتيم',
+    removeTag: 'إزالة الوسم',
   },
 } as const;

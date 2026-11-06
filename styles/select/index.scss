@@ -8,7 +8,7 @@
      需要随容器收缩，否则触发器溢出（触发器内部是 width: 100%，会跟着根元素走） */
   max-width: 100%;
   color: var(--lh-text-primary, #2C2C2C);
-  font-size: 14px;
+  font-size: var(--lh-font-size-base, 14px);
 
   &__trigger {
     display: flex;
@@ -85,7 +85,10 @@
     border: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
     border-radius: 2px;
     background: var(--lh-bg-color, #FAF6F0);
-    box-shadow: 0 6px 16px rgba(44, 44, 44, 0.12);
+    /* 弹层阴影声明在自身规则内（card 局部令牌模式）：popperContainer 透传后
+       DOM 被搬出 .lh-select，根作用域变量继承失效，自身声明仍然生效 */
+    --lh-select-dropdown-shadow: 0 6px 16px rgba(44, 44, 44, 0.12);
+    box-shadow: var(--lh-select-dropdown-shadow);
 
     &--teleported {
       position: fixed;
@@ -139,12 +142,12 @@
 
   &--small &__trigger {
     min-height: var(--lh-control-height-small, 24px);
-    font-size: 12px;
+    font-size: var(--lh-font-size-extra-small, 12px);
   }
 
   &--large &__trigger {
     min-height: var(--lh-control-height-large, 40px);
-    font-size: 16px;
+    font-size: var(--lh-font-size-medium, 16px);
   }
 
   &--disabled {

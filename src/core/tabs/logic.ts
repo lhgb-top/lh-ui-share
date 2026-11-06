@@ -63,6 +63,10 @@ export function getNextActiveName(
 /**
  * 计算移除页签后的建议激活页签：被移除项激活时，优先其右侧最近可用项，否则左侧最近可用项；
  * 被移除项未激活时维持 currentName；无可用页签返回 null
+ *
+ * **契约**：`records` 必须是**移除前**的列表（内部 `names.indexOf(removedName)`
+ * 假设被移除项仍在表中；传入移除后的列表会使 removedIndex 变 -1，"右侧最近可用项"
+ * 退化为"第一个可用项"）。四端调用方均在页签注销前调用，符合该契约。
  */
 export function getNameAfterRemove(
   records: LhTabRecord[],

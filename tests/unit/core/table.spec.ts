@@ -97,8 +97,21 @@ describe('LhTable core', () => {
     ])
     expect(offsets[0].left).toBe(0)
     expect(offsets[1].left).toBe(100)
+    // 非 px 字符串与缺失宽度：不参与偏移（undefined，不赋 left/right），
+    // 避免相邻固定列都被钉在 0 处重叠
     expect(offsets[2]).toEqual({})
+    // d 有 60px 宽度：右侧首个固定列，偏移 0
     expect(offsets[3].right).toBe(0)
+  })
+
+  it('无有效宽度的固定列不参与 sticky 偏移（防重叠回归）', () => {
+    // 相邻两个 fixed left 列、第一个无宽度：若照常赋 0 偏移，两列都 sticky 在 left:0 重叠
+    const offsets = getStickyOffsets([
+      { prop: 'a', label: 'A', fixed: 'left' },
+      { prop: 'b', label: 'B', width: 100, fixed: 'left' },
+    ])
+    expect(offsets[0]).toEqual({})
+    expect(offsets[1].left).toBe(0)
   })
 
   it('parses px string widths for sticky offsets', () => {
@@ -110,8 +123,9 @@ describe('LhTable core', () => {
     ])
     expect(offsets[0].left).toBe(0)
     expect(offsets[1].left).toBe(100)
-    // 非 px 字符串与缺失宽度按 0 计，偏移不累加
-    expect(offsets[3].right).toBe(0)
+    // 非 px 字符串与缺失宽度：不参与偏移（undefined，不赋 left/right）
+    expect(offsets[2]).toEqual({})
+    expect(offsets[3].right).toBeUndefined()
   })
 
   it('computes class names', () => {

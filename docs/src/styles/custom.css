@@ -65,6 +65,14 @@
   padding-block: clamp(2.5rem, 6vw, 4.5rem);
 }
 
+/* 家族统一横幅（logo-banner.png，3:1 宽幅，首页 mdx 正文引用） */
+.lh-home-banner {
+  display: block;
+  width: min(880px, 92vw);
+  height: auto;
+  margin: 1.5rem auto 2.5rem;
+}
+
 /* lh 演示块容器：隔离 --lh-* 令牌，不影响 Starlight 自身 */
 .lh-demo-shell {
   border: 1px solid var(--lh-border-color-base, #dcdfe6);

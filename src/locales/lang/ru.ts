@@ -10,6 +10,7 @@ export default {
   input: {
     placeholder: 'Введите',
     password: 'Пароль',
+    clear: 'Очистить',
   },
   // Компонент выбора даты (зарезервировано)
   datepicker: {
@@ -74,6 +75,7 @@ export default {
     placeholder: 'Выберите',
     panelLabel: 'Выберите элемент каскада',
     columnLabel: 'Уровень {n}',
+    filter: 'Поиск',
   },
   // Тег
   tag: {
@@ -88,6 +90,40 @@ export default {
     noMatch: 'Нет подходящих данных',
     noData: 'Нет данных',
     placeholder: 'Выберите',
+    clear: 'Очистить',
+    filter: 'Поиск',
+    empty: 'Нет совпадений',
+  },
+  // Автодополнение
+  autocomplete: {
+    label: 'Автодополнение',
+    noMatch: 'Нет совпадений',
+    noData: 'Нет данных',
+    placeholder: 'Введите',
+    clear: 'Очистить',
+  },
+  // Упоминания
+  mentions: {
+    label: 'Упоминания',
+    noMatch: 'Нет совпадающих участников',
+    placeholder: 'Введите @, чтобы упомянуть участника',
+  },
+  // Текст
+  text: {
+    copy: 'Копировать',
+    copied: 'Скопировано',
+  },
+  // 颜色选择器
+  colorPicker: {
+    label: 'Выбор цвета',
+    placeholder: 'Выберите цвет',
+    inputLabel: 'Значение цвета',
+  },
+  // 标签输入
+  inputTag: {
+    label: 'Ввод тегов',
+    placeholder: 'Введите тег и нажмите Enter',
+    removeTag: 'Удалить тег',
   },
   // Форма
   form: {
@@ -129,6 +165,9 @@ export default {
   // Диалоговое окно
   dialog: {
     close: 'Закрыть диалог',
+    confirm: 'OK',
+    cancel: 'Отмена',
+    ariaLabel: 'Диалог',
   },
   // Сообщение
   message: {
@@ -307,5 +346,9 @@ export default {
     moveToSource: 'Переместить влево',
     search: 'Поиск',
     empty: 'Нет данных',
+    saturation: 'Насыщенность',
+    hue: 'Оттенок',
+    alpha: 'Прозрачность',
+    removeTag: 'Удалить тег',
   },
 } as const;

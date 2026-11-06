@@ -12,7 +12,8 @@ export function isTreeNodeLeaf(node: LhTreeNode): boolean {
  * 扁平化树（深度优先，父在子前）。
  * 只展开 expandedKeys 命中的节点的子树。
  *
- * 祖先键集合判重保护循环引用数据；expandedKeys 入口转 Set，O(1) 查找。
+ * 祖先键集合判重保护循环引用：seen 沿递归链 add、返回时 delete（与「每层复制 Set」
+ * 等价但省去 O(depth) × 每层的拷贝）；expandedKeys 入口转 Set，O(1) 查找。
  */
 export function flattenTree(
   nodes: LhTreeNode[],
@@ -36,8 +37,7 @@ export function flattenTree(
       isLeaf,
     })
     if (!isLeaf && expandedSet.has(node.key) && node.children) {
-      const nextSeen = new Set(seen)
-      nextSeen.add(node.key)
+      seen.add(node.key)
       result.push(
         ...flattenTree(
           node.children,
@@ -46,9 +46,10 @@ export function flattenTree(
           node.key,
           [...ancestorKeys, node.key],
           expandedSet,
-          nextSeen,
+          seen,
         ),
       )
+      seen.delete(node.key)
     }
   }
   return result
@@ -60,9 +61,9 @@ export function getDescendantKeys(node: LhTreeNode, seen: Set<string> = new Set(
   const keys: string[] = []
   for (const child of node.children) {
     if (seen.has(child.key)) continue
-    const nextSeen = new Set(seen)
-    nextSeen.add(child.key)
-    keys.push(child.key, ...getDescendantKeys(child, nextSeen))
+    seen.add(child.key)
+    keys.push(child.key, ...getDescendantKeys(child, seen))
+    seen.delete(child.key)
   }
   return keys
 }
@@ -77,9 +78,9 @@ export function findTreeNode(
     if (seen.has(node.key)) continue
     if (node.key === key) return node
     if (node.children) {
-      const nextSeen = new Set(seen)
-      nextSeen.add(node.key)
-      const found = findTreeNode(node.children, key, nextSeen)
+      seen.add(node.key)
+      const found = findTreeNode(node.children, key, seen)
+      seen.delete(node.key)
       if (found) return found
     }
   }
@@ -95,8 +96,11 @@ export function getNodeCheckState(
   checkedKeys: string[],
   checkStrictly = false,
 ): LhTreeCheckState {
+  // 入口转 Set：级联勾选大树时 checkedKeys 可达数千键，includes 线性查找会让
+  // 每个父节点的渲染都做 O(leaves × checkedKeys) 次扫描
+  const checkedSet = checkedKeys instanceof Set ? checkedKeys : new Set(checkedKeys)
   if (checkStrictly || isTreeNodeLeaf(node)) {
-    return checkedKeys.includes(node.key) ? 'checked' : 'unchecked'
+    return checkedSet.has(node.key) ? 'checked' : 'unchecked'
   }
 
   const leaves = collectCheckableLeafKeys(node)
@@ -104,11 +108,14 @@ export function getNodeCheckState(
   // 但 toggleCheckKeys 会把它的自身键写入 checkedKeys。此处与 isSubtreeFullyChecked 的
   // next.has(node.key) 分支同义——键在即 checked，否则 unchecked（空子树不可能半选）
   if (leaves.length === 0) {
-    return checkedKeys.includes(node.key) ? 'checked' : 'unchecked'
+    return checkedSet.has(node.key) ? 'checked' : 'unchecked'
   }
-  const checkedLeaves = leaves.filter((key) => checkedKeys.includes(key))
-  if (checkedLeaves.length === 0) return 'unchecked'
-  if (checkedLeaves.length === leaves.length) return 'checked'
+  let checkedCount = 0
+  for (const leafKey of leaves) {
+    if (checkedSet.has(leafKey)) checkedCount++
+  }
+  if (checkedCount === 0) return 'unchecked'
+  if (checkedCount === leaves.length) return 'checked'
   return 'indeterminate'
 }
 
@@ -125,9 +132,9 @@ function collectCheckableLeafKeys(node: LhTreeNode, seen: Set<string> = new Set(
   const keys: string[] = []
   for (const child of node.children ?? []) {
     if (seen.has(child.key)) continue
-    const nextSeen = new Set(seen)
-    nextSeen.add(child.key)
-    keys.push(...collectCheckableLeafKeys(child, nextSeen))
+    seen.add(child.key)
+    keys.push(...collectCheckableLeafKeys(child, seen))
+    seen.delete(child.key)
   }
   return keys
 }
@@ -138,9 +145,9 @@ export function collectLeafKeys(node: LhTreeNode, seen: Set<string> = new Set())
   const keys: string[] = []
   for (const child of node.children ?? []) {
     if (seen.has(child.key)) continue
-    const nextSeen = new Set(seen)
-    nextSeen.add(child.key)
-    keys.push(...collectLeafKeys(child, nextSeen))
+    seen.add(child.key)
+    keys.push(...collectLeafKeys(child, seen))
+    seen.delete(child.key)
   }
   return keys
 }
@@ -190,6 +197,9 @@ function collectCascadeKeys(
  * 勾选/取消某节点：级联到全部后代，并向上回溯更新祖先（全选才加入、否则移除）。
  * checkStrictly（父子不联动）时只增删该键自身，不做级联与祖先回溯。
  * 返回新的 checkedKeys（去重、保序）。
+ *
+ * 祖先回溯走 buildParentIndex 的一次性索引（O(n) 建表 + O(depth) 回溯）；
+ * 此前每上一层都 findParentNode 全树扫描一次，深树下单次勾选 O(depth × n)。
  */
 export function toggleCheckKeys(
   roots: LhTreeNode[],
@@ -217,16 +227,41 @@ export function toggleCheckKeys(
 
   // 向上回溯：子树完全勾选 → 父级加入；否则父级移除。
   // 禁用父级不参与级联（键不写入、也不移除，保持「其键不被级联改写」的不变量）
-  let parent = findParentNode(roots, key)
+  const parentIndex = buildParentIndex(roots)
+  let parent = parentIndex.get(key) ?? null
   while (parent) {
     if (!parent.disabled) {
       if (isSubtreeFullyChecked(parent, next)) next.add(parent.key)
       else next.delete(parent.key)
     }
-    parent = findParentNode(roots, parent.key)
+    parent = parentIndex.get(parent.key) ?? null
   }
 
   return Array.from(next)
+}
+
+/**
+ * 一次性构建 key → 父节点 的索引（含全部层级）。
+ *
+ * 供需要逐层回溯的调用方复用（toggleCheckKeys 等），替代每层一次的
+ * findParentNode 全树扫描。祖先链判重保护循环引用，环上键只按首次出现计。
+ */
+export function buildParentIndex(
+  roots: LhTreeNode[],
+  seen: Set<string> = new Set(),
+): Map<string, LhTreeNode> {
+  const index = new Map<string, LhTreeNode>()
+  const walk = (nodes: LhTreeNode[], parent: LhTreeNode | null): void => {
+    for (const node of nodes) {
+      if (seen.has(node.key)) continue
+      seen.add(node.key)
+      if (parent) index.set(node.key, parent)
+      if (node.children && node.children.length > 0) walk(node.children, node)
+      seen.delete(node.key)
+    }
+  }
+  walk(roots, null)
+  return index
 }
 
 /** 查父节点（顶层返回 null；祖先链判重保护循环引用） */

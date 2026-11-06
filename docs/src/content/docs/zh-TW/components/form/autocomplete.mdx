@@ -1,0 +1,161 @@
+---
+title: autocomplete —— 自動補全
+description: 'filterSuggestions 過濾建議項（大小寫/trim/自訂 matcher），四個 aria 建構器組裝 APG combobox 語義'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+自動補全 = 輸入框 + 隨輸入過濾的下拉建議。`core/autocomplete` 只管兩件事：**過濾**與 **combobox 無障礙語義**。輸入框、下拉面板、定位、點擊外部關閉、過渡全部由各端 UI 層承接。
+
+## 何時使用
+
+- 各端實作 `LhAutocomplete`：過濾邏輯與 aria 屬性包全由 core 產出，UI 層不自己寫 `includes`。
+- 在自訂輸入控制項上複用同一套過濾與 combobox 語義時。
+- **不該用它**：標籤輸入用 `core/input-tag`；@ 提及用 `core/mentions`；無需輸入過濾的下拉選擇用 `core/select`。
+
+## 匯入方式
+
+```ts
+import {
+  filterSuggestions,
+  getAutocompleteOptionId,
+  getAutocompleteTriggerAria,
+  getAutocompleteListboxAria,
+  getAutocompleteOptionAria,
+  getAutocompleteOptionValue,
+} from '@lh-ui/share/core/autocomplete'
+import type { LhAutocompleteOption, LhAutocompleteFilterOptions } from '@lh-ui/share/core/autocomplete'
+```
+
+## 設計意圖
+
+**過濾的三條邊界**（`filterSuggestions`）：
+
+- 空查詢字串（trim 後為空）傳回**全部選項**：focus 觸發場景需要展示全部候選；是否展示空查詢面板由 UI 層的 trigger 語義決定，本函式不做隱藏判斷。
+- `trim` 預設開啟：首尾空白不參與比對；顯式傳 `false` 時保留原樣比對。
+- 停用項**保留**在結果裡：過濾只管可見性，置灰與禁選是 UI 層的事——把 disabled 過濾掉會讓使用者「看到列表憑空變短」。
+
+**確定性選項 id**：`getAutocompleteOptionId(listboxId, index)` 拼出 `{listboxId}-option-{index}`。高亮項變化時觸發器只需更新 `aria-activedescendant` 的值，讀屏軟體即可播報新高亮項，無需重新掛載 DOM。負數 / 非整數索引（-1 = 無高亮）**不產出 id**——否則觸發器會參照一個不存在的元素。
+
+**aria 與 select 同構**：`getAutocompleteTriggerAria` 輸出 `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant`，與 APG combobox pattern 一致；`value` 提交值與 `label` 展示文案分離（`getAutocompleteOptionValue` 未傳 value 時以 label 兜底）。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `filterSuggestions` | `(options, query, opts?) => LhAutocompleteOption[]` | 選項陣列 | 按查詢字串過濾（大小寫 / trim / matcher 可配） |
+| `getAutocompleteOptionId` | `(listboxId?, index) => string \| undefined` | 選項 id | 確定性拼接，供 aria-activedescendant 參照 |
+| `getAutocompleteTriggerAria` | `(input: LhAutocompleteTriggerAriaInput) => LhAriaAttrs` | aria 屬性包 | 觸發器 combobox 語義 |
+| `getAutocompleteListboxAria` | `(id?) => LhAriaAttrs` | aria 屬性包 | 列表盒 role + id |
+| `getAutocompleteOptionAria` | `(input: LhAutocompleteOptionAriaInput) => LhAriaAttrs` | aria 屬性包 | 選項 role + 選中 / 停用態 |
+| `getAutocompleteOptionValue` | `(option: LhAutocompleteOption) => string \| number` | 提交值 | value 未傳時以 label 兜底 |
+
+## 類型定義
+
+```ts
+export interface LhAutocompleteOption {
+  label: string
+  value?: string | number
+  disabled?: boolean
+}
+
+export interface LhAutocompleteFilterOptions {
+  caseSensitive?: boolean
+  trim?: boolean
+  /** 自訂比對判定（預設：label 包含查詢字串），傳回 true 表示保留 */
+  matcher?: (option: LhAutocompleteOption, query: string) => boolean
+}
+
+export interface LhAutocompleteTriggerAriaInput {
+  visible: boolean
+  listboxId?: string
+  /** 當前高亮項索引（-1 = 無高亮） */
+  highlightedIndex: number
+}
+
+export interface LhAutocompleteOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## 無障礙
+
+完整的 combobox 模式由三個屬性包拼出：
+
+- 觸發器：`role="combobox"`、`aria-expanded`（面板展閉）、`aria-controls`（列表盒 id）、`aria-activedescendant`（高亮項 id）。
+- 列表盒：`role="listbox"` + `id`。
+- 選項：`role="option"`、`aria-selected`（= 高亮態）、`aria-disabled`。
+
+鍵盤導航（↑↓ 移動高亮、Enter 選中、Esc 關閉）由 UI 層實現並同步更新 `highlightedIndex`——core 保證語義正確，互動由各端承接。
+
+## 使用範例
+
+```ts
+import { filterSuggestions, getAutocompleteTriggerAria } from '@lh-ui/share/core/autocomplete'
+
+filterSuggestions(
+  [{ label: '青花瓷' }, { label: '水墨' }, { label: '青綠山水' }],
+  '青',
+)
+// [{ label: '青花瓷' }, { label: '青綠山水' }]
+
+// 拼音首字母比對：交由 matcher 覆蓋
+filterSuggestions([{ label: '水墨' }], 'sm', {
+  matcher: (option, query) => pinyinAbbr(option.label).startsWith(query),
+})
+```
+
+```vue
+<!-- Vue3：input 掛觸發器 aria，下拉掛 listbox aria，高亮項走 aria-activedescendant -->
+<input
+  role="combobox"
+  :aria-expanded="visible"
+  :aria-controls="listboxId"
+  :aria-activedescendant="highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined"
+  @input="query = $event.target.value"
+/>
+<ul v-bind="getAutocompleteListboxAria(listboxId)">
+  <li
+    v-for="(option, index) in filterSuggestions(options, query)"
+    :key="index"
+    :aria-selected="index === highlightedIndex"
+  >{{ option.label }}</li>
+</ul>
+```
+
+```tsx
+// React：受控高亮 + 屬性包展開
+<input {...getAutocompleteTriggerAria({ visible, listboxId, highlightedIndex })} />
+```
+
+```ts
+// uniapp：小程式無真實 DOM id 參照，aria 屬性包僅在 h5 端下發，
+// MP 端保留鍵盤導航的停用守衛（無鍵盤事件，見計畫文件平台差異登記）
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-autocomplete` | 基礎類：relative 容器、期望寬度 240px |
+| `.lh-autocomplete__inner` | 輸入框（focus/hover 主色邊框） |
+| `.lh-autocomplete__prefix` | 前置圖示位 |
+| `.lh-autocomplete__clear` | 清除按鈕 |
+| `.lh-autocomplete__dropdown` | 下拉面板（`--teleported` 為掛 body 形態） |
+| `.lh-autocomplete__option` | 選項（`--highlighted` 高亮 / `--disabled` 置灰） |
+| `.lh-autocomplete__empty` | 空狀態 |
+| `.lh-autocomplete--small` / `--large` | 尺寸檔 |
+| `.lh-autocomplete--disabled` | 停用態 |
+
+下拉開合走 `lh-autocomplete-fade` 過渡（淡入 + 輕微下移，與 select 同觀感），`prefers-reduced-motion` 降級。顏色全部 `var(--lh-*)`。
+
+## 注意事項
+
+- 過濾在 core、請求在 UI：遠端搜尋場景傳 `matcher` 或在 UI 層自行控制 options 陣列，core 不發請求。
+- `aria-selected` 語義是「高亮」而非「已提交」——combobox 單選模式下二者合一，若 UI 層拆分兩態需自行補 `aria-selected` 邏輯。
+- 停用項不過濾、不禁高亮（高亮後 Enter 由 UI 層拒絕），保證鍵盤使用者與滑鼠使用者看到同一份列表。
+
+<FnPlayground module="autocomplete" fn="filterSuggestions" params='{"options": [{"label": "青花瓷"}, {"label": "水墨"}, {"label": "青綠山水"}], "query": "青"}' />

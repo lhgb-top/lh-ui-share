@@ -85,11 +85,14 @@
 }
 
 .lh-table__cell--fixed-left-last {
-  box-shadow: 4px 0 6px -4px rgba(0, 0, 0, 12%);
+  /* 固定列边缘的方向性阴影（card 局部令牌模式，声明在自身规则内 teleport/搬迁安全） */
+  --lh-table-fixed-left-shadow: 4px 0 6px -4px rgba(0, 0, 0, 12%);
+  box-shadow: var(--lh-table-fixed-left-shadow);
 }
 
 .lh-table__cell--fixed-right-first {
-  box-shadow: -4px 0 6px -4px rgba(0, 0, 0, 12%);
+  --lh-table-fixed-right-shadow: -4px 0 6px -4px rgba(0, 0, 0, 12%);
+  box-shadow: var(--lh-table-fixed-right-shadow);
 }
 
 .lh-table__header .lh-table__cell--fixed-left,
@@ -101,7 +104,7 @@
 .lh-table__sort-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--lh-spacing-xs, 4px);
   padding: 0;
   border: none;
   background: transparent;
@@ -179,13 +182,15 @@
   border: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2)); /* hairline */
   border-radius: 6px;
   background-color: var(--lh-bg-color, #fff);
-  box-shadow: 0 6px 16px -4px rgba(0, 0, 0, 18%);
+  /* card 局部令牌模式：position: fixed 的筛选面板可能被搬出表格根，自身声明才稳妥 */
+  --lh-table-filter-shadow: 0 6px 16px -4px rgba(0, 0, 0, 18%);
+  box-shadow: var(--lh-table-filter-shadow);
 }
 
 .lh-table__filter-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--lh-spacing-xs, 4px);
   max-block-size: 220px;
   overflow: auto;
   padding-block-end: 8px;
@@ -194,7 +199,7 @@
 .lh-table__filter-option {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
   padding: 4px 6px;
   border-radius: 4px;
   cursor: pointer;
@@ -211,7 +216,7 @@
 .lh-table__filter-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
   border-block-start: 1px solid var(--lh-table-border, var(--lh-border-color-lighter, #EEE9E2));
   padding-block-start: 8px;
 }

@@ -1,0 +1,151 @@
+---
+title: color-picker — ColorPicker
+description: 'paired hex/rgb and HSV space conversions, parseColorString lenient parsing, formatColor outputs by format, getColorPickerClassNames container class names'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+All the difficulty of a color picker lies in **color math**: saturation pad dragging, hue/alpha sliders, interconversion between hex and rgb(), preset palettes — behind them are the round-trip conversions between the RGB and HSV color spaces. `core/color-picker` distills this math into a set of paired, fully clamped pure functions; drag interaction and panel positioning are carried by each platform's UI layer.
+
+## When to use
+
+- Each platform implements `LhColorPicker`: every conversion and clamp for the saturation/value pad + hue/alpha sliders.
+- Scenarios that only need color conversion: `parseColorString` / `formatColor` / `rgbToHex` and friends can be used standalone (such as form validation or dynamic theming).
+- **Do not use it for**: a fixed list of color values — just render it directly, no need to componentize; theme tokens are defined in the theme layer, not in this component.
+
+## Import
+
+```ts
+import {
+  isValidColorFormat,
+  hexToRgb,
+  rgbToHex,
+  rgbToHsv,
+  hsvToRgb,
+  parseColorString,
+  formatColor,
+  isSameColor,
+  getColorPickerClassNames,
+} from '@lh-ui/share/core/color-picker'
+import type { LhColorFormat, LhColorRgb, LhColorHsv, LhColorPickerState } from '@lh-ui/share/core/color-picker'
+```
+
+## Design intent
+
+**Two color spaces, each with its own duty**: interaction uses **HSV** (the saturation pad's x = saturation, y = value, the hue slider's h — drag coordinates are naturally HSV semantics), while storage and output use **RGB** (hex / rgb() strings). The four conversion functions are strictly paired (`hexToRgb`↔`rgbToHex`, `rgbToHsv`↔`hsvToRgb`), and inputs and outputs are **all clamped**: `clampColorChannel` to integers 0–255, `clampColorAlpha` to 0–1 keeping two decimal places (eliminating float tails like `0.30000000000000004`), `clampColorHue` to 0–360, `clampColorRatio` to 0–1. Non-finite inputs (NaN/Infinity/undefined) always fall back to safe defaults and never leak out.
+
+**Lenient parsing** (`parseColorString`): hex supports 3/4/6/8 digits (`#3ab` → `#33aabb`), rgb()/rgba() allow decimal and percentage channels (the lenient form from before CSS Color 4), and invalid input returns `null` instead of throwing — a half-typed `#2B4` should not crash the panel.
+
+**Output contract** (`formatColor`): the `rgb` format outputs `rgba(...)` when `a < 1`, and the `hex` format outputs 8-digit hex when `a < 1` — **alpha is never silently lost once it carries a value**; this is the dividing line between 6-digit and 8-digit hex output.
+
+**Equality guard** (`isSameColor`): compares after clamping both the channels and alpha, so the UI layer can implement "do not dispatch change when the value did not change" and avoid duplicate events from drag jitter.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `isValidColorFormat` | `(format: string) => format is LhColorFormat` | guard | format validity ('hex' \| 'rgb') |
+| `clampColorChannel` | `(value) => number` | integer 0–255 | clamps the r/g/b channels |
+| `clampColorAlpha` | `(value) => number` | 0–1, two decimals | clamps alpha |
+| `clampColorHue` | `(value) => number` | integer 0–360 | clamps hue |
+| `clampColorRatio` | `(value) => number` | 0–1, two decimals | clamps saturation / value |
+| `hexToRgb` | `(hex: string) => LhColorRgb \| null` | RGBA \| null | parses hex (3/4/6/8 digits) |
+| `rgbToHex` | `(color: LhColorRgb) => string` | hex string | outputs 8-digit hex when `a < 1` |
+| `rgbToHsv` | `(color: LhColorRgb) => LhColorHsv` | HSVA | RGB → HSV |
+| `hsvToRgb` | `(color: LhColorHsv) => LhColorRgb` | RGBA | HSV → RGB |
+| `parseColorString` | `(input?) => LhColorRgb \| null` | RGBA \| null | lenient parsing of hex / rgb() / rgba() |
+| `formatColor` | `(color: LhColorRgb, format: LhColorFormat) => string` | color string | outputs per the format |
+| `isSameColor` | `(left, right) => boolean` | boolean | effective equality after clamping |
+| `getColorPickerClassNames` | `(state: LhColorPickerState) => string[]` | class name array | container class names (`--{size}`/`--disabled`/`--open`) |
+
+## Type definitions
+
+```ts
+export type LhColorFormat = 'hex' | 'rgb'
+
+export interface LhColorRgb {
+  r: number
+  g: number
+  b: number
+  a: number
+}
+
+export interface LhColorHsv {
+  h: number
+  s: number
+  v: number
+  a: number
+}
+
+export interface LhColorPickerState {
+  size?: string
+  disabled?: boolean
+  open?: boolean
+}
+```
+
+## Accessibility
+
+- **Sliders**: the hue / alpha sliders should carry `role="slider"` + `aria-valuenow/min/max`; arrow-key fine-tuning (Shift to accelerate) is implemented by the UI layer — dragging is unreachable for keyboard users, so slider semantics must not be omitted.
+- **Color value input**: the hex/rgb input box inside the panel is the keyboard channel for changing the color; `aria-label` takes the locale entry `colorPicker.inputLabel` ("Color value").
+- **Preset palette**: every cell is focusable, with the focus ring provided by the style side's `focus-visible`; the cell's accessible name is the color value string itself.
+
+## Usage examples
+
+```ts
+import { parseColorString, formatColor, rgbToHsv } from '@lh-ui/share/core/color-picker'
+
+parseColorString('#2B4C7C')        // { r: 43, g: 76, b: 124, a: 1 }
+parseColorString('rgba(43,76,124,0.5)')
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'hex')   // '#2b4c7c80'
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'rgb')   // 'rgba(43, 76, 124, 0.5)'
+
+// Drag loop: HSV (interaction state) → RGB (commit state) → HSV (echo state), clamped all the way
+rgbToHsv({ r: 43, g: 76, b: 124, a: 1 })  // { h: 215, s: 0.65, v: 0.49, a: 1 }
+```
+
+```vue
+<!-- Vue3: saturation pad pointer coordinates = HSV semantics -->
+<div
+  class="lh-color-picker__saturation"
+  @pointerdown="onSaturationDrag"
+>
+  <div class="lh-color-picker__saturation-pointer" :style="{ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%` }" />
+</div>
+```
+
+```tsx
+// React: on drag end, commit uniformly through hsvToRgb → formatColor
+const commit = (hsv: LhColorHsv) => onChange(formatColor(hsvToRgb(hsv), format))
+```
+
+```ts
+// uniapp: dragging uses element-level touchstart/move/end (MP dispatches along the touch
+// target); panel positioning goes through the adapter popper with two-frame measurement;
+// the color math is identical to this layer
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-color-picker` | trigger container (inline-flex + swatch + value text) |
+| `.lh-color-picker--{small\|large}` | size tiers |
+| `.lh-color-picker--disabled` / `--open` / `--empty` | disabled / panel open / no color selected (value text falls back to placeholder color) |
+| `.lh-color-picker__swatch` | swatch color block |
+| `.lh-color-picker__value` | current color value text (monospace font) |
+| `.lh-color-picker__panel` | floating panel (positioned by popper) |
+| `.lh-color-picker__saturation` / `__saturation-pointer` | saturation/value pad and pointer |
+| `.lh-color-picker__slider` / `__hue` / `__alpha` / `__slider-thumb` | hue/alpha sliders (checkerboard background for alpha) |
+| `.lh-color-picker__input` | hex/rgb input box |
+| `.lh-color-picker__predefine` / `__predefine-item` | preset palette |
+
+The hue gradient and the alpha checkerboard are fixed visuals (theme-independent); all other colors are `var(--lh-*)`.
+
+## Notes
+
+- Never skip clamping in conversions for convenience: floating-point coordinates produced by dragging must go through `clampColorRatio/Hue` before conversion, otherwise float tails will be written into the hex.
+- When `parseColorString` returns `null`, the UI layer should keep the last valid value (no clearing, no commit), treating "invalid input" and "cleared" as two distinct actions.
+- In scenarios where the swatch `<span>` cannot be focused to trigger the panel, the trigger as a whole should be a `<button>` or an equivalent element carrying a `role` — styles only govern the look.
+
+<FnPlayground module="color-picker" fn="formatColor" params='{"color": {"r": 43, "g": 76, "b": 124, "a": 1}, "format": "hex"}' />

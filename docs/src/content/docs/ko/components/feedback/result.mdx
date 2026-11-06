@@ -1,0 +1,119 @@
+---
+title: result —— 결과 페이지
+description: 'getResultClassNames가 네 상태 클래스명을 계산하고, getResultIconName이 상태 기본 아이콘 또는 커스텀 아이콘을 해석하며, isValidResultStatus가 상태 가드'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+결과 페이지는 '한 과정이 전부 끝났다'는 종결 상태 피드백에 쓰입니다: 폼 제출 성공, 결재 반려, 페이지 권한 없음. `core/result`는 두 가지만 계산합니다: 네 상태 클래스명과 아이콘 이름. 제목, 부제목, 작업 영역의 타이포그래피는 스타일 클래스가 받고, 내용은 전부 사용 측에 맡깁니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhResult`를 구현할 때: `success` / `warning` / `error` / `info` 네 상태의 클래스명과 아이콘 매핑.
+- 결과 페이지 시각을 재사용하는 시나리오(차트 빈 상태, 마법사 완료 페이지, 에러 경계 폴백 UI)는 클래스명을 직접 가져옵니다.
+- **사용하면 안 되는 곳**: 동작 피드백의 가벼운 알림은 `core/message` / `core/notification`을 사용하세요——result는 페이지 전체 단위의 종결 상태이고, message는 즉시 피드백으로 계층이 다릅니다.
+
+## 가져오기
+
+```ts
+import { isValidResultStatus, getResultClassNames, getResultIconName } from '@lh-ui/share/core/result'
+import type { LhResultState, LhResultStatus } from '@lh-ui/share/core/result'
+```
+
+## 설계 의도
+
+**상태 집합은 고정 네 값, 확장 비개방**: 결과 페이지의 의미 공간은 성공 / 경고 / 오류 / 안내 그 자체입니다. 커스텀 status 문자열은 UI에 들어가기 전에 먼저 `isValidResultStatus` 가드를 거치고, 잘못된 값은 UI 계층이 저하합니다(보통 `info`로 회귀)——'임의 문자열'은 아이콘 매핑 표에 구멍을 만듭니다.
+
+**아이콘 해석의 우선순위 설계**(`getResultIconName`):
+
+- `icon`을 명시적으로 전달(**빈 문자열 포함**) → 그대로 채택합니다. 빈 문자열의 의미는 '일부러 아이콘을 원하지 않음'이며 '전달하지 않아 기본 사용'과 엄격히 구분됩니다——`icon !== undefined` 판정이지 참값 판정이 아닌 이유입니다.
+- 미전달 → 상태 기본 아이콘으로 회귀: success→`check`, warning→`warning`, error→`error`, info→`info`. 모두 기존 `LhIcon` 아이콘 집합을 소비하며 새 아이콘 자산을 추가하지 않습니다.
+
+**클래스명 극도 단순**(`getResultClassNames`): 기본 클래스 + 상태 수정자 클래스 각 하나이며 크기/밀도 변형이 없습니다——결과 페이지는 내용 컴포넌트라서 타이포그래피 탄력은 내용 자체와 `sx`에 맡깁니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `isValidResultStatus` | `(status: string) => status is LhResultStatus` | 가드 | 상태 타당성 |
+| `getResultClassNames` | `(state: LhResultState) => string[]` | 클래스명 배열 | 결과 페이지 클래스명 계산 |
+| `getResultIconName` | `(status, icon?) => LhIconName \| '' \| undefined` | 아이콘 이름 | 명시 icon 우선, 상태 기본으로 회귀 |
+
+```ts
+getResultClassNames({ status: 'success' })
+// ['lh-result', 'lh-result--success']
+
+getResultIconName('error')          // 'error'(상태 기본 아이콘)
+getResultIconName('error', '')      // ''(명확히 아이콘 없음)
+getResultIconName('error', 'smile') // 'smile'(커스텀 아이콘이 기본을 덮어씀)
+```
+
+## 타입 정의
+
+```ts
+export type LhResultStatus = 'success' | 'warning' | 'info' | 'error'
+
+export interface LhResultState {
+  status: LhResultStatus
+}
+```
+
+## 접근성
+
+- 컨테이너에는 `role="status"`를 걸기를 권장합니다(일부 단말은 자동 읽어주기로 구현): 결과 페이지가 나타나는 것만으로 과정 상태 변경을 뜻하므로, 스크린 리더 사용자가 포커스를 기다릴 필요가 없습니다.
+- 아이콘은 장식 의미이며 아이콘 노드는 `aria-hidden="true"`여야 합니다——상태 의미는 제목 텍스트가 담지하고 아이콘 색에 의존해 전달하지 않습니다(색약 사용자도 읽을 수 있음).
+- 작업 영역 버튼은 네이티브 의미를 유지하며 일반 버튼과 같습니다.
+
+## 사용 예
+
+```ts
+import { getResultClassNames, getResultIconName } from '@lh-ui/share/core/result'
+
+getResultClassNames({ status: 'warning' })
+// ['lh-result', 'lh-result--warning']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getResultClassNames({ status })" role="status">
+  <LhIcon v-if="getResultIconName(status, icon)" class="lh-result__icon" aria-hidden="true" :name="getResultIconName(status, icon)!" />
+  <div class="lh-result__title">{{ title }}</div>
+  <div v-if="subtitle" class="lh-result__subtitle">{{ subtitle }}</div>
+  <div v-if="$slots.extra" class="lh-result__extra"><slot name="extra" /></div>
+</div>
+```
+
+```tsx
+// React
+<div className={getResultClassNames({ status }).join(' ')} role="status">
+  <ResultIcon status={status} icon={icon} />
+  <div className="lh-result__title">{title}</div>
+  {extra}
+</div>
+```
+
+```ts
+// uniapp: 아이콘은 iconfont 글꼴(share SVG path 컴파일 산출물)을 따르고,
+// role="status"는 MP 단말에서 렌더링하지 않음으로 저하됩니다(스크린 리더 live region 능력이 없음)
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-result` | 컨테이너: 세로 중앙 배열, 결과 안쪽 여백 |
+| `.lh-result--{success\|warning\|error\|info}` | 상태 수정자(아이콘 착색 구동) |
+| `.lh-result__icon` | 아이콘 노드(64px, 색은 상태 토큰을 따름) |
+| `.lh-result__title` | 제목(20px 굵게) |
+| `.lh-result__subtitle` | 부제목(보조 색, 행 높이 1.8) |
+| `.lh-result__extra` | 작업 영역(위 여백 확보) |
+
+아이콘 색은 모두 `var(--lh-*)`(success/warning/danger/info 의미 토큰)이며, 다크 모드는 `var-dark.scss`가 뒤집습니다. 안쪽 여백/글자 크기는 컴포넌트 단위 토큰(`--lh-result-*`)으로 조절할 수 있습니다.
+
+## 주의사항
+
+- 잘못된 status를 조용히 core에 되돌려 보내지 마세요: 먼저 `isValidResultStatus`를 거친 뒤 저하 전략을 결정합니다——가드는 UI 계층용이며 core가 대신 결정하지 않습니다.
+- `icon`에 빈 문자열을 전달하는 것과 전달하지 않는 것은 두 가지 의미입니다(명확히 아이콘 없음 vs 기본 아이콘). 타입상 `LhIconName | '' | undefined`로 부호화됩니다.
+- 결과 페이지 네 상태의 아이콘 색 차이는 `__icon`에만 나타나며, 제목/부제목 색은 상태와 무관합니다——error 상태 때문에 제목을 붉게 물들이지 마세요. 그러면 타이포그래피 일관성이 깨집니다.
+
+<FnPlayground module="result" fn="getResultClassNames" params='{"state": {"status": "success"}}' />

@@ -1,0 +1,157 @@
+---
+title: mentions —— @提及
+description: 'getMentionContext 游標上下文解析（電子郵件偽前綴排除/CJK 不誤判/空白即停）、insertMention 寫回、getMentions 反解、filterMentionOptions 過濾'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+@提及 = 文字輸入控制項 + 前綴觸發字元（預設 `@`）+ 建議面板 + 選中寫回。`core/mentions` 只做**文字處理與語義**：解析游標是否處於一個待完成的提及片段、寫回選中的提及、從文字反解全部提及；控制項、面板與鍵盤互動由各端 UI 層承接。
+
+## 何時使用
+
+- 各端實作 `LhMentions`：`@` 觸發成員建議、選中寫回 `@張三 `、提交時收集提及列表。
+- 在任意 textarea / input 上複用提及解析邏輯（core 不綁定具體控制項）。
+- **不該用它**：建議來自任意輸入（非前綴字元驅動）的場景用 `core/autocomplete`。
+
+## 匯入方式
+
+```ts
+import {
+  getMentionContext,
+  insertMention,
+  getMentions,
+  filterMentionOptions,
+  getMentionOptionId,
+  getMentionsTriggerAria,
+  getMentionsListboxAria,
+  getMentionOptionAria,
+} from '@lh-ui/share/core/mentions'
+import type { LhMentionOption, LhMentionContext } from '@lh-ui/share/core/mentions'
+```
+
+## 設計意圖
+
+**上下文解析三規則**（`getMentionContext(text, caretIndex, prefix)`）：從游標向前掃描找最近的 prefix 字元——
+
+1. **電子郵件偽前綴排除**：prefix 前緊貼電子郵件本地部分字元（ASCII 字母數字與 `._%+-`）時視為電子郵件偽前綴（`a@b.com` 不觸發），**跳過並繼續向前找**——`通知 a@b.com 和 @張三` 中游標在句尾時仍能命中 `@張三`。
+2. **CJK 不誤判**：前綴排除只針對 ASCII 詞字元，`你好@張三` 正常觸發。
+3. **空白即停**：掃描遇到空白還沒找到 prefix 就放棄——`@張三 你好` 中游標在「好」之後不觸發（提及片段已閉合）。
+
+**寫回的是 label 不是 value**（`insertMention`）：文字裡需要的是人可讀的提及（`@張三`），機器識別用的 value 透過 onSelect 回呼傳給應用層。寫回格式為 `prefix + label + 空格`，傳回的新游標位置精確落在提及之後——使用者可以緊接著輸入正文。
+
+**反解與解析同一套判定**（`getMentions`）：形如 `@張三` 的片段（prefix 前為文字起點或空白），供提交場景收集 @ 列表，UI 層無需自己寫正規表示式。
+
+**過濾**（`filterMentionOptions`）：label 包含搜尋字串、大小寫不敏感；空搜尋字串傳回全部（prefix 剛輸入時展示全部候選是標準行為）；停用項保留（置灰由 UI 層處理）。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getMentionContext` | `(text, caretIndex, prefix?) => LhMentionContext` | 上下文 | 解析游標處是否為活動提及 |
+| `insertMention` | `(text, context, option, prefix?) => { text, caret }` | 新文字 + 游標 | 寫回選中的提及 |
+| `getMentions` | `(text, prefix?) => string[]` | 提及值陣列 | 反解全部已完成提及 |
+| `filterMentionOptions` | `(options, searchText) => LhMentionOption[]` | 選項陣列 | 過濾建議列表 |
+| `getMentionOptionId` | `(listboxId?, index) => string \| undefined` | 選項 id | 供 aria-activedescendant 參照 |
+| `getMentionsTriggerAria` | `(input: { visible, listboxId?, highlightedIndex }) => LhAriaAttrs` | aria 屬性包 | 輸入控制項 combobox 語義 |
+| `getMentionsListboxAria` | `(id?) => LhAriaAttrs` | aria 屬性包 | 列表盒 role + id |
+| `getMentionOptionAria` | `(input: LhMentionOptionAriaInput) => LhAriaAttrs` | aria 屬性包 | 選項 role + 選中 / 停用態 |
+
+## 類型定義
+
+```ts
+export interface LhMentionOption {
+  label: string
+  value?: string
+  disabled?: boolean
+}
+
+export interface LhMentionContext {
+  /** 是否存在活動提及（應展示建議面板） */
+  active: boolean
+  /** prefix 在文字中的索引；不活動時為 -1 */
+  prefixIndex: number
+  /** prefix 之後到游標之間的搜尋字串 */
+  searchText: string
+  /** 寫回時應替換的區間終點（= 游標位置；不活動時為 -1） */
+  end: number
+}
+
+export interface LhMentionOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## 無障礙
+
+- 輸入控制項升級為 combobox 語義：`getMentionsTriggerAria` 輸出 `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant`（與 autocomplete 同構；區別是控制項本體是 textarea/input）。
+- 面板建議列表：`role="listbox"`，選項 `role="option"` + `aria-selected` / `aria-disabled`。
+- 面板顯隱對讀屏的可達性依賴 `aria-expanded`，UI 層在活動上下文出現/消失時同步更新。
+
+## 使用範例
+
+```ts
+import { getMentionContext, insertMention, getMentions } from '@lh-ui/share/core/mentions'
+
+getMentionContext('通知 @張三 明天評審', 9)
+// { active: true, prefixIndex: 3, searchText: '張三', end: 9 }
+
+getMentionContext('信箱是 a@b.com', 13)
+// { active: false, ... }（電子郵件偽前綴不觸發）
+
+insertMention('通知 @張 明天評審', ctx, { label: '張三' })
+// { text: '通知 @張三 明天評審', caret: 7 }
+
+getMentions('cc @李四 和 @王五，抄送 a@b.com')
+// ['李四', '王五']
+```
+
+```vue
+<!-- Vue3：keyup/selectionchange 後解析上下文，驅動面板顯隱 -->
+<textarea
+  :aria-expanded="ctx.active"
+  role="combobox"
+  @keyup="ctx = getMentionContext($event.target.value, $event.target.selectionStart)"
+/>
+<ul v-if="ctx.active" v-bind="getMentionsListboxAria(listboxId)">
+  <li v-for="(option, i) in filterMentionOptions(options, ctx.searchText)" :key="i">
+    {{ option.label }}
+  </li>
+</ul>
+```
+
+```tsx
+// React：選中項寫回並恢復游標
+const { text: next, caret } = insertMention(text, ctx, option)
+setText(next)
+requestAnimationFrame(() => ref.current?.setSelectionRange(caret, caret))
+```
+
+```ts
+// uniapp：游標位置走 input/textarea 的 @blur/@input event.detail.cursor，
+// MP 端無 selectionchange，游標解析在輸入事件裡完成；面板定位走 adapter popper
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-mentions` | 基礎類：relative 容器、期望寬度 320px |
+| `.lh-mentions__inner` | 輸入控制項（textarea，鎖橫寬、縱向可拉伸由 rows 控制） |
+| `.lh-mentions__dropdown` | 建議面板（預設**向上**展開；`--teleported` 為掛 body 形態） |
+| `.lh-mentions__option` | 選項（`--highlighted` 高亮 / `--disabled` 置灰） |
+| `.lh-mentions__empty` | 空狀態 |
+| `.lh-mentions--disabled` | 停用態 |
+
+下拉開合走 `lh-mentions-fade` 過渡（淡入 + 輕微上移，與向上展開的方向一致）。顏色全部 `var(--lh-*)`。
+
+## 注意事項
+
+- prefix 預設 `@` 且假定單字元；換 prefix 時 `getMentionContext` / `insertMention` / `getMentions` 三處必須傳同一值。
+- `insertMention` 寫回後**必須**把真實控制項游標設到傳回的 `caret`（Vue/React 各自的 selection API），否則游標回落文字尾。
+- 電子郵件偽前綴排除的字元集是電子郵件 RFC 的寬容子集；`user@` 後緊跟 CJK（如 `用戶@張三`）**會**觸發——ASCII 判定管不到 CJK，這是登記過的預期行為。
+- 多行 textarea 的提及片段同樣「空白即停」，換行即閉合片段。
+
+<FnPlayground module="mentions" fn="getMentionContext" params='{"text": "通知 @張三 明天評審", "caretIndex": 8, "prefix": "@"}' />

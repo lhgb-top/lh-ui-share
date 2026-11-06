@@ -45,7 +45,7 @@ export interface LhComputePositionOptions {
   padding?: number
   /** 主轴溢出时翻转方向（默认开启） */
   flip?: boolean
-  /** 交叉轴溢出时夹回视口（默认开启） */
+  /** 交叉轴溢出时夹回视口（默认开启）；false 只豁免主动夹回段，最终安全网仍保证弹层不整体探出视口 */
   shift?: boolean
 }
 
@@ -265,8 +265,12 @@ export function computePosition(
 
   // 最后一道安全网：低侧始终钳到视口起点 + padding（不许从视口上方/左侧整块探出）；
   // 高侧钳到「视口末 - 弹出层尺寸」——弹出层比视口还大时上界取低侧（贴齐视口起点），
-  // 而不是从另一侧整块溢出。flip:false 的调用方明确接受主轴溢出，主轴只保留低侧钳制，
-  // 不代为搬到视口内（与上面 bothOverflow 的夹回同口径）
+  // 而不是从另一侧整块溢出。主轴 flip:false 的调用方明确接受主轴溢出，主轴只保留低侧钳制、
+  // 不代为搬到视口内（与上面 bothOverflow 的夹回同口径）。
+  // 交叉轴的安全网是无条件的：flip/shift 全关时调用方接受溢出，但仍不许弹出层整体
+  // 探出视口右侧/下侧（popper.spec「clamps the high side」回归测试编码了这一契约——
+  // 贴右缘触发器 + 超宽弹出层必须被拉回，否则弹层在视口外完全不可见）。
+  // 因此 `shift:false` 只豁免上面 233-247 的主动夹回段，不代表「允许弹层整体飞出视口」。
   const topLow = safeViewport.top + padding
   const topHigh = Math.max(topLow, safeViewport.bottom - safePopper.height - padding)
   const leftLow = safeViewport.left + padding

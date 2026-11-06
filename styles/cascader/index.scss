@@ -4,7 +4,7 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
   min-width: 200px;
   max-width: 100%;
   /* 与 select 触发器同高，避免同表单混排时垂直中心和基线错位 */

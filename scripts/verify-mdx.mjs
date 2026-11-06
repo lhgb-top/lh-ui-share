@@ -2,16 +2,20 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
+
+// 路径一律锚定脚本所在的项目根，不依赖 cwd（从任意目录调用都能跑）
+const ROOT = resolve(import.meta.dirname, '..')
 const req = createRequire(import.meta.filename)
-const { satteri } = req('./node_modules/.pnpm/@astrojs+markdown-satteri@0.4.3/node_modules/@astrojs/markdown-satteri/dist/processor.js')
+const { satteri } = req(join(ROOT, 'node_modules/@astrojs/markdown-satteri/dist/processor.js'))
 
 const processor = satteri()
+// srcDir 须为 file URL（satteri 内部 shouldAddCharset 对其调 fileURLToPath，裸路径会抛 ERR_INVALID_URL_SCHEME）
 const renderer = await processor.createMdxRenderer(
   { syntaxHighlight: false, shikiConfig: {}, gfm: true, smartypants: false },
-  { optimize: false, srcDir: resolve('docs/src'), sourcemap: false }
+  { optimize: false, srcDir: pathToFileURL(resolve(ROOT, 'docs/src')).href, sourcemap: false },
 )
 
-const dir = resolve('docs/src/content/docs')
+const dir = resolve(ROOT, 'docs/src/content/docs')
 const bad = []
 let count = 0
 async function walk(d) {

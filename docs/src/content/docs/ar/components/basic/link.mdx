@@ -1,0 +1,135 @@
+---
+title: link —— رابط
+description: 'يحسب getLinkClassNames أصناف النوع/حالات التسطير الثلاث/التعطيل، ويُنتج getLinkAria دلالتي التعطيل والصفحة الحالية'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الرابط هو أصغر وحدة تفاعلية للانتقال بين الصفحات. لا يفعل `core/link` سوى أمرين: أسماء الأصناف وسمات aria — لون النوع الدلالي، وحالات التسطير الثلاث، وتخفيض التعطيل، كلها تقع على أسماء الأصناف، أما الانتقال نفسه فيُترك إلى وسم `<a>` الأصلي وموجّهات كل طرف.
+
+## متى تستخدمه
+
+- عند تنفيذ `LhLink` في كل طرف: تُنتج أسماء الأصناف وسمات aria بالكامل عبر `getLinkClassNames` / `getLinkAria`.
+- المشاهد التي تعيد استخدام الشكل البصري للرابط — كالصفحة الحالية في مسار التنقل والإجراءات داخل صفوف الجدول — تستدعي دوال core مباشرةً + أسماء أصناف `styles/link`.
+- **لا يجب استخدامه**: إطلاق الأجراءات داخل الصفحة يتم عبر `core/button` (فدلالة الرابط تُضلّل مستخدمي قارئ الشاشة لتوقع الانتقال).
+
+## الاستيراد
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+import type { LhLinkState, LhLinkType, LhLinkUnderline } from '@lh-ui/share/core/link'
+```
+
+## نية التصميم
+
+ثلاث حالات تخفيض بالقائمة البيضاء تضمن أن «الخاصية غير الصالحة لا تنتج أبدًا أسماء أصناف قذرة»:
+
+- `type` غير صالح → `default`: يسير على لون النص الاعتيادي من الرموز، **ولا يُنتج صنف تعديل** (لا وجود لـ `lh-link--default`).
+- `underline` غير صالح → `hover`: الشكل الافتراضي العام، ولا يُنتج صنف تعديل كذلك؛ فقط عند تمرير `always` / `none` صراحةً يهبط `lh-link--underline-{always|none}`.
+- `disabled` بقيمة صادقة يُخرج `lh-link--disabled` دائمًا: يُعطّل جانب الأنماط تغيّر اللون عند hover والتسطير.
+
+الرابط المعطّل هو ثغرة دلالية في HTML — فوسم `<a>` ليس له خاصية disabled. جواب core هو تركيبة `aria-disabled` + `role="link"`: ما يزال قارئ الشاشة يبثّ «رابط» لكنه يوضّح أنه غير متاح؛ أما الإزالة الفعلية لدلالة النقر (الرندر كـ `span` أو حذف `href`) فتتولاها الطبقة البصرية، وcore يوفّر الخصائص الصحيحة فقط.
+
+يدعم `aria-current` القيمتين `page` / `location` لخدمة روابط «أنا الموقع الحالي» — كالصفحة الحالية في مسار التنقل والعنصر الحالي في الترقيم.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getLinkClassNames` | `(state?: Partial<LhLinkState>) => string[]` | مصفوفة أسماء أصناف | حساب جميع أسماء أصناف الرابط |
+| `getLinkAria` | `(input: LhLinkAriaInput) => LhAriaAttrs` | حزمة سمات aria | دلالة التعطيل والصفحة الحالية |
+
+```ts
+getLinkClassNames({ type: 'primary', underline: 'hover', disabled: false })
+// ['lh-link', 'lh-link--primary']
+
+getLinkClassNames({ type: 'danger', underline: 'always', disabled: true })
+// ['lh-link', 'lh-link--danger', 'lh-link--underline-always', 'lh-link--disabled']
+```
+
+## تعريفات الأنواع
+
+```ts
+export type LhLinkType = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info'
+
+export type LhLinkUnderline = 'always' | 'hover' | 'none'
+
+export interface LhLinkState {
+  type: LhLinkType
+  underline: LhLinkUnderline
+  disabled: boolean
+}
+
+export interface LhLinkAriaInput {
+  disabled: boolean
+  /** الصفحة الحالية / الموقع الحالي (مشاهد كمسار التنقل، يُخرج aria-current) */
+  current?: 'page' | 'location' | true
+}
+```
+
+## إمكانية الوصول
+
+- **التعطيل**: يُخرج `getLinkAria({ disabled: true })` قيمة `aria-disabled="true"` مع `role="link"`. يجب على الطبقة البصرية أن تُزيل `href` في الوقت نفسه (أو ترندر كـ `span`)، وإلا ما يزال مستخدمو لوحة المفاتيح قادرين على التركيز وإطلاق الانتقال — حزمة الخصائص تتكفل بالدلالة، وبنية DOM تتكفل بالسلوك، وكلتا الطبقتين لا غنى عن إحداهما عن الأخرى.
+- **الصفحة الحالية**: تجعل `aria-current="page"` برمجيات قراءة الشاشة تبثّ «الصفحة الحالية» في مسار التنقل، وهو أفضل من مجرد نمط إبراز.
+- **حلقة تركيز لوحة المفاتيح**: يقودها توحيدًا رمز focus-ring في `theme/common/a11y.scss`، والمكوّن لا يكتب outline مبعثرةً.
+
+## أمثلة الاستخدام
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+
+getLinkClassNames({ type: 'warning', underline: 'none', disabled: false })
+// ['lh-link', 'lh-link--warning', 'lh-link--underline-none']
+
+getLinkAria({ disabled: false, current: 'page' })
+// { 'aria-current': 'page' }
+```
+
+```vue
+<!-- Vue3 -->
+<a :class="getLinkClassNames({ type, underline, disabled })" :href="disabled ? undefined : href" v-bind="getLinkAria({ disabled, current })">
+  <span v-if="$slots.prefix" class="lh-link__icon lh-link__icon--prefix"><slot name="prefix" /></span>
+  <slot />
+  <span v-if="$slots.suffix" class="lh-link__icon lh-link__icon--suffix"><slot name="suffix" /></span>
+</a>
+```
+
+```tsx
+// React: عند التعطيل يُرندر span لإزالة سطح تفاعل دلالة الرابط كليًا
+const Tag = disabled ? 'span' : 'a'
+return (
+  <Tag
+    className={getLinkClassNames({ type, underline, disabled }).join(' ')}
+    href={disabled ? undefined : href}
+    {...getLinkAria({ disabled, current })}
+  >
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp: مكوّن navigator يحمل الانتقال، وحالة العرض الصرف يمكن رندرها مباشرةً بـ text + أسماء أصناف؛
+// دعم سمات aria محدود في الأطراف غير h5، فيقرَّر ذلك وفق الترجمة الشرطية لكل منصة
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-link` | الصنف الأساسي: inline-flex، لون نص اعتيادي، تغيّر اللون إلى اللون الأساسي عند hover |
+| `.lh-link--{primary\|success\|warning\|danger\|info}` | النوع الدلالي (لا صنف تعديل لـ default) |
+| `.lh-link--underline-always` | تسطير دائم |
+| `.lh-link--underline-none` | بلا تسطير (ولا يظهر عند التحويم) |
+| `.lh-link--disabled` | حالة التعطيل: تخفيض اللون + تعطيل المؤشر، ويبطّل التسطير عند التحويم |
+| `.lh-link__icon--prefix` / `.lh-link__icon--suffix` | موضعا أيقونة البادئة واللاحقة |
+
+جميع الألوان `var(--lh-*)`؛ ولون hover في success / warning / danger يمتزج بنسبة 80% نحو لون النص عبر `color-mix`، ويعكسها `var-dark.scss` في الوضع الداكن.
+
+## ملاحظات
+
+- `underline` بقيمته الافتراضية `hover` لا يُنتج صنف تعديل، وتتولى قواعد hover في جانب الأنماط التغطية؛ ومن أراد «عدم إظهار التسطير أبدًا» فعليه تمرير `none` صراحةً.
+- إذا ما يزال الرابط المعطّل يُرندر كـ `<a>`، فلا بد من حذف `href`، وإلا صارت `aria-disabled` بلا قيمة فعلية.
+- نوع `default` والتسطير `hover` كلاهما يسيران باستراتيجية «لا صنف تعديل»، فلا تعتمد الطبقة البصرية على وجود `lh-link--default`.
+
+<FnPlayground module="link" fn="getLinkClassNames" params='{"state": {"type": "primary", "underline": "hover", "disabled": false}}' />

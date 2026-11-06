@@ -10,6 +10,7 @@ export default {
   input: {
     placeholder: '請輸入',
     password: '密碼',
+    clear: '清空',
   },
   // 日期元件（預留）
   datepicker: {
@@ -73,6 +74,7 @@ export default {
     placeholder: '請選擇',
     panelLabel: '請選擇級聯選項',
     columnLabel: '第 {n} 級',
+    filter: '搜尋',
   },
   // 標籤
   tag: {
@@ -87,6 +89,40 @@ export default {
     noMatch: '無匹配資料',
     noData: '暫無資料',
     placeholder: '請選擇',
+    clear: '清空',
+    filter: '搜尋',
+    empty: '無匹配項',
+  },
+  // 自動補全
+  autocomplete: {
+    label: '自動補全',
+    noMatch: '無匹配資料',
+    noData: '暫無資料',
+    placeholder: '請輸入',
+    clear: '清空',
+  },
+  // @提及
+  mentions: {
+    label: '@提及',
+    noMatch: '無匹配成員',
+    placeholder: '請輸入內容，@ 提及成員',
+  },
+  // 排版文字
+  text: {
+    copy: '複製',
+    copied: '已複製',
+  },
+  // 颜色选择器
+  colorPicker: {
+    label: '顏色選擇器',
+    placeholder: '選擇顏色',
+    inputLabel: '顏色值',
+  },
+  // 标签输入
+  inputTag: {
+    label: '標籤輸入',
+    placeholder: '輸入標籤後 Enter',
+    removeTag: '刪除標籤',
   },
   // 表單
   form: {
@@ -128,6 +164,9 @@ export default {
   // 對話框
   dialog: {
     close: '關閉對話框',
+    confirm: '確定',
+    cancel: '取消',
+    ariaLabel: '對話框',
   },
   // 提示消息
   message: {
@@ -306,5 +345,9 @@ export default {
     moveToSource: '移到左側',
     search: '搜尋',
     empty: '暫無資料',
+    saturation: '彩度',
+    hue: '色相',
+    alpha: '透明度',
+    removeTag: '移除標籤',
   },
 } as const;

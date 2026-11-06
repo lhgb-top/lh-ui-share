@@ -3,7 +3,7 @@
 .lh-rate {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--lh-spacing-xs, 4px);
 }
 
 .lh-rate__star {

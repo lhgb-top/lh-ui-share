@@ -1,0 +1,147 @@
+---
+title: text —— 文本
+description: 'getTextClassNames 计算八级排版/语义色/修饰/省略类，getTextTag 定渲染标签，getEllipsisRows/Style 处理多行省略'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+文本是页面里数量最多的元素，也最容易散落内联样式。`core/text` 把排版级别（h1~h6/p/caption）、语义色、加粗/斜体/下划线/标记/代码修饰、单行与多行省略全部算成类名与内联样式记录，UI 层只负责把它们铺到元素上。
+
+## 何时使用
+
+- 各端实现 `LhText`：八级排版、语义色、五种修饰、省略，类名全由 `getTextClassNames` 产出。
+- 只需要省略换算的场景：`getEllipsisRows` / `getEllipsisStyle` 可独立使用（如自定义卡片描述的多行截断）。
+- **不该用它**：富文本编辑（core 只管展示态）；标题的文档大纲语义请直接用真实 `h1~h6` 元素配合本类名。
+
+## 导入方式
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisRows, getEllipsisStyle, getTextAria } from '@lh-ui/share/core/text'
+import type { LhTextLevel, LhTextType, LhTextState } from '@lh-ui/share/core/text'
+```
+
+## 设计意图
+
+**八级排版，级别类恒输出**：`lh-text--{h1..h6|p|caption}` 无论传什么都输出（白名单降级：非法级别回退 `p`），排版规格在样式侧按令牌实现。`caption` 走行内小字但不产生真实标题语义——`getTextTag('caption')` 返回 `span` 而非 `h7`，避免读屏软件的大纲层级被辅助文字污染。
+
+**省略三态**（`getEllipsisRows` 归一）：
+
+- `ellipsis: true` → 1 行，落类名 `lh-text--ellipsis`（纯 CSS，无需内联样式）。
+- 数值 → clamp 到 `[1, 10]`，落类名 `lh-text--ellipsis-{n}` + `getEllipsisStyle` 的 line-clamp 内联记录。
+- 非法值 → 0（不省略，不产出任何省略类）。
+
+行数上限 10 不是随意拍的：CSS `line-clamp` 在超大值下会退化为不省略，超出无意义。
+
+**语义色与修饰**：`secondary/success/warning/danger` 仅非 default 时产出修饰类；`strong/italic/underline/mark/code/disabled` 为真才输出。`mark` 是 mark 元素同构的浅色高亮底，`code` 是等宽字体 + 浅底——两者都是**视觉修饰**，不强制替换语义元素，用 `<mark>` 还是类名由使用方决定。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getEllipsisRows` | `(ellipsis?: boolean \| number) => number` | 行数 | 省略行数归一（clamp [1,10]） |
+| `getTextClassNames` | `(state?: Partial<LhTextState>) => string[]` | 类名数组 | 计算文本全部类名 |
+| `getTextTag` | `(level?: LhTextLevel) => 'h1'…'h6' \| 'p' \| 'span'` | 标签名 | 级别 → 实际渲染标签（caption → span） |
+| `getEllipsisStyle` | `(ellipsis?: boolean \| number) => Record<string, string \| number>` | 内联样式 | 多行省略 line-clamp 样式 |
+| `getTextAria` | `(input?: LhTextAriaInput) => LhAriaAttrs` | aria 属性包 | 可展开 / 可复制语义 |
+
+```ts
+getTextClassNames({ level: 'h3', type: 'danger', mark: true, ellipsis: 3 })
+// ['lh-text', 'lh-text--h3', 'lh-text--danger', 'lh-text--mark', 'lh-text--ellipsis-3']
+
+getEllipsisStyle(3)
+// { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden' }
+```
+
+## 类型定义
+
+```ts
+export type LhTextLevel = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'p' | 'caption'
+
+export type LhTextType = 'default' | 'secondary' | 'success' | 'warning' | 'danger'
+
+export interface LhTextState {
+  level: LhTextLevel
+  type: LhTextType
+  strong: boolean
+  italic: boolean
+  underline: boolean
+  mark: boolean
+  code: boolean
+  ellipsis: boolean | number
+  disabled: boolean
+}
+
+export interface LhTextAriaInput {
+  /** 可展开省略场景的展开态（输出 aria-expanded） */
+  expanded?: boolean
+  /** 复制按钮的文案 id（aria-labelledby 引用） */
+  copyButtonId?: string
+}
+```
+
+## 无障碍
+
+- **标题语义**：`getTextTag` 决定真实元素——`h1~h6/p` 渲染对应标签提供文档大纲，`caption` 渲染 `span` 避免伪标题污染层级。UI 层不要用 `div` 承载 `lh-text--h2`，那样样式对了、大纲没了。
+- **可展开省略**：「展开/收起」按钮控制内容折叠时，`getTextAria({ expanded })` 输出 `aria-expanded`，读屏可感知状态。
+- **可复制**：复制按钮是独立控件，`copyButtonId` 通过 `aria-labelledby` 把按钮文案引入可达名称，避免读屏只读出「按钮」两个字。
+
+## 使用示例
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisStyle } from '@lh-ui/share/core/text'
+
+getTextClassNames({ level: 'caption', type: 'secondary', ellipsis: true })
+// ['lh-text', 'lh-text--caption', 'lh-text--secondary', 'lh-text--ellipsis']
+
+getTextTag('caption')  // 'span'
+```
+
+```vue
+<!-- Vue3：动态标签 + 内联省略样式 -->
+<component :is="getTextTag(level)" :class="getTextClassNames(state)" :style="getEllipsisStyle(state.ellipsis)">
+  <slot />
+  <button v-if="copyable" class="lh-text__copy" aria-label="复制" @click="copy">
+    {{ copied ? '已复制' : '复制' }}
+  </button>
+</component>
+```
+
+```tsx
+// React：style 记录直接满足 CSSProperties（键为驼峰含 webkit 前缀）
+const Tag = getTextTag(level) as React.ElementType
+return (
+  <Tag className={getTextClassNames(state).join(' ')} style={getEllipsisStyle(state.ellipsis)}>
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp：h1~h6 语义标签小程序端不存在，统一渲染 <text> + 类名，
+// 排版规格全由类名承接（文档大纲语义在小程序里本就无从谈起）
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-text` | 基础类：常规色、字号、行高 |
+| `.lh-text--{h1…h6\|p\|caption}` | 八级排版（标题走 serif 国风字体 + 分级字号） |
+| `.lh-text--{secondary\|success\|warning\|danger}` | 语义色（default 无修饰类） |
+| `.lh-text--strong` / `--italic` / `--underline` | 加粗 / 斜体 / 下划线 |
+| `.lh-text--mark` | 标记高亮底 |
+| `.lh-text--code` | 行内代码（等宽字体 + 浅底） |
+| `.lh-text--disabled` | 禁用态 |
+| `.lh-text--ellipsis` | 单行省略 |
+| `.lh-text--ellipsis-{2…10}` | 多行省略行列类（配合内联 line-clamp） |
+| `.lh-text__copy` | 复制按钮（`--copied` 为成功回显态） |
+
+颜色、字号、行高全部 `var(--lh-*)`，暗色由 `var-dark.scss` 翻转。
+
+## 注意事项
+
+- 多行省略的 line-clamp 内联样式需要 UI 层按各自规范断言下发（React `CSSProperties` / Vue `style` 对象），单行省略全由类名承接、无需内联。
+- `mark` / `code` 是视觉修饰不是语义替换；需要读屏识别代码的场景请用真实 `<code>` 元素加类名。
+- 复制成功回显态 `lh-text__copy--copied` 由 UI 层定时移除，core 不管定时器。
+
+<FnPlayground module="text" fn="getTextClassNames" params='{"state": {"level": "h3", "type": "default", "strong": false, "italic": false, "underline": false, "mark": true, "code": false, "ellipsis": false, "disabled": false}}' />

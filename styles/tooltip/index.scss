@@ -22,11 +22,11 @@ $lh-tooltip-arrow-size: 6px !default;
     position: fixed;
     z-index: 2000;
     padding: 6px 12px;
-    font-size: 12px;
+    font-size: var(--lh-font-size-extra-small, 12px);
     line-height: 1.5;
     border-radius: 2px;
     word-break: break-word;
-    box-shadow: 0 2px 12px 0 rgba(26, 26, 26, 0.08);
+    box-shadow: var(--lh-box-shadow-base, 0 2px 12px 0 rgba(26, 26, 26, 0.08));
     max-width: 200px;
     // 背景花纹：默认 none，由 ConfigProvider 的 bg-pattern + patternComponents 白名单开启
     background-image: var(--lh-bg-pattern, none);

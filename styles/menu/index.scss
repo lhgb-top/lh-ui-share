@@ -26,7 +26,7 @@
 .lh-menu-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
   height: var(--lh-menu-item-height, 40px);
   padding-inline: var(--lh-menu-item-padding, 20px);
   font-size: var(--lh-font-size-base, 14px);
@@ -70,7 +70,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
   height: var(--lh-menu-item-height, 40px);
   padding-inline: var(--lh-menu-item-padding, 20px);
   font-size: var(--lh-font-size-base, 14px);
@@ -131,6 +131,10 @@
 .lh-sub-menu__inline-content {
   min-height: 0;
   overflow: hidden;
+  /* 该元素为 ul（包裹 MenuItem 的 li），需重置 ul 默认外边距 / 列表符号 */
+  margin: 0;
+  padding: 0;
+  list-style: none;
 
   /* 嵌套子菜单缩进 */
   .lh-sub-menu__title {

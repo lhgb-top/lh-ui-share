@@ -1,0 +1,183 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-autocomplete {
+  position: relative;
+  display: inline-block;
+  width: 240px;
+  /* 与 lh-input / lh-select 同理：240px 是宽松容器里的期望宽度，窄容器里随容器收缩 */
+  max-width: 100%;
+  color: var(--lh-text-primary, #2C2C2C);
+  font-size: var(--lh-font-size-base, 14px);
+
+  &__prefix {
+    position: absolute;
+    top: 50%;
+    inset-inline-start: 8px;
+    display: inline-flex;
+    transform: translateY(-50%);
+    color: var(--lh-text-secondary, #8A8A8A);
+    pointer-events: none;
+  }
+
+  &__inner {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: var(--lh-control-height-medium, 32px);
+    padding: 0 10px;
+    border: 1px solid var(--lh-border-color-base, #D8D3CC); /* hairline */
+    border-radius: 2px;
+    outline: none;
+    background: var(--lh-bg-color, #FAF6F0);
+    color: inherit;
+    font: inherit;
+    transition: border-color 0.2s ease;
+
+    &::placeholder {
+      color: var(--lh-text-placeholder, #B0B0B0);
+    }
+
+    &:hover {
+      border-color: var(--lh-primary-color, #2B4C7C);
+    }
+
+    &:focus {
+      border-color: var(--lh-primary-color, #2B4C7C);
+    }
+
+    /* 前置图标在位时输入内边距右移，避免图标压字 */
+    .lh-autocomplete__prefix + & {
+      padding-inline-start: 28px;
+    }
+
+    .lh-autocomplete--disabled & {
+      background: var(--lh-bg-color-disabled, #EDE8E0);
+      color: var(--lh-text-disabled, #C8C8C8);
+      cursor: not-allowed;
+
+      &:hover {
+        border-color: var(--lh-border-color-base, #D8D3CC);
+      }
+    }
+  }
+
+  &__clear {
+    position: absolute;
+    top: 50%;
+    inset-inline-end: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--lh-text-secondary, #8A8A8A);
+    line-height: 1;
+    cursor: pointer;
+    transform: translateY(-50%);
+
+    &:hover {
+      color: var(--lh-text-primary, #2C2C2C);
+    }
+  }
+
+  &__dropdown {
+    position: absolute;
+    z-index: 10;
+    top: calc(100% + 4px);
+    right: 0;
+    left: 0;
+    max-height: 240px;
+    overflow: auto;
+    padding: 4px 0;
+    border: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
+    border-radius: 2px;
+    background: var(--lh-bg-color, #FAF6F0);
+    box-shadow: 0 6px 16px rgba(44, 44, 44, 0.12);
+
+    &--teleported {
+      position: fixed;
+      top: auto;
+      right: auto;
+      left: auto;
+      z-index: 2000;
+    }
+  }
+
+  &__option {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    cursor: pointer;
+    text-align: start;
+
+    &:hover {
+      background: var(--lh-hover-bg-color, rgba(0, 0, 0, 0.05));
+    }
+
+    &--highlighted {
+      color: var(--lh-primary-color, #2B4C7C);
+      background: var(--lh-primary-color-bg, rgba(43, 76, 124, 0.08));
+    }
+
+    &--disabled {
+      color: var(--lh-text-disabled, #C8C8C8);
+      cursor: not-allowed;
+    }
+  }
+
+  &__empty {
+    display: block;
+    padding: 10px 12px;
+    color: var(--lh-text-secondary, #777);
+    text-align: center;
+  }
+
+  &--small &__inner {
+    min-height: var(--lh-control-height-small, 24px);
+    font-size: var(--lh-font-size-extra-small, 12px);
+  }
+
+  &--large &__inner {
+    min-height: var(--lh-control-height-large, 40px);
+    font-size: var(--lh-font-size-medium, 16px);
+  }
+
+  &--disabled {
+    opacity: 0.6;
+  }
+}
+
+/* 下拉开合：淡入 + 轻微下移，与 lh-select 的 lh-select-fade 观感一致；
+   过渡类名双写由 theme/common/transition.scss 的 lh-transition-ends mixin 收编 */
+.lh-autocomplete-fade-enter-active,
+.lh-autocomplete-fade-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+@include lh-transition-ends('.lh-autocomplete-fade') {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-autocomplete-fade-enter-active,
+  .lh-autocomplete-fade-leave-active {
+    transition: opacity 0.15s ease;
+  }
+
+  @include lh-transition-ends('.lh-autocomplete-fade') {
+    transform: none;
+  }
+}
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-autocomplete');

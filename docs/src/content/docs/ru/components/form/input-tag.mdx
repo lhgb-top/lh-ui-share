@@ -1,0 +1,146 @@
+---
+title: input-tag —— Ввод тегов
+description: 'insertInputTag — неизменяемая вставка (три причины отказа: empty/duplicate/max), removeInputTag/removeLastInputTag — удаление, isInputTagTriggerKey — определение клавиши-триггера'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Ввод тегов = поле ввода + Enter (или запятая/пробел) создаёт тег + Backspace удаляет последний тег. `core/input-tag` делает логику добавления-удаления **неизменяемым обновлением** и даёт машиночитаемые причины отказа; поле ввода, рендер тегов, кнопки удаления несут UI-слои платформ.
+
+## Когда использовать
+
+- Реализация `LhInputTag` на каждой платформе: список тегов v-model, клавиши-триггеры (`enter`/`space`/`comma`), лимит `max`, дедупликация, удаление последнего по Backspace.
+- Сценарии, где нужна только логика добавления/удаления тегов (форма поля ввода не важна).
+- **Не следует использовать**: выбор одного значения — `core/select`; множественный выбор фиксированного перечня опций — `core/checkbox-group`; теги ввода тегов приходят из **свободного ввода** — в этом его коренная граница с компонентами мультивыбора.
+
+## Импорт
+
+```ts
+import {
+  isValidInputTagTrigger,
+  isInputTagTriggerKey,
+  getInputTagClassNames,
+  insertInputTag,
+  removeInputTag,
+  removeLastInputTag,
+} from '@lh-ui/share/core/input-tag'
+import type { LhInputTagState, LhInputTagTrigger, LhInputTagInsertResult } from '@lh-ui/share/core/input-tag'
+```
+
+## Замысел дизайна
+
+**Неизменяемые обновления**: `insertInputTag` / `removeInputTag` / `removeLastInputTag` возвращают новые массивы, входные параметры никогда не мутируются на месте — UI-слой кладёт результат прямо в `setData` / `setState` без копирования, что отсекает и скрытую связку «изменил вход — забыл отправить».
+
+**Причины отказа машиночитаемы**: неудачная вставка не молчалива, `LhInputTagInsertResult.reason` даёт три значения:
+
+- `empty`: после trim ввод — пустая строка.
+- `duplicate`: `allowDuplicate` не включён и тег уже существует.
+- `max`: `max` — положительное число и лимит достигнут.
+
+UI-слой по этому решает форму подсказки (тряска / toast / без подсказки), core ничего не показывает — подсказка это решение UI, отказ это факт данных.
+
+**Семантика max**: неположительное число значит «без лимита»; после достижения лимита — **отказ, а не замена самого раннего тега**: тихо терять данные — сюрприз, а не удобство, превышение должно быть видимым.
+
+**Совместимость клавиш-триггеров**: `space` в `isInputTagTriggerKey` принимает и `' '`, и историческое значение `'Spacebar'` (клавиша старых IE / части Android WebView), `comma` матчит `','`.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `isValidInputTagTrigger` | `(trigger: string) => trigger is LhInputTagTrigger` | страж | корректность клавиши-триггера |
+| `getInputTagClassNames` | `(state: LhInputTagState) => string[]` | массив классов | классы контейнера (`--disabled`/`--readonly`) |
+| `isInputTagTriggerKey` | `(key: string, trigger: LhInputTagTrigger) => boolean` | boolean | определяет, триггерит ли событие клавиатуры отправку |
+| `insertInputTag` | `(tags, input, state?) => LhInputTagInsertResult` | результат вставки | вставляет один тег (неизменяемо) |
+| `removeInputTag` | `(tags, index) => string[]` | новый массив | удаляет по указанному индексу (выход за границы возвращает исходный массив) |
+| `removeLastInputTag` | `(tags) => string[]` | новый массив | Backspace удаляет последний |
+
+## Определения типов
+
+```ts
+export type LhInputTagTrigger = 'enter' | 'space' | 'comma'
+
+export interface LhInputTagState {
+  max?: number
+  allowDuplicate?: boolean
+  readonly?: boolean
+  disabled?: boolean
+}
+
+export interface LhInputTagInsertResult {
+  tags: string[]
+  inserted: boolean
+  reason?: 'empty' | 'duplicate' | 'max'
+}
+```
+
+## Доступность
+
+- Кнопка удаления тега — нативный `<button>` (или эквивалент) + `aria-label` (например «Удалить Пейзаж»), на одной линии с кнопкой закрытия `core/tag`.
+- `aria-describedby` поля ввода указывает на подсказку «нажмите Enter, чтобы добавить тег» — пользователю клавиатуры не придётся угадывать клавишу-триггер.
+- Контейнеру списка тегов рекомендуется `role="list"`, тегам `role="listitem"` — скринридер сможет объявить «пункт N».
+
+## Примеры использования
+
+```ts
+import { insertInputTag, removeLastInputTag, isInputTagTriggerKey } from '@lh-ui/share/core/input-tag'
+
+insertInputTag(['Пейзаж', 'Цветы и птицы'], 'Портрет', { max: 5, allowDuplicate: false })
+// { tags: ['Пейзаж', 'Цветы и птицы', 'Портрет'], inserted: true }
+
+insertInputTag(['Пейзаж'], 'Пейзаж', {})
+// { tags: ['Пейзаж'], inserted: false, reason: 'duplicate' }
+
+insertInputTag(['a', 'b'], 'c', { max: 2 })
+// { tags: ['a', 'b'], inserted: false, reason: 'max' }
+
+isInputTagTriggerKey('Enter', 'enter')   // true
+isInputTagTriggerKey(',', 'comma')       // true
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getInputTagClassNames({ disabled, readonly })">
+  <span v-for="(tag, index) in tags" :key="tag" class="lh-input-tag__tag">
+    {{ tag }}
+    <button class="lh-input-tag__tag-close" aria-label="Удалить" @click="tags = removeInputTag(tags, index)">×</button>
+  </span>
+  <input
+    class="lh-input-tag__input"
+    @keydown="isInputTagTriggerKey($event.key, trigger) && commit()"
+    @keydown.backspace="!input && (tags = removeLastInputTag(tags))"
+  />
+</span>
+```
+
+```tsx
+// React: результат вставки целиком перехватывает state, причина отказа уходит слою подсказок
+const result = insertInputTag(tags, input, { max, allowDuplicate })
+if (result.inserted) setTags(result.tags)
+else if (result.reason === 'max') toast('Достигнут лимит тегов')
+```
+
+```ts
+// uniapp: в мини-программах нет keydown, клавиши-триггеры отображаются на confirm-type / @confirm (enter),
+// триггер comma на MP деградирует до «разрезать ввод, если он содержит запятую»; семантика Backspace деградирует так же
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-input-tag` | контейнер: flex-wrap, hover — рамка основного цвета, фокус через focus-within |
+| `.lh-input-tag--disabled` | отключённое состояние |
+| `.lh-input-tag--readonly` | состояние только чтения |
+| `.lh-input-tag__tag` | полоска тега (светлая подложка с обводкой, без переноса строки) |
+| `.lh-input-tag__tag-close` | кнопка удаления тега |
+| `.lh-input-tag__input` | встроенное поле ввода (без рамки, прозрачная подложка, placeholder — цвет плейсхолдера) |
+
+Все цвета — `var(--lh-*)`, тёмная тема переворачивается `var-dark.scss`.
+
+## Примечания
+
+- trim в `insertInputTag` — это «убрать краевые пробелы», а не «убрать внутренние»: `'a b'` — корректный тег.
+- `removeLastInputTag` имеет семантику Backspace только при **пустом поле ввода** (при наличии ввода Backspace удаляет символ) — этот контроль остаётся за UI-слоем.
+- При клавише-триггере `comma` UI-слою стоит разрезать запятые во вводе сразу, иначе ввод `a,b` создаст один цельный тег.
+
+<FnPlayground module="input-tag" fn="insertInputTag" params='{"tags": ["Пейзаж", "Цветы и птицы"], "input": "Портрет", "state": {"max": 5, "allowDuplicate": false}}' />

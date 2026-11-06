@@ -1,0 +1,135 @@
+---
+title: link —— 링크
+description: 'getLinkClassNames가 유형/밑줄 3가지 상태/비활성 클래스를 계산하고, getLinkAria가 비활성과 현재 페이지 의미를 산출'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+링크는 페이지 간 이동의 최소 상호작용 단위입니다. `core/link`는 두 가지만 계산합니다: 클래스명과 aria——유형 의미 색상, 밑줄 3가지 상태, 비활성 저하가 모두 클래스명에 떨어지고, 이동 자체는 네이티브 `<a>`와 각 단말의 라우팅에 맡깁니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhLink`를 구현할 때: 클래스명과 aria는 모두 `getLinkClassNames` / `getLinkAria`가 산출합니다.
+- 브레드크럼 현재 페이지, 테이블 행 내 작업 등 링크 시각을 재사용하는 경우에는 core 함수와 `styles/link`의 클래스명을 직접 가져옵니다.
+- **사용하면 안 되는 곳**: 페이지 내 동작 트리거는 `core/button`을 사용하세요(링크 의미 때문에 스크린 리더 사용자가 이동을 기대하게 오해할 수 있습니다).
+
+## 가져오기
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+import type { LhLinkState, LhLinkType, LhLinkUnderline } from '@lh-ui/share/core/link'
+```
+
+## 설계 의도
+
+세 곳의 화이트리스트 폴백으로 '잘못된 prop은 절대 더러운 클래스명을 낳지 않는다'를 보장합니다:
+
+- `type`이 잘못된 값이면 → `default`: 토큰의 일반 텍스트 색을 따르며 **수정자 클래스를 산출하지 않습니다**(`lh-link--default`는 존재하지 않음).
+- `underline`이 잘못된 값이면 → `hover`: 전역 기본 형태로, 역시 수정자 클래스를 산출하지 않습니다. `always` / `none`을 명시적으로 전달할 때만 `lh-link--underline-{always|none}`이 붙습니다.
+- `disabled`가 참이면 항상 `lh-link--disabled`를 출력합니다: 스타일 쪽에서 hover 색 변화와 밑줄을 비활성화합니다.
+
+비활성 링크는 HTML의 의미 공백입니다——`<a>`에는 disabled 속성이 없습니다. core의 답은 `aria-disabled` + `role="link"` 조합입니다: 스크린 리더는 여전히 '링크'로 읽어주지만 명확히 사용 불가임을 전달합니다. 클릭 가능 의미를 실제로 제거하는 일(`span`으로 렌더링하거나 `href` 생략)은 UI 계층이 수행하고, core는 올바른 속성만 제공합니다.
+
+`aria-current`는 `page` / `location`을 지원하며, 브레드크럼 현재 페이지, 페이지네이션 현재 항목 등 '내가 현재 있는 위치'인 링크에 사용합니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getLinkClassNames` | `(state?: Partial<LhLinkState>) => string[]` | 클래스명 배열 | 링크의 모든 클래스명 계산 |
+| `getLinkAria` | `(input: LhLinkAriaInput) => LhAriaAttrs` | aria 속성 묶음 | 비활성과 현재 페이지 의미 |
+
+```ts
+getLinkClassNames({ type: 'primary', underline: 'hover', disabled: false })
+// ['lh-link', 'lh-link--primary']
+
+getLinkClassNames({ type: 'danger', underline: 'always', disabled: true })
+// ['lh-link', 'lh-link--danger', 'lh-link--underline-always', 'lh-link--disabled']
+```
+
+## 타입 정의
+
+```ts
+export type LhLinkType = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info'
+
+export type LhLinkUnderline = 'always' | 'hover' | 'none'
+
+export interface LhLinkState {
+  type: LhLinkType
+  underline: LhLinkUnderline
+  disabled: boolean
+}
+
+export interface LhLinkAriaInput {
+  disabled: boolean
+  /** 현재 페이지 / 현재 위치(브레드크럼 등 시나리오, aria-current 출력) */
+  current?: 'page' | 'location' | true
+}
+```
+
+## 접근성
+
+- **비활성**: `getLinkAria({ disabled: true })`는 `aria-disabled="true"`와 `role="link"`를 출력합니다. UI 계층은 동시에 `href`를 제거해야 하며(`span`으로 렌더링하거나), 그렇지 않으면 키보드 사용자가 여전히 포커스해 이동을 트리거할 수 있습니다——속성 묶음이 의미를, DOM 구조가 동작을 담당하며 두 계층 중 하나도 빠지면 안 됩니다.
+- **현재 페이지**: `aria-current="page"`는 스크린 리더 소프트웨어가 브레드크럼에서 '현재 페이지'로 읽어주게 하며, 단순한 하이라이트 스타일보다 낫습니다.
+- **키보드 포커스 링**: `theme/common/a11y.scss`의 focus-ring 토큰이 통일하게 구동하며, 컴포넌트가 outline을 흩어 쓰지 않습니다.
+
+## 사용 예
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+
+getLinkClassNames({ type: 'warning', underline: 'none', disabled: false })
+// ['lh-link', 'lh-link--warning', 'lh-link--underline-none']
+
+getLinkAria({ disabled: false, current: 'page' })
+// { 'aria-current': 'page' }
+```
+
+```vue
+<!-- Vue3 -->
+<a :class="getLinkClassNames({ type, underline, disabled })" :href="disabled ? undefined : href" v-bind="getLinkAria({ disabled, current })">
+  <span v-if="$slots.prefix" class="lh-link__icon lh-link__icon--prefix"><slot name="prefix" /></span>
+  <slot />
+  <span v-if="$slots.suffix" class="lh-link__icon lh-link__icon--suffix"><slot name="suffix" /></span>
+</a>
+```
+
+```tsx
+// React: 비활성일 때 span으로 렌더링해 링크 의미의 상호작용 면을 완전히 제거
+const Tag = disabled ? 'span' : 'a'
+return (
+  <Tag
+    className={getLinkClassNames({ type, underline, disabled }).join(' ')}
+    href={disabled ? undefined : href}
+    {...getLinkAria({ disabled, current })}
+  >
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp: navigator 컴포넌트가 이동을 담당하고, 순수 표시 상태는 text + 클래스명으로 직접 렌더링할 수 있습니다.
+// aria 속성은 h5가 아닌 단말에서 지원이 제한적이므로 플랫폼 조건부 컴파일로 가감합니다
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-link` | 기본 클래스: inline-flex, 일반 텍스트 색, hover 시 메인 색 |
+| `.lh-link--{primary\|success\|warning\|danger\|info}` | 의미 유형(default는 수정자 클래스 없음) |
+| `.lh-link--underline-always` | 상시 밑줄 |
+| `.lh-link--underline-none` | 밑줄 없음(호버에서도 나오지 않음) |
+| `.lh-link--disabled` | 비활성 상태: 색 저하 + 포인터 금지, hover 밑줄 무효 |
+| `.lh-link__icon--prefix` / `.lh-link__icon--suffix` | 앞/뒤 아이콘 자리 |
+
+색은 모두 `var(--lh-*)`입니다. success / warning / danger의 hover 색은 `color-mix`로 텍스트 색에 80% 혼합하고, 다크 모드는 `var-dark.scss`가 뒤집습니다.
+
+## 주의사항
+
+- `underline` 기본값 `hover`는 수정자 클래스를 산출하지 않으며 스타일 쪽 hover 규칙이 뒤를 받습니다. '밑줄을 절대 표시하지 않기'를 원하면 반드시 `none`을 명시적으로 전달해야 합니다.
+- 비활성 링크를 여전히 `<a>`로 렌더링한다면 반드시 `href`를 제거하세요. 그렇지 않으면 `aria-disabled`가 무용지물이 됩니다.
+- `default` 유형도 `hover` 밑줄과 마찬가지로 '수정자 클래스 없음' 전략을 따르므로, UI 계층은 `lh-link--default`의 존재에 의존하면 안 됩니다.
+
+<FnPlayground module="link" fn="getLinkClassNames" params='{"state": {"type": "primary", "underline": "hover", "disabled": false}}' />

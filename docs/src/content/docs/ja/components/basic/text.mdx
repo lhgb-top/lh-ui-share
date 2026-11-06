@@ -1,0 +1,147 @@
+---
+title: text —— テキスト
+description: 'getTextClassNames が 8 段階のタイポグラフィ / セマンティクスカラー / 修飾 / 省略クラスを計算し、getTextTag はレンダリングタグを決定、getEllipsisRows/Style は複数行省略を処理'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+テキストはページ内で最も数の多い要素であり、インラインスタイルが散在しやすい要素でもあります。`core/text` はタイポグラフィレベル（h1~h6/p/caption）、セマンティクスカラー、太字/斜体/下線/マーカー/コードの修飾、単行・複数行の省略をすべてクラス名とインラインスタイルのレコードに計算し、UI 層はそれらを要素へ適用するだけです。
+
+## いつ使うか
+
+- 各端が `LhText` を実装する：8 段階タイポグラフィ、セマンティクスカラー、5 種類の修飾、省略——クラス名はすべて `getTextClassNames` が産出する。
+- 省略の換算だけが必要なシナリオ：`getEllipsisRows` / `getEllipsisStyle` は単独で使用できる（カスタムカード説明文の複数行切り詰めなど）。
+- **使うべきでない**：リッチテキスト編集（core は表示状態のみを受け持ちます）。見出しのドキュメントアウトラインセマンティクスには、実際の `h1~h6` 要素に本クラス名を組み合わせてください。
+
+## インポート方法
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisRows, getEllipsisStyle, getTextAria } from '@lh-ui/share/core/text'
+import type { LhTextLevel, LhTextType, LhTextState } from '@lh-ui/share/core/text'
+```
+
+## 設計意図
+
+**8 段階タイポグラフィ、レベルクラスは常に出力**：`lh-text--{h1..h6|p|caption}` は何を渡しても出力されます（ホワイトリストフォールバック：不正なレベルは `p` にフォールバック）。タイポグラフィの仕様はスタイル側でトークンに従って実装されます。`caption` は行内の小さな文字として表示しますが、実際の見出しセマンティクスは生みません——`getTextTag('caption')` は `h7` ではなく `span` を返し、補助テキストでスクリーンリーダーのアウトライン階層を汚すのを避けます。
+
+**省略の三状態**（`getEllipsisRows` が正規化）：
+
+- `ellipsis: true` → 1 行。クラス名 `lh-text--ellipsis` に落ちます（純粋 CSS、インラインスタイル不要）。
+- 数値 → `[1, 10]` にクランプ。クラス名 `lh-text--ellipsis-{n}` と `getEllipsisStyle` の line-clamp インラインレコードに落ちます。
+- 不正な値 → 0（省略せず、省略クラスは一切産出しません）。
+
+行数上限 10 は適当に決めたものではありません：CSS の `line-clamp` は極端に大きな値では省略なしの状態に退化するため、それを超える意味はありません。
+
+**セマンティクスカラーと修飾**：`secondary/success/warning/danger` は default 以外のときだけモディファイアクラスを産出し、`strong/italic/underline/mark/code/disabled` は真のときだけ出力します。`mark` は mark 要素と同型の淡いハイライト背景、`code` は等幅フォント + 薄い背景——どちらも**視覚修飾**であり、セマンティクス要素の置き換えを強制しません。`<mark>` を使うかクラス名を使うかは利用者が決めます。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getEllipsisRows` | `(ellipsis?: boolean \| number) => number` | 行数 | 省略行数の正規化（クランプ [1,10]） |
+| `getTextClassNames` | `(state?: Partial<LhTextState>) => string[]` | クラス名配列 | テキストの全クラス名を計算 |
+| `getTextTag` | `(level?: LhTextLevel) => 'h1'…'h6' \| 'p' \| 'span'` | タグ名 | レベル → 実際にレンダリングするタグ（caption → span） |
+| `getEllipsisStyle` | `(ellipsis?: boolean \| number) => Record<string, string \| number>` | インラインスタイル | 複数行省略の line-clamp スタイル |
+| `getTextAria` | `(input?: LhTextAriaInput) => LhAriaAttrs` | aria 属性パック | 展開可能 / コピー可能のセマンティクス |
+
+```ts
+getTextClassNames({ level: 'h3', type: 'danger', mark: true, ellipsis: 3 })
+// ['lh-text', 'lh-text--h3', 'lh-text--danger', 'lh-text--mark', 'lh-text--ellipsis-3']
+
+getEllipsisStyle(3)
+// { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden' }
+```
+
+## 型定義
+
+```ts
+export type LhTextLevel = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'p' | 'caption'
+
+export type LhTextType = 'default' | 'secondary' | 'success' | 'warning' | 'danger'
+
+export interface LhTextState {
+  level: LhTextLevel
+  type: LhTextType
+  strong: boolean
+  italic: boolean
+  underline: boolean
+  mark: boolean
+  code: boolean
+  ellipsis: boolean | number
+  disabled: boolean
+}
+
+export interface LhTextAriaInput {
+  /** 展開可能な省略シナリオの展開状態（aria-expanded を出力） */
+  expanded?: boolean
+  /** コピーボタンのテキスト id（aria-labelledby が参照） */
+  copyButtonId?: string
+}
+```
+
+## アクセシビリティ
+
+- **見出しセマンティクス**：`getTextTag` が実際の要素を決定します——`h1~h6/p` は対応するタグをレンダリングしてドキュメントアウトラインを提供し、`caption` は `span` をレンダリングして疑似見出しによる階層汚染を避けます。UI 層は `lh-text--h2` を `div` で担わないでください。スタイルは合ってもアウトラインが失われます。
+- **展開可能な省略**：「展開/折りたたみ」ボタンで内容の折りたたみを制御する場合、`getTextAria({ expanded })` が `aria-expanded` を出力し、スクリーンリーダーは状態を知覚できます。
+- **コピー可能**：コピーボタンは独立したコントロールです。`copyButtonId` が `aria-labelledby` でボタンのテキストをアクセシブルな名前に取り込み、スクリーンリーダーが「ボタン」という語だけを読み上げるのを避けます。
+
+## 使用例
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisStyle } from '@lh-ui/share/core/text'
+
+getTextClassNames({ level: 'caption', type: 'secondary', ellipsis: true })
+// ['lh-text', 'lh-text--caption', 'lh-text--secondary', 'lh-text--ellipsis']
+
+getTextTag('caption')  // 'span'
+```
+
+```vue
+<!-- Vue3：動的タグ + インライン省略スタイル -->
+<component :is="getTextTag(level)" :class="getTextClassNames(state)" :style="getEllipsisStyle(state.ellipsis)">
+  <slot />
+  <button v-if="copyable" class="lh-text__copy" aria-label="コピー" @click="copy">
+    {{ copied ? 'コピーしました' : 'コピー' }}
+  </button>
+</component>
+```
+
+```tsx
+// React：style レコードはそのまま CSSProperties を満たす（キーは webkit プレフィックス付きキャメルケース）
+const Tag = getTextTag(level) as React.ElementType
+return (
+  <Tag className={getTextClassNames(state).join(' ')} style={getEllipsisStyle(state.ellipsis)}>
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp：h1~h6 のセマンティクスタグはミニプログラム端に存在しないため、一律 <text> + クラス名でレンダリング。
+// タイポグラフィの仕様はすべてクラス名が担う（ミニプログラムにドキュメントアウトラインのセマンティクスはもともと存在しない）
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-text` | ベースクラス：通常色、文字サイズ、行間 |
+| `.lh-text--{h1…h6\|p\|caption}` | 8 段階タイポグラフィ（見出しはセリフ系の国風フォント + レベル別の文字サイズ） |
+| `.lh-text--{secondary\|success\|warning\|danger}` | セマンティクスカラー（default はモディファイアクラスなし） |
+| `.lh-text--strong` / `--italic` / `--underline` | 太字 / 斜体 / 下線 |
+| `.lh-text--mark` | マーカーのハイライト背景 |
+| `.lh-text--code` | インラインコード（等幅フォント + 薄い背景） |
+| `.lh-text--disabled` | 無効状態 |
+| `.lh-text--ellipsis` | 単行省略 |
+| `.lh-text--ellipsis-{2…10}` | 複数行省略の行数クラス（インライン line-clamp と併用） |
+| `.lh-text__copy` | コピーボタン（`--copied` は成功時のエコー状態） |
+
+色、文字サイズ、行間はすべて `var(--lh-*)` で、ダークモードは `var-dark.scss` が反転させます。
+
+## 注意事項
+
+- 複数行省略の line-clamp インラインスタイルは、UI 層がそれぞれの規約に従って型アサートして付与する必要があります（React の `CSSProperties` / Vue の `style` オブジェクト）。単行省略はすべてクラス名が担い、インラインは不要です。
+- `mark` / `code` は視覚修飾でありセマンティクスの置き換えではありません。スクリーンリーダーにコードとして認識させたいシナリオでは、実際の `<code>` 要素にクラス名を付けてください。
+- コピー成功のエコー状態 `lh-text__copy--copied` は UI 層がタイマーで取り除きます。core はタイマーを受け持ちません。
+
+<FnPlayground module="text" fn="getTextClassNames" params='{"state": {"level": "h3", "type": "default", "strong": false, "italic": false, "underline": false, "mark": true, "code": false, "ellipsis": false, "disabled": false}}' />

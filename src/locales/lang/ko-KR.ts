@@ -13,6 +13,7 @@ export default {
   input: {
     placeholder: '입력해 주세요',
     password: '비밀번호',
+    clear: '지우기',
   },
   // 날짜 선택기 (예약)
   datepicker: {
@@ -76,6 +77,7 @@ export default {
     placeholder: '선택해 주세요',
     panelLabel: '단계별 옵션을 선택해 주세요',
     columnLabel: '{n}단계',
+    filter: '검색',
   },
   // 태그
   tag: {
@@ -90,6 +92,40 @@ export default {
     noMatch: '일치하는 데이터가 없습니다',
     noData: '데이터가 없습니다',
     placeholder: '선택해 주세요',
+    clear: '지우기',
+    filter: '검색',
+    empty: '일치 항목 없음',
+  },
+  // 자동 완성
+  autocomplete: {
+    label: '자동 완성',
+    noMatch: '일치하는 데이터가 없습니다',
+    noData: '데이터가 없습니다',
+    placeholder: '입력하세요',
+    clear: '지우기',
+  },
+  // 멘션
+  mentions: {
+    label: '멘션',
+    noMatch: '일치하는 멤버가 없습니다',
+    placeholder: '내용을 입력하세요. @로 멤버 언급',
+  },
+  // 텍스트
+  text: {
+    copy: '복사',
+    copied: '복사됨',
+  },
+  // 颜色选择器
+  colorPicker: {
+    label: '색상 선택기',
+    placeholder: '색상 선택',
+    inputLabel: '색상 값',
+  },
+  // 标签输入
+  inputTag: {
+    label: '태그 입력',
+    placeholder: '태그를 입력하고 Enter',
+    removeTag: '태그 삭제',
   },
   // 폼
   form: {
@@ -131,6 +167,9 @@ export default {
   // 대화상자
   dialog: {
     close: '대화상자 닫기',
+    confirm: '확인',
+    cancel: '취소',
+    ariaLabel: '대화상자',
   },
   // 메시지
   message: {
@@ -309,5 +348,9 @@ export default {
     moveToSource: '왼쪽으로 이동',
     search: '검색',
     empty: '데이터가 없습니다',
+    saturation: '채도',
+    hue: '색상',
+    alpha: '불투명도',
+    removeTag: '태그 제거',
   },
 } as const;

@@ -1,0 +1,147 @@
+---
+title: text —— Текст
+description: 'getTextClassNames вычисляет классы восьми уровней типографики/семантического цвета/модификаторов/усечения, getTextTag определяет тег рендеринга, getEllipsisRows/Style обрабатывают многострочное усечение'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Текст — самый многочисленный элемент на странице и самый склонный к разросшимся инлайн-стилям. `core/text` сводит уровни типографики (h1~h6/p/caption), семантические цвета, модификаторы жирный/курсив/подчёркивание/маркер/код, одно- и многострочное усечение к классам и записям инлайн-стилей; UI-слой остаётся только разложить их на элементе.
+
+## Когда использовать
+
+- Реализация `LhText` на каждой платформе: восемь уровней типографики, семантические цвета, пять модификаторов, усечение — классы полностью выдаёт `getTextClassNames`.
+- Сценарии, где нужно только вычисление усечения: `getEllipsisRows` / `getEllipsisStyle` применимы самостоятельно (например, многострочное усечение описания в кастомной карточке).
+- **Не следует использовать**: редактирование rich-text (core ведает только отображением); для семантики структуры документа заголовков используйте настоящие элементы `h1~h6` в сочетании с этими классами.
+
+## Импорт
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisRows, getEllipsisStyle, getTextAria } from '@lh-ui/share/core/text'
+import type { LhTextLevel, LhTextType, LhTextState } from '@lh-ui/share/core/text'
+```
+
+## Замысел дизайна
+
+**Восемь уровней типографики, класс уровня выводится всегда**: `lh-text--{h1..h6|p|caption}` выводится при любом входе (понижение по белому списку: некорректный уровень откатывается к `p`), типографические спецификации реализуются на стороне стилей по токенам. `caption` идёт мелким строчным шрифтом, но не создаёт настоящей семантики заголовка — `getTextTag('caption')` возвращает `span`, а не `h7`, чтобы структура документа скринридеров не загрязнялась вспомогательным текстом.
+
+**Три состояния усечения** (нормировка `getEllipsisRows`):
+
+- `ellipsis: true` → 1 строка, класс `lh-text--ellipsis` (чистый CSS, инлайн-стили не нужны).
+- Число → clamp в `[1, 10]`, класс `lh-text--ellipsis-{n}` + запись line-clamp из `getEllipsisStyle`.
+- Некорректное значение → 0 (без усечения, никаких классов усечения).
+
+Верхняя граница в 10 строк взята не с потолка: CSS `line-clamp` при сверхбольших значениях деградирует до «без усечения», больше — бессмысленно.
+
+**Семантические цвета и модификаторы**: `secondary/success/warning/danger` дают класс-модификатор только при не-default; `strong/italic/underline/mark/code/disabled` выводятся только при истинности. `mark` — светлая подложка-выделение, изоморфная элементу mark, `code` — моноширинный шрифт + светлая подложка — оба являются **визуальными модификаторами** и не подменяют семантические элементы принудительно: использовать `<mark>` или класс, решает потребитель.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getEllipsisRows` | `(ellipsis?: boolean \| number) => number` | число строк | нормировка строк усечения (clamp [1,10]) |
+| `getTextClassNames` | `(state?: Partial<LhTextState>) => string[]` | массив классов | вычисляет все классы текста |
+| `getTextTag` | `(level?: LhTextLevel) => 'h1'…'h6' \| 'p' \| 'span'` | имя тега | уровень → фактический тег рендеринга (caption → span) |
+| `getEllipsisStyle` | `(ellipsis?: boolean \| number) => Record<string, string \| number>` | инлайн-стили | стили line-clamp многострочного усечения |
+| `getTextAria` | `(input?: LhTextAriaInput) => LhAriaAttrs` | пакет aria-атрибутов | семантика «можно развернуть / можно скопировать» |
+
+```ts
+getTextClassNames({ level: 'h3', type: 'danger', mark: true, ellipsis: 3 })
+// ['lh-text', 'lh-text--h3', 'lh-text--danger', 'lh-text--mark', 'lh-text--ellipsis-3']
+
+getEllipsisStyle(3)
+// { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden' }
+```
+
+## Определения типов
+
+```ts
+export type LhTextLevel = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'p' | 'caption'
+
+export type LhTextType = 'default' | 'secondary' | 'success' | 'warning' | 'danger'
+
+export interface LhTextState {
+  level: LhTextLevel
+  type: LhTextType
+  strong: boolean
+  italic: boolean
+  underline: boolean
+  mark: boolean
+  code: boolean
+  ellipsis: boolean | number
+  disabled: boolean
+}
+
+export interface LhTextAriaInput {
+  /** Состояние развёрнутости в сценарии разворачиваемого усечения (выводит aria-expanded) */
+  expanded?: boolean
+  /** id текста кнопки копирования (ссылка aria-labelledby) */
+  copyButtonId?: string
+}
+```
+
+## Доступность
+
+- **Семантика заголовков**: `getTextTag` решает настоящий элемент — `h1~h6/p` рендерят соответствующие теги и дают структуру документа, `caption` рендерит `span`, чтобы псевдозаголовки не загрязняли иерархию. UI-слою не стоит вешать `lh-text--h2` на `div`: стили будут верны, структура потеряется.
+- **Разворачиваемое усечение**: когда кнопка «Развернуть/Свернуть» управляет свёртыванием содержимого, `getTextAria({ expanded })` выводит `aria-expanded`, и состояние доступно скринридеру.
+- **Копирование**: кнопка копирования — самостоятельный контрол; `copyButtonId` через `aria-labelledby` вводит текст кнопки в доступимое имя, чтобы скринридер не прочитал только слово «кнопка».
+
+## Примеры использования
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisStyle } from '@lh-ui/share/core/text'
+
+getTextClassNames({ level: 'caption', type: 'secondary', ellipsis: true })
+// ['lh-text', 'lh-text--caption', 'lh-text--secondary', 'lh-text--ellipsis']
+
+getTextTag('caption')  // 'span'
+```
+
+```vue
+<!-- Vue3: динамический тег + инлайн-стили усечения -->
+<component :is="getTextTag(level)" :class="getTextClassNames(state)" :style="getEllipsisStyle(state.ellipsis)">
+  <slot />
+  <button v-if="copyable" class="lh-text__copy" aria-label="Копировать" @click="copy">
+    {{ copied ? 'Скопировано' : 'Копировать' }}
+  </button>
+</component>
+```
+
+```tsx
+// React: запись style напрямую удовлетворяет CSSProperties (ключи в camelCase с префиксом webkit)
+const Tag = getTextTag(level) as React.ElementType
+return (
+  <Tag className={getTextClassNames(state).join(' ')} style={getEllipsisStyle(state.ellipsis)}>
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp: семантических тегов h1~h6 в мини-программах нет, единообразно рендерится <text> + классы,
+// типографические спецификации полностью несут классы (семантика структуры документа в мини-программах и так отсутствует)
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-text` | базовый класс: обычный цвет, размер шрифта, межстрочный интервал |
+| `.lh-text--{h1…h6\|p\|caption}` | восемь уровней типографики (заголовки — serif-шрифт в национальном стиле + ступенчатые размеры шрифта) |
+| `.lh-text--{secondary\|success\|warning\|danger}` | семантические цвета (у default нет класса-модификатора) |
+| `.lh-text--strong` / `--italic` / `--underline` | жирный / курсив / подчёркивание |
+| `.lh-text--mark` | подложка-выделение |
+| `.lh-text--code` | строчный код (моноширинный шрифт + светлая подложка) |
+| `.lh-text--disabled` | отключённое состояние |
+| `.lh-text--ellipsis` | однострочное усечение |
+| `.lh-text--ellipsis-{2…10}` | классы многострочного усечения (вместе с инлайн line-clamp) |
+| `.lh-text__copy` | кнопка копирования (`--copied` — состояние успешного отклика) |
+
+Цвета, размеры шрифта, межстрочные интервалы — все `var(--lh-*)`, тёмная тема переворачивается `var-dark.scss`.
+
+## Примечания
+
+- Инлайн-стили line-clamp многострочного усечения UI-слой должен передавать по своим собственным правилам (React `CSSProperties` / объект `style` Vue); однострочное усечение полностью ложится на классы, инлайн не нужен.
+- `mark` / `code` — визуальные модификаторы, а не подмена семантики; в сценариях, где код должен распознаваться скринридером, используйте настоящий элемент `<code>` с классом.
+- Состояние успешного копирования `lh-text__copy--copied` UI-слой снимает по таймеру, core таймерами не занимается.
+
+<FnPlayground module="text" fn="getTextClassNames" params='{"state": {"level": "h3", "type": "default", "strong": false, "italic": false, "underline": false, "mark": true, "code": false, "ellipsis": false, "disabled": false}}' />

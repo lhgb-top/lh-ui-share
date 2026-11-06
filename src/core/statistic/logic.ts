@@ -83,6 +83,15 @@ export function formatStatisticValue(
 
   const precision = safePrecision(state.precision)
 
+  // |x| ≥ 1e21 时 toFixed 按规范返回指数记数（"1e+21"）——本组件定位是可读的统计数值，
+  // 此区间不做 toFixed 格式化，原样返回字符串形态（纯数字大数字符串仍走 formatBigString
+  // 全字符串路径，不丢精度）
+  if (typeof value === 'number' && Math.abs(value) >= 1e21) return String(value)
+  if (typeof value === 'string' && /[eE]/.test(value.trim())) {
+    const asNum = Number(value)
+    if (!Number.isNaN(asNum) && Math.abs(asNum) >= 1e21) return value
+  }
+
   // 字符串可承载超大数：超出安全整数范围时走字符串格式化，避免 Number 精度丢失
   if (typeof value === 'string' && isUnsafeIntegerString(value)) {
     return formatBigString(value, precision, state.separator)

@@ -1,0 +1,135 @@
+---
+title: link —— リンク
+description: 'getLinkClassNames がタイプ / 下線三状態 / 無効クラスを計算し、getLinkAria が無効と現在ページのセマンティクスを産出'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+リンクはページ間の移動における最小のインタラクション単位です。`core/link` が計算するのは二つだけ：クラス名と aria です——タイプのセマンティクスカラー、下線の三状態、無効へのフォールバックはすべてクラス名に落ち、移動そのものはネイティブの `<a>` と各端のルーティングに任せます。
+
+## いつ使うか
+
+- 各端が `LhLink` を実装する：クラス名と aria はすべて `getLinkClassNames` / `getLinkAria` が産出する。
+- パンくずリストの現在ページ、テーブル行内のアクションなど、リンクの視覚を再利用するシナリオでは、core の関数と `styles/link` のクラス名を直接 import できる。
+- **使うべきでない**：ページ内アクションの発火には `core/button` を使う（リンクのセマンティクスはスクリーンリーダーユーザーに「移動する」という誤った予期を与える）。
+
+## インポート方法
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+import type { LhLinkState, LhLinkType, LhLinkUnderline } from '@lh-ui/share/core/link'
+```
+
+## 設計意図
+
+三箇所のホワイトリストフォールバックにより、「不正な prop が決して汚いクラス名を産出しない」ことを保証します：
+
+- `type` が不正 → `default`：トークンの通常テキスト色を使い、**モディファイアクラスを産出しません**（`lh-link--default` は存在しない）。
+- `underline` が不正 → `hover`：グローバルのデフォルト形態。これもモディファイアクラスを産出せず、`always` / `none` を明示的に渡したときだけ `lh-link--underline-{always|none}` が落ちます。
+- `disabled` が真のときは常に `lh-link--disabled` を出力：スタイル側でホバー時の変色と下線を無効化します。
+
+無効なリンクは HTML のセマンティクス上の空白地帯です——`<a>` には disabled 属性がありません。core の答えは `aria-disabled` + `role="link"` の組み合わせです：スクリーンリーダーは「リンク」と読み上げ続けますが、利用できないことは明確です。本当にクリック可能なセマンティクスを取り除く（`span` としてレンダリングする、`href` を省略する）のは UI 層の仕事で、core は正しい属性を提供するだけです。
+
+`aria-current` は `page` / `location` をサポートし、パンくずリストの現在ページやページネーションの現在項目など「自分が現在位置である」リンクに対応します。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getLinkClassNames` | `(state?: Partial<LhLinkState>) => string[]` | クラス名配列 | リンクの全クラス名を計算 |
+| `getLinkAria` | `(input: LhLinkAriaInput) => LhAriaAttrs` | aria 属性パック | 無効と現在ページのセマンティクス |
+
+```ts
+getLinkClassNames({ type: 'primary', underline: 'hover', disabled: false })
+// ['lh-link', 'lh-link--primary']
+
+getLinkClassNames({ type: 'danger', underline: 'always', disabled: true })
+// ['lh-link', 'lh-link--danger', 'lh-link--underline-always', 'lh-link--disabled']
+```
+
+## 型定義
+
+```ts
+export type LhLinkType = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info'
+
+export type LhLinkUnderline = 'always' | 'hover' | 'none'
+
+export interface LhLinkState {
+  type: LhLinkType
+  underline: LhLinkUnderline
+  disabled: boolean
+}
+
+export interface LhLinkAriaInput {
+  disabled: boolean
+  /** 現在ページ / 現在位置（パンくずリストなどのシナリオ。aria-current を出力） */
+  current?: 'page' | 'location' | true
+}
+```
+
+## アクセシビリティ
+
+- **無効**：`getLinkAria({ disabled: true })` は `aria-disabled="true"` と `role="link"` を出力します。UI 層は同時に `href` を取り除く（または `span` としてレンダリングする）必要があります。そうしないとキーボードユーザーはまだフォーカスして移動を発火できてしまいます——属性パックはセマンティクスを、DOM 構造は挙動を受け持ち、どちらか一方だけでは機能しません。
+- **現在ページ**：`aria-current="page"` によりスクリーンリーダーはパンくずリストで「現在ページ」と読み上げます。単なるハイライトスタイルより優れています。
+- **キーボードフォーカスリング**：`theme/common/a11y.scss` の focus-ring トークンで一元的に駆動され、コンポーネント側で個別に outline を書くことはありません。
+
+## 使用例
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+
+getLinkClassNames({ type: 'warning', underline: 'none', disabled: false })
+// ['lh-link', 'lh-link--warning', 'lh-link--underline-none']
+
+getLinkAria({ disabled: false, current: 'page' })
+// { 'aria-current': 'page' }
+```
+
+```vue
+<!-- Vue3 -->
+<a :class="getLinkClassNames({ type, underline, disabled })" :href="disabled ? undefined : href" v-bind="getLinkAria({ disabled, current })">
+  <span v-if="$slots.prefix" class="lh-link__icon lh-link__icon--prefix"><slot name="prefix" /></span>
+  <slot />
+  <span v-if="$slots.suffix" class="lh-link__icon lh-link__icon--suffix"><slot name="suffix" /></span>
+</a>
+```
+
+```tsx
+// React：無効時は span をレンダリングし、リンクセマンティクスのインタラクション面を完全に取り除く
+const Tag = disabled ? 'span' : 'a'
+return (
+  <Tag
+    className={getLinkClassNames({ type, underline, disabled }).join(' ')}
+    href={disabled ? undefined : href}
+    {...getLinkAria({ disabled, current })}
+  >
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp：navigator コンポーネントが移動を担い、純粋な表示状態では text + クラス名を直接レンダリングできる。
+// aria 属性の非 h5 端でのサポートは限定的なため、プラットフォームごとの条件付きコンパイルで取捨する
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-link` | ベースクラス：inline-flex、通常テキスト色、ホバー時にプライマリーカラーへ変化 |
+| `.lh-link--{primary\|success\|warning\|danger\|info}` | セマンティクスタイプ（default はモディファイアクラスなし） |
+| `.lh-link--underline-always` | 常時下線 |
+| `.lh-link--underline-none` | 下線なし（ホバーでも表示しない） |
+| `.lh-link--disabled` | 無効状態：色を落とす + ポインター禁止、ホバー時の下線も無効 |
+| `.lh-link__icon--prefix` / `.lh-link__icon--suffix` | プレフィックス / サフィックスのアイコン位置 |
+
+色はすべて `var(--lh-*)`。success / warning / danger のホバー色は `color-mix` でテキスト色へ 80% ブレンドし、ダークモードは `var-dark.scss` が反転させます。
+
+## 注意事項
+
+- `underline` のデフォルト `hover` はモディファイアクラスを産出せず、スタイル側の hover ルールがフォールバックします。「下線を一切表示しない」にしたい場合は明示的に `none` を渡す必要があります。
+- 無効なリンクを `<a>` のままレンダリングする場合は、必ず `href` を取り除いてください。そうしないと `aria-disabled` が形骸化します。
+- `default` タイプも `hover` 下線と同じく「モディファイアクラスなし」戦略です。UI 層は `lh-link--default` の存在に依存しないでください。
+
+<FnPlayground module="link" fn="getLinkClassNames" params='{"state": {"type": "primary", "underline": "hover", "disabled": false}}' />

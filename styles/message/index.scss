@@ -22,14 +22,14 @@
 .lh-message__item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
   padding: 10px 16px;
   border-radius: var(--lh-border-radius-base, 8px);
   background-color: var(--lh-message-bg, var(--lh-bg-color, #fff));
   color: var(--lh-message-color, var(--lh-text-regular, #5A5A5A));
   box-shadow: var(--lh-message-shadow, 0 4px 16px rgba(0, 0, 0, 12%));
   border: 1px solid var(--lh-message-border, var(--lh-border-color-lighter, #EEE9E2)); /* hairline */
-  font-size: 14px;
+  font-size: var(--lh-font-size-base, 14px);
   line-height: 1.6;
   pointer-events: auto;
 

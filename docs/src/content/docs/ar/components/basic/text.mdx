@@ -1,0 +1,147 @@
+---
+title: text —— نص
+description: 'يحسب getTextClassNames أصناف مستويات التخطيط الثمانية/اللون الدلالي/التعديلات/الاقتطاع، ويحدد getTextTag وسم الرندر، ويتكفل getEllipsisRows/Style بالاقتطاع متعدد الأسطر'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+النص هو أكثر عناصر الصفحة عددًا وأسهلها تشتتًا في الأنماط المضمنة. يحوّل `core/text` مستويات التخطيط (h1~h6/p/caption) واللون الدلالي وتعديلات التسمك/المائل/التسطير/التظليل/الشِفرة والاقتطاع أحادي السطر ومتعدد الأسطر كلها إلى أسماء أصناف وسجلات أنماط مضمنة، ويتكفل الطرف البصري فقط بنشرها على العناصر.
+
+## متى تستخدمه
+
+- عند تنفيذ `LhText` في كل طرف: مستويات التخطيط الثمانية واللون الدلالي والتعديلات الخمسة والاقتطاع، تُنتج أسماء الأصناف كلها عبر `getTextClassNames`.
+- المشاهد التي تحتاج حساب الاقتطاع فقط: يمكن استخدام `getEllipsisRows` / `getEllipsisStyle` باستقلال (كاقتطاع متعدد الأسطر لوصف بطاقة مخصصة).
+- **لا يجب استخدامه**: تحرير النص الغني (لا يتكفل core إلا بحالة العرض)؛ أما دلالة مخطط المستند للعناوين فاستخدم عناصر `h1~h6` الحقيقية مع هذه الأصناف مباشرةً.
+
+## الاستيراد
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisRows, getEllipsisStyle, getTextAria } from '@lh-ui/share/core/text'
+import type { LhTextLevel, LhTextType, LhTextState } from '@lh-ui/share/core/text'
+```
+
+## نية التصميم
+
+**تخطيط من ثمانية مستويات، وصنف المستوى يُخرج دائمًا**: يُخرج `lh-text--{h1..h6|p|caption}` مهما مُرّر (تخفيض بالقائمة البيضاء: المستوى غير الصالح يرتد إلى `p`)، وتُنفَّذ مواصفات التخطيط في جانب الأنماط وفق الرموز. يسير `caption` كنص صغير مضمن لكنه لا يُنتج دلالة عنوان حقيقية — فدالة `getTextTag('caption')` تُعيد `span` لا `h7`، تفاديًا لتلويث مستويات مخطط قارئ الشاشة بالنص المساعد.
+
+**ثلاث حالات للاقتطاع** (توحيد عبر `getEllipsisRows`):
+
+- `ellipsis: true` → سطر واحد، يهبط الصنف `lh-text--ellipsis` (CSS صرف، بلا حاجة لأنماط مضمنة).
+- قيمة عددية → تُقيَّد (clamp) إلى `[1, 10]`، يهبط الصنف `lh-text--ellipsis-{n}` + سجل line-clamp المضمن من `getEllipsisStyle`.
+- قيمة غير صالحة → 0 (بلا اقتطاع، ولا يُنتج أي صنف اقتطاع).
+
+سقف الأسطر 10 ليس رقمًا عشوائيًا: يتراجع CSS `line-clamp` عند القيم الكبيرة جدًا إلى عدم الاقتطاع، فما فوقه بلا معنى.
+
+**اللون الدلالي والتعديلات**: تُنتج `secondary/success/warning/danger` أصناف التعديل فقط عندما تكون غير default؛ ولا يُخرج `strong/italic/underline/mark/code/disabled` إلا عند صدق القيمة. `mark` خلفية إبراز فاتحة متوازقة مع عنصر mark، و`code` خط أحادي المسافة + خلفية فاتحة — كلاهما **تعديل بصري** لا يفرض استبدال العنصر الدلالي، فاستخدام `<mark>` أو الصنف قرارٌ للمستخدم.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `getEllipsisRows` | `(ellipsis?: boolean \| number) => number` | عدد الأسطر | توحيد عدد أسطر الاقتطاع (تقييد [1,10]) |
+| `getTextClassNames` | `(state?: Partial<LhTextState>) => string[]` | مصفوفة أسماء أصناف | حساب جميع أسماء أصناف النص |
+| `getTextTag` | `(level?: LhTextLevel) => 'h1'…'h6' \| 'p' \| 'span'` | اسم الوسم | المستوى → وسم الرندر الفعلي (caption → span) |
+| `getEllipsisStyle` | `(ellipsis?: boolean \| number) => Record<string, string \| number>` | أنماط مضمنة | أنماط line-clamp للاقتطاع متعدد الأسطر |
+| `getTextAria` | `(input?: LhTextAriaInput) => LhAriaAttrs` | حزمة سمات aria | دلالة قابلية التوسيع / النسخ |
+
+```ts
+getTextClassNames({ level: 'h3', type: 'danger', mark: true, ellipsis: 3 })
+// ['lh-text', 'lh-text--h3', 'lh-text--danger', 'lh-text--mark', 'lh-text--ellipsis-3']
+
+getEllipsisStyle(3)
+// { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden' }
+```
+
+## تعريفات الأنواع
+
+```ts
+export type LhTextLevel = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'p' | 'caption'
+
+export type LhTextType = 'default' | 'secondary' | 'success' | 'warning' | 'danger'
+
+export interface LhTextState {
+  level: LhTextLevel
+  type: LhTextType
+  strong: boolean
+  italic: boolean
+  underline: boolean
+  mark: boolean
+  code: boolean
+  ellipsis: boolean | number
+  disabled: boolean
+}
+
+export interface LhTextAriaInput {
+  /** حالة التوسيع في مشاهد الاقتطاع القابل للتوسيع (يُخرج aria-expanded) */
+  expanded?: boolean
+  /** نصّ زر النسخ (تُشير إليه aria-labelledby) */
+  copyButtonId?: string
+}
+```
+
+## إمكانية الوصول
+
+- **دلالة العناوين**: تقرر `getTextTag` العنصر الحقيقي — يرندر `h1~h6/p` الوسم المقابل ليوفّر مخطط المستند، ويرندر `caption` عنصر `span` تفاديًا لتلويث المستويات بالعناوين المزيفة. لا تحمل `lh-text--h2` على `div`، فبالنمط يصح والمخطط يضيع.
+- **الاقتطاع القابل للتوسيع**: عندما يتحكم زر «توسيع/طي» في طيّ المحتوى، يُخرج `getTextAria({ expanded })` سمة `aria-expanded` فيدرك قارئ الشاشة الحالة.
+- **القابل للنسخ**: زر النسخ عنصر تحكم مستقل، و`copyButtonId` يُدخل نص الزر إلى الاسم الواصل عبر `aria-labelledby`، كي لا يقرأ قارئ الشاشة «زر» فحسب.
+
+## أمثلة الاستخدام
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisStyle } from '@lh-ui/share/core/text'
+
+getTextClassNames({ level: 'caption', type: 'secondary', ellipsis: true })
+// ['lh-text', 'lh-text--caption', 'lh-text--secondary', 'lh-text--ellipsis']
+
+getTextTag('caption')  // 'span'
+```
+
+```vue
+<!-- Vue3: وسم ديناميكي + أنماط اقتطاع مضمنة -->
+<component :is="getTextTag(level)" :class="getTextClassNames(state)" :style="getEllipsisStyle(state.ellipsis)">
+  <slot />
+  <button v-if="copyable" class="lh-text__copy" aria-label="نسخ" @click="copy">
+    {{ copied ? 'تم النسخ' : 'نسخ' }}
+  </button>
+</component>
+```
+
+```tsx
+// React: سجل style يحقّق CSSProperties مباشرةً (المفاتيح camelCase وبادئة webkit شاملة)
+const Tag = getTextTag(level) as React.ElementType
+return (
+  <Tag className={getTextClassNames(state).join(' ')} style={getEllipsisStyle(state.ellipsis)}>
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp: وسوم h1~h6 الدلالية غير موجودة في أطراف البرنامج المصغّر، فيُرندر موحّدًا <text> + أسماء أصناف،
+// وتتولى أسماء الأصناف مواصفات التخطيط كلها (دلالة مخطط المستند لا معنى لها في البرنامج المصغّر أصلًا)
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-text` | الصنف الأساسي: لون اعتيادي، حجم الخط، ارتفاع السطر |
+| `.lh-text--{h1…h6\|p\|caption}` | التخطيط الثماني المستويات (العناوين بخط serif ذي النمط الصيني + أحجام متدرجة) |
+| `.lh-text--{secondary\|success\|warning\|danger}` | اللون الدلالي (لا صنف تعديل لـ default) |
+| `.lh-text--strong` / `--italic` / `--underline` | التسمك / المائل / التسطير |
+| `.lh-text--mark` | خلفية تظليل الإبراز |
+| `.lh-text--code` | شِفرة داخل السطر (خط أحادي المسافة + خلفية فاتحة) |
+| `.lh-text--disabled` | حالة التعطيل |
+| `.lh-text--ellipsis` | اقتطاع سطر واحد |
+| `.lh-text--ellipsis-{2…10}` | أصناف صفوف الاقتطاع متعدد الأسطر (مع line-clamp مضمن) |
+| `.lh-text__copy` | زر النسخ (`--copied` حالة تأكيد النجاح) |
+
+الألوان وأحجام الخط وارتفاع السطر كلها `var(--lh-*)`، ويعكسها `var-dark.scss` في الوضع الداكن.
+
+## ملاحظات
+
+- أنماط line-clamp المضمنة للاقتطاع متعدد الأسطر يحتاج الطرف البصري إلى تمريرها مع تأكيد الأنواع وفق مواصفات كل طرف (React `CSSProperties` / كائن `style` في Vue)؛ والاقتطاع أحادي السطر تتكفل به أسماء الأصناف وحدها بلا مضمنات.
+- `mark` / `code` تعديلان بصريان لا استبدالان دلاليين؛ في المشاهد التي يحتاج قارئ الشاشة فيها إلى تمييز الشِفرة استخدم عنصر `<code>` حقيقيًا مع الصنف.
+- حالة تأكيد نجاح النسخ `lh-text__copy--copied` يُزيلها الطرف البصري بمؤقّت، ولا يتكفل core بالمؤقّتات.
+
+<FnPlayground module="text" fn="getTextClassNames" params='{"state": {"level": "h3", "type": "default", "strong": false, "italic": false, "underline": false, "mark": true, "code": false, "ellipsis": false, "disabled": false}}' />

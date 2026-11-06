@@ -1,0 +1,119 @@
+---
+title: result —— Página de resultado
+description: 'getResultClassNames calcula las clases de los cuatro estados, getResultIconName resuelve el icono por defecto del estado o el personalizado, isValidResultStatus como guardia del estado'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+La página de resultado sirve como retroalimentación de estado final para «todo un flujo terminado»: formulario enviado con éxito, aprobación rechazada, página sin permisos. `core/result` solo calcula dos cosas: las clases de los cuatro estados y los nombres de icono; la tipografía de título, subtítulo y zona de acciones la asumen las clases de estilo, y el contenido se deja entero a quien consume.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhResult`: las clases y el mapeo de iconos de los cuatro estados `success` / `warning` / `error` / `info`.
+- En escenarios que reutilizan el aspecto de la página de resultado (estado vacío de gráficos, página de finalización de un asistente, UI de respaldo del error boundary) se importan directamente las clases.
+- **No usarlo para**: los avisos ligeros de retroalimentación de acciones usan `core/message` / `core/notification`; result es un estado final a nivel de página completa y message es una retroalimentación transitoria, son niveles distintos.
+
+## Importación
+
+```ts
+import { isValidResultStatus, getResultClassNames, getResultIconName } from '@lh-ui/share/core/result'
+import type { LhResultState, LhResultStatus } from '@lh-ui/share/core/result'
+```
+
+## Intención de diseño
+
+**El conjunto de estados fija cuatro valores y no se abre a extensiones**: el espacio semántico de la página de resultado es éxito / advertencia / error / aviso. Un status personalizado pasa por la guardia `isValidResultStatus` antes de llegar a la UI, y los valores ilegales los degrada la capa UI (normalmente recaen en `info`): las «cadenas arbitrarias» dejarían huecos en la tabla de mapeo de iconos.
+
+**La prioridad de resolución del icono** (`getResultIconName`):
+
+- Si se pasa `icon` explícito (**incluida la cadena vacía**) → se adopta tal cual. La cadena vacía significa «no quiero icono a propósito», y se distingue estrictamente de «no se pasó y se toma el predeterminado»: por eso la comparación es `icon !== undefined` y no un chequeo de veracidad.
+- Si no se pasa → recae en el icono por defecto del estado: success→`check`, warning→`warning`, error→`error`, info→`info`; todos consumen el conjunto de iconos existente de `LhIcon`, sin añadir activos de iconos nuevos.
+
+**Clases minimalistas** (`getResultClassNames`): la clase base + una clase modificadora de estado, sin variantes de tamaño/densidad; la página de resultado es un componente de contenido y la elasticidad tipográfica se deja al propio contenido y a `sx`.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `isValidResultStatus` | `(status: string) => status is LhResultStatus` | guardia | legalidad del estado |
+| `getResultClassNames` | `(state: LhResultState) => string[]` | matriz de nombres de clase | calcula las clases de la página de resultado |
+| `getResultIconName` | `(status, icon?) => LhIconName \| '' \| undefined` | nombre de icono | el icon explícito tiene prioridad, si no recae en el del estado |
+
+```ts
+getResultClassNames({ status: 'success' })
+// ['lh-result', 'lh-result--success']
+
+getResultIconName('error')          // 'error' (icono por defecto del estado)
+getResultIconName('error', '')      // '' (sin icono, de forma explícita)
+getResultIconName('error', 'smile') // 'smile' (el icono personalizado sobrescribe el predeterminado)
+```
+
+## Definiciones de tipos
+
+```ts
+export type LhResultStatus = 'success' | 'warning' | 'info' | 'error'
+
+export interface LhResultState {
+  status: LhResultStatus
+}
+```
+
+## Accesibilidad
+
+- Se recomienda poner `role="status"` en el contenedor (algunas plataformas lo implementan como anuncio automático): que aparezca la página de resultado ya significa un cambio de estado del flujo, y los usuarios del lector de pantalla no necesitan esperar el foco.
+- El icono es decoración; el nodo del icono debería llevar `aria-hidden="true"`: el significado del estado lo carga el texto del título, no el color del icono (legible para usuarios con daltonismo).
+- Los botones de la zona de acciones conservan la semántica nativa, igual que un botón normal.
+
+## Ejemplos de uso
+
+```ts
+import { getResultClassNames, getResultIconName } from '@lh-ui/share/core/result'
+
+getResultClassNames({ status: 'warning' })
+// ['lh-result', 'lh-result--warning']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getResultClassNames({ status })" role="status">
+  <LhIcon v-if="getResultIconName(status, icon)" class="lh-result__icon" aria-hidden="true" :name="getResultIconName(status, icon)!" />
+  <div class="lh-result__title">{{ title }}</div>
+  <div v-if="subtitle" class="lh-result__subtitle">{{ subtitle }}</div>
+  <div v-if="$slots.extra" class="lh-result__extra"><slot name="extra" /></div>
+</div>
+```
+
+```tsx
+// React
+<div className={getResultClassNames({ status }).join(' ')} role="status">
+  <ResultIcon status={status} icon={icon} />
+  <div className="lh-result__title">{title}</div>
+  {extra}
+</div>
+```
+
+```ts
+// uniapp: los iconos van con la fuente iconfont (el producto compilado de los SVG path de share),
+// role="status" en MP degrada a no renderizar (sin capacidad de live region para el lector de pantalla)
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-result` | contenedor: disposición centrada en vertical, padding del resultado |
+| `.lh-result--{success\|warning\|error\|info}` | modificador de estado (impulsa el color del icono) |
+| `.lh-result__icon` | nodo del icono (64px, color según los tokens de estado) |
+| `.lh-result__title` | título (20px, negrita) |
+| `.lh-result__subtitle` | subtítulo (color secundario, interlineado 1.8) |
+| `.lh-result__extra` | zona de acciones (margen superior de separación) |
+
+Los colores del icono pasan todos por `var(--lh-*)` (tokens semánticos success/warning/danger/info) y el modo oscuro los invierte `var-dark.scss`; el padding y el tamaño de fuente tienen tokens a nivel de componente (`--lh-result-*`) ajustables.
+
+## Notas
+
+- Un status ilegal no se le devuelve en silencio a core: pásalo primero por `isValidResultStatus` y después decide la estrategia de degradación; la guardia es para la capa UI, core no toma decisiones por nadie.
+- Pasar una cadena vacía en `icon` y no pasarlo son dos semánticas (sin icono de forma explícita vs icono por defecto); en tipos se codifica como `LhIconName | '' | undefined`.
+- La diferencia de color del icono entre los cuatro estados solo aparece en `__icon`; los colores de título/subtítulo son independientes del estado: no tiñas el título de rojo para el estado error, rompería la coherencia tipográfica.
+
+<FnPlayground module="result" fn="getResultClassNames" params='{"state": {"status": "success"}}' />

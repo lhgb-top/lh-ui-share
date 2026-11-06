@@ -1,0 +1,157 @@
+---
+title: mentions —— Упоминания
+description: 'getMentionContext разбирает контекст курсора (исключение почтового псевдопрефикса / без ложных срабатываний на CJK / остановка на пробеле), insertMention записывает, getMentions разбирает обратно, filterMentionOptions фильтрует'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Упоминания = текстовый контрол ввода + триггерный префиксный символ (по умолчанию `@`) + панель подсказок + запись выбранного. `core/mentions` делает только **обработку текста и семантику**: разбирает, находится ли курсор в незавершённом фрагменте упоминания, записывает выбранное упоминание, разбирает все упоминания из текста; контрол, панель и клавиатурное взаимодействие несут UI-слои платформ.
+
+## Когда использовать
+
+- Реализация `LhMentions` на каждой платформе: `@` открывает подсказки участников, выбранное записывается как `@Чжан Сань `, при отправке собирается список упоминаний.
+- Переиспользование логики разбора упоминаний на любом textarea / input (core не привязан к конкретному контролу).
+- **Не следует использовать**: если подсказки приходят из любого ввода (не управляются префиксным символом) — берите `core/autocomplete`.
+
+## Импорт
+
+```ts
+import {
+  getMentionContext,
+  insertMention,
+  getMentions,
+  filterMentionOptions,
+  getMentionOptionId,
+  getMentionsTriggerAria,
+  getMentionsListboxAria,
+  getMentionOptionAria,
+} from '@lh-ui/share/core/mentions'
+import type { LhMentionOption, LhMentionContext } from '@lh-ui/share/core/mentions'
+```
+
+## Замысел дизайна
+
+**Три правила разбора контекста** (`getMentionContext(text, caretIndex, prefix)`): сканируем от курсора назад в поисках ближайшего префиксного символа —
+
+1. **Исключение почтового псевдопрефикса**: если вплотную перед prefix стоит символ локальной части почты (ASCII-буквы и цифры, а также `._%+-`), это почтовый псевдопрефикс (`a@b.com` не срабатывает); **пропускаем и продолжаем искать дальше** — в «Напомнить a@b.com и @Иван» курсор в конце строки всё равно найдёт `@Иван`.
+2. **CJK не даёт ложных срабатываний**: исключение префикса касается только ASCII-символов слов, `Привет@Чжан Сань` срабатывает как обычно.
+3. **Пробел — стоп**: если при сканировании встречен пробел, а prefix так и не найден — сдаёмся; в `@Чжан Сань привет` курсор после «привет» не срабатывает (фрагмент упоминания уже закрыт).
+
+**Записывается label, а не value** (`insertMention`): в тексте нужно человекочитаемое упоминание (`@Чжан Сань`), машинный идентификатор value уходит в приложение через колбэк onSelect. Формат записи — `prefix + label + пробел`, возвращаемая новая позиция курсора точно за упоминанием — пользователь может сразу вводить основной текст.
+
+**Обратный разбор тем же набором правил** (`getMentions`): фрагменты вида `@Чжан Сань` (перед prefix — начало текста или пробел), для сбора списка @ при отправке; UI-слою не нужно писать регулярку самому.
+
+**Фильтрация** (`filterMentionOptions`): label содержит строку поиска, без учёта регистра; пустая строка поиска возвращает все варианты (показать всех кандидатов сразу после ввода prefix — стандартное поведение); отключённые пункты сохраняются (затемнение обрабатывает UI-слой).
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getMentionContext` | `(text, caretIndex, prefix?) => LhMentionContext` | контекст | разбирает, активно ли упоминание в позиции курсора |
+| `insertMention` | `(text, context, option, prefix?) => { text, caret }` | новый текст + курсор | записывает выбранное упоминание |
+| `getMentions` | `(text, prefix?) => string[]` | массив значений упоминаний | разбирает обратно все завершённые упоминания |
+| `filterMentionOptions` | `(options, searchText) => LhMentionOption[]` | массив вариантов | фильтрует список подсказок |
+| `getMentionOptionId` | `(listboxId?, index) => string \| undefined` | id варианта | для ссылки в aria-activedescendant |
+| `getMentionsTriggerAria` | `(input: { visible, listboxId?, highlightedIndex }) => LhAriaAttrs` | пакет aria-атрибутов | семантика combobox контрола ввода |
+| `getMentionsListboxAria` | `(id?) => LhAriaAttrs` | пакет aria-атрибутов | role + id списка |
+| `getMentionOptionAria` | `(input: LhMentionOptionAriaInput) => LhAriaAttrs` | пакет aria-атрибутов | role варианта + состояние выбранности/отключённости |
+
+## Определения типов
+
+```ts
+export interface LhMentionOption {
+  label: string
+  value?: string
+  disabled?: boolean
+}
+
+export interface LhMentionContext {
+  /** Есть ли активное упоминание (стоит показать панель подсказок) */
+  active: boolean
+  /** Индекс prefix в тексте; при неактивности равен -1 */
+  prefixIndex: number
+  /** Строка поиска между prefix и курсором */
+  searchText: string
+  /** Конец интервала, заменяемого при записи (= позиция курсора; при неактивности -1) */
+  end: number
+}
+
+export interface LhMentionOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## Доступность
+
+- Контрол ввода повышается до семантики combobox: `getMentionsTriggerAria` выводит `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant` (изоморфно autocomplete; отличие — сам контрол это textarea/input).
+- Список подсказок панели: `role="listbox"`, варианты `role="option"` + `aria-selected` / `aria-disabled`.
+- Доступность показа/скрытия панели для скринридера держится на `aria-expanded`, UI-слой синхронно обновляет его при появлении/исчезновении активного контекста.
+
+## Примеры использования
+
+```ts
+import { getMentionContext, insertMention, getMentions } from '@lh-ui/share/core/mentions'
+
+getMentionContext('Напомнить @Чжан Сань о ревью завтра', 15)
+// { active: true, prefixIndex: 10, searchText: 'Чжан', end: 15 }
+
+getMentionContext('Почта — a@b.com', 15)
+// { active: false, ... } (почтовый псевдопрефикс не срабатывает)
+
+insertMention('Напомнить @Чж о ревью завтра', ctx, { label: 'Чжан Сань' })
+// { text: 'Напомнить @Чжан Сань о ревью завтра', caret: 21 }
+
+getMentions('cc @Иван и @Мария, копия a@b.com')
+// ['Иван', 'Мария']
+```
+
+```vue
+<!-- Vue3: после keyup/selectionchange разбираем контекст, он управляет показом панели -->
+<textarea
+  :aria-expanded="ctx.active"
+  role="combobox"
+  @keyup="ctx = getMentionContext($event.target.value, $event.target.selectionStart)"
+/>
+<ul v-if="ctx.active" v-bind="getMentionsListboxAria(listboxId)">
+  <li v-for="(option, i) in filterMentionOptions(options, ctx.searchText)" :key="i">
+    {{ option.label }}
+  </li>
+</ul>
+```
+
+```tsx
+// React: выбранное записывается, курсор восстанавливается
+const { text: next, caret } = insertMention(text, ctx, option)
+setText(next)
+requestAnimationFrame(() => ref.current?.setSelectionRange(caret, caret))
+```
+
+```ts
+// uniapp: позиция курсора — event.detail.cursor в @blur/@input у input/textarea,
+// на MP нет selectionchange, разбор курсора выполняется в событии ввода; позиционирование панели — adapter popper
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-mentions` | базовый класс: relative-контейнер, ожидаемая ширина 320px |
+| `.lh-mentions__inner` | контрол ввода (textarea, ширина по горизонтали зафиксирована, вертикальное растяжение ведёт rows) |
+| `.lh-mentions__dropdown` | панель подсказок (по умолчанию раскрывается **вверх**; `--teleported` — вариант с монтированием в body) |
+| `.lh-mentions__option` | вариант (`--highlighted` подсветка / `--disabled` затемнение) |
+| `.lh-mentions__empty` | пустое состояние |
+| `.lh-mentions--disabled` | отключённое состояние |
+
+Открытие/закрытие выпадающего идёт через переход `lh-mentions-fade` (плавное появление + лёгкий сдвиг вверх — по направлению раскрытия вверх). Все цвета — `var(--lh-*)`.
+
+## Примечания
+
+- prefix по умолчанию `@` и предполагает один символ; при смене prefix одно и то же значение обязано передаваться во все три места: `getMentionContext` / `insertMention` / `getMentions`.
+- После записи `insertMention` **обязательно** установите реальный курсор контрола на возвращённый `caret` (selection API у Vue/React свои), иначе курсор упадёт в конец текста.
+- Набор символов исключения почтового псевдопрефикса — толерантное подмножество RFC почты; если сразу за `user@` идёт CJK (например `用户@张三`), срабатывание **будет** — ASCII-проверка не достаёт до CJK, это зарегистрированное ожидаемое поведение.
+- У многострочного textarea фрагмент упоминания тоже «останавливается на пробеле», перевод строки закрывает фрагмент.
+
+<FnPlayground module="mentions" fn="getMentionContext" params='{"text": "Напомнить @Чжан Сань о ревью завтра", "caretIndex": 8, "prefix": "@"}' />

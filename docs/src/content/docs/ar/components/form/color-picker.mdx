@@ -1,0 +1,150 @@
+---
+title: color-picker —— منتقي الألوان
+description: 'تحويلات مقترنة بين hex/rgb وفضاء HSV، وparseColorString بتحليل متسامح، وformatColor يُخرج وفق format، وgetColorPickerClassNames لأصناف الحاوية'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+كل صعوبة منتقي الألوان في **رياضيات الألوان**: سحب لوحة التشبع، ومنزلق الطيف/الشفافية، والكتابة المتقابلة بين hex وrgb()، ولوحة الألوان المضبوطة سلفًا — خلفها التحويل ذهابًا وإيابًا بين فضائي الألوان RGB وHSV. يوحّد `core/color-picker` هذه الرياضيات في مجموعة دوال نقية مقترنة وكليّة التقييد؛ وتفاعل السحب وتموضع اللوحة يتولاها الطرف البصري في كل طرف.
+
+## متى تستخدمه
+
+- عند تنفيذ `LhColorPicker` في كل طرف: جميع تحويلات وتقييدات لوحة التشبع/الإضاءة ومنزلقي الطيف/الشفافية.
+- المشاهد التي تحتاج تحويل الألوان فقط: يمكن استخدام `parseColorString` / `formatColor` / `rgbToHex` وغيرها باستقلال (كالتحقق في النماذج وديناميكية السمة).
+- **لا يجب استخدامه**: قائمة قيم ألوان ثابتة يكفي رندرها مباشرةً بلا مكوّنة؛ وتعريف رموز السمة في طبقة theme لا في هذا المكوّن.
+
+## الاستيراد
+
+```ts
+import {
+  isValidColorFormat,
+  hexToRgb,
+  rgbToHex,
+  rgbToHsv,
+  hsvToRgb,
+  parseColorString,
+  formatColor,
+  isSameColor,
+  getColorPickerClassNames,
+} from '@lh-ui/share/core/color-picker'
+import type { LhColorFormat, LhColorRgb, LhColorHsv, LhColorPickerState } from '@lh-ui/share/core/color-picker'
+```
+
+## نية التصميم
+
+**فضاءا ألوان، لكلٍّ وظيفته**: التفاعل بـ **HSV** (x في لوحة التشبع = التشبع، وy = الإضاءة، وh في منزلق الطيف — فإحداثيات السحب ذات دلالة HSV بطبيعتها)، والتخزين والإخراج بـ **RGB** (سلاسل hex / rgb()). الدوال التحويلية الأربع مقترنة بصرامة (`hexToRgb`↔`rgbToHex` و`rgbToHsv`↔`hsvToRgb`)، والمدخلات والمخرجات **كلها تمرّ بالتقييد**: `clampColorChannel` أعداد صحيحة 0~255، و`clampColorAlpha` من 0~1 بمنزلتين عشريتين (لإبادة ذيول الفاصلة العائمة مثل `0.30000000000000004`)، و`clampColorHue` من 0~360، و`clampColorRatio` من 0~1. والمدخلات غير المنتهية (NaN/Infinity/undefined) ترتد كلها إلى الافتراض الآمن، ولا تتسرب أبدًا.
+
+**التحليل المتسامح** (`parseColorString`): يدعم hex الأطوال 3/4/6/8 أرقام (`#3ab` → `#33aabb`)، ويسمح rgb()/rgba() بمنازل عشرية وقنوات بالنسب المئوية (الصيغة المتسامحة السابقة على CSS Color 4)، ويُعيد المدخل غير الصالح قيمة `null` دون رمي خطأ — فـ `#2B4` الذي كتبه المستخدم نصفه لا ينبغي أن يُسقط اللوحة.
+
+**عقد الإخراج** (`formatColor`): صيغة `rgb` تُخرج `rgba(...)` عندما تكون `a < 1`، وصيغة `hex` تُخرج hex من 8 أرقام عندما تكون `a < 1` — **عندما لـ alpha قيمة لا يضيع أبدًا بصمت**، وهذا هو الخط الفاصل بين إخراج hex بستة أو ثمانية أرقام.
+
+**حارس التساوي** (`isSameColor`): تقارن بعد تقييد القنوات وalpha معًا، ليطبّق الطرف البصري «لا قيمة تغيّرت فلا change يُرسل»، تفاديًا لتوليد أحداث مكررة من رعشة السحب.
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `isValidColorFormat` | `(format: string) => format is LhColorFormat` | حارس | صلاحية الصيغة ('hex' \| 'rgb') |
+| `clampColorChannel` | `(value) => number` | عدد صحيح 0~255 | تقييد قنوات r/g/b |
+| `clampColorAlpha` | `(value) => number` | 0~1 بمنزلتين عشريتين | تقييد الشفافية |
+| `clampColorHue` | `(value) => number` | عدد صحيح 0~360 | تقييد الطيف |
+| `clampColorRatio` | `(value) => number` | 0~1 بمنزلتين عشريتين | تقييد التشبع / الإضاءة |
+| `hexToRgb` | `(hex: string) => LhColorRgb \| null` | RGBA \| null | تحليل hex (3/4/6/8 أرقام) |
+| `rgbToHex` | `(color: LhColorRgb) => string` | سلسلة hex | تُخرج 8 أرقام عندما `a < 1` |
+| `rgbToHsv` | `(color: LhColorRgb) => LhColorHsv` | HSVA | RGB → HSV |
+| `hsvToRgb` | `(color: LhColorHsv) => LhColorRgb` | RGBA | HSV → RGB |
+| `parseColorString` | `(input?) => LhColorRgb \| null` | RGBA \| null | تحليل متسامح لـ hex / rgb() / rgba() |
+| `formatColor` | `(color: LhColorRgb, format: LhColorFormat) => string` | سلسلة اللون | الإخراج وفق format |
+| `isSameColor` | `(left, right) => boolean` | boolean | تساوٍ محسوس بعد التقييد |
+| `getColorPickerClassNames` | `(state: LhColorPickerState) => string[]` | مصفوفة أسماء أصناف | أصناف الحاوية (`--{size}`/`--disabled`/`--open`) |
+
+## تعريفات الأنواع
+
+```ts
+export type LhColorFormat = 'hex' | 'rgb'
+
+export interface LhColorRgb {
+  r: number
+  g: number
+  b: number
+  a: number
+}
+
+export interface LhColorHsv {
+  h: number
+  s: number
+  v: number
+  a: number
+}
+
+export interface LhColorPickerState {
+  size?: string
+  disabled?: boolean
+  open?: boolean
+}
+```
+
+## إمكانية الوصول
+
+- **المنزلقات**: ينبغي أن يحمل منزلق الطيف/الشفافية `role="slider"` + `aria-valuenow/min/max`، والضبط الدقيق بأسهم الاتجاهات (وShift للتسريع) تنفّذه الطبقة البصرية — فالسحب غير متاح لمستخدمي لوحة المفاتيح، ودلالة المنزلق لا يمكن الاستغناء عنها.
+- **إدخال قيمة اللون**: صندوقا إدخال hex/rgb داخل اللوحة هما قناة لوحة المفاتيح لتعديل اللون، وتأخذ `aria-label` من حزمة اللغة `colorPicker.inputLabel` («قيمة اللون»).
+- **لوحة الألوان المضبوطة سلفًا**: كل خية قابلة للتركيز، وحلقة التركيز يوفرها `focus-visible` من جانب الأنماط؛ والاسم الواصل للخية هو سلسلة قيمة اللون ذاتها.
+
+## أمثلة الاستخدام
+
+```ts
+import { parseColorString, formatColor, rgbToHsv } from '@lh-ui/share/core/color-picker'
+
+parseColorString('#2B4C7C')        // { r: 43, g: 76, b: 124, a: 1 }
+parseColorString('rgba(43,76,124,0.5)')
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'hex')   // '#2b4c7c80'
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'rgb')   // 'rgba(43, 76, 124, 0.5)'
+
+// دورة السحب: HSV (حالة التفاعل) → RGB (حالة الإرسال) → HSV (حالة العرض المرتد) بتقييد على طول المسار
+rgbToHsv({ r: 43, g: 76, b: 124, a: 1 })  // { h: 215, s: 0.65, v: 0.49, a: 1 }
+```
+
+```vue
+<!-- Vue3: إحداثيا مؤشر لوحة التشبع = دلالة HSV -->
+<div
+  class="lh-color-picker__saturation"
+  @pointerdown="onSaturationDrag"
+>
+  <div class="lh-color-picker__saturation-pointer" :style="{ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%` }" />
+</div>
+```
+
+```tsx
+// React: عند انتهاء السحب يمرّ الإرسال موحّدًا عبر hsvToRgb → formatColor
+const commit = (hsv: LhColorHsv) => onChange(formatColor(hsvToRgb(hsv), format))
+```
+
+```ts
+// uniapp: السحب عبر touchstart/move/end على مستوى العنصر (وMP يُرسل على هدف اللمس)،
+// وتموضع اللوحة عبر popper الـ adapter بقياس إطارين؛ ورياضيات الألوان مطابقة تمامًا لهذه الطبقة
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-color-picker` | حاوية المُطلِق (inline-flex + عيّنة اللون + نص القيمة) |
+| `.lh-color-picker--{small\|large}` | درجتا المقاس |
+| `.lh-color-picker--disabled` / `--open` / `--empty` | التعطيل / توسّع اللوحة / عدم اختيار لون (ينخفض نص القيمة إلى لون بديل) |
+| `.lh-color-picker__swatch` | عيّنة اللون |
+| `.lh-color-picker__value` | نص قيمة اللون الحالية (خط أحادي المسافة) |
+| `.lh-color-picker__panel` | اللوحة العائمة (تموضعها مع popper) |
+| `.lh-color-picker__saturation` / `__saturation-pointer` | لوحة التشبع والإضاءة ومؤشرها |
+| `.lh-color-picker__slider` / `__hue` / `__alpha` / `__slider-thumb` | منزلقا الطيف/الشفافية (أسفل alpha رقعة شطرنج) |
+| `.lh-color-picker__input` | صندوقا إدخال hex/rgb |
+| `.lh-color-picker__predefine` / `__predefine-item` | لوحة الألوان المضبوطة سلفًا |
+
+تدرّج الطيف ورقعة شطرنج alpha مناظر ثابتة (لا علاقة لها بالسمة)؛ وبقية الألوان كلها `var(--lh-*)`.
+
+## ملاحظات
+
+- لا يجوز طلب الخفة بإغفال التقييد عند التحويل: إحداثيات الفاصلة العائمة الناتجة عن السحب يجب أن تمرّ أولًا بـ `clampColorRatio/Hue` ثم تتحوّل، وإلا لَكتبت ذيول الفاصلة العائمة في hex.
+- عندما تُعيد `parseColorString` قيمة `null` ينبغي للطبقة البصرية أن تحتفظ بآخر قيمة صالحة (بلا مسح ولا إرسال)، وتمييز «المدخل غير الصالح» عن «المسح» كفعلين منفصلين.
+- في المشاهد التي لا تصلح خيّة اللون `<span>` للتركيز وإطلاق اللوحة، ينبغي أن يكون المُطلِق كله `<button>` أو عنصرًا مكافئًا بـ `role` — فالأنماط لا تتكفل إلا بالمظهر.
+
+<FnPlayground module="color-picker" fn="formatColor" params='{"color": {"r": 43, "g": 76, "b": 124, "a": 1}, "format": "hex"}' />

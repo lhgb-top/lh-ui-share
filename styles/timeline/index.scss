@@ -9,7 +9,7 @@
 .lh-timeline__item {
   position: relative;
   display: flex;
-  gap: 12px;
+  gap: var(--lh-spacing-md, 12px);
   padding-bottom: var(--lh-spacing-lg, 24px);
 
   /* 连接线（伪元素，最后一项隐藏） */

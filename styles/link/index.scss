@@ -1,0 +1,113 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--lh-text-regular, #5A5A5A);
+  font-size: var(--lh-font-size-base, 14px);
+  line-height: var(--lh-font-line-height-primary, 1.8);
+  text-decoration: none;
+  cursor: pointer;
+  /* 颜色与下划线过渡，与 tag / button 的悬停反馈同速 */
+  transition: color 0.2s ease;
+
+  &:hover {
+    color: var(--lh-primary-color, #2B4C7C);
+  }
+
+  &:focus-visible {
+    /* 焦点环由 a11y.scss 的 focus-ring 令牌驱动，避免各组件散写 */
+    outline: var(--lh-focus-ring-outline, 2px solid var(--lh-primary-color, #2B4C7C));
+    outline-offset: var(--lh-focus-ring-offset, 2px);
+  }
+
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    color: inherit;
+
+    &--prefix {
+      margin-inline-end: 2px;
+    }
+
+    &--suffix {
+      margin-inline-start: 2px;
+    }
+  }
+
+  /* Types */
+  &--primary {
+    color: var(--lh-primary-color, #2B4C7C);
+
+    &:hover {
+      color: var(--lh-primary-color-active, #1F3A5F);
+    }
+  }
+
+  &--success {
+    color: var(--lh-success-color, #5B8C5A);
+
+    &:hover {
+      color: color-mix(in srgb, var(--lh-success-color, #5B8C5A) 80%, var(--lh-text-primary, #2C2C2C));
+    }
+  }
+
+  &--warning {
+    color: var(--lh-warning-color, #C4A35A);
+
+    &:hover {
+      color: color-mix(in srgb, var(--lh-warning-color, #C4A35A) 80%, var(--lh-text-primary, #2C2C2C));
+    }
+  }
+
+  &--danger {
+    color: var(--lh-danger-color, #B23A3A);
+
+    &:hover {
+      color: color-mix(in srgb, var(--lh-danger-color, #B23A3A) 80%, var(--lh-text-primary, #2C2C2C));
+    }
+  }
+
+  &--info {
+    color: var(--lh-info-color, #7A7A7A);
+
+    &:hover {
+      color: var(--lh-text-primary, #2C2C2C);
+    }
+  }
+
+  /* 下划线形态：always 常驻 / none 无（hover 为默认形态，无修饰类） */
+  &--underline-always {
+    text-decoration-line: underline;
+    text-underline-offset: 2px;
+  }
+
+  &--underline-none {
+    text-decoration-line: none;
+
+    &:hover {
+      text-decoration-line: none;
+    }
+  }
+
+  &:hover {
+    text-decoration-line: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* 禁用：颜色降级 + 移除交互指针，悬停下划线一并失效 */
+  &--disabled {
+    color: var(--lh-text-disabled, #C8C8C8);
+    cursor: not-allowed;
+    opacity: 0.6;
+
+    &:hover {
+      color: var(--lh-text-disabled, #C8C8C8);
+      text-decoration-line: none;
+    }
+  }
+}
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-link');

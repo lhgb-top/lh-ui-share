@@ -1,7 +1,7 @@
 {
   "name": "@lh-ui/share",
   "type": "module",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "lh-ui 家族唯一的框架无关共享层：core 纯函数 / theme / constants / locales / types / utils / 组件样式源",
   "keywords": [
     "lh-ui",
@@ -54,6 +54,11 @@
       "import": "./es/core/anchor/*.js",
       "require": "./lib/core/anchor/*.js"
     },
+    "./core/autocomplete/*": {
+      "types": "./es/core/autocomplete/*.d.ts",
+      "import": "./es/core/autocomplete/*.js",
+      "require": "./lib/core/autocomplete/*.js"
+    },
     "./core/avatar/*": {
       "types": "./es/core/avatar/*.d.ts",
       "import": "./es/core/avatar/*.js",
@@ -103,6 +108,11 @@
       "types": "./es/core/collapse/*.d.ts",
       "import": "./es/core/collapse/*.js",
       "require": "./lib/core/collapse/*.js"
+    },
+    "./core/color-picker/*": {
+      "types": "./es/core/color-picker/*.d.ts",
+      "import": "./es/core/color-picker/*.js",
+      "require": "./lib/core/color-picker/*.js"
     },
     "./core/config/*": {
       "types": "./es/core/config/*.d.ts",
@@ -174,10 +184,25 @@
       "import": "./es/core/input-number/*.js",
       "require": "./lib/core/input-number/*.js"
     },
+    "./core/input-tag/*": {
+      "types": "./es/core/input-tag/*.d.ts",
+      "import": "./es/core/input-tag/*.js",
+      "require": "./lib/core/input-tag/*.js"
+    },
+    "./core/link/*": {
+      "types": "./es/core/link/*.d.ts",
+      "import": "./es/core/link/*.js",
+      "require": "./lib/core/link/*.js"
+    },
     "./core/loading/*": {
       "types": "./es/core/loading/*.d.ts",
       "import": "./es/core/loading/*.js",
       "require": "./lib/core/loading/*.js"
+    },
+    "./core/mentions/*": {
+      "types": "./es/core/mentions/*.d.ts",
+      "import": "./es/core/mentions/*.js",
+      "require": "./lib/core/mentions/*.js"
     },
     "./core/menu/*": {
       "types": "./es/core/menu/*.d.ts",
@@ -223,6 +248,11 @@
       "types": "./es/core/rate/*.d.ts",
       "import": "./es/core/rate/*.js",
       "require": "./lib/core/rate/*.js"
+    },
+    "./core/result/*": {
+      "types": "./es/core/result/*.d.ts",
+      "import": "./es/core/result/*.js",
+      "require": "./lib/core/result/*.js"
     },
     "./core/segmented/*": {
       "types": "./es/core/segmented/*.d.ts",
@@ -283,6 +313,11 @@
       "types": "./es/core/tag/*.d.ts",
       "import": "./es/core/tag/*.js",
       "require": "./lib/core/tag/*.js"
+    },
+    "./core/text/*": {
+      "types": "./es/core/text/*.d.ts",
+      "import": "./es/core/text/*.js",
+      "require": "./lib/core/text/*.js"
     },
     "./core/time-picker/*": {
       "types": "./es/core/time-picker/*.d.ts",

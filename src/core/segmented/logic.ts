@@ -44,7 +44,9 @@ export function moveSegmentedIndex(
   direction: 1 | -1,
 ): number {
   if (options.length === 0) return current
-  return getNextListIndex(options, current, direction)
+  // 全部选项禁用时内核返回 -1（无效下标），兜底回当前——兑现「无可用项返回当前」的文档承诺
+  const next = getNextListIndex(options, current, direction)
+  return next < 0 ? current : next
 }
 
 /**

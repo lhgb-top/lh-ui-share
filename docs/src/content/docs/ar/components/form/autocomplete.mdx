@@ -1,0 +1,161 @@
+---
+title: autocomplete —— الإكمال التلقائي
+description: 'يُرشّح filterSuggestions خيارات الاقتراح (حالة الأحرف/trim/matcher مخصص)، وأربعة بُناة aria تُجمّع دلالة combobox وفق APG'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+الإكمال التلقائي = صندوق إدخال + اقتراحات منسدلة تُرشَّح مع الكتابة. لا يتكفل `core/autocomplete` بأمرين فقط: **الترشيح** و**دلالة combobox لإمكانية الوصول**. صندوق الإدخال ولوحة الاقتراحات المنسدلة والتموضع والإغلاق عند النقر خارجه والانتقالات، كلها يتولاها الطرف البصري في كل طرف.
+
+## متى تستخدمه
+
+- عند تنفيذ `LhAutocomplete` في كل طرف: منطق الترشيح وحزم سمات aria تُنتج كلها من core، ولا يكتب الطرف البصري `includes` بنفسه.
+- عند إعادة استخدام منظومة الترشيح ودلالة combobox ذاتها على عنصر إدخال مخصص.
+- **لا يجب استخدامه**: إدخال الوسوم عبر `core/input-tag`؛ والإشارات عبر `core/mentions`؛ والاختيار المنسدل بلا ترشيح إدخال عبر `core/select`.
+
+## الاستيراد
+
+```ts
+import {
+  filterSuggestions,
+  getAutocompleteOptionId,
+  getAutocompleteTriggerAria,
+  getAutocompleteListboxAria,
+  getAutocompleteOptionAria,
+  getAutocompleteOptionValue,
+} from '@lh-ui/share/core/autocomplete'
+import type { LhAutocompleteOption, LhAutocompleteFilterOptions } from '@lh-ui/share/core/autocomplete'
+```
+
+## نية التصميم
+
+**حدود الترشيح الثلاث** (`filterSuggestions`):
+
+- سلسلة الاستعلام الفارغة (بعد trim تصبح فارغة) تُعيد **كل الخيارات**: مشهد الإطلاق بالتركيز (focus) يحتاج إظهار كل المرشحين؛ أما إظهار لوحة الاستعلام الفارغ فيقرره الطرف البصري عبر دلالة trigger، وهذه الدالة لا تحكم الإخفاء.
+- `trim` مفعّل افتراضيًا: الفراغات الطرفية لا تشارك في المطابقة؛ وعند تمرير `false` صراحةً تُطابَق كما هي.
+- العناصر المعطلة **تبقى** في النتيجة: الترشيح لا يتكفل إلا بالرؤية، والتعتيم ومنع الاختيار شأن الطرف البصري — فلترشة disabled تجعل المستخدم «يرى القائمة تقصر من عدم».
+
+**id محدد للخيار**: تُركّب `getAutocompleteOptionId(listboxId, index)` القيمة `{listboxId}-option-{index}`. عند تغيّر العنصر المُبرز يكفي أن يُحدّث المُطلِق قيمة `aria-activedescendant` فيبثّ قارئ الشاشة العنصر المُبرز الجديد دون إعادة تركيب DOM. الأدلة السالبة / غير الصحيحة (-1 = بلا إبراز) **لا تُنتج id** — وإلا لَأشار المُطلِق إلى عنصر غير موجود.
+
+**aria متوازقة مع select**: تُخرج `getAutocompleteTriggerAria` قيمة `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant` بما يوافق APG combobox pattern؛ وتفصل قيمة الإرسال `value` عن نص العرض `label` (وتعوّض `getAutocompleteOptionValue` بالـ label عندما لا يُمرَّر value).
+
+## جدول الدوال
+
+| الدالة | التوقيع | القيمة المُعادة | الدور |
+| --- | --- | --- | --- |
+| `filterSuggestions` | `(options, query, opts?) => LhAutocompleteOption[]` | مصفوفة الخيارات | ترشيح وفق سلسلة الاستعلام (حالة الأحرف / trim / matcher قابلة للضبط) |
+| `getAutocompleteOptionId` | `(listboxId?, index) => string \| undefined` | id الخيار | تركيب محدد، تُشير إليه aria-activedescendant |
+| `getAutocompleteTriggerAria` | `(input: LhAutocompleteTriggerAriaInput) => LhAriaAttrs` | حزمة سمات aria | دلالة combobox للمُطلِق |
+| `getAutocompleteListboxAria` | `(id?) => LhAriaAttrs` | حزمة سمات aria | role + id لصندوق القائمة |
+| `getAutocompleteOptionAria` | `(input: LhAutocompleteOptionAriaInput) => LhAriaAttrs` | حزمة سمات aria | role للخيار + حالتا الاختيار / التعطيل |
+| `getAutocompleteOptionValue` | `(option: LhAutocompleteOption) => string \| number` | قيمة الإرسال | تعوّض بالـ label عند غياب value |
+
+## تعريفات الأنواع
+
+```ts
+export interface LhAutocompleteOption {
+  label: string
+  value?: string | number
+  disabled?: boolean
+}
+
+export interface LhAutocompleteFilterOptions {
+  caseSensitive?: boolean
+  trim?: boolean
+  /** حكم مطابقة مخصص (الافتراضي: label يحتوي سلسلة الاستعلام)، والقيمة true تعني البقاء */
+  matcher?: (option: LhAutocompleteOption, query: string) => boolean
+}
+
+export interface LhAutocompleteTriggerAriaInput {
+  visible: boolean
+  listboxId?: string
+  /** دليل العنصر المُبرز حاليًا (-1 = بلا إبراز) */
+  highlightedIndex: number
+}
+
+export interface LhAutocompleteOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## إمكانية الوصول
+
+تُجمَّع منظومة combobox الكاملة من ثلاث حزم سمات:
+
+- المُطلِق: `role="combobox"` و`aria-expanded` (فتح اللوحة وإغلاقها) و`aria-controls` (id صندوق القائمة) و`aria-activedescendant` (id العنصر المُبرز).
+- صندوق القائمة: `role="listbox"` + `id`.
+- الخيار: `role="option"` و`aria-selected` (= حالة الإبراز) و`aria-disabled`.
+
+التنقل بلوحة المفاتيح (↑↓ لتحريك الإبراز، وEnter للاختيار، وEsc للإغلاق) تنفّذه الطبقة البصرية وتحدّث `highlightedIndex` تزامنًا — يضمن core صحة الدلالة، ويتولى كل طرف التفاعل.
+
+## أمثلة الاستخدام
+
+```ts
+import { filterSuggestions, getAutocompleteTriggerAria } from '@lh-ui/share/core/autocomplete'
+
+filterSuggestions(
+  [{ label: 'النقش' }, { label: 'الحبر' }, { label: 'النحت' }],
+  'الن',
+)
+// [{ label: 'النقش' }, { label: 'النحت' }]
+
+// مطابقة أول حرفي البينيين: تُترك إلى matcher مخصص
+filterSuggestions([{ label: '水墨' }], 'sm', {
+  matcher: (option, query) => pinyinAbbr(option.label).startsWith(query),
+})
+```
+
+```vue
+<!-- Vue3: الـ input يحمل سمات المُطلِق aria، والمنسدلة تحمل سمات listbox aria، والعنصر المُبرز عبر aria-activedescendant -->
+<input
+  role="combobox"
+  :aria-expanded="visible"
+  :aria-controls="listboxId"
+  :aria-activedescendant="highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined"
+  @input="query = $event.target.value"
+/>
+<ul v-bind="getAutocompleteListboxAria(listboxId)">
+  <li
+    v-for="(option, index) in filterSuggestions(options, query)"
+    :key="index"
+    :aria-selected="index === highlightedIndex"
+  >{{ option.label }}</li>
+</ul>
+```
+
+```tsx
+// React: إبراز مضبوط + فرد حزمة الخصائص
+<input {...getAutocompleteTriggerAria({ visible, listboxId, highlightedIndex })} />
+```
+
+```ts
+// uniapp: البرنامج المصغّر بلا إشارة إلى DOM id حقيقي، فتُنزَّل حزم سمات aria في الطرف h5 فقط،
+// ويحتفظ طرف MP بحارس تعطيل التنقل بلوحة المفاتيح (لا أحداث لوحة مفاتيح؛ راجع سجل فروق المنصات في وثيقة الخطة)
+```
+
+## الأنماط والرموز
+
+| اسم الصنف | الدلالة |
+| --- | --- |
+| `.lh-autocomplete` | الصنف الأساسي: حاوية relative وعرض مرغوب 240px |
+| `.lh-autocomplete__inner` | صندوق الإدخال (حد بلون أساسي عند focus/hover) |
+| `.lh-autocomplete__prefix` | موضع الأيقونة الافتتاحية |
+| `.lh-autocomplete__clear` | زر المسح |
+| `.lh-autocomplete__dropdown` | لوحة الاقتراحات المنسدلة (`--teleported` هي صيغة التعلّق بـ body) |
+| `.lh-autocomplete__option` | الخيار (`--highlighted` إبراز / `--disabled` تعتيم) |
+| `.lh-autocomplete__empty` | الحالة الفارغة |
+| `.lh-autocomplete--small` / `--large` | درجتا المقاس |
+| `.lh-autocomplete--disabled` | حالة التعطيل |
+
+فتح المنسدلة وإغلاقها يمرّ بانتقال `lh-autocomplete-fade` (ظهور تدريجي + هبوط خفيف، بالمظهر ذاته كـ select) مع تخفيض عند `prefers-reduced-motion`. جميع الألوان `var(--lh-*)`.
+
+## ملاحظات
+
+- الترشيح في core والطلب في الواجهة: في مشهد البحث البعيد مرِّر `matcher` أو تحكّم بنفسك في مصفوفة options داخل الطبقة البصرية، وcore لا يرسل طلبات.
+- دلالة `aria-selected` هي «الإبراز» لا «الإرسال» — ففي نمط الاختيار المفرد لـ combobox يجتمع الاثنان، وإذا فصل الطرف البصري الحالتين فعليه إضافة منطق `aria-selected` بنفسه.
+- العنصر المعطل لا يُرشَّح ولا يُمنع من الإبراز (وEnter بعد الإبراز يرفضه الطرف البصري)، ضمانًا لأن يرى مستخدم لوحة المفاتيح ومستخدم الفأرة القائمة ذاتها.
+
+<FnPlayground module="autocomplete" fn="filterSuggestions" params='{"options": [{"label": "青花瓷"}, {"label": "水墨"}, {"label": "青绿山水"}], "query": "青"}' />

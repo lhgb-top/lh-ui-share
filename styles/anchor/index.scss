@@ -3,7 +3,7 @@
 .lh-anchor {
   &--horizontal .lh-anchor__list {
     display: flex;
-    gap: 16px;
+    gap: var(--lh-spacing-base, 16px);
   }
 }
 

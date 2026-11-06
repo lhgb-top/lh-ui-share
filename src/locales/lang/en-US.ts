@@ -7,6 +7,7 @@ export default {
   input: {
     placeholder: 'Please input',
     password: 'Password',
+    clear: 'Clear',
   },
   // Datepicker (reserved)
   datepicker: {
@@ -70,6 +71,7 @@ export default {
     placeholder: 'Please select',
     panelLabel: 'Select cascade option',
     columnLabel: 'Level {n}',
+    filter: 'Search',
   },
   // Tag
   tag: {
@@ -84,6 +86,40 @@ export default {
     noMatch: 'No matching data',
     noData: 'No data',
     placeholder: 'Please select',
+    clear: 'Clear',
+    filter: 'Search',
+    empty: 'No matches',
+  },
+  // Autocomplete
+  autocomplete: {
+    label: 'Autocomplete',
+    noMatch: 'No matching data',
+    noData: 'No data',
+    placeholder: 'Please input',
+    clear: 'Clear',
+  },
+  // Mentions
+  mentions: {
+    label: 'Mentions',
+    noMatch: 'No matching members',
+    placeholder: 'Type @ to mention someone',
+  },
+  // Text
+  text: {
+    copy: 'Copy',
+    copied: 'Copied',
+  },
+  // 颜色选择器
+  colorPicker: {
+    label: 'Color picker',
+    placeholder: 'Select color',
+    inputLabel: 'Color value',
+  },
+  // 标签输入
+  inputTag: {
+    label: 'Tag input',
+    placeholder: 'Type a tag and press Enter',
+    removeTag: 'Remove tag',
   },
   // Form
   form: {
@@ -125,6 +161,9 @@ export default {
   // Dialog
   dialog: {
     close: 'Close dialog',
+    confirm: 'OK',
+    cancel: 'Cancel',
+    ariaLabel: 'Dialog',
   },
   // Message
   message: {
@@ -303,5 +342,9 @@ export default {
     moveToSource: 'Move to source',
     search: 'Search',
     empty: 'No data',
+    saturation: 'Saturation',
+    hue: 'Hue',
+    alpha: 'Opacity',
+    removeTag: 'Remove tag',
   },
 } as const;

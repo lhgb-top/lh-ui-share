@@ -85,7 +85,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--lh-spacing-md, 12px);
     padding: var(--lh-card-header-padding);
 
     /* 分隔线：两端渐隐的墨痕，比生硬实线更贴合留白质感 */

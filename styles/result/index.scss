@@ -1,0 +1,53 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 结果页样式 — 水墨回执
+// ==============================
+
+.lh-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--lh-result-padding, 32px 24px);
+  text-align: center;
+}
+
+.lh-result__icon {
+  font-size: var(--lh-result-icon-size, 64px);
+  line-height: 1;
+}
+
+.lh-result--success .lh-result__icon {
+  color: var(--lh-success-color, #3A7D5A);
+}
+
+.lh-result--warning .lh-result__icon {
+  color: var(--lh-warning-color, #B8860B);
+}
+
+.lh-result--error .lh-result__icon {
+  color: var(--lh-danger-color, #A63D40);
+}
+
+.lh-result--info .lh-result__icon {
+  color: var(--lh-info-color, #666B70);
+}
+
+.lh-result__title {
+  margin: var(--lh-result-title-margin, 16px 0 0);
+  font-size: var(--lh-result-title-font-size, 20px);
+  font-weight: var(--lh-font-weight-bold, 600);
+  color: var(--lh-text-primary, #2C2C2C);
+}
+
+.lh-result__subtitle {
+  margin: var(--lh-result-subtitle-margin, 8px 0 0);
+  font-size: var(--lh-font-size-base, 14px);
+  line-height: var(--lh-font-line-height-primary, 1.8);
+  color: var(--lh-text-secondary, #8B8578);
+}
+
+.lh-result__extra {
+  margin-top: var(--lh-result-extra-margin, 20px);
+}

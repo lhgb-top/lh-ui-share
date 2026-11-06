@@ -25,7 +25,7 @@
     text-align: center;
     border: none;
     outline: none;
-    font-size: 14px;
+    font-size: var(--lh-font-size-base, 14px);
     background-color: transparent;
     color: var(--lh-text-primary, #2C2C2C);
     line-height: calc(var(--lh-control-height-medium, 32px) - 2px);
@@ -51,7 +51,7 @@
     background: transparent;
     cursor: pointer;
     color: var(--lh-text-regular, #5A5A5A);
-    font-size: 12px;
+    font-size: var(--lh-font-size-extra-small, 12px);
     -webkit-user-select: none;
     user-select: none;
 
@@ -84,7 +84,7 @@
     .lh-input-number__input {
       width: 40px;
       height: calc(var(--lh-control-height-small, 24px) - 2px);
-      font-size: 12px;
+      font-size: var(--lh-font-size-extra-small, 12px);
       line-height: calc(var(--lh-control-height-small, 24px) - 2px);
     }
 
@@ -101,7 +101,7 @@
     .lh-input-number__input {
       width: 56px;
       height: calc(var(--lh-control-height-large, 40px) - 2px);
-      font-size: 16px;
+      font-size: var(--lh-font-size-medium, 16px);
       line-height: calc(var(--lh-control-height-large, 40px) - 2px);
     }
 

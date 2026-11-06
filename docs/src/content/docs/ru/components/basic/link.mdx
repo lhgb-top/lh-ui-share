@@ -1,0 +1,135 @@
+---
+title: link —— Ссылка
+description: 'getLinkClassNames вычисляет классы типа/трёх состояний подчёркивания/отключения, getLinkAria формирует семантику отключения и текущей страницы'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Ссылка — минимальная интерактивная единица перехода между страницами. `core/link` считает ровно две вещи: классы и aria — семантический цвет типа, три состояния подчёркивания и деградация при отключении ложатся на классы, сам переход остаётся нативному `<a>` и маршрутизаторам каждой платформы.
+
+## Когда использовать
+
+- Реализация `LhLink` на каждой платформе: классы и aria полностью выдают `getLinkClassNames` / `getLinkAria`.
+- Сценарии переиспользования визуала ссылки — текущая страница в хлебных крошках, действия внутри строки таблицы: подключайте функции core напрямую + классы из `styles/link`.
+- **Не следует использовать**: для действий внутри страницы берите `core/button` (семантика ссылки введёт пользователей скринридера в ожидание перехода).
+
+## Импорт
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+import type { LhLinkState, LhLinkType, LhLinkUnderline } from '@lh-ui/share/core/link'
+```
+
+## Замысел дизайна
+
+Три понижения по белому списку гарантируют, что «некорректный prop никогда не порождает грязных классов»:
+
+- Некорректный `type` → `default`: обычный цвет текста по токенам, **класс-модификатор не создаётся** (`lh-link--default` не существует).
+- Некорректный `underline` → `hover`: глобальная форма по умолчанию, тоже без класса-модификатора; только явные `always` / `none` дают `lh-link--underline-{always|none}`.
+- Истинный `disabled` всегда выводит `lh-link--disabled`: стили отключают смену цвета при hover и подчёркивание.
+
+Отключённая ссылка — семантическая дыра HTML: у `<a>` нет атрибута disabled. Ответ core — комбинация `aria-disabled` + `role="link"`: скринридер всё ещё объявляет «ссылку», но явно недоступную; настоящее снятие кликабельной семантики (рендер как `span` или пропуск `href`) остаётся за UI-слоем, core лишь даёт правильные атрибуты.
+
+`aria-current` поддерживает `page` / `location` — для ссылок «я есть текущее положение»: текущая страница в хлебных крошках, текущий элемент пагинации.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `getLinkClassNames` | `(state?: Partial<LhLinkState>) => string[]` | массив классов | вычисляет все классы ссылки |
+| `getLinkAria` | `(input: LhLinkAriaInput) => LhAriaAttrs` | пакет aria-атрибутов | семантика отключения и текущей страницы |
+
+```ts
+getLinkClassNames({ type: 'primary', underline: 'hover', disabled: false })
+// ['lh-link', 'lh-link--primary']
+
+getLinkClassNames({ type: 'danger', underline: 'always', disabled: true })
+// ['lh-link', 'lh-link--danger', 'lh-link--underline-always', 'lh-link--disabled']
+```
+
+## Определения типов
+
+```ts
+export type LhLinkType = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info'
+
+export type LhLinkUnderline = 'always' | 'hover' | 'none'
+
+export interface LhLinkState {
+  type: LhLinkType
+  underline: LhLinkUnderline
+  disabled: boolean
+}
+
+export interface LhLinkAriaInput {
+  disabled: boolean
+  /** Текущая страница / текущее положение (хлебные крошки и т.п., выводит aria-current) */
+  current?: 'page' | 'location' | true
+}
+```
+
+## Доступность
+
+- **Отключение**: `getLinkAria({ disabled: true })` выводит `aria-disabled="true"` и `role="link"`. UI-слой обязан одновременно убрать `href` (или рендерить `span`), иначе пользователи клавиатуры всё ещё смогут сфокусироваться и перейти — пакет атрибутов отвечает за семантику, структура DOM за поведение, обоих слоёв не хватает друг без друга.
+- **Текущая страница**: `aria-current="page"` заставляет скринридер объявлять «текущая страница» в хлебных крошках — это лучше простой подсветки стилем.
+- **Фокус-кольцо клавиатуры**: управляется едиными токенами focus-ring из `theme/common/a11y.scss`, компонент не пишет outline разрозненно.
+
+## Примеры использования
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+
+getLinkClassNames({ type: 'warning', underline: 'none', disabled: false })
+// ['lh-link', 'lh-link--warning', 'lh-link--underline-none']
+
+getLinkAria({ disabled: false, current: 'page' })
+// { 'aria-current': 'page' }
+```
+
+```vue
+<!-- Vue3 -->
+<a :class="getLinkClassNames({ type, underline, disabled })" :href="disabled ? undefined : href" v-bind="getLinkAria({ disabled, current })">
+  <span v-if="$slots.prefix" class="lh-link__icon lh-link__icon--prefix"><slot name="prefix" /></span>
+  <slot />
+  <span v-if="$slots.suffix" class="lh-link__icon lh-link__icon--suffix"><slot name="suffix" /></span>
+</a>
+```
+
+```tsx
+// React: при отключении рендерится span, полностью снимая интерактивную поверхность семантики ссылки
+const Tag = disabled ? 'span' : 'a'
+return (
+  <Tag
+    className={getLinkClassNames({ type, underline, disabled }).join(' ')}
+    href={disabled ? undefined : href}
+    {...getLinkAria({ disabled, current })}
+  >
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp: переход несёт компонент navigator, чисто демонстрационное состояние можно рендерить как text + классы;
+// поддержка aria-атрибутов на не-h5 платформах ограничена, выбор решается условной компиляцией платформы
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-link` | базовый класс: inline-flex, обычный цвет текста, hover меняет на основной цвет |
+| `.lh-link--{primary\|success\|warning\|danger\|info}` | семантический тип (у default нет класса-модификатора) |
+| `.lh-link--underline-always` | постоянное подчёркивание |
+| `.lh-link--underline-none` | без подчёркивания (не появляется и при наведении) |
+| `.lh-link--disabled` | отключённое состояние: приглушение цвета + запрет указателя, hover-подчёркивание не работает |
+| `.lh-link__icon--prefix` / `.lh-link__icon--suffix` | позиции иконок префикса и суффикса |
+
+Все цвета — `var(--lh-*)`; hover-цвет success / warning / danger смешивается через `color-mix` с цветом текста на 80%, тёмная тема переворачивается `var-dark.scss`.
+
+## Примечания
+
+- `underline` по умолчанию `hover` не создаёт класс-модификатор — подстраховывает hover-правило на стороне стилей; чтобы «никогда не показывать подчёркивание», нужно явно передать `none`.
+- Если отключённая ссылка всё ещё рендерит `<a>`, обязательно уберите `href`, иначе `aria-disabled` становится фикцией.
+- Тип `default`, как и подчёркивание `hover`, следует стратегии «без класса-модификатора»: UI-слою не стоит полагаться на существование `lh-link--default`.
+
+<FnPlayground module="link" fn="getLinkClassNames" params='{"state": {"type": "primary", "underline": "hover", "disabled": false}}' />

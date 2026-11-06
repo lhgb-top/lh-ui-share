@@ -1,0 +1,162 @@
+---
+title: autocomplete —— Автодополнение
+description: 'filterSuggestions фильтрует варианты (регистр/trim/свой matcher), четыре сборщика aria собирают семантику combobox по APG'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Автодополнение = поле ввода + выпадающие подсказки, фильтруемые по мере ввода. `core/autocomplete` ведает ровно двумя вещами: **фильтрацией** и **семантикой combobox для доступности**. Поле ввода, панель подсказок, позиционирование, закрытие по клику вне, переходы — всё это несут UI-слои платформ.
+
+## Когда использовать
+
+- Реализация `LhAutocomplete` на каждой платформе: логику фильтрации и пакеты aria-атрибутов полностью выдаёт core, UI-слою не нужно писать `includes` самому.
+- Когда на кастомном контроле ввода нужно переиспользовать ту же фильтрацию и семантику combobox.
+- **Не следует использовать**: ввод тегов — `core/input-tag`; @-упоминания — `core/mentions`; выпадающий выбор без фильтрации ввода — `core/select`.
+
+## Импорт
+
+```ts
+import {
+  filterSuggestions,
+  getAutocompleteOptionId,
+  getAutocompleteTriggerAria,
+  getAutocompleteListboxAria,
+  getAutocompleteOptionAria,
+  getAutocompleteOptionValue,
+} from '@lh-ui/share/core/autocomplete'
+import type { LhAutocompleteOption, LhAutocompleteFilterOptions } from '@lh-ui/share/core/autocomplete'
+```
+
+## Замысел дизайна
+
+**Три границы фильтрации** (`filterSuggestions`):
+
+- Пустая строка запроса (после trim пусто) возвращает **все варианты**: сценарий фокуса требует показать всех кандидатов; показывать ли панель при пустом запросе, решает семантика триггера в UI-слое — эта функция скрытия не оценивает.
+- `trim` по умолчанию включён: краевые пробелы не участвуют в сопоставлении; при явном `false` сопоставление идёт как есть.
+- Отключённые пункты **сохраняются** в результате: фильтрация ведает только видимостью, затемнение и запрет выбора — дело UI-слоя; убрать disabled — и пользователь «увидит, что список необъяснимо укоротился».
+
+**Детерминированные id вариантов**: `getAutocompleteOptionId(listboxId, index)` склеивает `{listboxId}-option-{index}`. При смене подсвеченного пункта триггеру достаточно обновить значение `aria-activedescendant`, и скринридер объявит новый подсвеченный пункт — без перемонтирования DOM. Отрицательные / нецелые индексы (-1 = подсветки нет) **id не создают** — иначе триггер сослался бы на несуществующий элемент.
+
+**aria изоморфна select**: `getAutocompleteTriggerAria` выводит `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant`, в полном согласии с APG combobox pattern; отправляемое значение `value` отделено от показываемого текста `label` (`getAutocompleteOptionValue` при отсутствии value подстраховывается label).
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `filterSuggestions` | `(options, query, opts?) => LhAutocompleteOption[]` | массив вариантов | фильтрует по строке запроса (регистр / trim / matcher настраиваются) |
+| `getAutocompleteOptionId` | `(listboxId?, index) => string \| undefined` | id варианта | детерминированная склейка для ссылки в aria-activedescendant |
+| `getAutocompleteTriggerAria` | `(input: LhAutocompleteTriggerAriaInput) => LhAriaAttrs` | пакет aria-атрибутов | семантика combobox триггера |
+| `getAutocompleteListboxAria` | `(id?) => LhAriaAttrs` | пакет aria-атрибутов | role + id списка |
+| `getAutocompleteOptionAria` | `(input: LhAutocompleteOptionAriaInput) => LhAriaAttrs` | пакет aria-атрибутов | role варианта + состояние выбранности/отключённости |
+| `getAutocompleteOptionValue` | `(option: LhAutocompleteOption) => string \| number` | отправляемое значение | при отсутствии value подстраховывается label |
+
+## Определения типов
+
+```ts
+export interface LhAutocompleteOption {
+  label: string
+  value?: string | number
+  disabled?: boolean
+}
+
+export interface LhAutocompleteFilterOptions {
+  caseSensitive?: boolean
+  trim?: boolean
+  /** Пользовательское правило сопоставления (по умолчанию: label содержит строку запроса), true — оставить */
+  matcher?: (option: LhAutocompleteOption, query: string) => boolean
+}
+
+export interface LhAutocompleteTriggerAriaInput {
+  visible: boolean
+  listboxId?: string
+  /** Индекс текущего подсвеченного пункта (-1 = подсветки нет) */
+  highlightedIndex: number
+}
+
+export interface LhAutocompleteOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## Доступность
+
+Полный паттерн combobox складывается из трёх пакетов атрибутов:
+
+- Триггер: `role="combobox"`, `aria-expanded` (открыта ли панель), `aria-controls` (id списка), `aria-activedescendant` (id подсвеченного пункта).
+- Список: `role="listbox"` + `id`.
+- Вариант: `role="option"`, `aria-selected` (= состояние подсветки), `aria-disabled`.
+
+Клавиатурная навигация (↑↓ двигают подсветку, Enter выбирает, Esc закрывает) лежит на UI-слое, который синхронно обновляет `highlightedIndex` — core гарантирует корректную семантику, взаимодействие несут платформы.
+
+## Примеры использования
+
+```ts
+import { filterSuggestions, getAutocompleteTriggerAria } from '@lh-ui/share/core/autocomplete'
+
+filterSuggestions(
+  [{ label: 'Сине-белый фарфор' }, { label: 'Гуашь' }, { label: 'Пейзаж в сине-зелёных тонах' }],
+  'сине',
+)
+// [{ label: 'Сине-белый фарфор' }, { label: 'Пейзаж в сине-зелёных тонах' }]
+
+// Кастомное сопоставление (например, по инициалам): передаётся в matcher
+filterSuggestions([{ label: 'Гуашь' }], 'sm', {
+  matcher: (option, query) => pinyinAbbr(option.label).startsWith(query),
+})
+```
+
+```vue
+<!-- Vue3: aria триггера на input, aria списка на выпадающем меню, подсвеченный пункт идёт через aria-activedescendant -->
+<input
+  role="combobox"
+  :aria-expanded="visible"
+  :aria-controls="listboxId"
+  :aria-activedescendant="highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined"
+  @input="query = $event.target.value"
+/>
+<ul v-bind="getAutocompleteListboxAria(listboxId)">
+  <li
+    v-for="(option, index) in filterSuggestions(options, query)"
+    :key="index"
+    :aria-selected="index === highlightedIndex"
+  >{{ option.label }}</li>
+</ul>
+```
+
+```tsx
+// React: управляемая подсветка + разворачивание пакета атрибутов
+<input {...getAutocompleteTriggerAria({ visible, listboxId, highlightedIndex })} />
+```
+
+```ts
+// uniapp: в мини-программах нет ссылок на реальные DOM id, пакеты aria-атрибутов отдаются только на h5,
+// MP сохраняет стражи отключения клавиатурной навигации (клавиатурных событий нет — см. регистрацию
+// платформенных различий в плановом документе)
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-autocomplete` | базовый класс: relative-контейнер, ожидаемая ширина 240px |
+| `.lh-autocomplete__inner` | поле ввода (focus/hover — рамка основного цвета) |
+| `.lh-autocomplete__prefix` | позиция иконки в начале |
+| `.lh-autocomplete__clear` | кнопка очистки |
+| `.lh-autocomplete__dropdown` | выпадающая панель (`--teleported` — вариант с монтированием в body) |
+| `.lh-autocomplete__option` | вариант (`--highlighted` подсветка / `--disabled` затемнение) |
+| `.lh-autocomplete__empty` | пустое состояние |
+| `.lh-autocomplete--small` / `--large` | размерные ступени |
+| `.lh-autocomplete--disabled` | отключённое состояние |
+
+Открытие/закрытие выпадающего идёт через переход `lh-autocomplete-fade` (плавное появление + лёгкий сдвиг вниз — та же пластика, что у select), с деградацией `prefers-reduced-motion`. Все цвета — `var(--lh-*)`.
+
+## Примечания
+
+- Фильтрация в core, запросы в UI: в сценариях удалённого поиска передавайте `matcher` или управляйте массивом options в UI-слое — core запросов не отправляет.
+- Семантика `aria-selected` — «подсвечено», а не «отправлено»: в одновыборном режиме combobox они совпадают; если UI-слой разделяет два состояния, логику `aria-selected` нужно дописать самому.
+- Отключённые пункты не фильтруются и не запрещают подсветку (после подсветки Enter отклоняет UI-слой), чтобы пользователи клавиатуры и мыши видели один и тот же список.
+
+<FnPlayground module="autocomplete" fn="filterSuggestions" params='{"options": [{"label": "Сине-белый фарфор"}, {"label": "Гуашь"}, {"label": "Пейзаж в сине-зелёных тонах"}], "query": "сине"}' />

@@ -1,0 +1,150 @@
+---
+title: color-picker —— 색상 선택기
+description: 'hex/rgb와 HSV 공간이 쌍으로 변환되고, parseColorString이 너그럽게 파싱하며, formatColor가 format별로 출력하고, getColorPickerClassNames가 컨테이너 클래스명을 계산'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+색상 선택기의 모든 난이도는 **색상 수학**에 있습니다: 채도 판 드래그, 색상(Hue)/투명도 슬라이더, hex와 rgb() 상호 변환, 프리셋 팔레트——그 뒤에는 RGB와 HSV 두 색상 공간의 왕복 변환이 있습니다. `core/color-picker`는 이 수학들을 쌍으로 이루어진, 전부 클램프된 순수 함수 한 조로 수렴시킵니다. 드래그 상호작용과 패널 위치 잡기는 각 단말의 UI 계층이 받습니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhColorPicker`를 구현할 때: 채도/명도 판 + 색상(Hue)/투명도 슬라이더의 모든 변환과 클램프.
+- 색상 변환만 필요한 시나리오: `parseColorString` / `formatColor` / `rgbToHex` 등은 독립적으로 사용할 수 있습니다(폼 검증, 테마 동적화 등).
+- **사용하면 안 되는 곳**: 고정 색값 목록은 그냥 렌더링하면 되며 컴포넌트화가 필요 없습니다. 테마 토큰 정의는 theme 계층에 있지 이 컴포넌트에 있지 않습니다.
+
+## 가져오기
+
+```ts
+import {
+  isValidColorFormat,
+  hexToRgb,
+  rgbToHex,
+  rgbToHsv,
+  hsvToRgb,
+  parseColorString,
+  formatColor,
+  isSameColor,
+  getColorPickerClassNames,
+} from '@lh-ui/share/core/color-picker'
+import type { LhColorFormat, LhColorRgb, LhColorHsv, LhColorPickerState } from '@lh-ui/share/core/color-picker'
+```
+
+## 설계 의도
+
+**두 색상 공간이 각자의 몫을 담당**: 상호작용에는 **HSV**를 씁니다(채도 판의 x = 채도, y = 명도, 색상(Hue) 슬라이더의 h——드래그 좌표는 본래 HSV 의미). 저장 출력에는 **RGB**를 씁니다(hex / rgb() 문자열). 네 개의 변환 함수는 엄격히 쌍을 이루고(`hexToRgb`↔`rgbToHex`, `rgbToHsv`↔`hsvToRgb`), 입출력값은 **모두 클램프를 거칩니다**: `clampColorChannel` 0~255 정수, `clampColorAlpha` 0~1이며 소수 둘째 자리까지 유지(부동소수점 꼬리 `0.30000000000000004` 제거), `clampColorHue` 0~360, `clampColorRatio` 0~1. 비유한 입력(NaN/Infinity/undefined)은 일률적으로 안전 기본값으로 회귀하고 절대 새어 나가지 않습니다.
+
+**너그러운 파싱**(`parseColorString`): hex는 3/4/6/8자리를 지원하고(`#3ab` → `#33aabb`), rgb()/rgba()는 소수와 퍼센트 채널을 허용합니다(CSS Color 4 이전의 너그러운 형태). 잘못된 입력은 에러를 던지지 않고 `null`을 반환합니다——사용자가 절반만 직접 입력한 `#2B4`가 패널을 망가뜨려서는 안 됩니다.
+
+**출력 계약**(`formatColor`): `rgb` 형식은 `a < 1`일 때 `rgba(...)`를 출력하고, `hex` 형식은 `a < 1`일 때 8자리 hex를 출력합니다——**alpha에 값이 있으면 절대 조용히 잃지 않습니다**. 이것이 hex를 6자리로 출력할지 8자리로 출력할지의 분기선입니다.
+
+**동일성 가드**(`isSameColor`): 채널과 alpha를 모두 클램프한 뒤 비교하여, UI 계층이 '값이 변하지 않으면 change를 발행하지 않음'을 구현하도록 돕고 드래그 떨림이 중복 이벤트를 만드는 것을 막습니다.
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `isValidColorFormat` | `(format: string) => format is LhColorFormat` | 가드 | 형식 타당성('hex' \| 'rgb') |
+| `clampColorChannel` | `(value) => number` | 0~255 정수 | r/g/b 채널 클램프 |
+| `clampColorAlpha` | `(value) => number` | 0~1 두 자리 소수 | 알파 클램프 |
+| `clampColorHue` | `(value) => number` | 0~360 정수 | 색상(Hue) 클램프 |
+| `clampColorRatio` | `(value) => number` | 0~1 두 자리 소수 | 채도 / 명도 클램프 |
+| `hexToRgb` | `(hex: string) => LhColorRgb \| null` | RGBA \| null | hex 파싱(3/4/6/8자리) |
+| `rgbToHex` | `(color: LhColorRgb) => string` | hex 문자열 | `a < 1`일 때 8자리 hex 출력 |
+| `rgbToHsv` | `(color: LhColorRgb) => LhColorHsv` | HSVA | RGB → HSV |
+| `hsvToRgb` | `(color: LhColorHsv) => LhColorRgb` | RGBA | HSV → RGB |
+| `parseColorString` | `(input?) => LhColorRgb \| null` | RGBA \| null | hex / rgb() / rgba() 너그럽게 파싱 |
+| `formatColor` | `(color: LhColorRgb, format: LhColorFormat) => string` | 색상 문자열 | format별로 출력 |
+| `isSameColor` | `(left, right) => boolean` | boolean | 클램프 후 지각적 동일성 |
+| `getColorPickerClassNames` | `(state: LhColorPickerState) => string[]` | 클래스명 배열 | 컨테이너 클래스명(`--{size}`/`--disabled`/`--open`) |
+
+## 타입 정의
+
+```ts
+export type LhColorFormat = 'hex' | 'rgb'
+
+export interface LhColorRgb {
+  r: number
+  g: number
+  b: number
+  a: number
+}
+
+export interface LhColorHsv {
+  h: number
+  s: number
+  v: number
+  a: number
+}
+
+export interface LhColorPickerState {
+  size?: string
+  disabled?: boolean
+  open?: boolean
+}
+```
+
+## 접근성
+
+- **슬라이더**: 색상(Hue) / 투명도 슬라이더에는 `role="slider"` + `aria-valuenow/min/max`를 걸어야 하고, 방향키 미세 조정(Shift로 가속)은 UI 계층이 구현합니다——드래그는 키보드 사용자에게 도달할 수 없으므로 슬라이더 의미를 생략할 수 없습니다.
+- **색값 입력**: 패널 안 hex/rgb 입력창은 색상 수정의 키보드 통로이며, `aria-label`은 언어 팩의 `colorPicker.inputLabel`('색상값')을 사용합니다.
+- **프리셋 팔레트**: 각 칸은 포커스 가능하며 포커스 링은 스타일 쪽 `focus-visible`이 제공합니다. 칸의 접근 가능 이름은 곧 색값 문자열입니다.
+
+## 사용 예
+
+```ts
+import { parseColorString, formatColor, rgbToHsv } from '@lh-ui/share/core/color-picker'
+
+parseColorString('#2B4C7C')        // { r: 43, g: 76, b: 124, a: 1 }
+parseColorString('rgba(43,76,124,0.5)')
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'hex')   // '#2b4c7c80'
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'rgb')   // 'rgba(43, 76, 124, 0.5)'
+
+// 드래그 루프: HSV(상호작용 상태) → RGB(제출 상태) → HSV(되돌림 상태) 전 구간 클램프
+rgbToHsv({ r: 43, g: 76, b: 124, a: 1 })  // { h: 215, s: 0.65, v: 0.49, a: 1 }
+```
+
+```vue
+<!-- Vue3: 채도 판 포인터 좌표 = HSV 의미 -->
+<div
+  class="lh-color-picker__saturation"
+  @pointerdown="onSaturationDrag"
+>
+  <div class="lh-color-picker__saturation-pointer" :style="{ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%` }" />
+</div>
+```
+
+```tsx
+// React: 드래그가 끝나면 일률적으로 hsvToRgb → formatColor로 제출
+const commit = (hsv: LhColorHsv) => onChange(formatColor(hsvToRgb(hsv), format))
+```
+
+```ts
+// uniapp: 드래그는 요소 단위 touchstart/move/end를 사용하고(MP는 터치 대상을 따라 발행),
+// 패널 위치 잡기는 adapter popper의 두 프레임 측정을 따릅니다. 색상 수학은 이 계층과 완전히 일치합니다
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-color-picker` | 트리거 컨테이너(inline-flex + 색 견본 + 값 텍스트) |
+| `.lh-color-picker--{small\|large}` | 크기 단계 |
+| `.lh-color-picker--disabled` / `--open` / `--empty` | 비활성 / 패널 펼침 / 미선택(값 텍스트가 placeholder 색으로 저하) |
+| `.lh-color-picker__swatch` | 색 견본 블록 |
+| `.lh-color-picker__value` | 현재 색값 텍스트(고정폭 글꼴) |
+| `.lh-color-picker__panel` | 플로팅 패널(popper를 따라 위치) |
+| `.lh-color-picker__saturation` / `__saturation-pointer` | 채도·명도 판과 포인터 |
+| `.lh-color-picker__slider` / `__hue` / `__alpha` / `__slider-thumb` | 색상(Hue)/투명도 슬라이더(alpha 체커보드 배경) |
+| `.lh-color-picker__input` | hex/rgb 입력창 |
+| `.lh-color-picker__predefine` / `__predefine-item` | 프리셋 팔레트 |
+
+색상(Hue) 그라데이션과 alpha 체커보드는 고정 시각입니다(테마와 무관). 나머지 색은 모두 `var(--lh-*)`입니다.
+
+## 주의사항
+
+- 변환 방향에서 편의를 위해 클램프를 생략해서는 안 됩니다: 드래그로 생긴 부동소수점 좌표는 반드시 먼저 `clampColorRatio/Hue`를 거친 뒤 변환해야 하며, 그렇지 않으면 부동소수점 꼬리가 hex에 써집니다.
+- `parseColorString`이 `null`을 반환할 때 UI 계층은 마지막 유효값을 유지해야 합니다(지우지 않고 제출하지 않음). '잘못된 입력'과 '지우기'를 두 동작으로 구분합니다.
+- 색 견본 `<span>`이 포커스 불가로 패널을 트리거하는 시나리오에서는, 트리거 전체가 `<button>` 또는 `role`을 가진 동등 요소여야 합니다——스타일은 관감만 담당합니다.
+
+<FnPlayground module="color-picker" fn="formatColor" params='{"color": {"r": 43, "g": 76, "b": 124, "a": 1}, "format": "hex"}' />

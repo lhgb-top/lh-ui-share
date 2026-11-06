@@ -172,7 +172,18 @@ export function validateFormField(
       rules.find((rule) => rule.required && rule.message !== undefined) ??
       rules.find((rule) => rule.required)
     if (!requiredRule) return undefined
-    // 与内置规则同口径：message 显式提供（含空串）即原样使用，仅 undefined 回退通用文案
+    // 与内置规则同口径：message 显式提供（含空串）即原样使用，仅 undefined 回退通用文案。
+    // 调用方未传 requiredMessage 时必填校验会静默放行（core 无文案红线下不能内置兜底）——
+    // dev 期警告提醒漏传（四端 UI 层均已透传 t('form.required')，缺口仅限第三方直接调 core）
+    if (requiredRule.message === undefined && requiredMessage === undefined) {
+      const env = (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env?.NODE_ENV
+      if (env !== 'production') {
+        console.warn(
+          '[lh-ui/form] 必填规则缺 message 且未传 requiredMessage，该必填字段在校验失败时不产生错误文案。' +
+            'UI 层应透传语言包 form.required（四端已统一）。',
+        )
+      }
+    }
     return requiredRule.message !== undefined ? requiredRule.message : requiredMessage
   }
 

@@ -427,6 +427,9 @@
     ".lh-form",
     ".lh-form--inline",
     ".lh-form-item",
+    ".lh-form-item--bottom",
+    ".lh-form-item--left",
+    ".lh-form-item--right",
     ".lh-form-item--top",
     ".lh-form-item__content",
     ".lh-form-item__error",
@@ -509,7 +512,11 @@
     ".lh-input__wrapper",
     ".lh-input__wrapper--disabled",
     ".lh-input__wrapper--focused",
-    ".lh-input__wrapper--has-label",
+    ".lh-input__wrapper--label-bottom",
+    ".lh-input__wrapper--label-float",
+    ".lh-input__wrapper--label-left",
+    ".lh-input__wrapper--label-right",
+    ".lh-input__wrapper--label-top",
     ".lh-sr-only"
   ],
   "input-number": [

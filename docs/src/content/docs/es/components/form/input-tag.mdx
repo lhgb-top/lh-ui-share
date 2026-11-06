@@ -1,0 +1,146 @@
+---
+title: input-tag —— Entrada de etiquetas
+description: 'insertInputTag inserción inmutable (tres motivos de rechazo: empty/duplicate/max), removeInputTag/removeLastInputTag para eliminar, isInputTagTriggerKey para el criterio de la tecla disparadora'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Entrada de etiquetas = campo de entrada + Enter (o coma/espacio) que genera la etiqueta + Backspace que elimina la última. `core/input-tag` convierte la lógica de añadir y quitar en **actualizaciones inmutables** y aporta motivos de rechazo legibles por máquina; el campo de entrada, el render de las etiquetas y el botón de eliminar los asume la capa UI de cada plataforma.
+
+## Cuándo usarlo
+
+- Cuando cada plataforma implemente `LhInputTag`: lista de etiquetas por v-model, teclas disparadoras (`enter`/`space`/`comma`), límite `max`, deduplicación y Backspace para eliminar la última.
+- Escenarios que solo necesitan la lógica de añadir y quitar etiquetas (sin importar la forma del campo de entrada).
+- **No usarlo para**: la selección de un único valor usa `core/select`; la selección múltiple de opciones fijas usa `core/checkbox-group`: las etiquetas de la entrada de etiquetas vienen de la **entrada libre**, y esa es su frontera esencial con los componentes multiselección.
+
+## Importación
+
+```ts
+import {
+  isValidInputTagTrigger,
+  isInputTagTriggerKey,
+  getInputTagClassNames,
+  insertInputTag,
+  removeInputTag,
+  removeLastInputTag,
+} from '@lh-ui/share/core/input-tag'
+import type { LhInputTagState, LhInputTagTrigger, LhInputTagInsertResult } from '@lh-ui/share/core/input-tag'
+```
+
+## Intención de diseño
+
+**Actualización inmutable**: `insertInputTag` / `removeInputTag` / `removeLastInputTag` devuelven siempre una matriz nueva y nunca modifican los parámetros in situ: la capa UI recibe el resultado y lo pasa directo a `setData` / `setState`, sin copias, y se elimina el acoplamiento implícito de «modificar el parámetro y olvidar emitir».
+
+**Motivos de rechazo legibles por máquina**: el fallo de inserción no es silencioso; `LhInputTagInsertResult.reason` da tres valores:
+
+- `empty`: la entrada es una cadena vacía tras trim.
+- `duplicate`: `allowDuplicate` no está activo y la etiqueta ya existe.
+- `max`: `max` es positivo y se alcanzó el límite.
+
+La capa UI decide con esto cómo avisar (sacudida / toast / sin aviso); core no muestra ningún aviso: el aviso es una decisión de UI, el rechazo es un hecho de datos.
+
+**Semántica de max**: un valor no positivo significa sin límite; al alcanzar el límite se **rechaza en lugar de reemplazar la etiqueta más antigua**: perder datos en silencio es una sorpresa, no una comodidad; el exceso debería verse.
+
+**Compatibilidad de teclas disparadoras**: el `space` de `isInputTagTriggerKey` acepta a la vez `' '` y el valor histórico de tecla `'Spacebar'` (el de IE antiguo / algunas WebViews de Android), y `comma` coincide con `','`.
+
+## Tabla de funciones
+
+| Función | Firma | Devuelve | Descripción |
+| --- | --- | --- | --- |
+| `isValidInputTagTrigger` | `(trigger: string) => trigger is LhInputTagTrigger` | guardia | legalidad de la tecla disparadora |
+| `getInputTagClassNames` | `(state: LhInputTagState) => string[]` | matriz de nombres de clase | clases del contenedor (`--disabled`/`--readonly`) |
+| `isInputTagTriggerKey` | `(key: string, trigger: LhInputTagTrigger) => boolean` | boolean | determina si el evento de teclado dispara el envío |
+| `insertInputTag` | `(tags, input, state?) => LhInputTagInsertResult` | resultado de inserción | envía una etiqueta (inmutable) |
+| `removeInputTag` | `(tags, index) => string[]` | matriz nueva | elimina el índice dado (fuera de rango devuelve la matriz original) |
+| `removeLastInputTag` | `(tags) => string[]` | matriz nueva | Backspace elimina la última |
+
+## Definiciones de tipos
+
+```ts
+export type LhInputTagTrigger = 'enter' | 'space' | 'comma'
+
+export interface LhInputTagState {
+  max?: number
+  allowDuplicate?: boolean
+  readonly?: boolean
+  disabled?: boolean
+}
+
+export interface LhInputTagInsertResult {
+  tags: string[]
+  inserted: boolean
+  reason?: 'empty' | 'duplicate' | 'max'
+}
+```
+
+## Accesibilidad
+
+- El botón de eliminar la etiqueta se apoya en un `<button>` nativo (o elemento equivalente) + `aria-label` (como «Eliminar Paisaje»), en la misma línea que el botón de cierre de `core/tag`.
+- El `aria-describedby` del campo de entrada apunta al texto de ayuda «pulsa Enter para añadir la etiqueta»; los usuarios de teclado no necesitan adivinar la tecla disparadora.
+- En el contenedor de la lista de etiquetas se recomienda `role="list"` y en las etiquetas `role="listitem"`; el lector de pantalla puede anunciar «elemento N».
+
+## Ejemplos de uso
+
+```ts
+import { insertInputTag, removeLastInputTag, isInputTagTriggerKey } from '@lh-ui/share/core/input-tag'
+
+insertInputTag(['Paisaje', 'Flores y aves'], 'Figuras', { max: 5, allowDuplicate: false })
+// { tags: ['Paisaje', 'Flores y aves', 'Figuras'], inserted: true }
+
+insertInputTag(['Paisaje'], 'Paisaje', {})
+// { tags: ['Paisaje'], inserted: false, reason: 'duplicate' }
+
+insertInputTag(['a', 'b'], 'c', { max: 2 })
+// { tags: ['a', 'b'], inserted: false, reason: 'max' }
+
+isInputTagTriggerKey('Enter', 'enter')   // true
+isInputTagTriggerKey(',', 'comma')       // true
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getInputTagClassNames({ disabled, readonly })">
+  <span v-for="(tag, index) in tags" :key="tag" class="lh-input-tag__tag">
+    {{ tag }}
+    <button class="lh-input-tag__tag-close" aria-label="Eliminar" @click="tags = removeInputTag(tags, index)">×</button>
+  </span>
+  <input
+    class="lh-input-tag__input"
+    @keydown="isInputTagTriggerKey($event.key, trigger) && commit()"
+    @keydown.backspace="!input && (tags = removeLastInputTag(tags))"
+  />
+</span>
+```
+
+```tsx
+// React: el resultado de la inserción toma el control del state al completo; los motivos de rechazo se dejan a la capa de avisos
+const result = insertInputTag(tags, input, { max, allowDuplicate })
+if (result.inserted) setTags(result.tags)
+else if (result.reason === 'max') toast('Se alcanzó el límite de etiquetas')
+```
+
+```ts
+// uniapp: el miniprograma no tiene keydown; la tecla disparadora se mapea a confirm-type / @confirm (enter),
+// el disparo por comma degrada en MP a «dividir cuando la entrada ya contiene comas»; la semántica de Backspace degrada del mismo modo
+```
+
+## Estilos y tokens
+
+| Clase | Significado |
+| --- | --- |
+| `.lh-input-tag` | contenedor: flex-wrap, borde del color primario en hover, foco con focus-within |
+| `.lh-input-tag--disabled` | estado desactivado |
+| `.lh-input-tag--readonly` | estado de solo lectura |
+| `.lh-input-tag__tag` | pastilla de etiqueta (fondo claro con borde, sin salto de línea) |
+| `.lh-input-tag__tag-close` | botón de eliminar la etiqueta |
+| `.lh-input-tag__input` | campo de entrada incrustado (sin borde, fondo transparente, placeholder en color de marcador) |
+
+Todos los colores pasan por `var(--lh-*)`; el modo oscuro los invierte `var-dark.scss`.
+
+## Notas
+
+- El trim de `insertInputTag` es «quitar los espacios del inicio y del final», no «quitar los espacios internos»; `'a b'` es una etiqueta legal.
+- `removeLastInputTag` solo tiene semántica de Backspace si se llama con el **campo de entrada vacío** (con texto, Backspace borra caracteres); esa evaluación la hace la capa UI.
+- Con la tecla disparadora `comma` se recomienda que la capa UI divida al vuelo las comas de la entrada; de lo contrario, un usuario que teclee `a,b` generaría una etiqueta con la cadena entera.
+
+<FnPlayground module="input-tag" fn="insertInputTag" params='{"tags": ["Paisaje", "Flores y aves"], "input": "Figuras", "state": {"max": 5, "allowDuplicate": false}}' />

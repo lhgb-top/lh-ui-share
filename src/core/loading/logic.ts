@@ -15,6 +15,8 @@ export function getLoadingClassNames(state: LhLoadingState): string[] {
  * 不传 target 即全屏（body）。
  */
 export function resolveLoadingTarget(target: string | HTMLElement | undefined): HTMLElement {
+  // SSR / 非 DOM 环境守卫（与 isLoadingFullscreen / ensurePositioned 一致）：无 document 时无从取 body
+  if (typeof document === 'undefined') return target as HTMLElement
   if (!target) return document.body
   if (target instanceof HTMLElement) return target
   return document.querySelector<HTMLElement>(target) ?? document.body

@@ -63,7 +63,11 @@ export function patchMeasuredSize(
 ): number {
   const item = items[index]
   if (!item) return 0
-  const next = Number.isFinite(size) && size > 0 ? size : defaultSize
+  // defaultSize 与 buildVirtualItems 同口径守卫：非有限/非正时回退默认值，
+  // 否则 NaN 的 next 沿 offset 链污染整条偏移、二分查找全部退化成 false
+  const safeDefault =
+    Number.isFinite(defaultSize) && defaultSize > 0 ? defaultSize : LH_VIRTUAL_ITEM_SIZE
+  const next = Number.isFinite(size) && size > 0 ? size : safeDefault
   const delta = next - item.size
   if (delta === 0) return 0
   item.size = next

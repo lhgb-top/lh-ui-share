@@ -1,0 +1,146 @@
+---
+title: input-tag —— タグ入力
+description: 'insertInputTag のイミュータブルな挿入（empty/duplicate/max の 3 種類の拒否理由）、removeInputTag/removeLastInputTag の削除、isInputTagTriggerKey によるトリガーキー判定'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+タグ入力 = 入力欄 + Enter（またはカンマ/スペース）でタグ生成 + Backspace で末尾のタグを削除。`core/input-tag` は追加・削除ロジックを**イミュータブルな更新**として実装し、機械可読な拒否理由を返します。入力欄、タグのレンダリング、削除ボタンは各端の UI 層が担います。
+
+## いつ使うか
+
+- 各端が `LhInputTag` を実装する：v-model のタグリスト、トリガーキー（`enter`/`space`/`comma`）、`max` 上限、重複排除、Backspace での末尾削除。
+- タグの追加・削除ロジックだけが必要（入力欄の形態は問わない）シナリオ。
+- **使うべきでない**：単一値の選択は `core/select`、選択肢が固定の列挙複数選択は `core/checkbox-group`——タグ入力のタグは**自由入力**から生まれます。これが複数選択コンポーネントとの本質的な分界です。
+
+## インポート方法
+
+```ts
+import {
+  isValidInputTagTrigger,
+  isInputTagTriggerKey,
+  getInputTagClassNames,
+  insertInputTag,
+  removeInputTag,
+  removeLastInputTag,
+} from '@lh-ui/share/core/input-tag'
+import type { LhInputTagState, LhInputTagTrigger, LhInputTagInsertResult } from '@lh-ui/share/core/input-tag'
+```
+
+## 設計意図
+
+**イミュータブルな更新**：`insertInputTag` / `removeInputTag` / `removeLastInputTag` はすべて新しい配列を返し、入力を決してその場で変更しません——UI 層は結果をそのまま `setData` / `setState` に渡せ、コピーは不要。さらに「入力を変更したのにディスパッチを忘れる」という暗黙の結合も排除します。
+
+**拒否理由は機械可読**：挿入の失敗はサイレントではありません。`LhInputTagInsertResult.reason` が三つの値を返します：
+
+- `empty`：入力が trim 後に空文字列。
+- `duplicate`：`allowDuplicate` が有効でなく、同名のタグが既に存在。
+- `max`：`max` が正の数で、既に上限に到達。
+
+UI 層はこれに応じてヒントの出し方（シェイク / toast / 表示なし）を決めます。core はいかなるヒントも表示しません——ヒントは UI の決断であり、拒否はデータとしての事実です。
+
+**max のセマンティクス**：正でない数は無制限を意味します。上限到達後は**最も古いタグを置き換えるのではなく拒否します**——こっそりデータを捨てるのは便利さではなく驚き（サプライズ）であり、上限超過は目に見えるべきです。
+
+**トリガーキーの互換**：`isInputTagTriggerKey` の `space` は `' '` と歴史的なキー値 `'Spacebar'`（旧 IE / 一部の Android WebView のキー値）の両方を受け付け、`comma` は `','` にマッチします。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `isValidInputTagTrigger` | `(trigger: string) => trigger is LhInputTagTrigger` | ガード | トリガーキーの正当性 |
+| `getInputTagClassNames` | `(state: LhInputTagState) => string[]` | クラス名配列 | コンテナークラス名（`--disabled`/`--readonly`） |
+| `isInputTagTriggerKey` | `(key: string, trigger: LhInputTagTrigger) => boolean` | boolean | キーボードイベントが送信をトリガーするか判定 |
+| `insertInputTag` | `(tags, input, state?) => LhInputTagInsertResult` | 挿入結果 | タグを一つ確定（イミュータブル） |
+| `removeInputTag` | `(tags, index) => string[]` | 新しい配列 | 指定インデックスを削除（範囲外は元の配列を返す） |
+| `removeLastInputTag` | `(tags) => string[]` | 新しい配列 | Backspace で末尾を削除 |
+
+## 型定義
+
+```ts
+export type LhInputTagTrigger = 'enter' | 'space' | 'comma'
+
+export interface LhInputTagState {
+  max?: number
+  allowDuplicate?: boolean
+  readonly?: boolean
+  disabled?: boolean
+}
+
+export interface LhInputTagInsertResult {
+  tags: string[]
+  inserted: boolean
+  reason?: 'empty' | 'duplicate' | 'max'
+}
+```
+
+## アクセシビリティ
+
+- タグの削除ボタンはネイティブ `<button>`（または等価要素）で担い、`aria-label`（「山水を削除」など）を付けます。`core/tag` の閉じるボタンと同じ方針です。
+- 入力欄の `aria-describedby` は「Enter でタグを追加」というヒントテキストを指します。キーボードユーザーがトリガーキーを推測する必要はありません。
+- タグリストのコンテナーには `role="list"`、タグには `role="listitem"` を推奨します。スクリーンリーダーが「N 番目の項目」と読み上げます。
+
+## 使用例
+
+```ts
+import { insertInputTag, removeLastInputTag, isInputTagTriggerKey } from '@lh-ui/share/core/input-tag'
+
+insertInputTag(['山水', '花鳥'], '人物', { max: 5, allowDuplicate: false })
+// { tags: ['山水', '花鳥', '人物'], inserted: true }
+
+insertInputTag(['山水'], '山水', {})
+// { tags: ['山水'], inserted: false, reason: 'duplicate' }
+
+insertInputTag(['a', 'b'], 'c', { max: 2 })
+// { tags: ['a', 'b'], inserted: false, reason: 'max' }
+
+isInputTagTriggerKey('Enter', 'enter')   // true
+isInputTagTriggerKey(',', 'comma')       // true
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getInputTagClassNames({ disabled, readonly })">
+  <span v-for="(tag, index) in tags" :key="tag" class="lh-input-tag__tag">
+    {{ tag }}
+    <button class="lh-input-tag__tag-close" aria-label="削除" @click="tags = removeInputTag(tags, index)">×</button>
+  </span>
+  <input
+    class="lh-input-tag__input"
+    @keydown="isInputTagTriggerKey($event.key, trigger) && commit()"
+    @keydown.backspace="!input && (tags = removeLastInputTag(tags))"
+  />
+</span>
+```
+
+```tsx
+// React：挿入結果で state を丸ごと引き継ぎ、拒否理由はヒント層に委ねる
+const result = insertInputTag(tags, input, { max, allowDuplicate })
+if (result.inserted) setTags(result.tags)
+else if (result.reason === 'max') toast('タグの上限に達しました')
+```
+
+```ts
+// uniapp：ミニプログラムに keydown はないため、トリガーキーは confirm-type / @confirm（enter）にマップ。
+// comma トリガーは MP 端で「入力にカンマが含まれた時点で分割」に降格。Backspace のセマンティクスも同様に降格
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-input-tag` | コンテナー：flex-wrap、hover でプライマリーカラーのボーダー、focus-within でフォーカス表示 |
+| `.lh-input-tag--disabled` | 無効状態 |
+| `.lh-input-tag--readonly` | 読み取り専用状態 |
+| `.lh-input-tag__tag` | タグチップ（薄い背景 + 枠線、折り返しなし） |
+| `.lh-input-tag__tag-close` | タグ削除ボタン |
+| `.lh-input-tag__input` | 内蔵入力欄（ボーダーなし・透明背景、placeholder はプレースホルダー色） |
+
+色はすべて `var(--lh-*)` で、ダークモードは `var-dark.scss` が反転させます。
+
+## 注意事項
+
+- `insertInputTag` の trim は「先頭末尾の空白を除去」であって「内部の空白を除去」ではありません。`'a b'` は正当な一つのタグです。
+- `removeLastInputTag` は**入力欄が空のとき**に呼んで初めて Backspace のセマンティクスになります（入力があるときの Backspace は文字削除です）。この判定は UI 層の責務です。
+- トリガーキーが `comma` のときは、UI 層で入力中のカンマを即座に分割することを推奨します。そうしないと `a,b` の入力が一つながりのタグとして生成されます。
+
+<FnPlayground module="input-tag" fn="insertInputTag" params='{"tags": ["山水", "花鳥"], "input": "人物", "state": {"max": 5, "allowDuplicate": false}}' />

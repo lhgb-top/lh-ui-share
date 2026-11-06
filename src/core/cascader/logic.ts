@@ -130,6 +130,9 @@ export function searchNodes(
   itemConfig: LhCascaderItemConfig = {},
   maxResults = 50
 ): LhCascaderSearchResult[] {
+  // 内部一律用新数组累积：直接 push 入参 results 会 mutate 调用方数组，
+  // 重复调用同一数组会让结果在外部累积、maxResults 判定也基于污染后的长度
+  const collected: LhCascaderSearchResult[] = []
   const lowerKeyword = keyword.toLowerCase()
 
   function walk(
@@ -138,14 +141,14 @@ export function searchNodes(
     ancestors: LhCascaderNode[]
   ): void {
     for (const node of list) {
-      if (results.length >= maxResults) return
+      if (collected.length >= maxResults) return
       if (ancestors.includes(node)) continue
 
       const label = getField<string>(node, 'label', itemConfig.label)
       const chain = [...ancestorNodes, node]
 
       if (String(label ?? '').toLowerCase().includes(lowerKeyword)) {
-        results.push({
+        collected.push({
           path: chain.map((n) => getField<string | number>(n, 'value', itemConfig.value)),
           nodes: chain,
           pathLabels: chain.map((n) => getField<string>(n, 'label', itemConfig.label)),
@@ -160,7 +163,8 @@ export function searchNodes(
   }
 
   walk(nodes, [], [])
-  return results
+  // 兼容旧签名：调用方可选传入 results 作初始累积，追加进新结果后返回新数组（不 mutate 入参）
+  return [...results, ...collected]
 }
 
 /**
@@ -245,6 +249,20 @@ export function normalizeCascaderNodes(
     const normalized: LhCascaderNode = {
       value: getField<string | number>(node, 'value', itemConfig.value),
       label: getField<string>(node, 'label', itemConfig.label),
+    }
+    // value 是级联的唯一标识（expandedValues、回显匹配、emit 全靠它）：
+    // 源数据缺该字段时归一化结果带 undefined，类型上仍声明必填——dev 期给出口头警告，
+    // 避免脏数据静默流进依赖值唯一性的逻辑（仅为 dev 提示，不抛错不强校验；
+    // globalThis 探测而不直接读 process——core 是框架无关纯库，类型环境里没有 node 类型）
+    if (normalized.value === undefined) {
+      const env = (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env
+        ?.NODE_ENV
+      if (env !== 'production') {
+        console.warn(
+          '[lh-ui/cascader] 节点缺少 value 字段（或其别名）：' +
+            `${JSON.stringify(normalized.label ?? node)}，依赖值唯一性的逻辑（展开/回显/emit）将无法匹配该项`,
+        )
+      }
     }
     const disabled = getField<boolean | undefined>(node, 'disabled', itemConfig.disabled)
     if (disabled !== undefined) normalized.disabled = disabled

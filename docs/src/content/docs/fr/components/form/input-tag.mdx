@@ -1,0 +1,147 @@
+---
+title: input-tag —— Saisie de balises
+description: 'insertInputTag insertion immuable (trois motifs de refus empty/duplicate/max), removeInputTag/removeLastInputTag pour la suppression, isInputTagTriggerKey détermine la touche de déclenchement'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Saisie de balises = champ de saisie + Entrée (ou virgule/espace) pour générer une balise + Backspace pour supprimer la balise de fin. `core/input-tag` fait des ajouts/suppressions des **mises à jour immuables** et fournit des motifs de refus lisibles par machine ; champ de saisie, rendu des balises et boutons de suppression sont portés par la couche UI de chaque plateforme.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhInputTag` : liste de balises en v-model, touches de déclenchement (`enter`/`space`/`comma`), plafond `max`, déduplication, suppression de la balise de fin par Backspace.
+- Pour les scénarios qui ne demandent que la logique d'ajout/suppression de balises (peu importe la forme du champ).
+- **À ne pas utiliser pour** : une sélection à valeur unique → `core/select` ; un multi-choix à options fixes → `core/checkbox-group` — les balises de la saisie de balises proviennent d'une **saisie libre**, c'est la frontière essentielle avec les composants multi-choix.
+
+## Import
+
+```ts
+import {
+  isValidInputTagTrigger,
+  isInputTagTriggerKey,
+  getInputTagClassNames,
+  insertInputTag,
+  removeInputTag,
+  removeLastInputTag,
+} from '@lh-ui/share/core/input-tag'
+import type { LhInputTagState, LhInputTagTrigger, LhInputTagInsertResult } from '@lh-ui/share/core/input-tag'
+```
+
+## Intention de conception
+
+**Mise à jour immuable** : `insertInputTag` / `removeInputTag` / `removeLastInputTag` renvoient tous un nouveau tableau, les entrées ne sont jamais modifiées sur place — la couche UI prend le résultat et le passe directement à `setData` / `setState`, sans copie, et supprime le couplage implicite du type « j'ai modifié l'entrée mais oublié d'émettre ».
+
+**Motifs de refus lisibles par machine** : un échec d'insertion n'est pas silencieux, `LhInputTagInsertResult.reason` donne trois valeurs :
+
+- `empty` : la saisie est une chaîne vide après trim.
+- `duplicate` : `allowDuplicate` non activé et la balise existe déjà.
+- `max` : `max` est un nombre positif et le plafond est atteint.
+
+La couche UI décide du mode d'alerte (secousse / toast / aucune alerte), core n'affiche rien — l'alerte est une décision d'UI, le refus est un fait de données.
+
+**Sémantique de max** : un nombre non positif signifie sans limite ; une fois le plafond atteint, **refus plutôt que remplacement de la balise la plus ancienne** — perdre des données en silence est une surprise, pas une commodité, le dépassement doit être vu.
+
+**Compatibilité des touches de déclenchement** : le `space` d'`isInputTagTriggerKey` accepte à la fois `' '` et la valeur historique `'Spacebar'` (valeur des vieux IE / de certains WebView Android), `comma` correspond à `','`.
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `isValidInputTagTrigger` | `(trigger: string) => trigger is LhInputTagTrigger` | garde-fou | Validité de la touche de déclenchement |
+| `getInputTagClassNames` | `(state: LhInputTagState) => string[]` | tableau de classes | Classes du conteneur (`--disabled`/`--readonly`) |
+| `isInputTagTriggerKey` | `(key: string, trigger: LhInputTagTrigger) => boolean` | boolean | Détermine si l'événement clavier déclenche la soumission |
+| `insertInputTag` | `(tags, input, state?) => LhInputTagInsertResult` | résultat d'insertion | Soumet une balise (immuable) |
+| `removeInputTag` | `(tags, index) => string[]` | nouveau tableau | Supprime l'indice donné (indice hors bornes → tableau d'origine) |
+| `removeLastInputTag` | `(tags) => string[]` | nouveau tableau | Suppression de la balise de fin par Backspace |
+
+## Définitions de types
+
+```ts
+export type LhInputTagTrigger = 'enter' | 'space' | 'comma'
+
+export interface LhInputTagState {
+  max?: number
+  allowDuplicate?: boolean
+  readonly?: boolean
+  disabled?: boolean
+}
+
+export interface LhInputTagInsertResult {
+  tags: string[]
+  inserted: boolean
+  reason?: 'empty' | 'duplicate' | 'max'
+}
+```
+
+## Accessibilité
+
+- Le bouton de suppression de balise porte sur un `<button>` natif (ou un élément équivalent) + `aria-label` (par exemple « Retirer Paysage »), même calibre que le bouton de fermeture de `core/tag`.
+- Le champ de saisie pointe son `aria-describedby` vers le texte d'aide « appuyez sur Entrée pour ajouter une balise », les utilisateurs clavier n'ont pas à deviner la touche.
+- Le conteneur de la liste de balises devrait porter `role="list"` et les balises `role="listitem"`, le lecteur d'écran peut annoncer « élément N ».
+
+## Exemples d'utilisation
+
+```ts
+import { insertInputTag, removeLastInputTag, isInputTagTriggerKey } from '@lh-ui/share/core/input-tag'
+
+insertInputTag(['Paysage', 'Fleurs et oiseaux'], 'Personnages', { max: 5, allowDuplicate: false })
+// { tags: ['Paysage', 'Fleurs et oiseaux', 'Personnages'], inserted: true }
+
+insertInputTag(['Paysage'], 'Paysage', {})
+// { tags: ['Paysage'], inserted: false, reason: 'duplicate' }
+
+insertInputTag(['a', 'b'], 'c', { max: 2 })
+// { tags: ['a', 'b'], inserted: false, reason: 'max' }
+
+isInputTagTriggerKey('Enter', 'enter')   // true
+isInputTagTriggerKey(',', 'comma')       // true
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getInputTagClassNames({ disabled, readonly })">
+  <span v-for="(tag, index) in tags" :key="tag" class="lh-input-tag__tag">
+    {{ tag }}
+    <button class="lh-input-tag__tag-close" aria-label="Retirer" @click="tags = removeInputTag(tags, index)">×</button>
+  </span>
+  <input
+    class="lh-input-tag__input"
+    @keydown="isInputTagTriggerKey($event.key, trigger) && commit()"
+    @keydown.backspace="!input && (tags = removeLastInputTag(tags))"
+  />
+</span>
+```
+
+```tsx
+// React : le résultat d'insertion prend en charge l'état entier, les motifs de refus vont à la couche d'alerte
+const result = insertInputTag(tags, input, { max, allowDuplicate })
+if (result.inserted) setTags(result.tags)
+else if (result.reason === 'max') toast('Limite de balises atteinte')
+```
+
+```ts
+// uniapp : pas de keydown côté mini-programme, les touches de déclenchement se mappent en
+// confirm-type / @confirm (enter) ; le déclenchement comma dégrade côté MP en
+// « découpe dès la saisie dès qu'une virgule apparaît » ; même dégradation pour la sémantique Backspace
+```
+
+## Styles et tokens
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-input-tag` | Conteneur : flex-wrap, bordure de couleur principale au hover, focus-within à la prise de focus |
+| `.lh-input-tag--disabled` | État désactivé |
+| `.lh-input-tag--readonly` | État en lecture seule |
+| `.lh-input-tag__tag` | Étiquette de balise (fond clair à contour, sans retour à la ligne) |
+| `.lh-input-tag__tag-close` | Bouton de suppression de balise |
+| `.lh-input-tag__input` | Champ de saisie encastré (sans bordure, fond transparent, couleur d'espace réservé en placeholder) |
+
+Toutes les couleurs en `var(--lh-*)`, le mode sombre est basculé par `var-dark.scss`.
+
+## Remarques
+
+- Le trim d'`insertInputTag` « retire les espaces de début et de fin », pas « les espaces internes » : `'a b'` est une balise légale.
+- `removeLastInputTag` n'a la sémantique Backspace que si le **champ de saisie est vide** (avec une saisie en cours, Backspace supprime un caractère), la couche UI est responsable de ce test.
+- Quand la touche de déclenchement est `comma`, il est conseillé que la couche UI découpe à la volée les virgules de la saisie, sinon la saisie `a,b` produirait une balise d'un seul bloc.
+
+<FnPlayground module="input-tag" fn="insertInputTag" params='{"tags": ["Paysage", "Fleurs et oiseaux"], "input": "Personnages", "state": {"max": 5, "allowDuplicate": false}}' />

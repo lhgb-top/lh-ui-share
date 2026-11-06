@@ -16,7 +16,9 @@ export function resolveDelay(
   defaults: LhDefaultDelay,
 ): LhDefaultDelay {
   return {
-    show: showDelay ?? defaults.show,
-    hide: hideDelay ?? defaults.hide,
+    // Math.max(0, ...) 兑现下方注释承诺的非负钳制：负延迟对 setTimeout 无意义，
+    // 原样返回会把 show/hide 变成立即触发外的脏值（如 showAfter: -500）
+    show: Math.max(0, showDelay ?? defaults.show),
+    hide: Math.max(0, hideDelay ?? defaults.hide),
   }
 }

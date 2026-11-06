@@ -1,0 +1,157 @@
+---
+title: mentions —— メンション
+description: 'getMentionContext によるカーソルコンテキスト解析（メール擬似プレフィックスの排除 / CJK 誤判定なし / 空白で即停止）、insertMention の書き戻し、getMentions の逆解析、filterMentionOptions のフィルター'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+@メンション = テキスト入力コントロール + プレフィックストリガー文字（デフォルト `@`）+ 候補パネル + 選択の書き戻し。`core/mentions` が行うのは**テキスト処理とセマンティクス**だけです：カーソルが未完了のメンションフラグメント内にあるかを解析し、選択されたメンションを書き戻し、テキストから全メンションを逆解析します。コントロール、パネル、キーボードインタラクションは各端の UI 層が担います。
+
+## いつ使うか
+
+- 各端が `LhMentions` を実装する：`@` でメンバー候補をトリガー、選択したら `@張三 ` を書き戻し、送信時にメンションリストを収集する。
+- 任意の textarea / input 上でメンション解析ロジックを再利用する（core は特定のコントロールに束縛されない）。
+- **使うべきでない**：候補が任意の入力から生まれる（プレフィックス文字駆動でない）シナリオでは `core/autocomplete` を使う。
+
+## インポート方法
+
+```ts
+import {
+  getMentionContext,
+  insertMention,
+  getMentions,
+  filterMentionOptions,
+  getMentionOptionId,
+  getMentionsTriggerAria,
+  getMentionsListboxAria,
+  getMentionOptionAria,
+} from '@lh-ui/share/core/mentions'
+import type { LhMentionOption, LhMentionContext } from '@lh-ui/share/core/mentions'
+```
+
+## 設計意図
+
+**コンテキスト解析の三つのルール**（`getMentionContext(text, caretIndex, prefix)`）：カーソル位置から前方へスキャンし、直近の prefix 文字を探します——
+
+1. **メールの擬似プレフィックスの排除**：prefix の直前がメールローカル部の文字（ASCII 英数字と `._%+-`）に隣接している場合はメールの擬似プレフィックスとみなし（`a@b.com` はトリガーしない）、**スキップしてさらに前方を探し続けます**——`a@b.com と @張三さんに通知` の文では、カーソルが文末にあっても `@張三` にヒットします。
+2. **CJK を誤判定しない**：プレフィックス排除の対象は ASCII ワード文字だけです。`こんにちは@張三` は正常にトリガーします。
+3. **空白で即停止**：スキャン中に空白に達し、まだ prefix を見つけていなければ諦めます——`@張三さん こんにちは` ではカーソルが「は」の後ろでもトリガーしません（メンションフラグメントは既に閉じています）。
+
+**書き戻すのは label であって value ではない**（`insertMention`）：テキストに必要なのは人間が読めるメンション（`@張三`）であり、機械識別用の value は onSelect コールバックでアプリ層へ渡ります。書き戻し形式は `prefix + label + 空白` で、返される新しいカーソル位置はメンションの直後に正確に落ちます——ユーザーは続けて本文を入力できます。
+
+**逆解析は解析と同一の判定**（`getMentions`）：`@張三` のようなフラグメント（prefix の直前がテキスト先頭または空白）を抽出します。送信シナリオで @ リストを収集するのに使い、UI 層が自分で正規表現を書く必要はありません。
+
+**フィルター**（`filterMentionOptions`）：label が検索文字列を含み、大文字小文字を区別しません。空の検索文字列はすべてを返します（prefix を入力した直後に全候補を表示するのは標準的な挙動です）。無効項目は保持します（グレーアウトは UI 層が処理します）。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `getMentionContext` | `(text, caretIndex, prefix?) => LhMentionContext` | コンテキスト | カーソル位置にアクティブなメンションがあるか解析 |
+| `insertMention` | `(text, context, option, prefix?) => { text, caret }` | 新テキスト + カーソル | 選択されたメンションを書き戻す |
+| `getMentions` | `(text, prefix?) => string[]` | メンション値配列 | 完了済みの全メンションを逆解析 |
+| `filterMentionOptions` | `(options, searchText) => LhMentionOption[]` | オプション配列 | 候補リストをフィルター |
+| `getMentionOptionId` | `(listboxId?, index) => string \| undefined` | オプション id | aria-activedescendant が参照 |
+| `getMentionsTriggerAria` | `(input: { visible, listboxId?, highlightedIndex }) => LhAriaAttrs` | aria 属性パック | 入力コントロールの combobox セマンティクス |
+| `getMentionsListboxAria` | `(id?) => LhAriaAttrs` | aria 属性パック | リストボックスの role + id |
+| `getMentionOptionAria` | `(input: LhMentionOptionAriaInput) => LhAriaAttrs` | aria 属性パック | オプションの role + 選択 / 無効状態 |
+
+## 型定義
+
+```ts
+export interface LhMentionOption {
+  label: string
+  value?: string
+  disabled?: boolean
+}
+
+export interface LhMentionContext {
+  /** アクティブなメンションが存在するか（候補パネルを表示すべき） */
+  active: boolean
+  /** prefix のテキスト内インデックス。非アクティブ時は -1 */
+  prefixIndex: number
+  /** prefix の後からカーソルまでの検索文字列 */
+  searchText: string
+  /** 書き戻し時に置き換える区間の終点（= カーソル位置。非アクティブ時は -1） */
+  end: number
+}
+
+export interface LhMentionOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## アクセシビリティ
+
+- 入力コントロールを combobox セマンティクスへ昇格させます：`getMentionsTriggerAria` は `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant` を出力します（autocomplete と同型。違いはコントロール本体が textarea/input である点）。
+- パネルの候補リスト：`role="listbox"`、オプションは `role="option"` + `aria-selected` / `aria-disabled`。
+- パネルの表示・非表示がスクリーンリーダーに伝わるかは `aria-expanded` に依存します。UI 層はアクティブなコンテキストの出現・消滅時に同期更新してください。
+
+## 使用例
+
+```ts
+import { getMentionContext, insertMention, getMentions } from '@lh-ui/share/core/mentions'
+
+getMentionContext('@張三さんに明日のレビューを通知', 9)
+// { active: true, prefixIndex: 0, searchText: '張三さんに明日の', end: 9 }
+
+getMentionContext('メールは a@b.com', 13)
+// { active: false, ... }（メールの擬似プレフィックスはトリガーしない）
+
+insertMention('@張 さんに明日のレビューを通知', ctx, { label: '張三' })
+// { text: '@張三 さんに明日のレビューを通知', caret: 4 }
+
+getMentions('cc @李四 と @王五 に送信、a@b.com は除外')
+// ['李四', '王五']
+```
+
+```vue
+<!-- Vue3：keyup/selectionchange の後にコンテキストを解析し、パネルの表示・非表示を駆動 -->
+<textarea
+  :aria-expanded="ctx.active"
+  role="combobox"
+  @keyup="ctx = getMentionContext($event.target.value, $event.target.selectionStart)"
+/>
+<ul v-if="ctx.active" v-bind="getMentionsListboxAria(listboxId)">
+  <li v-for="(option, i) in filterMentionOptions(options, ctx.searchText)" :key="i">
+    {{ option.label }}
+  </li>
+</ul>
+```
+
+```tsx
+// React：選択項目を書き戻し、カーソルを復元
+const { text: next, caret } = insertMention(text, ctx, option)
+setText(next)
+requestAnimationFrame(() => ref.current?.setSelectionRange(caret, caret))
+```
+
+```ts
+// uniapp：カーソル位置は input/textarea の @blur/@input event.detail.cursor を使用。
+// MP 端に selectionchange はなく、カーソル解析は入力イベント内で完結。パネルの位置決めは adapter popper
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-mentions` | ベースクラス：relative コンテナー、想定幅 320px |
+| `.lh-mentions__inner` | 入力コントロール（textarea。横幅を固定し、縦方向の伸縮は rows で制御） |
+| `.lh-mentions__dropdown` | 候補パネル（デフォルトで**上方向**へ展開。`--teleported` は body マウント形態） |
+| `.lh-mentions__option` | オプション（`--highlighted` ハイライト / `--disabled` グレーアウト） |
+| `.lh-mentions__empty` | 空状態 |
+| `.lh-mentions--disabled` | 無効状態 |
+
+ドロップダウンの開閉は `lh-mentions-fade` トランジション（フェードイン + わずかな上移動、上方向展開の方向と一致）。色はすべて `var(--lh-*)`。
+
+## 注意事項
+
+- prefix はデフォルト `@` で単一文字を想定します。prefix を変更する場合、`getMentionContext` / `insertMention` / `getMentions` の三箇所に同じ値を渡す必要があります。
+- `insertMention` で書き戻した後、**必ず**実際のコントロールのカーソルを返された `caret` に設定してください（Vue/React それぞれの selection API）。そうしないとカーソルがテキスト末尾に落ちます。
+- メールの擬似プレフィックス排除の文字セットはメール RFC の寛容なサブセットです。`user@` の直後に CJK が続く場合（`ユーザー@張三` など）は**トリガーします**——ASCII 判定は CJK に届きません。これは記録済みの想定挙動です。
+- 複数行 textarea のメンションフラグメントも同様に「空白で即停止」です。改行でフラグメントは閉じます。
+
+<FnPlayground module="mentions" fn="getMentionContext" params='{"text": "@張三さんに明日のレビューを通知", "caretIndex": 8, "prefix": "@"}' />

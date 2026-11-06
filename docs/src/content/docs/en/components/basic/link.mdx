@@ -1,0 +1,136 @@
+---
+title: link — Link
+description: 'getLinkClassNames computes the type/underline tri-state/disabled classes, getLinkAria produces disabled and current-page semantics'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+The link is the smallest interactive unit for jumping between pages. `core/link` computes exactly two things: class names and aria — semantic type colors, the underline tri-state, and the disabled fallback all land on class names, while the navigation itself is left to the native `<a>` element and each platform's router.
+
+## When to use
+
+- Each platform implements `LhLink`: class names and aria are produced entirely by `getLinkClassNames` / `getLinkAria`.
+- For scenarios reusing the link visual, such as the breadcrumb current page or in-table row actions, import the core function plus the class names from `styles/link` directly.
+- **Do not use it for**: triggering in-page actions — use `core/button` (link semantics would mislead screen reader users into expecting a navigation).
+
+## Import
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+import type { LhLinkState, LhLinkType, LhLinkUnderline } from '@lh-ui/share/core/link'
+```
+
+## Design intent
+
+Three whitelist fallbacks guarantee that "an invalid prop never produces dirty class names":
+
+- Invalid `type` → `default`: uses the token's regular text color and **produces no modifier class** (`lh-link--default` does not exist).
+- Invalid `underline` → `hover`: the global default form, likewise producing no modifier class; only explicit `always` / `none` values land `lh-link--underline-{always|none}`.
+- A truthy `disabled` always outputs `lh-link--disabled`: the style side disables the hover color change and the underline.
+
+A disabled link is a semantic hole in HTML — `<a>` has no disabled attribute. core's answer is the `aria-disabled` + `role="link"` combination: screen readers still announce "link", but it is explicitly unavailable; actually removing the clickable semantics (rendering as a `span` or omitting `href`) is done by the UI layer, and core only provides the correct attributes.
+
+`aria-current` supports `page` / `location`, serving links that mean "I am where you currently are", such as the breadcrumb current page or the pagination current item.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getLinkClassNames` | `(state?: Partial<LhLinkState>) => string[]` | class name array | computes all link class names |
+| `getLinkAria` | `(input: LhLinkAriaInput) => LhAriaAttrs` | aria attribute bundle | disabled and current-page semantics |
+
+```ts
+getLinkClassNames({ type: 'primary', underline: 'hover', disabled: false })
+// ['lh-link', 'lh-link--primary']
+
+getLinkClassNames({ type: 'danger', underline: 'always', disabled: true })
+// ['lh-link', 'lh-link--danger', 'lh-link--underline-always', 'lh-link--disabled']
+```
+
+## Type definitions
+
+```ts
+export type LhLinkType = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info'
+
+export type LhLinkUnderline = 'always' | 'hover' | 'none'
+
+export interface LhLinkState {
+  type: LhLinkType
+  underline: LhLinkUnderline
+  disabled: boolean
+}
+
+export interface LhLinkAriaInput {
+  disabled: boolean
+  /** Current page / current location (breadcrumb and similar scenarios, outputs aria-current) */
+  current?: 'page' | 'location' | true
+}
+```
+
+## Accessibility
+
+- **Disabled**: `getLinkAria({ disabled: true })` outputs `aria-disabled="true"` and `role="link"`. The UI layer must also remove `href` (or render as a `span`), otherwise keyboard users can still focus it and trigger navigation — the attribute bundle governs semantics, the DOM structure governs behavior, and neither layer is dispensable.
+- **Current page**: `aria-current="page"` lets screen readers announce "current page" in a breadcrumb, which beats mere highlight styling.
+- **Keyboard focus ring**: driven uniformly by the focus-ring tokens in `theme/common/a11y.scss`; the component never writes its own scattered outline rules.
+
+## Usage examples
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+
+getLinkClassNames({ type: 'warning', underline: 'none', disabled: false })
+// ['lh-link', 'lh-link--warning', 'lh-link--underline-none']
+
+getLinkAria({ disabled: false, current: 'page' })
+// { 'aria-current': 'page' }
+```
+
+```vue
+<!-- Vue3 -->
+<a :class="getLinkClassNames({ type, underline, disabled })" :href="disabled ? undefined : href" v-bind="getLinkAria({ disabled, current })">
+  <span v-if="$slots.prefix" class="lh-link__icon lh-link__icon--prefix"><slot name="prefix" /></span>
+  <slot />
+  <span v-if="$slots.suffix" class="lh-link__icon lh-link__icon--suffix"><slot name="suffix" /></span>
+</a>
+```
+
+```tsx
+// React: render a span when disabled, completely removing the interactive surface of link semantics
+const Tag = disabled ? 'span' : 'a'
+return (
+  <Tag
+    className={getLinkClassNames({ type, underline, disabled }).join(' ')}
+    href={disabled ? undefined : href}
+    {...getLinkAria({ disabled, current })}
+  >
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp: the navigator component carries the navigation; a purely presentational state can
+// render text + class names directly. aria attributes have limited support on non-h5
+// platforms — trade off via platform conditional compilation
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-link` | base class: inline-flex, regular text color, hover turns primary |
+| `.lh-link--{primary\|success\|warning\|danger\|info}` | semantic types (default has no modifier class) |
+| `.lh-link--underline-always` | persistent underline |
+| `.lh-link--underline-none` | no underline (not even on hover) |
+| `.lh-link--disabled` | disabled state: dimmed color + not-allowed pointer, hover underline disabled |
+| `.lh-link__icon--prefix` / `.lh-link__icon--suffix` | prefix/suffix icon slots |
+
+Colors are all `var(--lh-*)`; hover colors for success / warning / danger mix 80% toward the text color with `color-mix`, and dark mode is flipped by `var-dark.scss`.
+
+## Notes
+
+- The default `underline: 'hover'` produces no modifier class; the style-side hover rule covers it. To "never show an underline" you must pass `none` explicitly.
+- If a disabled link still renders an `<a>`, be sure to remove `href`; otherwise `aria-disabled` is effectively void.
+- The `default` type, like the `hover` underline, follows the "no modifier class" strategy; the UI layer must not rely on `lh-link--default` existing.
+
+<FnPlayground module="link" fn="getLinkClassNames" params='{"state": {"type": "primary", "underline": "hover", "disabled": false}}' />

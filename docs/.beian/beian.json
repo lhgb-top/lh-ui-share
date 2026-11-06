@@ -20,7 +20,7 @@
     }
   },
   "meta": {
-    "syncedAt": "2026-10-15T11:54:56.023Z",
+    "syncedAt": "2026-11-04T08:36:42.790Z",
     "source": "lh-feng-mo-workspace/packages/shared/packages/site",
     "local": false,
     "notice": "由 scripts/sync-beian.mjs 生成，禁止手改；真源在 lh-feng-mo-workspace。"

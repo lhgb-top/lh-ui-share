@@ -1,0 +1,148 @@
+---
+title: text — Text
+description: 'getTextClassNames computes eight-level typography/semantic color/modifier/ellipsis classes, getTextTag decides the rendered tag, getEllipsisRows/Style handle multi-line ellipsis'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Text is the most numerous element on a page and the easiest place for inline styles to scatter. `core/text` computes typography levels (h1~h6/p/caption), semantic colors, strong/italic/underline/mark/code modifiers, and single-line and multi-line ellipsis all into class names and inline style records; the UI layer only spreads them onto the element.
+
+## When to use
+
+- Each platform implements `LhText`: eight-level typography, semantic colors, five modifiers, ellipsis — class names are produced entirely by `getTextClassNames`.
+- Scenarios that only need the ellipsis conversion: `getEllipsisRows` / `getEllipsisStyle` can be used standalone (such as multi-line truncation for a custom card description).
+- **Do not use it for**: rich text editing (core only handles the presentational state); for the document outline semantics of headings, use real `h1~h6` elements together with these class names.
+
+## Import
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisRows, getEllipsisStyle, getTextAria } from '@lh-ui/share/core/text'
+import type { LhTextLevel, LhTextType, LhTextState } from '@lh-ui/share/core/text'
+```
+
+## Design intent
+
+**Eight typography levels; level classes always output**: `lh-text--{h1..h6|p|caption}` is output no matter what is passed (whitelist fallback: invalid levels fall back to `p`), with the typography specs implemented token-driven on the style side. `caption` renders small inline text but produces no real heading semantics — `getTextTag('caption')` returns `span` instead of `h7`, keeping the screen reader's outline hierarchy from being polluted by auxiliary text.
+
+**Ellipsis tri-state** (normalized by `getEllipsisRows`):
+
+- `ellipsis: true` → 1 line, landing the class `lh-text--ellipsis` (pure CSS, no inline styles needed).
+- A number → clamped to `[1, 10]`, landing the class `lh-text--ellipsis-{n}` plus the line-clamp inline record from `getEllipsisStyle`.
+- Invalid values → 0 (no ellipsis, no ellipsis classes produced).
+
+The line cap of 10 is not arbitrary: CSS `line-clamp` degrades to no truncation at extremely large values, so going beyond is meaningless.
+
+**Semantic colors and modifiers**: `secondary/success/warning/danger` produce modifier classes only when not default; `strong/italic/underline/mark/code/disabled` output only when true. `mark` is a light highlight background isomorphic to the mark element, and `code` is a monospace font + light background — both are **visual modifiers** that do not force semantic element replacement; whether to use `<mark>` or a class name is up to the consumer.
+
+## Function table
+
+| Function | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `getEllipsisRows` | `(ellipsis?: boolean \| number) => number` | line count | normalizes the ellipsis line count (clamp [1,10]) |
+| `getTextClassNames` | `(state?: Partial<LhTextState>) => string[]` | class name array | computes all text class names |
+| `getTextTag` | `(level?: LhTextLevel) => 'h1'…'h6' \| 'p' \| 'span'` | tag name | level → actually rendered tag (caption → span) |
+| `getEllipsisStyle` | `(ellipsis?: boolean \| number) => Record<string, string \| number>` | inline styles | multi-line ellipsis line-clamp styles |
+| `getTextAria` | `(input?: LhTextAriaInput) => LhAriaAttrs` | aria attribute bundle | expandable / copyable semantics |
+
+```ts
+getTextClassNames({ level: 'h3', type: 'danger', mark: true, ellipsis: 3 })
+// ['lh-text', 'lh-text--h3', 'lh-text--danger', 'lh-text--mark', 'lh-text--ellipsis-3']
+
+getEllipsisStyle(3)
+// { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden' }
+```
+
+## Type definitions
+
+```ts
+export type LhTextLevel = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'p' | 'caption'
+
+export type LhTextType = 'default' | 'secondary' | 'success' | 'warning' | 'danger'
+
+export interface LhTextState {
+  level: LhTextLevel
+  type: LhTextType
+  strong: boolean
+  italic: boolean
+  underline: boolean
+  mark: boolean
+  code: boolean
+  ellipsis: boolean | number
+  disabled: boolean
+}
+
+export interface LhTextAriaInput {
+  /** Expanded state for expandable-ellipsis scenarios (outputs aria-expanded) */
+  expanded?: boolean
+  /** Label id of the copy button (referenced by aria-labelledby) */
+  copyButtonId?: string
+}
+```
+
+## Accessibility
+
+- **Heading semantics**: `getTextTag` decides the real element — `h1~h6/p` render the corresponding tag to provide the document outline, while `caption` renders a `span` to keep pseudo-headings from polluting the hierarchy. The UI layer should not host `lh-text--h2` on a `div`: the styles would be right but the outline gone.
+- **Expandable ellipsis**: when an "Expand/Collapse" button controls content folding, `getTextAria({ expanded })` outputs `aria-expanded`, so screen readers can perceive the state.
+- **Copyable**: the copy button is an independent control; `copyButtonId` brings the button's label into the accessible name via `aria-labelledby`, avoiding a screen reader announcing nothing but "button".
+
+## Usage examples
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisStyle } from '@lh-ui/share/core/text'
+
+getTextClassNames({ level: 'caption', type: 'secondary', ellipsis: true })
+// ['lh-text', 'lh-text--caption', 'lh-text--secondary', 'lh-text--ellipsis']
+
+getTextTag('caption')  // 'span'
+```
+
+```vue
+<!-- Vue3: dynamic tag + inline ellipsis styles -->
+<component :is="getTextTag(level)" :class="getTextClassNames(state)" :style="getEllipsisStyle(state.ellipsis)">
+  <slot />
+  <button v-if="copyable" class="lh-text__copy" aria-label="Copy" @click="copy">
+    {{ copied ? 'Copied' : 'Copy' }}
+  </button>
+</component>
+```
+
+```tsx
+// React: the style record directly satisfies CSSProperties (keys are camelCase, including webkit prefixes)
+const Tag = getTextTag(level) as React.ElementType
+return (
+  <Tag className={getTextClassNames(state).join(' ')} style={getEllipsisStyle(state.ellipsis)}>
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp: h1~h6 semantic tags do not exist in mini programs; render <text> + class names
+// uniformly, with the typography specs carried entirely by class names (document outline
+// semantics are moot in mini programs anyway)
+```
+
+## Styles and tokens
+
+| Class | Semantic meaning |
+| --- | --- |
+| `.lh-text` | base class: regular color, font size, line height |
+| `.lh-text--{h1…h6\|p\|caption}` | eight-level typography (headings use a serif guofeng font + graded sizes) |
+| `.lh-text--{secondary\|success\|warning\|danger}` | semantic colors (default has no modifier class) |
+| `.lh-text--strong` / `--italic` / `--underline` | strong / italic / underline |
+| `.lh-text--mark` | mark highlight background |
+| `.lh-text--code` | inline code (monospace font + light background) |
+| `.lh-text--disabled` | disabled state |
+| `.lh-text--ellipsis` | single-line ellipsis |
+| `.lh-text--ellipsis-{2…10}` | multi-line ellipsis row classes (paired with inline line-clamp) |
+| `.lh-text__copy` | copy button (`--copied` is the success feedback state) |
+
+Colors, font sizes, and line heights are all `var(--lh-*)`; dark mode is flipped by `var-dark.scss`.
+
+## Notes
+
+- The line-clamp inline styles for multi-line ellipsis must be asserted and delivered by the UI layer per its own conventions (React `CSSProperties` / Vue `style` object); single-line ellipsis is carried entirely by class names and needs no inline styles.
+- `mark` / `code` are visual modifiers, not semantic replacements; for scenarios where screen readers must identify code, use a real `<code>` element with the class name.
+- The copy success feedback state `lh-text__copy--copied` is removed on a timer by the UI layer; core does not manage timers.
+
+<FnPlayground module="text" fn="getTextClassNames" params='{"state": {"level": "h3", "type": "default", "strong": false, "italic": false, "underline": false, "mark": true, "code": false, "ellipsis": false, "disabled": false}}' />

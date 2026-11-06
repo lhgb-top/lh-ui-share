@@ -1,0 +1,158 @@
+---
+title: mentions —— Mentions
+description: 'getMentionContext analyse le contexte du curseur (exclusion du pseudo-préfixe d''e-mail / pas de faux positif CJK / arrêt aux espaces), insertMention écrit la mention, getMentions décode en sens inverse, filterMentionOptions filtre'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Mentions @ = contrôle de saisie de texte + caractère de déclenchement préfixe (par défaut `@`) + panneau de suggestions + écriture de la sélection. `core/mentions` ne fait que du **traitement de texte et de la sémantique** : analyser si le curseur se trouve dans un fragment de mention à compléter, écrire en retour la mention sélectionnée, décoder en sens inverse toutes les mentions du texte ; le contrôle, le panneau et l'interaction clavier sont portés par la couche UI de chaque plateforme.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhMentions` : `@` déclenche les suggestions de membres, la sélection écrit en retour `@Zhangsan `, la soumission collecte la liste des mentions.
+- Pour réutiliser la logique d'analyse des mentions sur n'importe quel textarea / input (core ne se lie à aucun contrôle précis).
+- **À ne pas utiliser pour** : quand les suggestions proviennent d'une saisie quelconque (sans caractère préfixe moteur), utilisez `core/autocomplete`.
+
+## Import
+
+```ts
+import {
+  getMentionContext,
+  insertMention,
+  getMentions,
+  filterMentionOptions,
+  getMentionOptionId,
+  getMentionsTriggerAria,
+  getMentionsListboxAria,
+  getMentionOptionAria,
+} from '@lh-ui/share/core/mentions'
+import type { LhMentionOption, LhMentionContext } from '@lh-ui/share/core/mentions'
+```
+
+## Intention de conception
+
+**Trois règles d'analyse du contexte** (`getMentionContext(text, caretIndex, prefix)`) : scanner vers l'arrière depuis le curseur pour trouver le caractère prefix le plus proche —
+
+1. **Exclusion du pseudo-préfixe d'e-mail** : quand le prefix est immédiatement précédé d'un caractère de la partie locale d'un e-mail (alphanumériques ASCII et `._%+-`), il s'agit d'un pseudo-préfixe d'e-mail (`a@b.com` ne déclenche pas), **on saute et on continue de chercher en arrière** — dans `Prévenir a@b.com et @Zhangsan`, le curseur en fin de phrase atteint quand même `@Zhangsan`.
+2. **Pas de faux positif CJK** : l'exclusion de préfixe ne vise que les caractères de mot ASCII, `你好@张三` déclenche normalement.
+3. **Arrêt aux espaces** : si le scan rencontre un espace avant de trouver le prefix, il abandonne — dans `@Zhangsan bonjour`, le curseur placé après « bonjour » ne déclenche pas (le fragment de mention est déjà refermé).
+
+**Ce qui est écrit, c'est le label, pas la value** (`insertMention`) : le texte a besoin d'une mention lisible par l'humain (`@Zhangsan`), l'identifiant machine value passe par le callback onSelect à la couche application. Le format d'écriture est `prefix + label + espace`, la nouvelle position du curseur retombe précisément après la mention — l'utilisateur peut enchaîner directement avec le corps du texte.
+
+**Décodage et analyse partagent le même critère** (`getMentions`) : les fragments de la forme `@Zhangsan` (précédés du début du texte ou d'un espace), pour collecter la liste des @ à la soumission ; la couche UI n'a pas besoin d'écrire sa propre regex.
+
+**Filtrage** (`filterMentionOptions`) : le label contient la chaîne recherchée, insensible à la casse ; une recherche vide renvoie tout (afficher tous les candidats dès la saisie du prefix est le comportement standard) ; les options désactivées sont conservées (le grisage relève de la couche UI).
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getMentionContext` | `(text, caretIndex, prefix?) => LhMentionContext` | contexte | Détermine si une mention est active au curseur |
+| `insertMention` | `(text, context, option, prefix?) => { text, caret }` | nouveau texte + curseur | Écrit en retour la mention sélectionnée |
+| `getMentions` | `(text, prefix?) => string[]` | tableau de valeurs de mentions | Décode en sens inverse toutes les mentions terminées |
+| `filterMentionOptions` | `(options, searchText) => LhMentionOption[]` | tableau d'options | Filtre la liste de suggestions |
+| `getMentionOptionId` | `(listboxId?, index) => string \| undefined` | id d'option | Référencé par aria-activedescendant |
+| `getMentionsTriggerAria` | `(input: { visible, listboxId?, highlightedIndex }) => LhAriaAttrs` | paquet d'attributs aria | Sémantique combobox du contrôle de saisie |
+| `getMentionsListboxAria` | `(id?) => LhAriaAttrs` | paquet d'attributs aria | role + id de la listbox |
+| `getMentionOptionAria` | `(input: LhMentionOptionAriaInput) => LhAriaAttrs` | paquet d'attributs aria | role d'option + états sélectionné / désactivé |
+
+## Définitions de types
+
+```ts
+export interface LhMentionOption {
+  label: string
+  value?: string
+  disabled?: boolean
+}
+
+export interface LhMentionContext {
+  /** Une mention active existe-t-elle (le panneau de suggestions devrait s'afficher) */
+  active: boolean
+  /** Indice du prefix dans le texte ; -1 quand inactif */
+  prefixIndex: number
+  /** Chaîne recherchée entre le prefix et le curseur */
+  searchText: string
+  /** Fin de l'intervalle à remplacer à l'écriture (= position du curseur ; -1 quand inactif) */
+  end: number
+}
+
+export interface LhMentionOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## Accessibilité
+
+- Le contrôle de saisie est élevé en sémantique combobox : `getMentionsTriggerAria` produit `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant` (isomorphe à autocomplete ; la différence : le contrôle lui-même est un textarea/input).
+- Liste de suggestions du panneau : `role="listbox"`, options `role="option"` + `aria-selected` / `aria-disabled`.
+- La visibilité du panneau pour le lecteur d'écran dépend d'`aria-expanded`, la couche UI la met à jour quand le contexte actif apparaît / disparaît.
+
+## Exemples d'utilisation
+
+```ts
+import { getMentionContext, insertMention, getMentions } from '@lh-ui/share/core/mentions'
+
+getMentionContext('Prévenir @Zhangsan pour la revue de demain', 18)
+// { active: true, prefixIndex: 9, searchText: 'Zhangsan', end: 18 }
+
+getMentionContext("L'email est a@b.com", 19)
+// { active: false, ... } (le pseudo-préfixe d'e-mail ne déclenche pas)
+
+insertMention('Prévenir @Zhang pour la revue de demain', ctx, { label: 'Zhangsan' })
+// { text: 'Prévenir @Zhangsan pour la revue de demain', caret: 19 }
+
+getMentions('cc @Lisi et @Wangwu, en copie a@b.com')
+// ['Lisi', 'Wangwu']
+```
+
+```vue
+<!-- Vue3 : après keyup/selectionchange, analyser le contexte pour piloter l'affichage du panneau -->
+<textarea
+  :aria-expanded="ctx.active"
+  role="combobox"
+  @keyup="ctx = getMentionContext($event.target.value, $event.target.selectionStart)"
+/>
+<ul v-if="ctx.active" v-bind="getMentionsListboxAria(listboxId)">
+  <li v-for="(option, i) in filterMentionOptions(options, ctx.searchText)" :key="i">
+    {{ option.label }}
+  </li>
+</ul>
+```
+
+```tsx
+// React : écrire en retour l'élément sélectionné et restaurer le curseur
+const { text: next, caret } = insertMention(text, ctx, option)
+setText(next)
+requestAnimationFrame(() => ref.current?.setSelectionRange(caret, caret))
+```
+
+```ts
+// uniapp : la position du curseur passe par event.detail.cursor des @blur/@input de input/textarea,
+// pas de selectionchange côté MP, l'analyse du curseur se fait dans l'événement de saisie ;
+// le positionnement du panneau passe par le popper de l'adapter
+```
+
+## Styles et tokens
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-mentions` | Classe de base : conteneur relative, largeur attendue 320px |
+| `.lh-mentions__inner` | Contrôle de saisie (textarea, largeur horizontale verrouillée, étirement vertical contrôlé par rows) |
+| `.lh-mentions__dropdown` | Panneau de suggestions (s'ouvre par défaut **vers le haut** ; `--teleported` pour la forme montée sur le body) |
+| `.lh-mentions__option` | Option (`--highlighted` surbrillance / `--disabled` grisée) |
+| `.lh-mentions__empty` | État vide |
+| `.lh-mentions--disabled` | État désactivé |
+
+L'ouverture/fermeture du panneau passe par la transition `lh-mentions-fade` (fondu + léger décalage vers le haut, cohérent avec l'ouverture vers le haut). Toutes les couleurs en `var(--lh-*)`.
+
+## Remarques
+
+- Le prefix est `@` par défaut et supposé mono-caractère ; en changeant de prefix, `getMentionContext` / `insertMention` / `getMentions` doivent recevoir la même valeur aux trois endroits.
+- Après l'écriture d'`insertMention`, il **faut** positionner le curseur du vrai contrôle sur le `caret` renvoyé (API de sélection propre à Vue/React), sinon le curseur retombe en fin de texte.
+- Le jeu de caractères d'exclusion du pseudo-préfixe d'e-mail est un sous-ensemble tolérant du RFC des e-mails ; un CJK collé après `user@` (comme `用户@张三`) **déclenche** — le test ASCII ne voit pas le CJK, c'est un comportement attendu et consigné.
+- Le fragment de mention des textarea multilignes obéit au même « arrêt aux espaces », un saut de ligne referme le fragment.
+
+<FnPlayground module="mentions" fn="getMentionContext" params='{"text": "Prévenir @Zhangsan pour la revue de demain", "caretIndex": 8, "prefix": "@"}' />

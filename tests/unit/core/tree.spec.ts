@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildParentIndex,
   collectLeafKeys,
   findParentNode,
   findTreeNode,
@@ -248,6 +249,57 @@ describe('LhTree core', () => {
     cycleRoot.children = [cycleChild]
     cycleChild.children = [cycleRoot]
     expect(() => toggleCheckKeys([cycleRoot], [], 'r')).not.toThrow()
+  })
+})
+
+describe('LhTree 性能回归（buildParentIndex / Set 化查找）', () => {
+  /** 链式深树：n 层单链，每层一个节点 */
+  const chain = (depth: number): LhTreeNode[] => {
+    const root: LhTreeNode = { key: '0', label: '0' }
+    let cur = root
+    for (let i = 1; i < depth; i++) {
+      const child: LhTreeNode = { key: String(i), label: String(i) }
+      cur.children = [child]
+      cur = child
+    }
+    return [root]
+  }
+
+  it('buildParentIndex 正确映射全部层级的父节点', () => {
+    const roots = chain(5)
+    const index = buildParentIndex(roots)
+    expect(index.get('1')?.key).toBe('0')
+    expect(index.get('4')?.key).toBe('3')
+    // 顶层节点不在索引中（无父节点）
+    expect(index.has('0')).toBe(false)
+  })
+
+  it('深链下勾选最深叶子，祖先链全部正确回溯', () => {
+    const roots = chain(50)
+    // 勾选最深层（key '49'）：链上 0~48 应全部因「子树完全勾选」被加入
+    const next = toggleCheckKeys(roots, [], '49')
+    expect(next).toHaveLength(50)
+    // 取消中间某一层 '40'：级联语义删除其全部后代（41..49），
+    // 链上祖先（0..39）因子树不再全选也被移除 → 结果为空
+    const partial = toggleCheckKeys(roots, next, '40')
+    expect(partial).toEqual([])
+    // checkStrictly 下取消只动自身键，不级联
+    const strictOff = toggleCheckKeys(roots, next, '40', { checkStrictly: true })
+    expect(strictOff).not.toContain('40')
+    expect(strictOff).toContain('49')
+  })
+
+  it('千键级联勾选下 getNodeCheckState 不退化（Set 化查找回归）', () => {
+    // 宽树：根 + 1000 个叶子
+    const root: LhTreeNode = { key: 'root', label: 'root', children: [] }
+    for (let i = 0; i < 1000; i++) {
+      root.children!.push({ key: `leaf-${i}`, label: `leaf-${i}` })
+    }
+    const checked: string[] = []
+    for (let i = 0; i < 1000; i++) checked.push(`leaf-${i}`)
+    expect(getNodeCheckState(root, checked)).toBe('checked')
+    expect(getNodeCheckState(root, checked.slice(0, 500))).toBe('indeterminate')
+    expect(getNodeCheckState(root, [])).toBe('unchecked')
   })
 })
 

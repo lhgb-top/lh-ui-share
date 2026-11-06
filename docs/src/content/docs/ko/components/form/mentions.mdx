@@ -1,0 +1,157 @@
+---
+title: mentions —— 멘션
+description: 'getMentionContext가 커서 컨텍스트를 해석하고(이메일 가짜 접두사 제외/CJK 오판 없음/공백이면 정지), insertMention이 되쓰기하며, getMentions가 역추출하고, filterMentionOptions가 필터링'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+@멘션 = 텍스트 입력 컨트롤 + 접두사 트리거 문자(기본 `@`) + 추천 패널 + 선택 되쓰기. `core/mentions`는 **텍스트 처리와 의미**만 합니다: 커서가 완성 대기 중인 멘션 조각에 있는지 해석하고, 선택된 멘션을 되쓰기하며, 텍스트에서 전체 멘션을 역추출합니다. 컨트롤, 패널, 키보드 상호작용은 각 단말의 UI 계층이 받습니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhMentions`를 구현할 때: `@`로 구성원 추천을 트리거하고, 선택 시 `@장삼 `으로 되쓰기하며, 제출 시 멘션 배열을 수집.
+- 임의의 textarea / input 위에 멘션 해석 로직을 재사용할 때(core는 특정 컨트롤에 묶이지 않습니다).
+- **사용하면 안 되는 곳**: 추천이 임의 입력에서 나오는(접두사 문자가 구동하지 않는) 시나리오는 `core/autocomplete`를 사용하세요.
+
+## 가져오기
+
+```ts
+import {
+  getMentionContext,
+  insertMention,
+  getMentions,
+  filterMentionOptions,
+  getMentionOptionId,
+  getMentionsTriggerAria,
+  getMentionsListboxAria,
+  getMentionOptionAria,
+} from '@lh-ui/share/core/mentions'
+import type { LhMentionOption, LhMentionContext } from '@lh-ui/share/core/mentions'
+```
+
+## 설계 의도
+
+**컨텍스트 해석 세 규칙**(`getMentionContext(text, caretIndex, prefix)`): 커서에서 앞쪽으로 스캔해 가장 가까운 prefix 문자를 찾습니다——
+
+1. **이메일 가짜 접두사 제외**: prefix 바로 앞에 이메일 로컬 부분 문자(ASCII 영숫자와 `._%+-`)가 붙어 있으면 이메일 가짜 접두사로 간주합니다(`a@b.com`은 트리거하지 않음). **건너뛰고 계속 앞을 찾습니다**——`a@b.com과 @장삼에게 알림`에서 커서가 문장 끝에 있어도 `@장삼`을 맞힙니다.
+2. **CJK 오판 없음**: 접두사 제외는 ASCII 단어 문자만 대상으로 하며, `안녕하세요@장삼`은 정상적으로 트리거됩니다.
+3. **공백이면 즉시 정지**: 스캔이 공백을 만났는데 아직 prefix를 찾지 못했다면 포기합니다——`@장삼 안녕하세요`에서 커서가 '하세요' 뒤에 있으면 트리거하지 않습니다(멘션 조각이 이미 닫혔습니다).
+
+**되쓰기되는 것은 value가 아니라 label**(`insertMention`): 텍스트에 필요한 것은 사람이 읽을 수 있는 멘션이고(`@장삼`), 기계 식별자 value는 onSelect 콜백으로 애플리케이션 계층에 전달됩니다. 되쓰기 형식은 `prefix + label + 공백`이며, 반환되는 새 커서 위치는 정확히 멘션 바로 뒤에 떨어집니다——사용자는 이어서 바로 본문을 입력할 수 있습니다.
+
+**역추출과 해석은 같은 판정**(`getMentions`): `@장삼` 형태의 조각(prefix 앞이 텍스트 시작 또는 공백)을 대상으로 하며, 제출 시나리오에서 @ 배열을 수집하는 데 쓰입니다. UI 계층이 정규식을 직접 쓸 필요가 없습니다.
+
+**필터링**(`filterMentionOptions`): label이 검색 문자열을 포함하고 대소문자를 구분하지 않습니다. 빈 검색 문자열은 전체를 반환하고(prefix를 방금 입력했을 때 전체 후보를 보여주는 것이 표준 동작), 비활성 항목은 유지됩니다(회색 처리는 UI 계층이 처리).
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `getMentionContext` | `(text, caretIndex, prefix?) => LhMentionContext` | 컨텍스트 | 커서 위치에 활성 멘션이 있는지 해석 |
+| `insertMention` | `(text, context, option, prefix?) => { text, caret }` | 새 텍스트 + 커서 | 선택된 멘션 되쓰기 |
+| `getMentions` | `(text, prefix?) => string[]` | 멘션 값 배열 | 완료된 전체 멘션 역추출 |
+| `filterMentionOptions` | `(options, searchText) => LhMentionOption[]` | 옵션 배열 | 추천 배열 필터링 |
+| `getMentionOptionId` | `(listboxId?, index) => string \| undefined` | 옵션 id | aria-activedescendant 참조용 |
+| `getMentionsTriggerAria` | `(input: { visible, listboxId?, highlightedIndex }) => LhAriaAttrs` | aria 속성 묶음 | 입력 컨트롤 combobox 의미 |
+| `getMentionsListboxAria` | `(id?) => LhAriaAttrs` | aria 속성 묶음 | 리스트 박스 role + id |
+| `getMentionOptionAria` | `(input: LhMentionOptionAriaInput) => LhAriaAttrs` | aria 속성 묶음 | 옵션 role + 선택 / 비활성 상태 |
+
+## 타입 정의
+
+```ts
+export interface LhMentionOption {
+  label: string
+  value?: string
+  disabled?: boolean
+}
+
+export interface LhMentionContext {
+  /** 활성 멘션이 존재하는지(추천 패널을 보여줘야 함) */
+  active: boolean
+  /** 텍스트 안에서 prefix의 인덱스. 비활성일 때 -1 */
+  prefixIndex: number
+  /** prefix 뒤부터 커서 사이의 검색 문자열 */
+  searchText: string
+  /** 되쓰기 시 교체해야 할 구간 끝점(= 커서 위치. 비활성일 때 -1) */
+  end: number
+}
+
+export interface LhMentionOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## 접근성
+
+- 입력 컨트롤이 combobox 의미로 승격됩니다: `getMentionsTriggerAria`는 `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant`를 출력합니다(autocomplete과 동형. 차이는 컨트롤 본체가 textarea/input라는 점).
+- 패널 추천 배열: `role="listbox"`, 옵션은 `role="option"` + `aria-selected` / `aria-disabled`.
+- 패널 표시/숨김의 스크린 리더 접근성은 `aria-expanded`에 의존하며, UI 계층이 활성 컨텍스트가 나타나거나 사라질 때 동시에 갱신합니다.
+
+## 사용 예
+
+```ts
+import { getMentionContext, insertMention, getMentions } from '@lh-ui/share/core/mentions'
+
+getMentionContext('@장삼님에게 내일 리뷰 알림', 9)
+// { active: true, prefixIndex: 3, searchText: '장삼', end: 9 }
+
+getMentionContext('이메일은 a@b.com', 13)
+// { active: false, ... }(이메일 가짜 접두사는 트리거하지 않음)
+
+insertMention('@장님에게 내일 리뷰 알림', ctx, { label: '장삼' })
+// { text: '@장삼님에게 내일 리뷰 알림', caret: 7 }
+
+getMentions('cc @이사 와 @왕오, 참조 a@b.com')
+// ['이사', '왕오']
+```
+
+```vue
+<!-- Vue3: keyup/selectionchange 후 컨텍스트를 해석해 패널 표시/숨김을 구동 -->
+<textarea
+  :aria-expanded="ctx.active"
+  role="combobox"
+  @keyup="ctx = getMentionContext($event.target.value, $event.target.selectionStart)"
+/>
+<ul v-if="ctx.active" v-bind="getMentionsListboxAria(listboxId)">
+  <li v-for="(option, i) in filterMentionOptions(options, ctx.searchText)" :key="i">
+    {{ option.label }}
+  </li>
+</ul>
+```
+
+```tsx
+// React: 선택 항목을 되쓰기하고 커서를 복구
+const { text: next, caret } = insertMention(text, ctx, option)
+setText(next)
+requestAnimationFrame(() => ref.current?.setSelectionRange(caret, caret))
+```
+
+```ts
+// uniapp: 커서 위치는 input/textarea의 @blur/@input event.detail.cursor를 따르고,
+// MP 단말에는 selectionchange가 없으므로 커서 해석은 입력 이벤트 안에서 완성됩니다. 패널 위치 잡기는 adapter popper를 따릅니다
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-mentions` | 기본 클래스: relative 컨테이너, 기대 폭 320px |
+| `.lh-mentions__inner` | 입력 컨트롤(textarea, 가로폭 고정, 세로 늘림은 rows가 제어) |
+| `.lh-mentions__dropdown` | 추천 패널(기본 **위쪽**으로 펼침. `--teleported`는 body에 붙는 형태) |
+| `.lh-mentions__option` | 옵션(`--highlighted` 하이라이트 / `--disabled` 회색 처리) |
+| `.lh-mentions__empty` | 빈 상태 |
+| `.lh-mentions--disabled` | 비활성 상태 |
+
+드롭다운 열고 닫기는 `lh-mentions-fade` 트랜지션(페이드 인 + 살짝 위로 이동, 위쪽 펼침 방향과 일치)을 따릅니다. 색은 모두 `var(--lh-*)`입니다.
+
+## 주의사항
+
+- prefix는 기본 `@`이며 단일 문자로 가정합니다. prefix를 바꿀 때는 `getMentionContext` / `insertMention` / `getMentions` 세 곳에 반드시 같은 값을 전달해야 합니다.
+- `insertMention` 되쓰기 후에는 **반드시** 실제 컨트롤의 커서를 반환된 `caret`에 설정해야 합니다(Vue/React 각자의 selection API). 그렇지 않으면 커서가 텍스트 끝으로 떨어집니다.
+- 이메일 가짜 접두사 제외의 문자 집합은 이메일 RFC의 너그러운 부분 집합입니다. `user@` 뒤에 CJK가 바로 붙으면(예: `사용자@장삼`)**트리거됩니다**——ASCII 판정은 CJK까지는 관할하지 못하며, 이것은 등록된 예상 동작입니다.
+- 여러 줄 textarea의 멘션 조각도 마찬가지로 '공백이면 즉시 정지'이며, 줄바꿈이 곧 조각 닫힘입니다.
+
+<FnPlayground module="mentions" fn="getMentionContext" params='{"text": "@장삼님에게 내일 리뷰 알림", "caretIndex": 8, "prefix": "@"}' />

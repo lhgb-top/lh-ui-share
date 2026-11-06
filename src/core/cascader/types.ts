@@ -41,6 +41,11 @@ export interface LhCascaderState {
   placeholder: string
   visible: boolean
   checkStrictly: boolean
+  /**
+   * change/update:modelValue 是否输出完整路径。**仅对单选生效**：
+   * 多选固定输出末级值数组（`(string|number)[]`，每项为一条选中路径的末级值），
+   * 不受本开关影响——emitPath 与 multiple 的组合语义见各 UI 库文档
+   */
   emitPath: boolean
   multiple: boolean
   cascading: boolean

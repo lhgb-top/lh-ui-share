@@ -3,7 +3,7 @@
 .lh-transfer {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--lh-spacing-md, 12px);
 
   &--disabled {
     opacity: var(--lh-disabled-opacity, 0.5);
@@ -25,7 +25,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
   padding: 8px 12px;
   border-block-end: 1px solid var(--lh-transfer-border, var(--lh-border-color-lighter, #EEE9E2));
   font-size: var(--lh-font-size-small, 13px);
@@ -48,7 +48,7 @@
   flex: 1;
   min-height: 0;
   padding: 8px;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
 }
 
 .lh-transfer-panel__search {
@@ -103,7 +103,7 @@
 .lh-transfer__actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
 }
 
 .lh-transfer__button {
@@ -113,7 +113,7 @@
   border-radius: var(--lh-border-radius-small, 6px);
   background-color: var(--lh-bg-color, #fff);
   color: var(--lh-text-regular, #5A5A5A);
-  font-size: 16px;
+  font-size: var(--lh-font-size-medium, 16px);
   cursor: pointer;
 
   &:hover:not(:disabled) {

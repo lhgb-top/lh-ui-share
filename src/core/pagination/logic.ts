@@ -57,7 +57,9 @@ function ellipsis(): LhPaginationRangeItem {
 export function getPaginationRange(state: LhPaginationRangeState): LhPaginationRangeItem[] {
   const pageCount = state.pageCount
   const current = clampPage(state.current, pageCount)
-  const siblingCount = Math.max(0, Math.floor(state.siblingCount ?? 1))
+  // siblingCount 与 current/total 同走 sanitizeNumber：NaN 穿透会让 totalSlots=NaN，
+  // 后续所有比较恒 false、落到末行 return range(1, pageCount) 一次性渲染全部页码
+  const siblingCount = sanitizeNumber(state.siblingCount, 1, { min: 0, integer: true })
   const totalSlots = siblingCount * 2 + 5
 
   if (pageCount <= totalSlots) return range(1, pageCount)

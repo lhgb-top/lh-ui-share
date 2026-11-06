@@ -40,7 +40,12 @@ export function computeRange(
   }
   const safeTop = Number.isFinite(scrollTop) ? scrollTop : 0
   const safeViewport = Number.isFinite(viewportHeight) ? viewportHeight : 0
-  const safeOverscan = Number.isFinite(overscan) ? overscan : LH_VIRTUAL_OVERSCAN
+  // 与 virtual-list/logic.ts 的 findVirtualRange 同口径：非有限回退默认值，
+  // 另取整并钳到非负——0 是合法值（不过扫描）；负 overscan 会让 start 跳过真正可见行、
+  // end 可小于 start（白屏），小数 overscan 会让 offsetY 与 slice 的整截断错位
+  const safeOverscan = Number.isFinite(overscan)
+    ? Math.max(0, Math.floor(overscan))
+    : LH_VIRTUAL_OVERSCAN
   const totalHeight = total * itemHeight
   const first = Math.min(total - 1, Math.floor(Math.max(0, safeTop) / itemHeight))
   const visible = Math.ceil(Math.max(0, safeViewport) / itemHeight)

@@ -1,0 +1,114 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 标签输入框样式 — 批注签条
+// ==============================
+
+$lh-input-tag-border-color: var(--lh-border-color-base, #D8D3CC) !default;
+$lh-input-tag-hover-border-color: var(--lh-primary-color, #2B4C7C) !default;
+$lh-input-tag-bg-color: var(--lh-bg-color, #FAF6F0) !default;
+$lh-input-tag-disabled-color: var(--lh-text-disabled, #C8C8C8) !default;
+$lh-input-tag-disabled-bg-color: var(--lh-bg-color-disabled, #EDE8E0) !default;
+
+.lh-input-tag {
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--lh-spacing-xs, 4px);
+  width: 100%;
+  min-height: var(--lh-control-height-medium, 32px);
+  padding: 4px 8px;
+  font-family: var(--lh-font-family, 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif);
+  font-size: var(--lh-font-size-base, 14px);
+  color: var(--lh-text-primary, #2C2C2C);
+  background-color: $lh-input-tag-bg-color;
+  border: 1px solid $lh-input-tag-border-color;
+  border-radius: var(--lh-border-radius-base, 8px);
+  transition: border-color var(--lh-transition-base, 0.2s) ease;
+
+  &:hover {
+    border-color: $lh-input-tag-hover-border-color;
+  }
+
+  &--disabled {
+    color: $lh-input-tag-disabled-color;
+    background-color: $lh-input-tag-disabled-bg-color;
+    cursor: not-allowed;
+
+    &:hover {
+      border-color: $lh-input-tag-border-color;
+    }
+  }
+
+  &--readonly {
+    cursor: default;
+  }
+
+  &:has(.lh-input-tag__input:focus) {
+    border-color: $lh-input-tag-hover-border-color;
+  }
+}
+
+.lh-input-tag__tag {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  font-size: var(--lh-font-size-extra-small, 12px);
+  line-height: 1;
+  white-space: nowrap;
+  background-color: var(--lh-bg-color-page, #F2F3F5);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
+  border-radius: var(--lh-border-radius-small, 6px);
+  user-select: none;
+}
+
+.lh-input-tag__tag-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-inline-start: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--lh-text-secondary, #8A8A8A);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--lh-text-primary, #2C2C2C);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.lh-input-tag__input {
+  flex: 1 1 auto;
+  min-width: 60px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+
+  &::placeholder {
+    color: var(--lh-text-placeholder, #B0B0B0);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+  }
+}
+
+.lh-input-tag--disabled .lh-input-tag__tag-close {
+  cursor: not-allowed;
+}

@@ -10,7 +10,7 @@
   &--inline {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
+    gap: var(--lh-spacing-base, 16px);
   }
 }
 
@@ -44,7 +44,7 @@
     display: block;
     margin-top: 4px;
     color: var(--lh-danger-color, #B23A3A);
-    font-size: 12px;
+    font-size: var(--lh-font-size-extra-small, 12px);
     line-height: 18px;
   }
 
@@ -55,6 +55,36 @@
       display: block;
       padding: 0 0 6px;
       text-align: start;
+    }
+  }
+
+  /* 'left' / 'right'：沿 Element Plus 口径——label 仍在控件左侧，两档只差
+     label 文字对齐（left 起始对齐 / right 贴控件一侧，后者即基础样式）。
+     'bottom' 是真正的位置档：label 调到控件下方 */
+  &--left {
+    .lh-form-item__label {
+      text-align: start;
+    }
+  }
+
+  &--right {
+    /* 与基础样式一致（label 文字贴控件一侧），显式类提供选择器钩子 */
+    .lh-form-item__label {
+      text-align: end;
+    }
+  }
+
+  &--bottom {
+    flex-direction: column;
+
+    .lh-form-item__label {
+      order: 2;
+      padding: 6px 0 0;
+      text-align: start;
+    }
+
+    .lh-form-item__content {
+      order: 1;
     }
   }
 }

@@ -4,10 +4,10 @@
 .lh-alert {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
   padding: 10px 14px;
   border-radius: var(--lh-border-radius-base, 8px);
-  font-size: 14px;
+  font-size: var(--lh-font-size-base, 14px);
   line-height: 1.6;
   overflow: hidden;
 

@@ -1,0 +1,161 @@
+---
+title: autocomplete —— オートコンプリート
+description: 'filterSuggestions が候補項目をフィルター（大文字小文字 / trim / カスタム matcher）、4 つの aria ビルダーが APG combobox セマンティクスを組み立て'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+オートコンプリート = 入力欄 + 入力に応じてフィルターされるドロップダウン候補。`core/autocomplete` が担当するのは二つだけ：**フィルター**と **combobox のアクセシビリティセマンティクス**です。入力欄、ドロップダウンパネル、位置決め、外部クリックでの閉じ、トランジションはすべて各端の UI 層が担います。
+
+## いつ使うか
+
+- 各端が `LhAutocomplete` を実装する：フィルターロジックと aria 属性パックはすべて core が産出し、UI 層が自分で `includes` を書くことはない。
+- カスタム入力コントロール上で同一のフィルターと combobox セマンティクスを再利用したいとき。
+- **使うべきでない**：タグ入力は `core/input-tag`、@ メンションは `core/mentions`、入力フィルター不要のドロップダウン選択は `core/select` を使う。
+
+## インポート方法
+
+```ts
+import {
+  filterSuggestions,
+  getAutocompleteOptionId,
+  getAutocompleteTriggerAria,
+  getAutocompleteListboxAria,
+  getAutocompleteOptionAria,
+  getAutocompleteOptionValue,
+} from '@lh-ui/share/core/autocomplete'
+import type { LhAutocompleteOption, LhAutocompleteFilterOptions } from '@lh-ui/share/core/autocomplete'
+```
+
+## 設計意図
+
+**フィルターの三つの境界**（`filterSuggestions`）：
+
+- 空のクエリ文字列（trim 後が空）は**全オプション**を返します：フォーカス発火シナリオでは全候補を表示する必要があるためです。空クエリのパネルを表示するかどうかは UI 層の trigger セマンティクスが決め、本関数は非表示の判定を行いません。
+- `trim` はデフォルトで有効：先頭末尾の空白はマッチに参加しません。明示的に `false` を渡すと元のままマッチします。
+- 無効項目は結果に**残します**：フィルターは可視性だけを受け持ち、グレーアウトと選択禁止は UI 層の仕事——disabled をフィルターで落とすと、ユーザーには「リストが突然短くなった」ように見えます。
+
+**決定論的なオプション id**：`getAutocompleteOptionId(listboxId, index)` は `{listboxId}-option-{index}` を組み立てます。ハイライト項目が変わったときはトリガーが `aria-activedescendant` の値を更新するだけで、スクリーンリーダーが新しいハイライト項目を読み上げます。DOM を再マウントする必要はありません。負数 / 非整数のインデックス（-1 = ハイライトなし）は **id を産出しません**——そうしないとトリガーが存在しない要素を参照してしまいます。
+
+**aria は select と同型**：`getAutocompleteTriggerAria` は `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant` を出力し、APG combobox パターンと一致します。`value` の送信値と `label` の表示テキストは分離されています（`getAutocompleteOptionValue` は value 未指定のとき label でフォールバックします）。
+
+## 関数表
+
+| 関数 | シグネチャ | 戻り値 | 役割 |
+| --- | --- | --- | --- |
+| `filterSuggestions` | `(options, query, opts?) => LhAutocompleteOption[]` | オプション配列 | クエリ文字列でフィルター（大文字小文字 / trim / matcher 設定可） |
+| `getAutocompleteOptionId` | `(listboxId?, index) => string \| undefined` | オプション id | 決定論的に組み立て、aria-activedescendant が参照 |
+| `getAutocompleteTriggerAria` | `(input: LhAutocompleteTriggerAriaInput) => LhAriaAttrs` | aria 属性パック | トリガーの combobox セマンティクス |
+| `getAutocompleteListboxAria` | `(id?) => LhAriaAttrs` | aria 属性パック | リストボックスの role + id |
+| `getAutocompleteOptionAria` | `(input: LhAutocompleteOptionAriaInput) => LhAriaAttrs` | aria 属性パック | オプションの role + 選択 / 無効状態 |
+| `getAutocompleteOptionValue` | `(option: LhAutocompleteOption) => string \| number` | 送信値 | value 未指定のとき label でフォールバック |
+
+## 型定義
+
+```ts
+export interface LhAutocompleteOption {
+  label: string
+  value?: string | number
+  disabled?: boolean
+}
+
+export interface LhAutocompleteFilterOptions {
+  caseSensitive?: boolean
+  trim?: boolean
+  /** カスタムマッチ判定（デフォルト：label がクエリ文字列を含む）。true を返すと保持 */
+  matcher?: (option: LhAutocompleteOption, query: string) => boolean
+}
+
+export interface LhAutocompleteTriggerAriaInput {
+  visible: boolean
+  listboxId?: string
+  /** 現在ハイライト中の項目インデックス（-1 = ハイライトなし） */
+  highlightedIndex: number
+}
+
+export interface LhAutocompleteOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## アクセシビリティ
+
+完全な combobox パターンは三つの属性パックで組み立てます：
+
+- トリガー：`role="combobox"`、`aria-expanded`（パネルの開閉）、`aria-controls`（リストボックス id）、`aria-activedescendant`（ハイライト項目 id）。
+- リストボックス：`role="listbox"` + `id`。
+- オプション：`role="option"`、`aria-selected`（= ハイライト状態）、`aria-disabled`。
+
+キーボードナビゲーション（↑↓ でハイライトを移動、Enter で選択、Esc で閉じる）は UI 層が実装して `highlightedIndex` を同期更新します——core はセマンティクスの正しさを保証し、インタラクションは各端が担います。
+
+## 使用例
+
+```ts
+import { filterSuggestions, getAutocompleteTriggerAria } from '@lh-ui/share/core/autocomplete'
+
+filterSuggestions(
+  [{ label: '青花磁' }, { label: '水墨' }, { label: '青緑山水' }],
+  '青',
+)
+// [{ label: '青花磁' }, { label: '青緑山水' }]
+
+// ピンイン頭文字マッチ：matcher でオーバーライドする
+filterSuggestions([{ label: '水墨' }], 'sm', {
+  matcher: (option, query) => pinyinAbbr(option.label).startsWith(query),
+})
+```
+
+```vue
+<!-- Vue3：input にトリガー aria、ドロップダウンに listbox aria、ハイライト項目は aria-activedescendant -->
+<input
+  role="combobox"
+  :aria-expanded="visible"
+  :aria-controls="listboxId"
+  :aria-activedescendant="highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined"
+  @input="query = $event.target.value"
+/>
+<ul v-bind="getAutocompleteListboxAria(listboxId)">
+  <li
+    v-for="(option, index) in filterSuggestions(options, query)"
+    :key="index"
+    :aria-selected="index === highlightedIndex"
+  >{{ option.label }}</li>
+</ul>
+```
+
+```tsx
+// React：制御されたハイライト + 属性パックの展開
+<input {...getAutocompleteTriggerAria({ visible, listboxId, highlightedIndex })} />
+```
+
+```ts
+// uniapp：ミニプログラムには実際の DOM id 参照がないため、aria 属性パックは h5 端でのみ付与。
+// MP 端はキーボードナビゲーションの無効ガードを残す（キーボードイベントなし。計画ドキュメントのプラットフォーム差分登記を参照）
+```
+
+## スタイルとトークン
+
+| クラス名 | 意味 |
+| --- | --- |
+| `.lh-autocomplete` | ベースクラス：relative コンテナー、想定幅 240px |
+| `.lh-autocomplete__inner` | 入力欄（focus/hover でプライマリーカラーのボーダー） |
+| `.lh-autocomplete__prefix` | プレフィックスのアイコン位置 |
+| `.lh-autocomplete__clear` | クリアボタン |
+| `.lh-autocomplete__dropdown` | ドロップダウンパネル（`--teleported` は body マウント形態） |
+| `.lh-autocomplete__option` | オプション（`--highlighted` ハイライト / `--disabled` グレーアウト） |
+| `.lh-autocomplete__empty` | 空状態 |
+| `.lh-autocomplete--small` / `--large` | サイズ段階 |
+| `.lh-autocomplete--disabled` | 無効状態 |
+
+ドロップダウンの開閉は `lh-autocomplete-fade` トランジション（フェードイン + わずかな下移動、select と同じ見た目）で、`prefers-reduced-motion` で降格します。色はすべて `var(--lh-*)`。
+
+## 注意事項
+
+- フィルターは core、リクエストは UI：リモート検索シナリオでは `matcher` を渡すか UI 層で options 配列を自前制御し、core はリクエストを送りません。
+- `aria-selected` のセマンティクスは「ハイライト」であって「送信済み」ではありません——combobox の単一選択モードでは両者は一致します。UI 層が二つの状態を分離する場合は `aria-selected` のロジックを自前で補ってください。
+- 無効項目はフィルターせず、ハイライトも禁止しません（ハイライト後の Enter は UI 層が拒否します）。キーボードユーザーとマウスユーザーが同じリストを見られることを保証します。
+
+<FnPlayground module="autocomplete" fn="filterSuggestions" params='{"options": [{"label": "青花磁"}, {"label": "水墨"}, {"label": "青緑山水"}], "query": "青"}' />

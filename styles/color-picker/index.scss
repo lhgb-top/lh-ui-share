@@ -1,0 +1,232 @@
+@use '../theme/common/index.scss' as *;
+
+// ==============================
+// 颜色选择器样式 — 调色瓷碟
+// ==============================
+
+$lh-color-picker-border-color: var(--lh-border-color-base, #D8D3CC) !default;
+$lh-color-picker-hover-border-color: var(--lh-primary-color, #2B4C7C) !default;
+$lh-color-picker-bg-color: var(--lh-bg-color, #FAF6F0) !default;
+$lh-color-picker-disabled-color: var(--lh-text-disabled, #C8C8C8) !default;
+$lh-color-picker-disabled-bg-color: var(--lh-bg-color-disabled, #EDE8E0) !default;
+
+.lh-color-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lh-spacing-xs, 4px);
+  box-sizing: border-box;
+  height: var(--lh-control-height-medium, 32px);
+  padding: 0 var(--lh-spacing-sm, 8px);
+  font-family: var(--lh-font-family, 'Noto Serif SC', 'STSong', 'SimSun', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif);
+  font-size: var(--lh-font-size-base, 14px);
+  color: var(--lh-text-primary, #2C2C2C);
+  background-color: $lh-color-picker-bg-color;
+  border: 1px solid $lh-color-picker-border-color;
+  border-radius: var(--lh-border-radius-base, 8px);
+  cursor: pointer;
+  transition: border-color var(--lh-transition-base, 0.2s) ease;
+
+  &:hover {
+    border-color: $lh-color-picker-hover-border-color;
+  }
+
+  &--small {
+    height: var(--lh-control-height-small, 28px);
+    font-size: var(--lh-font-size-small, 13px);
+  }
+
+  &--large {
+    height: var(--lh-control-height-large, 40px);
+    font-size: var(--lh-font-size-large, 16px);
+  }
+
+  &--disabled {
+    color: $lh-color-picker-disabled-color;
+    background-color: $lh-color-picker-disabled-bg-color;
+    cursor: not-allowed;
+
+    &:hover {
+      border-color: $lh-color-picker-border-color;
+    }
+  }
+
+  // 在 grid / flex 容器中不要被默认的 stretch 拉伸：定位锚点是根元素
+  justify-self: center;
+  align-self: center;
+}
+
+.lh-color-picker__swatch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
+  border-radius: var(--lh-border-radius-small, 6px);
+}
+
+.lh-color-picker__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--lh-font-family-mono, 'JetBrains Mono', Consolas, 'Courier New', monospace);
+}
+
+/* 清除按钮（clearable 且已有值时出现；与 autocomplete__clear 同风格） */
+.lh-color-picker__clear {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--lh-text-secondary, #8A8A8A);
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--lh-text-primary, #2C2C2C);
+  }
+}
+
+.lh-color-picker--empty .lh-color-picker__value {
+  color: var(--lh-text-placeholder, #B0B0B0);
+}
+
+// ── 面板（浮层内容，随 popper 定位）──────────────────────────────
+.lh-color-picker__panel {
+  box-sizing: border-box;
+  width: 232px;
+  padding: 12px;
+  background-color: var(--lh-bg-color, #FAF6F0);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
+  border-radius: var(--lh-border-radius-base, 8px);
+  box-shadow: var(--lh-box-shadow-base, 0 2px 12px 0 rgba(26, 26, 26, 0.08));
+}
+
+// 饱和度 / 明度板：水平饱和度、垂直明度，指针由 JS 按 hsv 定位
+.lh-color-picker__saturation {
+  position: relative;
+  width: 100%;
+  height: 120px;
+  margin-bottom: var(--lh-spacing-sm, 8px);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
+  border-radius: var(--lh-border-radius-small, 6px);
+  cursor: crosshair;
+  overflow: hidden;
+}
+
+.lh-color-picker__saturation-pointer {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border: 2px solid #FFF;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+// 色相 / 透明度滑杆：轨道 + 拇指（aria slider 由 JS 挂键）
+.lh-color-picker__slider {
+  position: relative;
+  height: 12px;
+  margin-bottom: var(--lh-spacing-sm, 8px);
+  border-radius: 6px;
+}
+
+.lh-color-picker__hue {
+  background: linear-gradient(
+    to right,
+    #f00 0%,
+    #ff0 16.66%,
+    #0f0 33.33%,
+    #0ff 50%,
+    #00f 66.66%,
+    #f0f 83.33%,
+    #f00 100%
+  );
+}
+
+.lh-color-picker__alpha {
+  background-image: linear-gradient(45deg, #c8c8c8 25%, transparent 25%),
+    linear-gradient(-45deg, #c8c8c8 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #c8c8c8 75%),
+    linear-gradient(-45deg, transparent 75%, #c8c8c8 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+}
+
+.lh-color-picker__slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-inline-start: -6px;
+  border: 2px solid #FFF;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+// 十六进制 / rgb 输入
+.lh-color-picker__input {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--lh-control-height-small, 28px);
+  margin-bottom: var(--lh-spacing-sm, 8px);
+  padding: 0 var(--lh-spacing-sm, 8px);
+  font-family: var(--lh-font-family-mono, 'JetBrains Mono', Consolas, 'Courier New', monospace);
+  font-size: var(--lh-font-size-small, 13px);
+  color: var(--lh-text-primary, #2C2C2C);
+  background-color: var(--lh-bg-color, #FAF6F0);
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
+  border-radius: var(--lh-border-radius-small, 6px);
+  outline: none;
+  transition: border-color var(--lh-transition-base, 0.2s) ease;
+
+  &:focus {
+    border-color: var(--lh-primary-color, #2B4C7C);
+  }
+}
+
+// 预设色板
+.lh-color-picker__predefine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lh-spacing-xs, 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lh-color-picker__predefine-item {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--lh-border-color-base, #D8D3CC);
+  border-radius: var(--lh-border-radius-small, 6px);
+  cursor: pointer;
+
+  &:hover {
+    transform: scale(1.15);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--lh-primary-color, #2B4C7C);
+    outline-offset: 1px;
+  }
+}
+
+// ── 尺寸下的触发器内部调整 ──────────────────────────────────────
+.lh-color-picker--small .lh-color-picker__swatch,
+.lh-color-picker--large .lh-color-picker__swatch {
+  width: 14px;
+  height: 14px;
+}

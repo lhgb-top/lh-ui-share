@@ -22,13 +22,13 @@
 
 .lh-calendar__actions {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--lh-spacing-xs, 4px);
 }
 
 .lh-calendar__nav-row {
   display: flex;
   justify-content: flex-end;
-  gap: 4px;
+  gap: var(--lh-spacing-xs, 4px);
   width: 100%;
 }
 
@@ -135,7 +135,7 @@
 .lh-calendar__panels {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: var(--lh-spacing-base, 16px);
   position: relative;
 }
 

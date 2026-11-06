@@ -17,7 +17,8 @@ export function getNotificationIconName(type: LhNotificationType): LhIconName {
     danger: 'error',
     error: 'error',
   }
-  return icons[type]
+  // 非法 type（JS 侧脏数据）兜底 info，与 groupNotificationsByPosition 的脏数据处置口径一致
+  return icons[type] ?? ('info' as LhIconName)
 }
 
 /** 计算通知卡片类名 */

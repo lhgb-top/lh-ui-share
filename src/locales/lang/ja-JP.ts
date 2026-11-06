@@ -13,6 +13,7 @@ export default {
   input: {
     placeholder: '入力してください',
     password: 'パスワード',
+    clear: 'クリア',
   },
   // 日付ピッカー（予約）
   datepicker: {
@@ -76,6 +77,7 @@ export default {
     placeholder: '選択してください',
     panelLabel: 'カスケードオプションを選択',
     columnLabel: '第{n}階層',
+    filter: '検索',
   },
   // タグ
   tag: {
@@ -90,6 +92,40 @@ export default {
     noMatch: '該当するデータがありません',
     noData: 'データがありません',
     placeholder: '選択してください',
+    clear: 'クリア',
+    filter: '検索',
+    empty: '一致なし',
+  },
+  // オートコンプリート
+  autocomplete: {
+    label: 'オートコンプリート',
+    noMatch: '一致するデータがありません',
+    noData: 'データがありません',
+    placeholder: '入力してください',
+    clear: 'クリア',
+  },
+  // メンション
+  mentions: {
+    label: 'メンション',
+    noMatch: '一致するメンバーがいません',
+    placeholder: '入力してください。@ でメンバー',
+  },
+  // テキスト
+  text: {
+    copy: 'コピー',
+    copied: 'コピーしました',
+  },
+  // 颜色选择器
+  colorPicker: {
+    label: 'カラーピッカー',
+    placeholder: '色を選択',
+    inputLabel: '色値',
+  },
+  // 标签输入
+  inputTag: {
+    label: 'タグ入力',
+    placeholder: 'タグを入力して Enter',
+    removeTag: 'タグを削除',
   },
   // フォーム
   form: {
@@ -131,6 +167,9 @@ export default {
   // ダイアログ
   dialog: {
     close: 'ダイアログを閉じる',
+    confirm: '確定',
+    cancel: 'キャンセル',
+    ariaLabel: 'ダイアログ',
   },
   // メッセージ
   message: {
@@ -309,5 +348,9 @@ export default {
     moveToSource: '左に移動',
     search: '検索',
     empty: 'データがありません',
+    saturation: '彩度',
+    hue: '色相',
+    alpha: '不透明度',
+    removeTag: 'タグを削除',
   },
 } as const;

@@ -221,7 +221,9 @@ export function setInertOutside(
   locked: HTMLElement[] = []
 ): HTMLElement[] {
   if (!supportsInert()) return []
-  if (typeof document === 'undefined' || !document.body) return locked
+  // 与 supportsInert 分支同口径返回「未锁定任何节点」——@returns 契约是「被加锁的
+  // 节点（解锁时用）」，无 body 时谈不上锁定，返回豁免清单会让据此判断的调用方误判
+  if (typeof document === 'undefined' || !document.body) return []
 
   if (active) {
     if (!container.isConnected) {

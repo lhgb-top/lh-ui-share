@@ -3,7 +3,7 @@
 .lh-switch {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--lh-spacing-sm, 8px);
   cursor: pointer;
   -webkit-user-select: none;
   user-select: none;
@@ -49,7 +49,7 @@
   }
 
   &__label {
-    font-size: 14px;
+    font-size: var(--lh-font-size-base, 14px);
     color: var(--lh-text-primary, #2C2C2C);
   }
 

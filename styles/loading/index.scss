@@ -17,7 +17,7 @@
   }
 
   &--with-text {
-    font-size: 14px;
+    font-size: var(--lh-font-size-base, 14px);
   }
 }
 

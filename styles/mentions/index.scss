@@ -1,0 +1,135 @@
+@use '../theme/common/index.scss' as *;
+
+.lh-mentions {
+  position: relative;
+  display: inline-block;
+  width: 320px;
+  /* 与 lh-input / lh-select 同理：宽松容器里的期望宽度，窄容器里随容器收缩 */
+  max-width: 100%;
+  color: var(--lh-text-primary, #2C2C2C);
+  font-size: var(--lh-font-size-base, 14px);
+
+  &__inner {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: var(--lh-control-height-medium, 32px);
+    padding: 4px 10px;
+    border: 1px solid var(--lh-border-color-base, #D8D3CC); /* hairline */
+    border-radius: 2px;
+    outline: none;
+    background: var(--lh-bg-color, #FAF6F0);
+    color: inherit;
+    /* textarea 默认可纵向拉伸，表单场景容易破坏对齐，统一锁高由 rows 控制 */
+    resize: vertical;
+    transition: border-color 0.2s ease;
+
+    &::placeholder {
+      color: var(--lh-text-placeholder, #B0B0B0);
+    }
+
+    &:hover {
+      border-color: var(--lh-primary-color, #2B4C7C);
+    }
+
+    &:focus {
+      border-color: var(--lh-primary-color, #2B4C7C);
+    }
+
+    .lh-mentions--disabled & {
+      background: var(--lh-bg-color-disabled, #EDE8E0);
+      color: var(--lh-text-disabled, #C8C8C8);
+      cursor: not-allowed;
+
+      &:hover {
+        border-color: var(--lh-border-color-base, #D8D3CC);
+      }
+    }
+  }
+
+  &__dropdown {
+    position: absolute;
+    z-index: 10;
+    bottom: calc(100% + 4px);
+    left: 0;
+    max-height: 240px;
+    overflow: auto;
+    padding: 4px 0;
+    border: 1px solid var(--lh-border-color-light, #E5E0D8); /* hairline */
+    border-radius: 2px;
+    background: var(--lh-bg-color, #FAF6F0);
+    box-shadow: 0 6px 16px rgba(44, 44, 44, 0.12);
+
+    &--teleported {
+      position: fixed;
+      top: auto;
+      bottom: auto;
+      left: auto;
+      z-index: 2000;
+    }
+  }
+
+  &__option {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    cursor: pointer;
+    text-align: start;
+
+    &:hover {
+      background: var(--lh-hover-bg-color, rgba(0, 0, 0, 0.05));
+    }
+
+    &--highlighted {
+      color: var(--lh-primary-color, #2B4C7C);
+      background: var(--lh-primary-color-bg, rgba(43, 76, 124, 0.08));
+    }
+
+    &--disabled {
+      color: var(--lh-text-disabled, #C8C8C8);
+      cursor: not-allowed;
+    }
+  }
+
+  &__empty {
+    display: block;
+    padding: 10px 12px;
+    color: var(--lh-text-secondary, #777);
+    text-align: center;
+  }
+
+  &--disabled {
+    opacity: 0.6;
+  }
+}
+
+/* 下拉开合：淡入 + 轻微上移（mentions 面板默认向上展开，位移方向与面板一致）；
+   过渡类名双写由 theme/common/transition.scss 的 lh-transition-ends mixin 收编 */
+.lh-mentions-fade-enter-active,
+.lh-mentions-fade-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+@include lh-transition-ends('.lh-mentions-fade') {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-mentions-fade-enter-active,
+  .lh-mentions-fade-leave-active {
+    transition: opacity 0.15s ease;
+  }
+
+  @include lh-transition-ends('.lh-mentions-fade') {
+    transform: none;
+  }
+}
+
+/* 键盘焦点环：统一由 theme/common/a11y.scss 的 focus-ring 令牌驱动 */
+@include focus-ring('.lh-mentions');

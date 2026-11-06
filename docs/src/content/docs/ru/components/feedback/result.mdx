@@ -1,0 +1,119 @@
+---
+title: result —— Страница результата
+description: 'getResultClassNames вычисляет классы четырёх состояний, getResultIconName определяет иконку по умолчанию состояния или пользовательскую, isValidResultStatus — страж состояния'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Страница результата — финальный отклик на «весь процесс завершён»: форма успешно отправлена, заявка отклонена, нет прав на страницу. `core/result` считает ровно две вещи: классы четырёх состояний и имена иконок; типографику заголовка, подзаголовка и зоны действий несут стилевые классы, содержимое целиком оставлено потребителю.
+
+## Когда использовать
+
+- Реализация `LhResult` на каждой платформе: отображение классов и иконок для четырёх состояний `success` / `warning` / `error` / `info`.
+- Сценарии переиспользования визуала страницы результата (пустое состояние графика, финальная страница мастера, fallback-UI границы ошибок) — подключайте классы напрямую.
+- **Не следует использовать**: лёгкие подсказки-отклики на действие — `core/message` / `core/notification`: result — финальное состояние уровня целой страницы, message — мгновенный отклик, уровни разные.
+
+## Импорт
+
+```ts
+import { isValidResultStatus, getResultClassNames, getResultIconName } from '@lh-ui/share/core/result'
+import type { LhResultState, LhResultStatus } from '@lh-ui/share/core/result'
+```
+
+## Замысел дизайна
+
+**Набор состояний фиксирован четырьмя значениями и не открыт для расширения**: семантическое пространство страницы результата — это успех / предупреждение / ошибка / подсказка. Пользовательская строка status перед попаданием в UI сначала проходит страж `isValidResultStatus`, некорректные значения деградируют на UI-слое (обычно откат к `info`) — «произвольная строка» оставит дыры в таблице отображения иконок.
+
+**Приоритеты разбора иконки** (`getResultIconName`):
+
+- Явно передан `icon` (**включая пустую строку**) → берётся как есть. Семантика пустой строки — «я специально не хочу иконку», она строго отличима от «не передано — идёт значение по умолчанию» — потому проверка `icon !== undefined`, а не на истинность.
+- Не передано → откат к иконке состояния по умолчанию: success→`check`, warning→`warning`, error→`error`, info→`info`, всё потребляет существующий набор иконок `LhIcon`, новые иконочные ресурсы не добавляются.
+
+**Классы минимальны** (`getResultClassNames`): базовый класс + по одному классу-модификатору состояния, без вариантов размеров/плотности — страница результата это контентный компонент, типографическая гибкость отдаётся самому содержимому и `sx`.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `isValidResultStatus` | `(status: string) => status is LhResultStatus` | страж | корректность состояния |
+| `getResultClassNames` | `(state: LhResultState) => string[]` | массив классов | вычисляет классы страницы результата |
+| `getResultIconName` | `(status, icon?) => LhIconName \| '' \| undefined` | имя иконки | явный icon приоритетен, откат к состоянию по умолчанию |
+
+```ts
+getResultClassNames({ status: 'success' })
+// ['lh-result', 'lh-result--success']
+
+getResultIconName('error')          // 'error' (иконка состояния по умолчанию)
+getResultIconName('error', '')      // '' (явно без иконки)
+getResultIconName('error', 'smile') // 'smile' (пользовательская иконка перекрывает дефолт)
+```
+
+## Определения типов
+
+```ts
+export type LhResultStatus = 'success' | 'warning' | 'info' | 'error'
+
+export interface LhResultState {
+  status: LhResultStatus
+}
+```
+
+## Доступность
+
+- Контейнеру рекомендуется `role="status"` (часть платформ реализует его как автопроговаривание): появление страницы результата означает смену статуса процесса, пользователю скринридера не нужно ждать фокуса.
+- Иконка — декоративная семантика, узел иконки должен нести `aria-hidden="true"` — смысл состояния несёт текст заголовка, а не цвет иконки (читаемо для пользователей с нарушенным цветовосприятием).
+- Кнопки зоны действий сохраняют нативную семантику, наравне с обычными кнопками.
+
+## Примеры использования
+
+```ts
+import { getResultClassNames, getResultIconName } from '@lh-ui/share/core/result'
+
+getResultClassNames({ status: 'warning' })
+// ['lh-result', 'lh-result--warning']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getResultClassNames({ status })" role="status">
+  <LhIcon v-if="getResultIconName(status, icon)" class="lh-result__icon" aria-hidden="true" :name="getResultIconName(status, icon)!" />
+  <div class="lh-result__title">{{ title }}</div>
+  <div v-if="subtitle" class="lh-result__subtitle">{{ subtitle }}</div>
+  <div v-if="$slots.extra" class="lh-result__extra"><slot name="extra" /></div>
+</div>
+```
+
+```tsx
+// React
+<div className={getResultClassNames({ status }).join(' ')} role="status">
+  <ResultIcon status={status} icon={icon} />
+  <div className="lh-result__title">{title}</div>
+  {extra}
+</div>
+```
+
+```ts
+// uniapp: иконки идут иконочным шрифтом iconfont (сборочный продукт SVG path из share),
+// role="status" на MP деградирует до нерендеринга (возможностей live region для скринридера нет)
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-result` | контейнер: вертикальное центрированное расположение, внутренние отступы результата |
+| `.lh-result--{success\|warning\|error\|info}` | модификатор состояния (управляет окраской иконки) |
+| `.lh-result__icon` | узел иконки (64px, цвет по токену состояния) |
+| `.lh-result__title` | заголовок (20px, жирный) |
+| `.lh-result__subtitle` | подзаголовок (второстепенный цвет, межстрочный интервал 1.8) |
+| `.lh-result__extra` | зона действий (воздух сверху) |
+
+Цвета иконок — все `var(--lh-*)` (семантические токены success/warning/danger/info), тёмная тема переворачивается `var-dark.scss`; внутренние отступы/размер шрифта имеют настраиваемые компонентные токены (`--lh-result-*`).
+
+## Примечания
+
+- Некорректный status не стоит молча передавать в core: сначала страж `isValidResultStatus`, затем решение о деградации — страж предназначен UI-слою, core решения за него не принимает.
+- Передача `icon` пустой строкой и её отсутствие — две разные семантики (явно без иконки vs иконка по умолчанию), на уровне типов это кодируется как `LhIconName | '' | undefined`.
+- Различие цветов иконки четырёх состояний страницы результата живёт только на `__icon`, цвета заголовка/подзаголовка от состояния не зависят — не красьте заголовок в красный для error-состояния: это сломает типографическую согласованность.
+
+<FnPlayground module="result" fn="getResultClassNames" params='{"state": {"status": "success"}}' />

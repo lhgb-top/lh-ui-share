@@ -1,0 +1,135 @@
+---
+title: link —— 連結
+description: 'getLinkClassNames 計算類型/底線三態/停用類，getLinkAria 產出停用與當前頁語義'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+連結是頁面間跳轉的最小互動單元。`core/link` 只算兩件事：類別名與 aria——類型語義色、底線三態、停用降級全部落在類別名上，跳轉本身交給原生 `<a>` 與各端路由。
+
+## 何時使用
+
+- 各端實作 `LhLink`：類別名與 aria 全由 `getLinkClassNames` / `getLinkAria` 產出。
+- 麵包屑當前頁、表格行內操作等複用連結視覺的場景，直接引 core 函式 + `styles/link` 的類別名。
+- **不該用它**：頁面內動作觸發用 `core/button`（連結語義會誤導讀屏使用者預期跳轉）。
+
+## 匯入方式
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+import type { LhLinkState, LhLinkType, LhLinkUnderline } from '@lh-ui/share/core/link'
+```
+
+## 設計意圖
+
+三處白名單降級，保證「非法 prop 永不產生髒類別名」：
+
+- `type` 非法 → `default`：走令牌常規文字色，**不產出修飾類**（`lh-link--default` 不存在）。
+- `underline` 非法 → `hover`：全域預設形態，同樣不產出修飾類；只有 `always` / `none` 顯式傳值才落 `lh-link--underline-{always|none}`。
+- `disabled` 為真恆輸出 `lh-link--disabled`：樣式側停用 hover 變色與底線。
+
+停用連結是 HTML 的語義空洞——`<a>` 沒有 disabled 屬性。core 的答案是 `aria-disabled` + `role="link"` 組合：讀屏仍播報「連結」，但明確不可用；真正移除可點擊語義（渲染為 `span` 或省略 `href`）由 UI 層完成，core 只提供正確的屬性。
+
+`aria-current` 支援 `page` / `location`，服務麵包屑當前頁、分頁當前項等「我是當前所在位置」的連結。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `getLinkClassNames` | `(state?: Partial<LhLinkState>) => string[]` | 類別名陣列 | 計算連結全部類別名 |
+| `getLinkAria` | `(input: LhLinkAriaInput) => LhAriaAttrs` | aria 屬性包 | 停用與當前頁語義 |
+
+```ts
+getLinkClassNames({ type: 'primary', underline: 'hover', disabled: false })
+// ['lh-link', 'lh-link--primary']
+
+getLinkClassNames({ type: 'danger', underline: 'always', disabled: true })
+// ['lh-link', 'lh-link--danger', 'lh-link--underline-always', 'lh-link--disabled']
+```
+
+## 類型定義
+
+```ts
+export type LhLinkType = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info'
+
+export type LhLinkUnderline = 'always' | 'hover' | 'none'
+
+export interface LhLinkState {
+  type: LhLinkType
+  underline: LhLinkUnderline
+  disabled: boolean
+}
+
+export interface LhLinkAriaInput {
+  disabled: boolean
+  /** 當前頁 / 當前位置（麵包屑等場景，輸出 aria-current） */
+  current?: 'page' | 'location' | true
+}
+```
+
+## 無障礙
+
+- **停用**：`getLinkAria({ disabled: true })` 輸出 `aria-disabled="true"` 與 `role="link"`。UI 層必須同時移除 `href`（或渲染為 `span`），否則鍵盤使用者仍可聚焦觸發跳轉——屬性包管語義，DOM 結構管行為，兩層缺一不可。
+- **當前頁**：`aria-current="page"` 讓讀屏軟體在麵包屑中播報「當前頁」，優於單純的高亮樣式。
+- **鍵盤焦點環**：由 `theme/common/a11y.scss` 的 focus-ring 令牌統一驅動，元件不散寫 outline。
+
+## 使用範例
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+
+getLinkClassNames({ type: 'warning', underline: 'none', disabled: false })
+// ['lh-link', 'lh-link--warning', 'lh-link--underline-none']
+
+getLinkAria({ disabled: false, current: 'page' })
+// { 'aria-current': 'page' }
+```
+
+```vue
+<!-- Vue3 -->
+<a :class="getLinkClassNames({ type, underline, disabled })" :href="disabled ? undefined : href" v-bind="getLinkAria({ disabled, current })">
+  <span v-if="$slots.prefix" class="lh-link__icon lh-link__icon--prefix"><slot name="prefix" /></span>
+  <slot />
+  <span v-if="$slots.suffix" class="lh-link__icon lh-link__icon--suffix"><slot name="suffix" /></span>
+</a>
+```
+
+```tsx
+// React：停用時渲染 span，徹底移除連結語義的互動面
+const Tag = disabled ? 'span' : 'a'
+return (
+  <Tag
+    className={getLinkClassNames({ type, underline, disabled }).join(' ')}
+    href={disabled ? undefined : href}
+    {...getLinkAria({ disabled, current })}
+  >
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp：navigator 元件承載跳轉，純展示態可直接渲染 text + 類別名；
+// aria 屬性在非 h5 端支援有限，按平台條件編譯取捨
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-link` | 基礎類：inline-flex、常規文字色、hover 變主色 |
+| `.lh-link--{primary\|success\|warning\|danger\|info}` | 語義類型（default 無修飾類） |
+| `.lh-link--underline-always` | 常駐底線 |
+| `.lh-link--underline-none` | 無底線（懸停也不出） |
+| `.lh-link--disabled` | 停用態：降色 + 禁游標，懸停底線失效 |
+| `.lh-link__icon--prefix` / `.lh-link__icon--suffix` | 前後綴圖示位 |
+
+顏色全部 `var(--lh-*)`；success / warning / danger 的 hover 色用 `color-mix` 向文字色混合 80%，暗色由 `var-dark.scss` 翻轉。
+
+## 注意事項
+
+- `underline` 預設 `hover` 不產出修飾類，樣式側的 hover 規則兜底；想要「從不顯示底線」必須顯式傳 `none`。
+- 停用連結若仍渲染 `<a>`，務必去掉 `href`，否則 `aria-disabled` 形同虛設。
+- `default` 類型與 `hover` 底線一樣走「無修飾類」策略，UI 層不要依賴 `lh-link--default` 存在。
+
+<FnPlayground module="link" fn="getLinkClassNames" params='{"state": {"type": "primary", "underline": "hover", "disabled": false}}' />

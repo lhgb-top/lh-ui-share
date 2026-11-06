@@ -1,0 +1,148 @@
+---
+title: text —— Texte
+description: 'getTextClassNames calcule les classes de typographie à huit niveaux / couleur sémantique / modificateurs / ellipsis, getTextTag détermine la balise de rendu, getEllipsisRows/Style gèrent l''ellipsis multiligne'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Le texte est l'élément le plus nombreux des pages et celui où les styles en ligne se dispersent le plus facilement. `core/text` calcule tout — niveau de typographie (h1~h6/p/caption), couleur sémantique, modificateurs gras/italique/souligné/marquage/code, ellipsis sur une ligne comme sur plusieurs — en noms de classe et enregistrements de styles en ligne ; la couche UI n'a plus qu'à les appliquer à l'élément.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhText` : typographie à huit niveaux, couleur sémantique, cinq modificateurs, ellipsis — les classes sont toutes produites par `getTextClassNames`.
+- Pour les scénarios qui ne demandent que la conversion d'ellipsis : `getEllipsisRows` / `getEllipsisStyle` s'utilisent indépendamment (troncature multiligne de la description d'une carte personnalisée, par exemple).
+- **À ne pas utiliser pour** : l'édition de texte riche (core ne gère que l'état d'affichage) ; pour la sémantique de plan de document des titres, utilisez de vrais éléments `h1~h6` accompagnés de ces classes.
+
+## Import
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisRows, getEllipsisStyle, getTextAria } from '@lh-ui/share/core/text'
+import type { LhTextLevel, LhTextType, LhTextState } from '@lh-ui/share/core/text'
+```
+
+## Intention de conception
+
+**Typographie à huit niveaux, classe de niveau produite en permanence** : `lh-text--{h1..h6|p|caption}` est produite quoi qu'on transmette (dégradation par liste blanche : niveau illégal retombe sur `p`), les spécifications de typographie sont réalisées côté styles par les jetons. `caption` adopte le petit texte en ligne mais ne produit pas de vraie sémantique de titre — `getTextTag('caption')` renvoie `span` et non `h7`, pour éviter que le plan du lecteur d'écran soit pollué par du texte auxiliaire.
+
+**Trois états d'ellipsis** (normalisés par `getEllipsisRows`) :
+
+- `ellipsis: true` → 1 ligne, classe `lh-text--ellipsis` (pur CSS, sans style en ligne).
+- Nombre → clamp à `[1, 10]`, classe `lh-text--ellipsis-{n}` + enregistrement en ligne line-clamp de `getEllipsisStyle`.
+- Valeur illégale → 0 (pas d'ellipsis, aucune classe d'ellipsis produite).
+
+La limite de 10 lignes n'est pas sortie du hasard : le `line-clamp` CSS dégénère en « pas d'ellipsis » pour des valeurs très grandes, dépasser ce plafond n'a aucun sens.
+
+**Couleur sémantique et modificateurs** : `secondary/success/warning/danger` ne produisent une classe modificatrice que si non default ; `strong/italic/underline/mark/code/disabled` ne produisent que si vrai. `mark` est un fond clair de surbrillance isomorphe à l'élément mark, `code` est une police à chasse fixe + fond clair — les deux sont des **modifications visuelles**, sans remplacement sémantique forcé : utiliser `<mark>` ou la classe relève de l'utilisateur.
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `getEllipsisRows` | `(ellipsis?: boolean \| number) => number` | nombre de lignes | Normalisation du nombre de lignes d'ellipsis (clamp [1,10]) |
+| `getTextClassNames` | `(state?: Partial<LhTextState>) => string[]` | tableau de classes | Calcule toutes les classes du texte |
+| `getTextTag` | `(level?: LhTextLevel) => 'h1'…'h6' \| 'p' \| 'span'` | nom de balise | Niveau → balise réellement rendue (caption → span) |
+| `getEllipsisStyle` | `(ellipsis?: boolean \| number) => Record<string, string \| number>` | styles en ligne | Styles line-clamp d'ellipsis multiligne |
+| `getTextAria` | `(input?: LhTextAriaInput) => LhAriaAttrs` | paquet d'attributs aria | Sémantique dépliable / copiable |
+
+```ts
+getTextClassNames({ level: 'h3', type: 'danger', mark: true, ellipsis: 3 })
+// ['lh-text', 'lh-text--h3', 'lh-text--danger', 'lh-text--mark', 'lh-text--ellipsis-3']
+
+getEllipsisStyle(3)
+// { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden' }
+```
+
+## Définitions de types
+
+```ts
+export type LhTextLevel = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'p' | 'caption'
+
+export type LhTextType = 'default' | 'secondary' | 'success' | 'warning' | 'danger'
+
+export interface LhTextState {
+  level: LhTextLevel
+  type: LhTextType
+  strong: boolean
+  italic: boolean
+  underline: boolean
+  mark: boolean
+  code: boolean
+  ellipsis: boolean | number
+  disabled: boolean
+}
+
+export interface LhTextAriaInput {
+  /** État déplié du scénario d'ellipsis dépliable (produit aria-expanded) */
+  expanded?: boolean
+  /** Id du libellé du bouton de copie (référencé par aria-labelledby) */
+  copyButtonId?: string
+}
+```
+
+## Accessibilité
+
+- **Sémantique de titre** : `getTextTag` décide du vrai élément — `h1~h6/p` rendent la balise correspondante et fournissent le plan de document, `caption` rend un `span` pour éviter qu'un faux titre pollue le plan. La couche UI ne doit pas porter `lh-text--h2` sur un `div` : le style serait correct, le plan perdu.
+- **Ellipsis dépliable** : quand un bouton « Déplier / Replier » contrôle le repli du contenu, `getTextAria({ expanded })` produit `aria-expanded` et le lecteur d'écran perçoit l'état.
+- **Copiable** : le bouton de copie est un contrôle indépendant ; `copyButtonId` introduit le libellé du bouton dans le nom accessible via `aria-labelledby`, pour éviter que le lecteur d'écran ne lise seulement « bouton ».
+
+## Exemples d'utilisation
+
+```ts
+import { getTextClassNames, getTextTag, getEllipsisStyle } from '@lh-ui/share/core/text'
+
+getTextClassNames({ level: 'caption', type: 'secondary', ellipsis: true })
+// ['lh-text', 'lh-text--caption', 'lh-text--secondary', 'lh-text--ellipsis']
+
+getTextTag('caption')  // 'span'
+```
+
+```vue
+<!-- Vue3 : balise dynamique + style d'ellipsis en ligne -->
+<component :is="getTextTag(level)" :class="getTextClassNames(state)" :style="getEllipsisStyle(state.ellipsis)">
+  <slot />
+  <button v-if="copyable" class="lh-text__copy" aria-label="Copier" @click="copy">
+    {{ copied ? 'Copié' : 'Copier' }}
+  </button>
+</component>
+```
+
+```tsx
+// React : l'enregistrement de style satisfait directement CSSProperties (clés en camelCase avec préfixe webkit)
+const Tag = getTextTag(level) as React.ElementType
+return (
+  <Tag className={getTextClassNames(state).join(' ')} style={getEllipsisStyle(state.ellipsis)}>
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp : les balises sémantiques h1~h6 n'existent pas côté mini-programme, rendre uniformément
+// <text> + classes ; les spécifications de typographie sont entièrement portées par les classes
+// (la sémantique de plan de document n'a de toute façon pas de sens dans une mini-programme)
+```
+
+## Styles et tokens
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-text` | Classe de base : couleur courante, taille de police, hauteur de ligne |
+| `.lh-text--{h1…h6\|p\|caption}` | Typographie à huit niveaux (titres en police serif guofeng + tailles étagées) |
+| `.lh-text--{secondary\|success\|warning\|danger}` | Couleur sémantique (default sans classe modificatrice) |
+| `.lh-text--strong` / `--italic` / `--underline` | Gras / italique / souligné |
+| `.lh-text--mark` | Fond de surbrillance marqué |
+| `.lh-text--code` | Code en ligne (police à chasse fixe + fond clair) |
+| `.lh-text--disabled` | État désactivé |
+| `.lh-text--ellipsis` | Ellipsis sur une ligne |
+| `.lh-text--ellipsis-{2…10}` | Classes d'ellipsis multiligne (avec line-clamp en ligne) |
+| `.lh-text__copy` | Bouton de copie (`--copied` pour l'état de confirmation de succès) |
+
+Couleurs, tailles de police et hauteurs de ligne toutes en `var(--lh-*)`, le mode sombre est basculé par `var-dark.scss`.
+
+## Remarques
+
+- Le style en ligne line-clamp de l'ellipsis multiligne doit être transmis par la couche UI selon ses propres conventions (objet `CSSProperties` React / objet `style` Vue) ; l'ellipsis sur une ligne est entièrement portée par les classes, sans style en ligne.
+- `mark` / `code` sont des modifications visuelles, pas des remplacements sémantiques ; quand le lecteur d'écran doit identifier du code, utilisez un vrai élément `<code>` accompagné de la classe.
+- L'état de confirmation de copie `lh-text__copy--copied` est retiré par minuterie côté UI, core ne gère pas les minuteries.
+
+<FnPlayground module="text" fn="getTextClassNames" params='{"state": {"level": "h3", "type": "default", "strong": false, "italic": false, "underline": false, "mark": true, "code": false, "ellipsis": false, "disabled": false}}' />

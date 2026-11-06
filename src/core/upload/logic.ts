@@ -51,12 +51,16 @@ export function exceedsMaxCount(current: number, limit: number): boolean {
 }
 
 /**
- * 归一 accept 输入：数组原样（浅拷贝）、字符串按逗号切分、空值给空数组。
+ * 归一 accept 输入：数组形态同样净化、字符串按逗号切分、空值给空数组。
  * 组件入口统一调用，下游（校验 / 原生属性）只面对 string[] 一种形态。
+ * 数组形态补净化：JS 侧运行时可达的脏元素（如条件表达式产出 undefined）
+ * 会让 isFileRejected 的 pattern.toLowerCase() 抛 TypeError，与字符串形态同口径。
  */
 export function normalizeUploadAccept(accept?: string | string[] | null): string[] {
   if (accept == null) return []
-  if (Array.isArray(accept)) return [...accept]
+  if (Array.isArray(accept)) {
+    return accept.filter((part) => typeof part === 'string' && part.trim().length > 0)
+  }
   return accept
     .split(',')
     .map((part) => part.trim())

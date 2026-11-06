@@ -63,7 +63,7 @@
   .lh-popover__arrow {
     bottom: calc(var(--lh-popover-arrow-size, 8px) / -2);
     left: var(--lh-arrow-offset, 50%);
-    margin-left: calc(var(--lh-popover-arrow-size, 8px) / -2);
+    margin-inline-start: calc(var(--lh-popover-arrow-size, 8px) / -2);
   }
 }
 
@@ -73,7 +73,7 @@
   .lh-popover__arrow {
     top: calc(var(--lh-popover-arrow-size, 8px) / -2);
     left: var(--lh-arrow-offset, 50%);
-    margin-left: calc(var(--lh-popover-arrow-size, 8px) / -2);
+    margin-inline-start: calc(var(--lh-popover-arrow-size, 8px) / -2);
   }
 }
 

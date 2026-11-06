@@ -51,13 +51,13 @@
 
   &__description {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--lh-font-size-base, 14px);
     color: var(--lh-text-secondary, #8A8A8A);
   }
 
   &__actions {
     display: flex;
-    gap: 8px;
+    gap: var(--lh-spacing-sm, 8px);
     margin-top: 16px;
   }
 }

@@ -1,0 +1,135 @@
+---
+title: link —— 链接
+description: 'getLinkClassNames 计算类型/下划线三态/禁用类，getLinkAria 产出禁用与当前页语义'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+链接是页面间跳转的最小交互单元。`core/link` 只算两件事：类名与 aria——类型语义色、下划线三态、禁用降级全部落在类名上，跳转本身交给原生 `<a>` 与各端路由。
+
+## 何时使用
+
+- 各端实现 `LhLink`：类名与 aria 全由 `getLinkClassNames` / `getLinkAria` 产出。
+- 面包屑当前页、表格行内操作等复用链接视觉的场景，直接引 core 函数 + `styles/link` 的类名。
+- **不该用它**：页面内动作触发用 `core/button`（链接语义会误导读屏用户预期跳转）。
+
+## 导入方式
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+import type { LhLinkState, LhLinkType, LhLinkUnderline } from '@lh-ui/share/core/link'
+```
+
+## 设计意图
+
+三处白名单降级，保证「非法 prop 永不产生脏类名」：
+
+- `type` 非法 → `default`：走令牌常规文本色，**不产出修饰类**（`lh-link--default` 不存在）。
+- `underline` 非法 → `hover`：全局默认形态，同样不产出修饰类；只有 `always` / `none` 显式传值才落 `lh-link--underline-{always|none}`。
+- `disabled` 为真恒输出 `lh-link--disabled`：样式侧禁用 hover 变色与下划线。
+
+禁用链接是 HTML 的语义空洞——`<a>` 没有 disabled 属性。core 的答案是 `aria-disabled` + `role="link"` 组合：读屏仍播报「链接」，但明确不可用；真正移除可点击语义（渲染为 `span` 或省略 `href`）由 UI 层完成，core 只提供正确的属性。
+
+`aria-current` 支持 `page` / `location`，服务面包屑当前页、分页当前项等「我是当前所在位置」的链接。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `getLinkClassNames` | `(state?: Partial<LhLinkState>) => string[]` | 类名数组 | 计算链接全部类名 |
+| `getLinkAria` | `(input: LhLinkAriaInput) => LhAriaAttrs` | aria 属性包 | 禁用与当前页语义 |
+
+```ts
+getLinkClassNames({ type: 'primary', underline: 'hover', disabled: false })
+// ['lh-link', 'lh-link--primary']
+
+getLinkClassNames({ type: 'danger', underline: 'always', disabled: true })
+// ['lh-link', 'lh-link--danger', 'lh-link--underline-always', 'lh-link--disabled']
+```
+
+## 类型定义
+
+```ts
+export type LhLinkType = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info'
+
+export type LhLinkUnderline = 'always' | 'hover' | 'none'
+
+export interface LhLinkState {
+  type: LhLinkType
+  underline: LhLinkUnderline
+  disabled: boolean
+}
+
+export interface LhLinkAriaInput {
+  disabled: boolean
+  /** 当前页 / 当前位置（面包屑等场景，输出 aria-current） */
+  current?: 'page' | 'location' | true
+}
+```
+
+## 无障碍
+
+- **禁用**：`getLinkAria({ disabled: true })` 输出 `aria-disabled="true"` 与 `role="link"`。UI 层必须同时移除 `href`（或渲染为 `span`），否则键盘用户仍可聚焦触发跳转——属性包管语义，DOM 结构管行为，两层缺一不可。
+- **当前页**：`aria-current="page"` 让读屏软件在面包屑中播报「当前页」，优于单纯的高亮样式。
+- **键盘焦点环**：由 `theme/common/a11y.scss` 的 focus-ring 令牌统一驱动，组件不散写 outline。
+
+## 使用示例
+
+```ts
+import { getLinkClassNames, getLinkAria } from '@lh-ui/share/core/link'
+
+getLinkClassNames({ type: 'warning', underline: 'none', disabled: false })
+// ['lh-link', 'lh-link--warning', 'lh-link--underline-none']
+
+getLinkAria({ disabled: false, current: 'page' })
+// { 'aria-current': 'page' }
+```
+
+```vue
+<!-- Vue3 -->
+<a :class="getLinkClassNames({ type, underline, disabled })" :href="disabled ? undefined : href" v-bind="getLinkAria({ disabled, current })">
+  <span v-if="$slots.prefix" class="lh-link__icon lh-link__icon--prefix"><slot name="prefix" /></span>
+  <slot />
+  <span v-if="$slots.suffix" class="lh-link__icon lh-link__icon--suffix"><slot name="suffix" /></span>
+</a>
+```
+
+```tsx
+// React：禁用时渲染 span，彻底移除链接语义的交互面
+const Tag = disabled ? 'span' : 'a'
+return (
+  <Tag
+    className={getLinkClassNames({ type, underline, disabled }).join(' ')}
+    href={disabled ? undefined : href}
+    {...getLinkAria({ disabled, current })}
+  >
+    {children}
+  </Tag>
+)
+```
+
+```ts
+// uniapp：navigator 组件承载跳转，纯展示态可直接渲染 text + 类名；
+// aria 属性在非 h5 端支持有限，按平台条件编译取舍
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-link` | 基础类：inline-flex、常规文本色、hover 变主色 |
+| `.lh-link--{primary\|success\|warning\|danger\|info}` | 语义类型（default 无修饰类） |
+| `.lh-link--underline-always` | 常驻下划线 |
+| `.lh-link--underline-none` | 无下划线（悬停也不出） |
+| `.lh-link--disabled` | 禁用态：降色 + 禁指针，悬停下划线失效 |
+| `.lh-link__icon--prefix` / `.lh-link__icon--suffix` | 前后缀图标位 |
+
+颜色全部 `var(--lh-*)`；success / warning / danger 的 hover 色用 `color-mix` 向文本色混合 80%，暗色由 `var-dark.scss` 翻转。
+
+## 注意事项
+
+- `underline` 默认 `hover` 不产出修饰类，样式侧的 hover 规则兜底；想要「从不显示下划线」必须显式传 `none`。
+- 禁用链接若仍渲染 `<a>`，务必去掉 `href`，否则 `aria-disabled` 形同虚设。
+- `default` 类型与 `hover` 下划线一样走「无修饰类」策略，UI 层不要依赖 `lh-link--default` 存在。
+
+<FnPlayground module="link" fn="getLinkClassNames" params='{"state": {"type": "primary", "underline": "hover", "disabled": false}}' />

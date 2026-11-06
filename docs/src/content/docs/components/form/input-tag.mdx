@@ -1,0 +1,146 @@
+---
+title: input-tag —— 标签输入
+description: 'insertInputTag 不可变插入（empty/duplicate/max 三种拒绝原因）、removeInputTag/removeLastInputTag 删除、isInputTagTriggerKey 触发键判定'
+---
+
+import FnPlayground from '../../../../components/FnPlayground.astro'
+
+标签输入 = 输入框 + 回车（或逗号/空格）生成标签 + Backspace 删尾标签。`core/input-tag` 把增删逻辑做成**不可变更新**并给出机器可读的拒绝原因；输入框、标签渲染、删除按钮由各端 UI 层承接。
+
+## 何时使用
+
+- 各端实现 `LhInputTag`：v-model 标签列表、触发键（`enter`/`space`/`comma`）、`max` 上限、去重、Backspace 删尾。
+- 只需要标签增删逻辑（不关心输入框形态）的场景。
+- **不该用它**：单值选择用 `core/select`；选项固定的枚举多选用 `core/checkbox-group`——标签输入的标签来自**自由输入**，这是它与多选组件的本质分界。
+
+## 导入方式
+
+```ts
+import {
+  isValidInputTagTrigger,
+  isInputTagTriggerKey,
+  getInputTagClassNames,
+  insertInputTag,
+  removeInputTag,
+  removeLastInputTag,
+} from '@lh-ui/share/core/input-tag'
+import type { LhInputTagState, LhInputTagTrigger, LhInputTagInsertResult } from '@lh-ui/share/core/input-tag'
+```
+
+## 设计意图
+
+**不可变更新**：`insertInputTag` / `removeInputTag` / `removeLastInputTag` 全部返回新数组，入参永不原地修改——UI 层拿到结果直接 `setData` / `setState`，无需拷贝，也杜绝「改了入参忘了派发」的隐式耦合。
+
+**拒绝原因机器可读**：插入失败不是静默的，`LhInputTagInsertResult.reason` 给出三值：
+
+- `empty`：输入 trim 后为空串。
+- `duplicate`：未开 `allowDuplicate` 且标签已存在。
+- `max`：`max` 为正数且已达到上限。
+
+UI 层据此决定提示方式（抖动 / toast / 无提示），core 不弹任何提示——提示是 UI 决策，拒绝是数据事实。
+
+**max 语义**：非正数表示不限制；达到上限后**拒绝而非替换最早标签**——悄悄丢数据是惊喜不是便利，超限该被看见。
+
+**触发键兼容**：`isInputTagTriggerKey` 的 `space` 同时接受 `' '` 与历史键值 `'Spacebar'`（老 IE / 部分安卓 WebView 的键值），`comma` 匹配 `','`。
+
+## 函数表
+
+| 函数 | 签名 | 返回 | 作用 |
+| --- | --- | --- | --- |
+| `isValidInputTagTrigger` | `(trigger: string) => trigger is LhInputTagTrigger` | 守卫 | 触发键合法性 |
+| `getInputTagClassNames` | `(state: LhInputTagState) => string[]` | 类名数组 | 容器类名（`--disabled`/`--readonly`） |
+| `isInputTagTriggerKey` | `(key: string, trigger: LhInputTagTrigger) => boolean` | boolean | 判定键盘事件是否触发提交 |
+| `insertInputTag` | `(tags, input, state?) => LhInputTagInsertResult` | 插入结果 | 提交一个标签（不可变） |
+| `removeInputTag` | `(tags, index) => string[]` | 新数组 | 删除指定下标（越界返回原数组） |
+| `removeLastInputTag` | `(tags) => string[]` | 新数组 | Backspace 删尾 |
+
+## 类型定义
+
+```ts
+export type LhInputTagTrigger = 'enter' | 'space' | 'comma'
+
+export interface LhInputTagState {
+  max?: number
+  allowDuplicate?: boolean
+  readonly?: boolean
+  disabled?: boolean
+}
+
+export interface LhInputTagInsertResult {
+  tags: string[]
+  inserted: boolean
+  reason?: 'empty' | 'duplicate' | 'max'
+}
+```
+
+## 无障碍
+
+- 标签删除按钮用原生 `<button>`（或等价元素）承载 + `aria-label`（如「移除 山水」），与 `core/tag` 的关闭按钮同口径。
+- 输入框 `aria-describedby` 指向「按回车添加标签」的提示文案，键盘用户无需猜触发键。
+- 标签列表容器建议 `role="list"`、标签 `role="listitem"`，读屏可播报「第 N 项」。
+
+## 使用示例
+
+```ts
+import { insertInputTag, removeLastInputTag, isInputTagTriggerKey } from '@lh-ui/share/core/input-tag'
+
+insertInputTag(['山水', '花鸟'], '人物', { max: 5, allowDuplicate: false })
+// { tags: ['山水', '花鸟', '人物'], inserted: true }
+
+insertInputTag(['山水'], '山水', {})
+// { tags: ['山水'], inserted: false, reason: 'duplicate' }
+
+insertInputTag(['a', 'b'], 'c', { max: 2 })
+// { tags: ['a', 'b'], inserted: false, reason: 'max' }
+
+isInputTagTriggerKey('Enter', 'enter')   // true
+isInputTagTriggerKey(',', 'comma')       // true
+```
+
+```vue
+<!-- Vue3 -->
+<span :class="getInputTagClassNames({ disabled, readonly })">
+  <span v-for="(tag, index) in tags" :key="tag" class="lh-input-tag__tag">
+    {{ tag }}
+    <button class="lh-input-tag__tag-close" aria-label="移除" @click="tags = removeInputTag(tags, index)">×</button>
+  </span>
+  <input
+    class="lh-input-tag__input"
+    @keydown="isInputTagTriggerKey($event.key, trigger) && commit()"
+    @keydown.backspace="!input && (tags = removeLastInputTag(tags))"
+  />
+</span>
+```
+
+```tsx
+// React：插入结果整体接管 state，拒绝原因交给提示层
+const result = insertInputTag(tags, input, { max, allowDuplicate })
+if (result.inserted) setTags(result.tags)
+else if (result.reason === 'max') toast('已达标签上限')
+```
+
+```ts
+// uniapp：小程序无 keydown，触发键映射为 confirm-type / @confirm（enter），
+// comma 触发在 MP 端降级为「输入即含逗号时切分」；Backspace 语义同款降级
+```
+
+## 样式与令牌
+
+| 类名 | 语义 |
+| --- | --- |
+| `.lh-input-tag` | 容器：flex-wrap、hover 主色边框、focus-within 聚焦 |
+| `.lh-input-tag--disabled` | 禁用态 |
+| `.lh-input-tag--readonly` | 只读态 |
+| `.lh-input-tag__tag` | 标签签条（浅底描边、不换行） |
+| `.lh-input-tag__tag-close` | 标签删除按钮 |
+| `.lh-input-tag__input` | 内嵌输入框（无边框透明底，placeholder 占位色） |
+
+颜色全部 `var(--lh-*)`，暗色由 `var-dark.scss` 翻转。
+
+## 注意事项
+
+- `insertInputTag` 的 trim 是「去首尾空白」不是「去内部空白」，`'a b'` 是一个合法标签。
+- `removeLastInputTag` 只在**输入框为空**时调用才有 Backspace 语义（有输入时 Backspace 是删字符），UI 层负责这个判定。
+- 触发键为 `comma` 时建议 UI 层把输入里的逗号即时切分，否则用户输入 `a,b` 会生成整串标签。
+
+<FnPlayground module="input-tag" fn="insertInputTag" params='{"tags": ["山水", "花鸟"], "input": "人物", "state": {"max": 5, "allowDuplicate": false}}' />

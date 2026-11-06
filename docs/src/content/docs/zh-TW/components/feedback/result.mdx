@@ -1,0 +1,119 @@
+---
+title: result —— 結果頁
+description: 'getResultClassNames 計算四態類別名，getResultIconName 解析狀態預設圖示或自訂圖示，isValidResultStatus 狀態守衛'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+結果頁用於「一整段流程辦完了」的終態回饋：表單提交成功、審核被駁回、頁面無權限。`core/result` 只算兩件事：四態類別名與圖示名；標題、副標題、操作區的排版由樣式類承接，內容全部留給使用方。
+
+## 何時使用
+
+- 各端實作 `LhResult`：`success` / `warning` / `error` / `info` 四態的類別名與圖示映射。
+- 複用結果頁視覺的場景（圖表空狀態、精靈完成頁、錯誤邊界兜底 UI）直接引類別名。
+- **不該用它**：操作回饋的輕提示用 `core/message` / `core/notification`——result 是整頁級終態，message 是瞬時回饋，層級不同。
+
+## 匯入方式
+
+```ts
+import { isValidResultStatus, getResultClassNames, getResultIconName } from '@lh-ui/share/core/result'
+import type { LhResultState, LhResultStatus } from '@lh-ui/share/core/result'
+```
+
+## 設計意圖
+
+**狀態集固定四值，不開放擴充**：結果頁的語義空間就是成功 / 警告 / 錯誤 / 提示。自訂 status 字串在落入 UI 前先過 `isValidResultStatus` 守衛，非法值由 UI 層降級（通常回退 `info`）——「任意字串」會讓圖示映射表出現空洞。
+
+**圖示解析的優先級設計**（`getResultIconName`）：
+
+- 顯式傳 `icon`（**含空字串**）→ 原樣採用。空字串語義是「我特意不要圖示」，與「沒傳走預設」嚴格區分——這是 `icon !== undefined` 而非真值判斷的原因。
+- 未傳 → 回退狀態預設圖示：`success`→`check`、`warning`→`warning`、`error`→`error`、`info`→`info`，全部消費現有 `LhIcon` 圖示集，不新增圖示資產。
+
+**類別名極簡**（`getResultClassNames`）：基類 + 狀態修飾類各一個，沒有尺寸/密度變體——結果頁是內容元件，排版彈性交給內容本身與 `sx`。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `isValidResultStatus` | `(status: string) => status is LhResultStatus` | 守衛 | 狀態合法性 |
+| `getResultClassNames` | `(state: LhResultState) => string[]` | 類別名陣列 | 計算結果頁類別名 |
+| `getResultIconName` | `(status, icon?) => LhIconName \| '' \| undefined` | 圖示名 | 顯式 icon 優先，回退狀態預設 |
+
+```ts
+getResultClassNames({ status: 'success' })
+// ['lh-result', 'lh-result--success']
+
+getResultIconName('error')          // 'error'（狀態預設圖示）
+getResultIconName('error', '')      // ''（明確不要圖示）
+getResultIconName('error', 'smile') // 'smile'（自訂圖示覆蓋預設）
+```
+
+## 類型定義
+
+```ts
+export type LhResultStatus = 'success' | 'warning' | 'info' | 'error'
+
+export interface LhResultState {
+  status: LhResultStatus
+}
+```
+
+## 無障礙
+
+- 容器建議掛 `role="status"`（部分端實現為自動播報）：結果頁出現即代表流程狀態變更，讀屏使用者無需等待焦點。
+- 圖示是裝飾語義，圖示節點應 `aria-hidden="true"`——狀態含義由標題文字承載，不靠圖示顏色傳達（色弱使用者可讀）。
+- 操作區按鈕保持原生語義，與普通按鈕一致。
+
+## 使用範例
+
+```ts
+import { getResultClassNames, getResultIconName } from '@lh-ui/share/core/result'
+
+getResultClassNames({ status: 'warning' })
+// ['lh-result', 'lh-result--warning']
+```
+
+```vue
+<!-- Vue3 -->
+<div :class="getResultClassNames({ status })" role="status">
+  <LhIcon v-if="getResultIconName(status, icon)" class="lh-result__icon" aria-hidden="true" :name="getResultIconName(status, icon)!" />
+  <div class="lh-result__title">{{ title }}</div>
+  <div v-if="subtitle" class="lh-result__subtitle">{{ subtitle }}</div>
+  <div v-if="$slots.extra" class="lh-result__extra"><slot name="extra" /></div>
+</div>
+```
+
+```tsx
+// React
+<div className={getResultClassNames({ status }).join(' ')} role="status">
+  <ResultIcon status={status} icon={icon} />
+  <div className="lh-result__title">{title}</div>
+  {extra}
+</div>
+```
+
+```ts
+// uniapp：圖示走 iconfont 字體（share SVG path 編譯產物），
+// role="status" 在 MP 端降級為不渲染（無讀屏 live region 能力）
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-result` | 容器：縱向居中排布、結果內邊距 |
+| `.lh-result--{success\|warning\|error\|info}` | 狀態修飾（驅動圖示著色） |
+| `.lh-result__icon` | 圖示節點（64px，顏色隨狀態令牌） |
+| `.lh-result__title` | 標題（20px 粗體） |
+| `.lh-result__subtitle` | 副標題（次要色，行高 1.8） |
+| `.lh-result__extra` | 操作區（上邊距留白） |
+
+圖示顏色全部 `var(--lh-*)`（success/warning/danger/info 語義令牌），暗色由 `var-dark.scss` 翻轉；內邊距/字號有元件級令牌（`--lh-result-*`）可調。
+
+## 注意事項
+
+- 非法 status 不要靜默回傳給 core：先過 `isValidResultStatus`，再決定降級策略——守衛是給 UI 層用的，core 不代做決策。
+- `icon` 傳空字串與不傳是兩個語義（明確無圖示 vs 預設圖示），類型上以 `LhIconName | '' | undefined` 編碼。
+- 結果頁四態的圖示顏色差異只出現在 `__icon` 上，標題/副標題顏色狀態無關——不要為 error 態把標題染紅，那會破壞排版一致性。
+
+<FnPlayground module="result" fn="getResultClassNames" params='{"state": {"status": "success"}}' />

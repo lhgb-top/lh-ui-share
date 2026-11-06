@@ -1,5 +1,213 @@
 # @lh-ui/share
 
+## 0.5.0
+
+### Minor Changes
+
+- Input 支持 label 位置切换（labelPosition）：core 新增 `LhInputLabelPosition` 类型（`float` 默认 / `top` / `bottom` / `left` / `right`）与纯函数 `isInputLabelFloating`、`getInputLabelClassNames`、`getInputWrapperModifiers`，浮动判定（Material 3 floating label 口径：聚焦或有值浮起、有值失焦不回落）收敛到 core，各 UI 库不再各自硬编码。styles 新增 wrapper 五档位置修饰类（`--label-float/top/left/right/bottom`，静态位置零 `:has` 依赖、WXSS 可直接消费）与 form-item 的 `--left`/`--right`/`--bottom` 修饰类（`left`/`right` 沿 Element Plus 文字对齐口径，`bottom` 为新增位置档）。
+- 7d0259f: share 语言包补齐四种语言并完善现有翻译：
+
+  - 新增 `zh-TW` / `es` / `ar` / `ru` 四个语言包（`src/locales/lang/`），`LhLocaleType` 与 `constants` 同步扩展
+  - `locale.ts` 注册新语言，语言列表注释由骨架标记改为「已完整翻译」
+  - `de-DE` / `en-US` / `fr-FR` / `ja-JP` / `ko-KR` 现有语言包翻译补全
+  - `tests/unit/locales.spec.ts` 扩展覆盖：各语言包键集合一致、注册表与导出同步
+
+- # 新增四个组件的共享层（core 纯函数 + BEM 样式 + 单测）
+  - **link**：`getLinkClassNames` / `getLinkAria`（类型 / 下划线三态 / 禁用，白名单校验收口）
+  - **text**：`getTextClassNames` / `getTextTag` / `getEllipsisRows` / `getEllipsisStyle` / `getTextAria`（h1~h6 / p / caption 八级排版 + 语义色 + mark/code/ellipsis/copyable 修饰）
+  - **autocomplete**：`filterSuggestions`（包含匹配 / 大小写开关 / trim / 自定义 matcher）/ `getAutocompleteOptionId` / `getAutocompleteTriggerAria` / `getAutocompleteListboxAria` / `getAutocompleteOptionAria` / `getAutocompleteOptionValue`
+  - **mentions**：`getMentionContext`（光标上下文解析：邮箱伪前缀排除，CJK 不误判）/ `insertMention` / `getMentions`（文本反解）/ `filterMentionOptions` / 三个 aria 构建器
+  - styles：<name>/index.scss 各一份（BEM `lh-*`，令牌 `var(--lh-*, fallback)` 驱动）
+  - locales：十语言补 autocomplete / mentions / text 词条
+  - core 单测 4 份（覆盖白名单降级、行数钳制、邮箱伪前缀、自定义前缀等边界）
+
+- # 新增三组件 core 纯逻辑与样式（配合 lh-ui-plus 新组件批次）
+  - **color-picker core**：颜色模型互转纯函数（`hexToRgb` / `rgbToHex` / `rgbToHsv` / `hsvToRgb` / `parseColorString` / `formatColor`）、通道 / 色相 / 透明度钳制（`clampColorChannel` / `clampColorHue` / `clampColorAlpha`）、`isSameColor` 感知比较、容器类名；配套 `styles/color-picker`（触发器三档尺寸 + 面板：饱和度板 / 色相滑杆 / 透明度棋盘格 / hex 输入 / 预设色板）
+  - **result core**：四状态映射（`LH_RESULT_STATUS_CONST`）、状态默认图标名（`check` / `warning` / `error` / `info`）、`getResultClassNames` 与自定义图标回退（空串 = 不显示图标）；配套 `styles/result`
+  - **input-tag core**：`insertInputTag`（trim / 去重 / `max` 上限拦截，不可变更新）、`removeInputTag` / `removeLastInputTag`（Backspace 语义）、`isInputTagTriggerKey`（enter / space / comma）；配套 `styles/input-tag`
+  - **locale**：十语言包新增 `colorPicker.label` / `inputTag.label`（ariaLabels 另增 `saturation` / `hue` / `alpha` / `removeTag`），键树镜像 zh-CN 校验保持绿
+  - 续完既有 WIP：text / link / autocomplete / mentions 的 core 与 scss（原为未提交半成品，本轮补齐注册、单测与封装）
+
+- 4cf960e: # 组件样式支持 RTL：物理方向声明改为逻辑属性
+
+  为支持阿拉伯语等从右向左语言，`styles/` 中所有方向相关声明改用 CSS 逻辑属性，
+  `dir="rtl"` 下布局随阅读方向自动镜像。规范见 `docs/i18n/glossary.md` §4.1，
+  例外登记簿见 `_work/rtl-exceptions.md`。
+
+  ## 改造范围（17 个组件样式）
+
+  button、form、date-picker、time-picker、message、progress、tag、descriptions、
+  cascader、input-number、steps、badge、dialog、select、slider、input、switch
+  的方向相关声明，统一改为 `margin-inline-*` / `padding-inline-*` / `border-inline-*` /
+  `inset-inline-*` / `text-align: start|end` / 逻辑角圆角（`border-start-start-radius` 等）。
+
+  - 变换驱动的位移（badge 角标缩放、switch 滑块滑动）新增 `[dir='rtl']` 覆盖块翻转，
+    LTR 行为完全不变
+  - tooltip / popover / popconfirm 的箭头定位与 popper 的 JS 数学耦合，按已登记例外保留物理值
+  - drawer `--left/--right`、notification 四角等 API 语义方位保留物理值（例外第二类）
+  - 全幅拉伸（`left: 0; right: 0`）、`left: 50%` 居中等方向无关形态保留物理值（例外第四类）
+
+  ## 顺带修复
+
+  `switch/index.scss` 的 `&--small &--checked` 与 `&--large &--checked` 编译为后代选择器
+  （`.lh-switch--small .lh-switch--checked`），而两修饰符实际在同一根元素上，永不匹配——
+  small / large 档位的滑块位移（14px / 22px）此前一直退化为基础 18px。改为复合选择器后
+  各尺寸位移生效。
+
+### Patch Changes
+
+- 061bc00: # 家族协议统一为 Apache-2.0
+
+  - LICENSE 由 MIT 替换为 Apache License 2.0（家族十仓统一开源协议）
+  - `package.json` 的 `license` 字段同步改为 `Apache-2.0`
+
+- # core 逻辑 bug 修复批次（双血脉全面审计）
+  - **time-picker `parseTime` 位置依赖解析错位【P1】**：原实现按 format 里的 token 下标切输入串，用户手输个位数小时（`9:30:00`）时后续 token 整体错位、仍能 parseInt 出合法数字，静默返回错误时间（9:30 → 9:00）。改为按分隔符结构整体匹配（token 各自 `(\d{1,2})`），结构不匹配一律返回 null
+  - **avatar `isImageSource` 误判裸相对路径【P1】**：`me.png`、`icon/avatar.png` 这类合法 HTML 相对文件名被判为不可用、静默降级文字头像。补图片扩展名分支（允许尾随 ?query/#fragment）
+  - **pagination `siblingCount` NaN 穿透【P1】**：`Math.max(0, NaN)` 仍为 NaN，窗口收缩算法全部比较恒 false，500 页会一次性渲染全部页码。改走 `sanitizeNumber`（与 clampPage / getPageCount 同口径）
+  - **virtual `computeRange` overscan 未净化**：负数 / 小数 overscan 导致跳过可见行或白屏。与 `findVirtualRange` 统一为「取整 + 非负 + 非有限回退默认值」
+  - **virtual-list `patchMeasuredSize` defaultSize 未净化**：非法 defaultSize + 实测 NaN 时沿 offset 链污染整条偏移链，二分查找全部退化。与 `buildVirtualItems` 同口径守卫
+  - **popper `shift` 语义澄清（不改行为）**：安全网对交叉轴的无条件钳制是既有契约（`popper.spec`「clamps the high side」回归测试编码：flip/shift 全关时超宽弹出层仍不许整体探出视口）。为 `shift` 选项与安全网补文档说明——`shift:false` 只豁免主动夹回段，不代表「允许弹层整体飞出视口」
+  - **cascader `searchNodes` 就地 mutate 入参数组**：内部改用新数组累积，入参 `results` 仅作初始累积合并（返回新数组）
+  - **focus-trap `setInertOutside` 返回值契约**：无 body 分支返回豁免清单而非空数组（与 @returns「被加锁的节点」矛盾），统一为 `[]`
+  - **`resolveDelay` 兑现注释承诺的非负钳制**：`showAfter: -500` 等负延迟原样返回
+  - **loading `resolveLoadingTarget` 补 SSR 守卫**（与同文件 `isLoadingFullscreen` / `ensurePositioned` 一致）
+  - **notification `getNotificationIconName` 非法 type 兜底 info**（与 `groupNotificationsByPosition` 脏数据处置一致）
+  - **segmented `moveSegmentedIndex` 全禁用兜底**：内核返回 -1 时回退当前下标（兑现「无可用项返回当前」文档）
+
+- # core 性能与校验修复批次
+
+  ## tree 性能重构（O(depth × n) → O(n)）
+  - 新增 `buildParentIndex(roots)`：一次性构建 key → 父节点索引（含全部层级，循环引用保护），供逐层回溯场景复用
+  - `toggleCheckKeys` 的祖先回溯从「每上一层 findParentNode 全树扫描」改为走索引：深树下单次勾选 O(depth × n) → O(n)
+  - `getNodeCheckState` 的 `checkedKeys.includes` 线性查找改为入口转 Set：千键级联勾选下每个父节点的渲染从 O(leaves × checkedKeys) 降到 O(leaves)
+  - `flattenTree` / `getDescendantKeys` / `findTreeNode` / `collectCheckableLeafKeys` / `collectLeafKeys` 的递归判重从「每层 `new Set(seen)` 复制祖先链」改为单 Set 沿链 add / 返回后 delete（语义等价、省去 O(depth) × 每层拷贝）
+  - 补深链（50 层）+ 千键宽树的正确性/性能回归用例
+  - 行为零变化：全部 26 项 tree 既有断言不变
+
+  ## 校验与格式化
+  - **table `getStickyOffsets`**：无有效宽度的固定列不再赋 sticky 偏移（兑现既有「不参与偏移」注释——此前照常赋 0 会让相邻固定列都钉在 left:0 重叠）
+  - **cascader `normalizeCascaderNodes`**：源数据缺 value 字段（或别名）时，dev 环境输出警告——缺 value 的节点会带着 undefined 流进依赖值唯一性的展开/回显/emit 逻辑
+  - **statistic 科学计数法**：`|x| ≥ 1e21` 时 `toFixed` 按规范返回指数记数（"1e+21"），此区间不再做 toFixed 格式化，数值与科学计数法字符串原样返回（纯数字大数仍走 formatBigString 全字符串路径）
+  - **popper `shift` 语义澄清**：交叉轴安全网的无条件钳制是既有契约（popper.spec「clamps the high side」回归测试编码），补 `shift` 选项文档说明——`shift:false` 只豁免主动夹回段
+
+- core 纯逻辑健壮性修复批（审计低优收尾）：
+
+  - `input`：`isInputLabelFloating` / `getInputWrapperModifiers` 对 `value` 同时校验 `null` 与 `''`——react / uni 挂载前 `state.value` 可能为 `undefined`，旧逻辑 `!== ''` 误判为"有值"导致标签错浮起；补单测（undefined → 不浮起 / 不输出 `--has-value`）。
+  - `tabs` `getNameAfterRemove`：JSDoc 显式声明契约「records 须为移除前的列表」（内部 `names.indexOf(removedName)` 假设被移除项仍在表中，当前四端调用方均正确，属语义澄清不改行为）。
+  - `form` `validateFormField`：必填规则无 `message` 且调用方未传 `requiredMessage` 时增加 dev 警告（core 无文案红线下不内置兜底文案，四端 UI 层均已透传 `t('form.required')`）。
+  - `upload` `normalizeUploadAccept`：数组形态补净化（过滤非字符串与空串），与字符串形态同口径；`['.png', undefined]` 不再在 `isFileRejected` 抛 TypeError。
+  - `cascader` types：`emitPath` 注释明确「多选固定输出末级值数组，仅对单选生效」（不改行为）。
+
+- CSS 按需注入优化（方向 B 落地）：`build:styles` 组件编译循环新增后处理，为每个组件另写 `dist/<name>/style-standalone.css` 净样式产物——剔除内嵌的 `:root { --lh-* }` 令牌块（括号配平定位）、`.lh-sr-only` 公共规则与「no-fallback」标记行。**现有 `style.css` 逐字节不变**，纯新增双轨产物：
+
+  - 组件合计 801.1 KB / 215.2 KB gz → standalone 合计 **228.6 KB / 93.1 KB gz**（省 71.5%，58 组件每件省约 10–13 KB 重复令牌）
+  - 使用方先引一次 `@lh-ui/share/theme.css`，再按需引 `@lh-ui/share/dist/<name>/style-standalone.css`；`./dist/*` exports 通配已自动覆盖
+  - `css-size-report.mjs` 同步纳入 standalone 列与双轨节流汇总；四端框架库均不消费单组件 dist 产物，既有路径零影响
+
+- f914472: 修复文档站两处问题：
+
+  - 暗色模式整页仍是白底：custom.css 的 `:root` 把背景 / 文本 / 分割线令牌写成明色值，而本文件不分进任何 CSS layer，未分层声明在级联中恒胜过 Starlight 分层声明的暗色令牌。改为把这些明色专属令牌移进 `:root[data-theme='light']`，暗色回落 Starlight 默认暗色盘；与主题无关的主色 / 圆角 / 字体留在 `:root`。
+  - 首页 hero 按钮（快速开始 / 主题预设，中英双语）此前以 `/` 开头写成，Astro 的 `base` 不会作用于 hero CTA 与 markdown 正文链接，部署到 `/lhui/share/` 后跳到站点根路径。hero 按钮改为写完整前缀；正文 240 条绝对路径链接由 `astro.config.mjs` 新增的 `basePrefixPlugin` 插件在构建期自动补 base，内容里仍可写绝对路径。
+  - 顺带修正主题文档与源码不一致的示例值（中英双语 dark-mode / tokens / overview / customization 六份）：`--lh-bg-color` 暗色 `#14141F` → 源码实际值 `#2A2520`、暗色文本 `#E8E0D8`、边框 `#3A3530`；主色 `#2B5FA6` → `#2B4C7C`、hover `#3D72BC` → `#3D649E`、明色背景 `#FAF6F0`；commands.md 里 dev 端口 4321 → 实际 5180。
+  - 重写 tokens.mdx「令牌的分层结构」一节（中英）：原文档编造了一个「基础调色板」中间层（`--lh-blue-6` 等）并声称语义令牌经 `var()` 引用它，实际源码是 SCSS 变量 → 全局 CSS 变量的编译期插值，没有调色板层；第 3 档例子换成真实存在的组件级变量（`.lh-card` 的 `--lh-card-bg` 等）。同步修正 verification.md「EP 调色板」一节（中英）：该检查是 EP 遗留 9 色的黑名单回归护栏，而非「校验颜色落在合法色阶上」。
+
+- f914472: 文档站页脚接入家族统一备案/版权方案（机制见家族 docs/备案资源同步方案.md）：
+
+  - 页脚新增备案行（中文界面展示「版权 | 宁ICP备2024006574号 | [公安图标]苏公网安备32040002010537」，非中文仅版权），数据由工作区根 `scripts/sync-beian.mjs` 从 `lh-feng-mo-workspace` 真源同步到 `docs/.beian/beian.json`，结束年份动态取当前年。
+  - 站点差异化入口 `docs/.beian/beian.local.json`（深合并，未覆盖项继续随真源）。
+
+- f914472: 文档站搜索结果图标（favicon）与社交分享图补齐（家族统一整改，机制见家族 docs/SEO提交与曝光指南.md「搜索结果图标」一节）：
+
+  - 品牌图标统一为家族 logo（靛蓝印章 + lh 字标，源 lh-ui-plus/docs/public/logo.svg），栅格化产物（favicon.ico 16/32/48、apple-touch-icon 180、og.png 512）分发到本站静态目录。
+  - head 补齐 icon 声明：SVG 主链接 + ICO fallback（供 Bing/Google 等搜索引擎与老浏览器）+ apple-touch-icon；社交卡片补 og:image / twitter:image。
+
+- f914472: 文档站补齐五种语言内容（ko / es / ar / fr / ru 各 95 篇，与中文源 1:1 镜像），加上 W0 的日语站，share 文档站九语言内容齐全：
+
+  - 三段式组件标题按 W4 裁决统一（`<slug> <译名> —— <分类译名>`，分类与 astro.config.mjs 侧栏标签对齐）
+  - 相对 import 深度 +1、站内绝对链接带 locale 前缀、`reference/locales` 语言包真实值保留原文等口径已全树校验
+  - 同步修复：ar/ru 部分文件 CRLF 行尾归一为 LF、fr 12 篇 frontmatter 单引号标量内直撇号（YAML 解析必崩）改排版撇号、四处跨语言锚点 slug 与 ja 站 cascader 区域 demo 未译
+
+- f914472: 文档站语言切换体验改进：
+
+  - 切换语言由 `window.location.pathname =`（push）改为 `location.replace()`：语言切换被视为「同一页换语言」而非新页面，浏览器回退不再逐语言回退堆积历史条目，back 直达切换前页面。以 Starlight 组件覆盖机制 `components: { LanguageSelect: './src/components/LanguageSelect.astro' }` 实现，覆盖组件内联了 0.42.6 原组件的 `localizedUrl`（该工具未公开导出，升级 Starlight 时需同步对齐原组件）。
+  - Starlight `locales` 提取为 `STARLIGHT_LOCALES` 常量并加 `buildStarlightLocales()` 内容门禁：目标语言内容目录 `src/content/docs/<locale>/` 尚不存在时不注册（切换器不展示空内容语言，避免点到无翻译的语言），目录出现后守卫自动失效，无需手工撤销。
+
+- 文档站换用家族新品牌 logo（AIGC 新标，母版存 docs/部署/favicon-src/masters/，机制见家族 docs/SEO提交与曝光指南.md「搜索结果图标」一节）：
+
+  - 旧品牌标（靛蓝印章 + lh 字标 SVG）废止，改用新品牌 logo 的 PNG 栅格体系：logo.png（浅底主标，真透明）/ logo-dark.png（暗底主标，浅色字标透明）/ logo-banner.png（首页横幅）/ favicon.ico 16/32/48 / apple-touch-icon 180 / og.png 512。
+  - 导航栏新增品牌 logo 展示（明暗双图自动切换）；favicon head 声明改指 logo.png；og:image / apple-touch-icon 换用新品牌深色方版。
+  - 首页 hero 区新增家族统一横幅。
+  - empty 组件文档 demo 的占位图随品牌资产迁移（logo.svg → logo.png）。
+
+- 修复发布阻断的两处环境/翻译问题：
+
+  - `scripts/build-styles.mjs` 末尾追加 `process.exit(0)`：本机 Node v24 下 sass 全量编译完成后，进程自然退出的 teardown 阶段触发 V8 fatal（`AllowHeapAllocationInRelease`，exit 134）。产物此时已全部写盘，仅退出码被污染，导致 `pnpm build` 与 `prepublishOnly` 链路误报失败。显式退出绕过 teardown，构建与发版链恢复正常。
+  - 补齐 9 个非简中语言包（zh-TW / en-US / ja-JP / ko-KR / es / ar / fr-FR / ru / de-DE）缺失的 4 个 Wave G 文案键：`colorPicker.placeholder`、`colorPicker.inputLabel`、`inputTag.placeholder`、`inputTag.removeTag`。此前 `locales.spec.ts` 的「every registered pack mirrors the zh-CN key tree」断言失败（209 vs 205），补齐后语言包对齐。
+
+- # core 聚合导出补齐 avatar / badge + 回归门禁
+  - `src/core/index.ts` 漏挂 `export * from './avatar'` 与 `./badge'`：深路径 `@lh-ui/share/core/avatar` 可用，但根入口 `@lh-ui/share` 静默缺失 `getAvatarClassNames` / `getBadgeClassNames` 等导出，两种消费形态行为分裂
+  - `tests/unit/exports.spec.ts` 新增「src/core 聚合导出完整性」双向 diff 门禁：有 `index.ts` 的模块目录必须被导出、每条 re-export 必须对应真实目录，杜绝再次漏挂
+
+- f914472: 修复文档站两处构建阻断：
+
+  - ja 版 `theme/presets.mdx` 正文里的裸 `<style>` 标签未加反引号，MDX 解析成未闭合 JSX 标签导致构建失败（`Expected a closing tag for <style> before the end of paragraph`）。其他语言同句均为 `` `<style>` ``，仅 ja 漏了。
+  - `docs/src/components/LanguageSelect.astro` 文件开头缺少 `---` frontmatter 栅栏（注释直接开头），导致整个 frontmatter 处于未闭合状态、astro 编译报 `Unexpected token`。Astro 要求开头栅栏在文件绝对起始位置（修复方式：栅栏置于首字符，注释随入 frontmatter 内部）。
+
+- f914472: 修复文档站两处法/西语言页面问题：
+
+  - `fr/core/popper.mdx`：frontmatter `description` 是单引号 YAML 标量，其中的 `l\'axe` 写法对 YAML 无效（单引号串的正确转义是重复一次引号 `''`），astro 解析 frontmatter 直接失败。改为 `l''axe`。
+  - `fr/components/basic/card.mdx`、`fr/components/basic/empty.mdx`：同类问题——单引号串内含未转义的 `l'interactivité` / `l'image`，改写为 `''`。
+  - `es/development/commands.md`：代码围栏信息串写成了 ` ```bash# 注释…`，astro-expressive-code 把 `bash#` 当语言名找不到，退化成 txt 并告警；注释移入代码块内部。
+
+- f914472: 修复文档站非根语言（zh-TW / ja）页面构建失败：mdx 中 `FnPlayground` / `TokenTable` / `LocaleInspector` / `PresetPreview` 等组件的相对导入沿用了根语言的 `../` 级数，但 locale 目录比根语言深一级，路径全部解析到不存在的 `content/components/`。
+
+  - `zh-TW/components/**`（56 份）：`../../../../components/` → `../../../../../components/`
+  - `zh-TW/{core,theme,reference}/**` 与 `ja/core/**`：`../../../components/` → `../../../../components/`
+  - en 语言此前已修正，本次未改动；根语言不受影响
+
+- 4cf960e: 修复 `styles/switch/index.scss` 两个复合修饰符选择器在 dart-sass 下的编译失败：
+
+  - 原写法 `&--small&--checked` / `&--large&--checked` 中 `&` 出现在复合选择器中间，dart-sass 报「"&" may only used at the beginning of a compound selector」，react 文档站直接编译 SCSS 时构建失败。
+  - 改为 `&--small.lh-switch--checked` / `&--large.lh-switch--checked`（第二段修饰符写全类名），并修正内部嵌套：原 `&__core::after` 会拼成永不匹配的 `.lh-switch--checked__core::after`，改为后代选择器后输出为预期的 `.lh-switch--small.lh-switch--checked .lh-switch__core::after`，与文件末尾 RTL 块的手写形式一致。
+  - 注意：dist/ 里的旧产物仍是更早的错误形式（`.lh-switch--small .lh-switch--checked__core::after`，永不命中），需重跑 `pnpm build:styles` 重新生成——这同时修复 small/large 档 switch 勾选后滑块位移退化为基础 18px 的运行时 bug。
+
+- locale 使用键门禁 + CSS 体积台账工具链：
+
+  - 新增 `scripts/collect-used-locale-keys.mjs`：收集源码里 `t()` / `tm()` 字面量键（纯 JS，经 `createRequire` 加载以绕开 vite 对仓外路径的模块图拦截），配套导出 `collectLocaleLeafKeys` / `findMissingKeys`。四端 UI 库测试新增门禁用例（plus / vue2 / react / uniapp 的 locale spec）：**本仓使用的键 ⊆ share zh-CN 叶子键**，是 S-23 类「语言包漏键导致非中文语言回显中文 fallback」的根本防线；兄弟仓不存在时（CI 单仓 clone）自动跳过。
+  - share 侧新增 `tests/unit/scripts/collect-used-locale-keys.spec.ts` 自检：脚本可加载、目录跳过、叶子键展平正常，并守护 **share/src 自身不出现 `t()` 调用**（core 无文案红线）。
+  - 新增 `scripts/css-size-report.mjs`：测量 `build:styles` 产物的原始 / gzip 字节并排序，`--json` 出机器可读格式。基线落盘见 docs/share/share包计划.md「CSS 体积基线（2026-11-03）」：全量 822 KB / gzip 50 KB；**单组件产物 71% 为重复内嵌的 `:root` 令牌块**（58 组件合计 801 KB 中约 572 KB 重复），是后续按需注入优化的首选课题（本期只测量不优化）。
+
+- # 十语言包补齐 8 个组件文案键
+
+  补齐各 UI 库组件实际消费、但语言包未收录而永远走中文 fallback 的文案键（切到任意非中文语言仍显示中文）：
+
+  - `dialog.confirm` / `dialog.cancel` / `dialog.ariaLabel`（对话框确定/取消按钮与无障碍名）
+  - `input.clear`、`select.clear`（清除按钮）
+  - `select.filter` / `select.empty`（选择器筛选占位与空态）
+  - `cascader.filter`（级联筛选占位）
+
+  译法与各语言包既有 `popconfirm`/`datepicker` 同名键保持一致；uniapp 仓 `adapter/locale.ts` 的 6 键 `add()` 过渡副本随之拆除（UI 库不再持有文案副本）。
+
+- # 新增 shared/scroll-lock：元素滚动锁引用计数
+
+  弹层族（dialog / drawer / loading 服务）此前各自快照 `target.style.overflow` 再写 `hidden`、关闭时写回快照——两个弹层先后打开都锁同一个 body 时，先开者先关会提前解锁（后开者仍显示但页面可滚动），或后关者按过期快照 `'hidden'` 写回导致 body 永久锁死。
+
+  - 新增 `lockScrollTarget(target)` / `unlockScrollTarget(target)` / `scrollLockCount(target)`：模块级 `Map<target, {count, original}>`，**首个锁记录原始 overflow、引用数归零才真正还原**；无 DOM 环境 no-op；空串 original 用 `removeProperty` 还原
+  - `src/core/shared/index.ts` 聚合导出；新增 6 项单测覆盖双持有者、嵌套、多 target、no-op 场景
+  - 四端弹层族（plus dialog/drawer/loading、vue2 dialog/drawer/loading、react dialog/drawer/loading、uniapp adapter）均改引本模块，详见各仓 changeset
+
+- # styles 令牌化扫尾 + getInputStyle 标 deprecated
+
+  ## 令牌化（视觉零变化——fallback 值与令牌当前值逐字相等）
+  - 33 个组件 scss 的 **87 处** `font-size: Npx` / `gap: Npx` 硬编码改引令牌：`font-size: var(--lh-font-size-{extra-small|small|base|medium}, Npx)`、`gap: var(--lh-spacing-{xs|sm|md|base}, Npx)`。此前这些字面量绕过 `--lh-font-size-*` / `--lh-spacing-*` 令牌（令牌早已定义却未被消费），主题自定义对它们无效
+  - 5 处特化阴影按 card 局部令牌模式收敛（声明在组件自身规则内、teleport/搬迁安全）：`--lh-select-dropdown-shadow`、`--lh-table-fixed-left/right-shadow`、`--lh-table-filter-shadow`、`--lh-time-picker-panel-shadow`
+  - tooltip 的阴影恰为 `--lh-box-shadow-base` 精确值，直接改引通用令牌
+
+  ## core 双源收敛
+  - `getInputStyle` 标 `@deprecated`：尺寸映射已由 SCSS `.lh-input--<size>` 类（带 `--lh-control-height-*` 高度令牌 + `--lh-font-size-*` 字号令牌）承载，JS 内联字面量会覆盖 CSS 类、令主题覆盖失效。函数保留仅为存量消费方（wxapp 内联样式）兼容；plus / vue2 的死代码消费已随之移除
+  - 非标准值保留不改：avatar 的 24~56px（头像尺寸语义）、badge/tag 的 11px、gap 2/6/10/14（非标准间距刻度）——映射最近令牌会改变视觉，留待令牌刻度扩展时再定
+
 ## 0.4.1
 
 ### Patch Changes

@@ -22,7 +22,7 @@
     transform: translateX(-50%);
     /* 首尾刻度在 0%/100% 处可用宽度只剩半字，必须 nowrap 防止竖排换行 */
     white-space: nowrap;
-    font-size: 12px;
+    font-size: var(--lh-font-size-extra-small, 12px);
     color: var(--lh-text-placeholder, #B0B0B0);
     margin-top: 8px;
     transition: color 0.2s;
@@ -87,7 +87,7 @@
   }
 
   &__input-text {
-    font-size: 13px;
+    font-size: var(--lh-font-size-small, 13px);
     color: var(--lh-text-regular, #5A5A5A);
   }
 

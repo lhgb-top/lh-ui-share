@@ -29,32 +29,42 @@ export function formatTime(
 /**
  * 解析时间字符串
  *
- * 与 formatTime 对称：各 token 按 format 中的位置取值，缺失的分量按 0 补
+ * 与 formatTime 对称：token（HH / mm / ss）各自匹配 1~2 位数字，缺声明的分量按 0 补
  * （formatTime 只写出出现的分量，parseTime 也要能解回仅含部分分量的串）。
- * 解析失败（NaN）或值域非法（如 99:99:99）一律返回 null。
+ * 解析失败（结构不匹配）或值域非法（如 99:99:99）一律返回 null。
+ *
+ * 实现说明：按 format 中的**分隔符结构**整体匹配（而非按 token 下标切字串）——
+ * 后者要求输入串与 format 逐字等长，用户手输个位数小时（'9:30:00'）会让后续
+ * token 整体错位，且错位后常仍能 parseInt 出合法数字、静默返回错误时间。
  */
 export function parseTime(timeStr: string, format: string = 'HH:mm:ss'): LhTimeData | null {
-  const hhIdx = format.indexOf('HH')
-  const mmIdx = format.indexOf('mm')
-  const ssIdx = format.indexOf('ss')
+  type Token = 'HH' | 'mm' | 'ss'
+  const tokens: Token[] = []
+  // 先转义 format 中的正则元字符（token 字母 HH/mm/ss 无元字符，转义后再替换捕获组）
+  const escaped = format.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const pattern = escaped.replace(/HH|mm|ss/g, (m) => {
+    tokens.push(m as Token)
+    return '(\\d{1,2})'
+  })
 
   // format 中一个时间 token 都没有，无法解析
-  if (hhIdx < 0 && mmIdx < 0 && ssIdx < 0) {
+  if (tokens.length === 0) {
     return null
   }
 
-  const hours = hhIdx >= 0 ? parseInt(timeStr.substring(hhIdx, hhIdx + 2), 10) : 0
-  const minutes = mmIdx >= 0 ? parseInt(timeStr.substring(mmIdx, mmIdx + 2), 10) : 0
-  const seconds = ssIdx >= 0 ? parseInt(timeStr.substring(ssIdx, ssIdx + 2), 10) : 0
+  const match = new RegExp(`^\\s*${pattern}\\s*$`).exec(timeStr)
+  if (!match) return null
 
-  if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
+  const values: Record<Token, number> = { HH: 0, mm: 0, ss: 0 }
+  tokens.forEach((token, i) => {
+    values[token] = parseInt(match[i + 1], 10)
+  })
+
+  if (!isValidTime(values.HH, values.mm, values.ss)) {
     return null
   }
-  if (!isValidTime(hours, minutes, seconds)) {
-    return null
-  }
 
-  return { hours, minutes, seconds }
+  return { hours: values.HH, minutes: values.mm, seconds: values.ss }
 }
 
 /**

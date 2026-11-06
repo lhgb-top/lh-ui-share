@@ -108,16 +108,24 @@ export function getStickyOffsets(columns: LhTableColumn[]): LhTableCellSticky[] 
   let left = 0
   for (let i = 0; i < columns.length; i++) {
     if (columns[i].fixed === 'left') {
-      offsets[i].left = left
-      left += widthOf(columns[i])
+      const w = widthOf(columns[i])
+      // 未声明有效宽度的固定列不参与偏移（与文档注释一致）：
+      // 照常赋 0 偏移会让相邻固定列都 sticky 在 left:0，视觉重叠
+      if (w > 0) {
+        offsets[i].left = left
+        left += w
+      }
     }
   }
 
   let right = 0
   for (let i = columns.length - 1; i >= 0; i--) {
     if (columns[i].fixed === 'right') {
-      offsets[i].right = right
-      right += widthOf(columns[i])
+      const w = widthOf(columns[i])
+      if (w > 0) {
+        offsets[i].right = right
+        right += w
+      }
     }
   }
   return offsets

@@ -1,0 +1,161 @@
+---
+title: autocomplete —— 자동 완성
+description: 'filterSuggestions가 추천 항목을 필터링하고(대소문자/trim/커스텀 matcher), 네 개의 aria 빌더가 APG combobox 의미를 조립'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+자동 완성 = 입력창 + 입력에 따라 필터링되는 드롭다운 추천. `core/autocomplete`는 두 가지만 담당합니다: **필터링**과 **combobox 접근성 의미**. 입력창, 드롭다운 패널, 위치 잡기, 외부 클릭 닫기, 트랜지션은 모두 각 단말의 UI 계층이 받습니다.
+
+## 언제 사용할까
+
+- 각 단말이 `LhAutocomplete`를 구현할 때: 필터 로직과 aria 속성 묶음은 모두 core가 산출하고, UI 계층이 직접 `includes`를 쓰지 않습니다.
+- 커스텀 입력 컨트롤 위에 같은 필터링과 combobox 의미를 재사용할 때.
+- **사용하면 안 되는 곳**: 태그 입력은 `core/input-tag`, @ 멘션은 `core/mentions`, 입력 필터가 필요 없는 드롭다운 선택은 `core/select`를 사용하세요.
+
+## 가져오기
+
+```ts
+import {
+  filterSuggestions,
+  getAutocompleteOptionId,
+  getAutocompleteTriggerAria,
+  getAutocompleteListboxAria,
+  getAutocompleteOptionAria,
+  getAutocompleteOptionValue,
+} from '@lh-ui/share/core/autocomplete'
+import type { LhAutocompleteOption, LhAutocompleteFilterOptions } from '@lh-ui/share/core/autocomplete'
+```
+
+## 설계 의도
+
+**필터링의 세 가지 경계**(`filterSuggestions`):
+
+- 빈 쿼리 문자열(trim 후 빈 문자열)은 **전체 옵션**을 반환합니다: focus 트리거 시나리오에서 전체 후보를 보여줘야 하기 때문입니다. 빈 쿼리 패널을 표시할지는 UI 계층의 trigger 의미가 결정하며, 이 함수는 숨김 판단을 하지 않습니다.
+- `trim`은 기본 활성: 앞뒤 공백은 매칭에 참여하지 않습니다. `false`를 명시적으로 전달하면 원본 그대로 매칭합니다.
+- 비활성 항목은 결과에 **유지**됩니다: 필터링은 가시성만 담당하고 회색 처리와 선택 금지는 UI 계층의 일입니다——disabled를 필터링해버리면 사용자가 '목록이 갑자기 짧아지는' 것을 보게 됩니다.
+
+**결정론적 옵션 id**: `getAutocompleteOptionId(listboxId, index)`는 `{listboxId}-option-{index}`를 조립합니다. 하이라이트 항목이 바뀔 때 트리거는 `aria-activedescendant` 값만 갱신하면 스크린 리더 소프트웨어가 새 하이라이트 항목을 읽어주며, DOM을 다시 마운트할 필요가 없습니다. 음수 / 정수가 아닌 인덱스(-1 = 하이라이트 없음)는 **id를 산출하지 않습니다**——그렇지 않으면 트리거가 존재하지 않는 요소를 참조하게 됩니다.
+
+**aria는 select와 동형**: `getAutocompleteTriggerAria`는 `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant`를 출력하며 APG combobox pattern과 일치합니다. `value` 제출값과 `label` 표시 문구는 분리되어 있습니다(`getAutocompleteOptionValue`는 value가 전달되지 않으면 label로 폴백).
+
+## 함수 표
+
+| 함수 | 시그니처 | 반환 | 역할 |
+| --- | --- | --- | --- |
+| `filterSuggestions` | `(options, query, opts?) => LhAutocompleteOption[]` | 옵션 배열 | 쿼리 문자열로 필터링(대소문자 / trim / matcher 설정 가능) |
+| `getAutocompleteOptionId` | `(listboxId?, index) => string \| undefined` | 옵션 id | 결정론적 조립, aria-activedescendant 참조용 |
+| `getAutocompleteTriggerAria` | `(input: LhAutocompleteTriggerAriaInput) => LhAriaAttrs` | aria 속성 묶음 | 트리거 combobox 의미 |
+| `getAutocompleteListboxAria` | `(id?) => LhAriaAttrs` | aria 속성 묶음 | 리스트 박스 role + id |
+| `getAutocompleteOptionAria` | `(input: LhAutocompleteOptionAriaInput) => LhAriaAttrs` | aria 속성 묶음 | 옵션 role + 선택 / 비활성 상태 |
+| `getAutocompleteOptionValue` | `(option: LhAutocompleteOption) => string \| number` | 제출값 | value 미지정 시 label로 폴백 |
+
+## 타입 정의
+
+```ts
+export interface LhAutocompleteOption {
+  label: string
+  value?: string | number
+  disabled?: boolean
+}
+
+export interface LhAutocompleteFilterOptions {
+  caseSensitive?: boolean
+  trim?: boolean
+  /** 커스텀 매칭 판정(기본: label이 쿼리 문자열을 포함), true 반환 시 유지 */
+  matcher?: (option: LhAutocompleteOption, query: string) => boolean
+}
+
+export interface LhAutocompleteTriggerAriaInput {
+  visible: boolean
+  listboxId?: string
+  /** 현재 하이라이트 항목 인덱스(-1 = 하이라이트 없음) */
+  highlightedIndex: number
+}
+
+export interface LhAutocompleteOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## 접근성
+
+완전한 combobox 패턴은 세 개의 속성 묶음으로 조립됩니다:
+
+- 트리거: `role="combobox"`, `aria-expanded`(패널 펼침/닫힘), `aria-controls`(리스트 박스 id), `aria-activedescendant`(하이라이트 항목 id).
+- 리스트 박스: `role="listbox"` + `id`.
+- 옵션: `role="option"`, `aria-selected`(= 하이라이트 상태), `aria-disabled`.
+
+키보드 내비게이션(↑↓로 하이라이트 이동, Enter 선택, Esc 닫기)은 UI 계층이 구현하고 `highlightedIndex`를 동시에 갱신합니다——core가 의미의 정확성을 보장하고, 상호작용은 각 단말이 받습니다.
+
+## 사용 예
+
+```ts
+import { filterSuggestions, getAutocompleteTriggerAria } from '@lh-ui/share/core/autocomplete'
+
+filterSuggestions(
+  [{ label: '청화백자' }, { label: '수묵' }, { label: '청록 산수' }],
+  '청',
+)
+// [{ label: '청화백자' }, { label: '청록 산수' }]
+
+// 병음 초성 매칭: matcher가 커버
+filterSuggestions([{ label: '수묵' }], 'sm', {
+  matcher: (option, query) => pinyinAbbr(option.label).startsWith(query),
+})
+```
+
+```vue
+<!-- Vue3: input에 트리거 aria를 걸고, 드롭다운에 listbox aria를 걸며, 하이라이트 항목은 aria-activedescendant로 -->
+<input
+  role="combobox"
+  :aria-expanded="visible"
+  :aria-controls="listboxId"
+  :aria-activedescendant="highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined"
+  @input="query = $event.target.value"
+/>
+<ul v-bind="getAutocompleteListboxAria(listboxId)">
+  <li
+    v-for="(option, index) in filterSuggestions(options, query)"
+    :key="index"
+    :aria-selected="index === highlightedIndex"
+  >{{ option.label }}</li>
+</ul>
+```
+
+```tsx
+// React: 제어된 하이라이트 + 속성 묶음 펼치기
+<input {...getAutocompleteTriggerAria({ visible, listboxId, highlightedIndex })} />
+```
+
+```ts
+// uniapp: 미니프로그램에는 실제 DOM id 참조가 없으므로 aria 속성 묶음은 h5 단말에서만 내려가고,
+// MP 단말은 키보드 내비게이션의 비활성 가드를 유지합니다(키보드 이벤트가 없음, 계획 문서의 플랫폼 차이 등록 참조)
+```
+
+## 스타일과 토큰
+
+| 클래스명 | 의미 |
+| --- | --- |
+| `.lh-autocomplete` | 기본 클래스: relative 컨테이너, 기대 폭 240px |
+| `.lh-autocomplete__inner` | 입력창(focus/hover 메인 색 테두리) |
+| `.lh-autocomplete__prefix` | 앞쪽 아이콘 자리 |
+| `.lh-autocomplete__clear` | 지우기 버튼 |
+| `.lh-autocomplete__dropdown` | 드롭다운 패널(`--teleported`는 body에 붙는 형태) |
+| `.lh-autocomplete__option` | 옵션(`--highlighted` 하이라이트 / `--disabled` 회색 처리) |
+| `.lh-autocomplete__empty` | 빈 상태 |
+| `.lh-autocomplete--small` / `--large` | 크기 단계 |
+| `.lh-autocomplete--disabled` | 비활성 상태 |
+
+드롭다운 열고 닫기는 `lh-autocomplete-fade` 트랜지션(페이드 인 + 살짝 아래로 이동, select와 같은 관감)을 따르며, `prefers-reduced-motion`에서 저하됩니다. 색은 모두 `var(--lh-*)`입니다.
+
+## 주의사항
+
+- 필터링은 core, 요청은 UI: 원격 검색 시나리오에서는 `matcher`를 전달하거나 UI 계층에서 options 배열을 직접 제어하고, core는 요청을 보내지 않습니다.
+- `aria-selected`의 의미는 '제출됨'이 아니라 '하이라이트'입니다——combobox 단일 선택 모드에서는 둘이 하나로 합쳐지며, UI 계층이 두 상태를 분리한다면 `aria-selected` 로직을 직접 보충해야 합니다.
+- 비활성 항목은 필터링하지 않고 하이라이트도 금지하지 않습니다(하이라이트 후 Enter는 UI 계층이 거부). 키보드 사용자와 마우스 사용자가 같은 목록을 보도록 보장합니다.
+
+<FnPlayground module="autocomplete" fn="filterSuggestions" params='{"options": [{"label": "청화백자"}, {"label": "수묵"}, {"label": "청록 산수"}], "query": "청"}' />

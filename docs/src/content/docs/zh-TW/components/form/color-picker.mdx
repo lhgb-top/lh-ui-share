@@ -1,0 +1,150 @@
+---
+title: color-picker —— 顏色選擇器
+description: 'hex/rgb 與 HSV 空間成對換算、parseColorString 寬容解析、formatColor 按 format 輸出、getColorPickerClassNames 容器類別名'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+顏色選擇器的全部難度在**顏色數學**：飽和度板拖曳、色相/透明度滑桿、hex 與 rgb() 互寫、預設色板——背後是 RGB 與 HSV 兩個顏色空間的往返換算。`core/color-picker` 把這些數學收斂成一組成對、全鉗制的純函式；拖曳互動與面板定位由各端 UI 層承接。
+
+## 何時使用
+
+- 各端實作 `LhColorPicker`：飽和度/明度板 + 色相/透明度滑桿的所有換算與鉗制。
+- 只需要顏色換算的場景：`parseColorString` / `formatColor` / `rgbToHex` 等可獨立使用（如表單驗證、主題動態化）。
+- **不該用它**：固定色值列表直接渲染即可，無需元件化；主題令牌定義在 theme 層而非本元件。
+
+## 匯入方式
+
+```ts
+import {
+  isValidColorFormat,
+  hexToRgb,
+  rgbToHex,
+  rgbToHsv,
+  hsvToRgb,
+  parseColorString,
+  formatColor,
+  isSameColor,
+  getColorPickerClassNames,
+} from '@lh-ui/share/core/color-picker'
+import type { LhColorFormat, LhColorRgb, LhColorHsv, LhColorPickerState } from '@lh-ui/share/core/color-picker'
+```
+
+## 設計意圖
+
+**兩個顏色空間各司其職**：互動用 **HSV**（飽和度板的 x = 飽和度、y = 明度，色相滑桿的 h——拖曳座標天然是 HSV 語義），儲存輸出用 **RGB**（hex / rgb() 字串）。四個換算函式嚴格成對（`hexToRgb`↔`rgbToHex`、`rgbToHsv`↔`hsvToRgb`），入參出參**全部過鉗制**：`clampColorChannel` 0~255 整數、`clampColorAlpha` 0~1 且保留兩位小數（消滅浮點尾巴 `0.30000000000000004`）、`clampColorHue` 0~360、`clampColorRatio` 0~1。非有限輸入（NaN/Infinity/undefined）一律回退安全預設，永不外溢。
+
+**寬容解析**（`parseColorString`）：hex 支援 3/4/6/8 位（`#3ab` → `#33aabb`），rgb()/rgba() 允許小數與百分數通道（CSS Color 4 之前的寬容形態），非法輸入傳回 `null` 而不拋錯——使用者手動輸入到一半的 `#2B4` 不該讓面板崩掉。
+
+**輸出契約**（`formatColor`）：`rgb` 格式在 `a < 1` 時輸出 `rgba(...)`，`hex` 格式在 `a < 1` 時輸出 8 位 hex——**alpha 有值時永不靜默遺失**，這是 hex 輸出 6 位還是 8 位的分界線。
+
+**相等守衛**（`isSameColor`）：通道與 alpha 都鉗制後比較，供 UI 層實現「值未變不派發 change」，避免拖曳抖動產生重複事件。
+
+## 函式表
+
+| 函式 | 簽名 | 傳回 | 作用 |
+| --- | --- | --- | --- |
+| `isValidColorFormat` | `(format: string) => format is LhColorFormat` | 守衛 | 格式合法性（'hex' \| 'rgb'） |
+| `clampColorChannel` | `(value) => number` | 0~255 整數 | r/g/b 通道鉗制 |
+| `clampColorAlpha` | `(value) => number` | 0~1 兩位小數 | 透明度鉗制 |
+| `clampColorHue` | `(value) => number` | 0~360 整數 | 色相鉗制 |
+| `clampColorRatio` | `(value) => number` | 0~1 兩位小數 | 飽和度 / 明度鉗制 |
+| `hexToRgb` | `(hex: string) => LhColorRgb \| null` | RGBA \| null | 解析 hex（3/4/6/8 位） |
+| `rgbToHex` | `(color: LhColorRgb) => string` | hex 字串 | `a < 1` 時輸出 8 位 hex |
+| `rgbToHsv` | `(color: LhColorRgb) => LhColorHsv` | HSVA | RGB → HSV |
+| `hsvToRgb` | `(color: LhColorHsv) => LhColorRgb` | RGBA | HSV → RGB |
+| `parseColorString` | `(input?) => LhColorRgb \| null` | RGBA \| null | 寬容解析 hex / rgb() / rgba() |
+| `formatColor` | `(color: LhColorRgb, format: LhColorFormat) => string` | 顏色字串 | 按 format 輸出 |
+| `isSameColor` | `(left, right) => boolean` | boolean | 鉗制後感知相等 |
+| `getColorPickerClassNames` | `(state: LhColorPickerState) => string[]` | 類別名陣列 | 容器類別名（`--{size}`/`--disabled`/`--open`） |
+
+## 類型定義
+
+```ts
+export type LhColorFormat = 'hex' | 'rgb'
+
+export interface LhColorRgb {
+  r: number
+  g: number
+  b: number
+  a: number
+}
+
+export interface LhColorHsv {
+  h: number
+  s: number
+  v: number
+  a: number
+}
+
+export interface LhColorPickerState {
+  size?: string
+  disabled?: boolean
+  open?: boolean
+}
+```
+
+## 無障礙
+
+- **滑桿**：色相 / 透明度滑桿應掛 `role="slider"` + `aria-valuenow/min/max`，方向鍵微調（Shift 加速）由 UI 層實現——拖曳對鍵盤使用者不可達，滑桿語義不可省。
+- **色值輸入**：面板內 hex/rgb 輸入框是顏色修改的鍵盤通道，`aria-label` 取語言包 `colorPicker.inputLabel`（「顏色值」）。
+- **預設色板**：每格可聚焦，焦點環由樣式側 `focus-visible` 提供；格子的可達名稱即色值字串。
+
+## 使用範例
+
+```ts
+import { parseColorString, formatColor, rgbToHsv } from '@lh-ui/share/core/color-picker'
+
+parseColorString('#2B4C7C')        // { r: 43, g: 76, b: 124, a: 1 }
+parseColorString('rgba(43,76,124,0.5)')
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'hex')   // '#2b4c7c80'
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'rgb')   // 'rgba(43, 76, 124, 0.5)'
+
+// 拖曳循環：HSV（互動態）→ RGB（提交態）→ HSV（回顯態）全程鉗制
+rgbToHsv({ r: 43, g: 76, b: 124, a: 1 })  // { h: 215, s: 0.65, v: 0.49, a: 1 }
+```
+
+```vue
+<!-- Vue3：飽和度板指標座標 = HSV 語義 -->
+<div
+  class="lh-color-picker__saturation"
+  @pointerdown="onSaturationDrag"
+>
+  <div class="lh-color-picker__saturation-pointer" :style="{ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%` }" />
+</div>
+```
+
+```tsx
+// React：拖曳結束統一走 hsvToRgb → formatColor 提交
+const commit = (hsv: LhColorHsv) => onChange(formatColor(hsvToRgb(hsv), format))
+```
+
+```ts
+// uniapp：拖曳用元素級 touchstart/move/end（MP 沿觸控目標派發），
+// 面板定位走 adapter popper 兩幀度量；顏色數學與本層完全一致
+```
+
+## 樣式與令牌
+
+| 類別名 | 語義 |
+| --- | --- |
+| `.lh-color-picker` | 觸發器容器（inline-flex + 色票 + 值文字） |
+| `.lh-color-picker--{small\|large}` | 尺寸檔 |
+| `.lh-color-picker--disabled` / `--open` / `--empty` | 停用 / 面板展開 / 未選色（值文字降為佔位色） |
+| `.lh-color-picker__swatch` | 色票色塊 |
+| `.lh-color-picker__value` | 當前色值文字（等寬字體） |
+| `.lh-color-picker__panel` | 浮層面板（隨 popper 定位） |
+| `.lh-color-picker__saturation` / `__saturation-pointer` | 飽和度明度板與指標 |
+| `.lh-color-picker__slider` / `__hue` / `__alpha` / `__slider-thumb` | 色相/透明度滑桿（alpha 棋盤格底） |
+| `.lh-color-picker__input` | hex/rgb 輸入框 |
+| `.lh-color-picker__predefine` / `__predefine-item` | 預設色板 |
+
+色相漸層與 alpha 棋盤格是固定視覺（與主題無關）；其餘顏色全部 `var(--lh-*)`。
+
+## 注意事項
+
+- 換算方向不可圖省事省略鉗制：拖曳產生的浮點座標必須先 `clampColorRatio/Hue` 再換算，否則浮點尾巴會寫進 hex。
+- `parseColorString` 傳回 `null` 時 UI 層應保留上一次合法值（不清空、不提交），把「非法輸入」與「清空」區分為兩個動作。
+- 色票 `<span>` 不可聚焦觸發面板的場景，觸發器整體應是 `<button>` 或帶 `role` 的等價元素——樣式只管觀感。
+
+<FnPlayground module="color-picker" fn="formatColor" params='{"color": {"r": 43, "g": 76, "b": 124, "a": 1}, "format": "hex"}' />

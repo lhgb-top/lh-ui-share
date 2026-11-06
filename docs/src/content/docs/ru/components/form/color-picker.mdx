@@ -1,0 +1,150 @@
+---
+title: color-picker —— Палитра цветов
+description: 'парные преобразования hex/rgb и пространства HSV, толерантный разбор parseColorString, вывод formatColor по format, классы контейнера getColorPickerClassNames'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Вся сложность палитры цветов — в **математике цвета**: перетаскивание по панели насыщенности, слайдеры тона/прозрачности, взаимная запись hex и rgb(), палитра предустановок — за всем стоят преобразования туда-обратно между двумя цветовыми пространствами RGB и HSV. `core/color-picker` сводит эту математику в набор парных, полностью клампированных чистых функций; взаимодействие перетаскивания и позиционирование панели несут UI-слои платформ.
+
+## Когда использовать
+
+- Реализация `LhColorPicker` на каждой платформе: все преобразования и клампы для панели насыщенности/яркости + слайдеров тона/прозрачности.
+- Сценарии, где нужны только преобразования цвета: `parseColorString` / `formatColor` / `rgbToHex` и другие применимы самостоятельно (валидация форм, динамика темы).
+- **Не следует использовать**: фиксированный список цветов можно отрендерить напрямую, компонент не нужен; токены темы определяются на слое theme, а не в этом компоненте.
+
+## Импорт
+
+```ts
+import {
+  isValidColorFormat,
+  hexToRgb,
+  rgbToHex,
+  rgbToHsv,
+  hsvToRgb,
+  parseColorString,
+  formatColor,
+  isSameColor,
+  getColorPickerClassNames,
+} from '@lh-ui/share/core/color-picker'
+import type { LhColorFormat, LhColorRgb, LhColorHsv, LhColorPickerState } from '@lh-ui/share/core/color-picker'
+```
+
+## Замысел дизайна
+
+**Два цветовых пространства, каждое при своём деле**: для взаимодействия — **HSV** (панель насыщенности: x = насыщенность, y = яркость; слайдер тона: h — координаты перетаскивания по своей природе несут семантику HSV), для хранения и вывода — **RGB** (строки hex / rgb()). Четыре функции преобразования строго парные (`hexToRgb`↔`rgbToHex`, `rgbToHsv`↔`hsvToRgb`), входы и выходы **все проходят кламп**: `clampColorChannel` — целые 0~255, `clampColorAlpha` — 0~1 с двумя знаками после запятой (уничтожая плавающий хвост `0.30000000000000004`), `clampColorHue` — 0~360, `clampColorRatio` — 0~1. Нефинитные входы (NaN/Infinity/undefined) всегда откатываются к безопасным значениям по умолчанию и никогда не протекают наружу.
+
+**Толерантный разбор** (`parseColorString`): hex поддерживает 3/4/6/8 разрядов (`#3ab` → `#33aabb`), rgb()/rgba() допускают дробные и процентные каналы (толерантная форма до CSS Color 4); некорректный вход возвращает `null`, а не бросает ошибку — наполовину введённый пользователем `#2B4` не должен ронять панель.
+
+**Контракт вывода** (`formatColor`): формат `rgb` при `a < 1` выводит `rgba(...)`, формат `hex` при `a < 1` выводит 8-значный hex — **при наличии alpha значение никогда не теряется молча**, это граница между выводом hex в 6 и 8 знаков.
+
+**Страж равенства** (`isSameColor`): сравнение после клампа каналов и alpha; UI-слой использует его для «значение не изменилось — change не отправляем», чтобы дрожание перетаскивания не плодило дублирующих событий.
+
+## Таблица функций
+
+| Функция | Сигнатура | Возврат | Назначение |
+| --- | --- | --- | --- |
+| `isValidColorFormat` | `(format: string) => format is LhColorFormat` | страж | корректность формата ('hex' \| 'rgb') |
+| `clampColorChannel` | `(value) => number` | целые 0~255 | кламп канала r/g/b |
+| `clampColorAlpha` | `(value) => number` | 0~1, два знака | кламп прозрачности |
+| `clampColorHue` | `(value) => number` | целые 0~360 | кламп тона |
+| `clampColorRatio` | `(value) => number` | 0~1, два знака | кламп насыщенности / яркости |
+| `hexToRgb` | `(hex: string) => LhColorRgb \| null` | RGBA \| null | разбор hex (3/4/6/8 разрядов) |
+| `rgbToHex` | `(color: LhColorRgb) => string` | строка hex | при `a < 1` выводит 8-значный hex |
+| `rgbToHsv` | `(color: LhColorRgb) => LhColorHsv` | HSVA | RGB → HSV |
+| `hsvToRgb` | `(color: LhColorHsv) => LhColorRgb` | RGBA | HSV → RGB |
+| `parseColorString` | `(input?) => LhColorRgb \| null` | RGBA \| null | толерантный разбор hex / rgb() / rgba() |
+| `formatColor` | `(color: LhColorRgb, format: LhColorFormat) => string` | строка цвета | вывод по format |
+| `isSameColor` | `(left, right) => boolean` | boolean | перцепционное равенство после клампа |
+| `getColorPickerClassNames` | `(state: LhColorPickerState) => string[]` | массив классов | классы контейнера (`--{size}`/`--disabled`/`--open`) |
+
+## Определения типов
+
+```ts
+export type LhColorFormat = 'hex' | 'rgb'
+
+export interface LhColorRgb {
+  r: number
+  g: number
+  b: number
+  a: number
+}
+
+export interface LhColorHsv {
+  h: number
+  s: number
+  v: number
+  a: number
+}
+
+export interface LhColorPickerState {
+  size?: string
+  disabled?: boolean
+  open?: boolean
+}
+```
+
+## Доступность
+
+- **Слайдеры**: слайдеры тона/прозрачности должны нести `role="slider"` + `aria-valuenow/min/max`; точная подстройка стрелками (Shift ускоряет) — на UI-слое: перетаскивание недостижимо для пользователей клавиатуры, семантику слайдера опускать нельзя.
+- **Ввод значения цвета**: поля hex/rgb внутри панели — клавиатурный канал изменения цвета, `aria-label` берётся из языкового пакета `colorPicker.inputLabel` («Значение цвета»).
+- **Палитра предустановок**: каждая ячейка фокусируема, кольцо фокуса даёт стилевой `focus-visible`; доступимое имя ячейки — сама строка значения цвета.
+
+## Примеры использования
+
+```ts
+import { parseColorString, formatColor, rgbToHsv } from '@lh-ui/share/core/color-picker'
+
+parseColorString('#2B4C7C')        // { r: 43, g: 76, b: 124, a: 1 }
+parseColorString('rgba(43,76,124,0.5)')
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'hex')   // '#2b4c7c80'
+formatColor({ r: 43, g: 76, b: 124, a: 0.5 }, 'rgb')   // 'rgba(43, 76, 124, 0.5)'
+
+// Цикл перетаскивания: HSV (состояние взаимодействия) → RGB (отправляемое) → HSV (отображаемое), кламп на всём пути
+rgbToHsv({ r: 43, g: 76, b: 124, a: 1 })  // { h: 215, s: 0.65, v: 0.49, a: 1 }
+```
+
+```vue
+<!-- Vue3: координаты указателя панели насыщенности = семантика HSV -->
+<div
+  class="lh-color-picker__saturation"
+  @pointerdown="onSaturationDrag"
+>
+  <div class="lh-color-picker__saturation-pointer" :style="{ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%` }" />
+</div>
+```
+
+```tsx
+// React: по завершении перетаскивания единообразно идём hsvToRgb → formatColor для отправки
+const commit = (hsv: LhColorHsv) => onChange(formatColor(hsvToRgb(hsv), format))
+```
+
+```ts
+// uniapp: перетаскивание — элементные touchstart/move/end (MP диспатчит по целевому объекту касания),
+// позиционирование панели — двухкадровый замер adapter popper; математика цвета полностью совпадает с этим слоем
+```
+
+## Стили и токены
+
+| Класс | Семантика |
+| --- | --- |
+| `.lh-color-picker` | контейнер триггера (inline-flex + образец цвета + текст значения) |
+| `.lh-color-picker--{small\|large}` | размерные ступени |
+| `.lh-color-picker--disabled` / `--open` / `--empty` | отключено / панель раскрыта / цвет не выбран (текст значения деградирует до цвета плейсхолдера) |
+| `.lh-color-picker__swatch` | цветовой образец |
+| `.lh-color-picker__value` | текст текущего значения цвета (моноширинный шрифт) |
+| `.lh-color-picker__panel` | всплывающая панель (позиционируется popper) |
+| `.lh-color-picker__saturation` / `__saturation-pointer` | панель насыщенности-яркости и указатель |
+| `.lh-color-picker__slider` / `__hue` / `__alpha` / `__slider-thumb` | слайдеры тона/прозрачности (у alpha шахматная подложка) |
+| `.lh-color-picker__input` | поле ввода hex/rgb |
+| `.lh-color-picker__predefine` / `__predefine-item` | палитра предустановок |
+
+Градиент тона и шахматная подложка alpha — фиксированная визуалика (не зависят от темы); остальные цвета — все `var(--lh-*)`.
+
+## Примечания
+
+- Нельзя экономить на клампе при преобразованиях: дробные координаты перетаскивания сначала `clampColorRatio/Hue`, потом преобразование — иначе плавающие хвосты попадут в hex.
+- Когда `parseColorString` вернул `null`, UI-слой должен сохранить предыдущее корректное значение (не очищать, не отправлять), разведя «некорректный ввод» и «очистку» как два разных действия.
+- Если цветовой образец `<span>` не фокусируем и не открывает панель, триггер целиком должен быть `<button>` или эквивалентом с `role` — стили отвечают только за внешность.
+
+<FnPlayground module="color-picker" fn="formatColor" params='{"color": {"r": 43, "g": 76, "b": 124, "a": 1}, "format": "hex"}' />

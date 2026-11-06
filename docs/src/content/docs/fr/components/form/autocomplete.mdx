@@ -1,0 +1,162 @@
+---
+title: autocomplete —— Saisie semi-automatique
+description: 'filterSuggestions filtre les options de suggestion (casse / trim / matcher personnalisé), quatre constructeurs d''aria assemblent la sémantique combobox APG'
+---
+
+import FnPlayground from '../../../../../components/FnPlayground.astro'
+
+Saisie semi-automatique = champ de saisie + panneau de suggestions filtré au fil de la saisie. `core/autocomplete` ne gère que deux choses : le **filtrage** et la **sémantique d'accessibilité combobox**. Champ de saisie, panneau déroulant, positionnement, fermeture au clic extérieur, transitions sont tous portés par la couche UI de chaque plateforme.
+
+## Quand l'utiliser
+
+- Quand chaque plateforme implémente `LhAutocomplete` : la logique de filtrage et les paquets d'attributs aria sont tous produits par core, la couche UI n'écrit pas son propre `includes`.
+- Pour réutiliser le même filtrage et la même sémantique combobox sur un contrôle de saisie personnalisé.
+- **À ne pas utiliser pour** : la saisie de balises → `core/input-tag` ; les mentions @ → `core/mentions` ; une sélection déroulante sans filtrage à la saisie → `core/select`.
+
+## Import
+
+```ts
+import {
+  filterSuggestions,
+  getAutocompleteOptionId,
+  getAutocompleteTriggerAria,
+  getAutocompleteListboxAria,
+  getAutocompleteOptionAria,
+  getAutocompleteOptionValue,
+} from '@lh-ui/share/core/autocomplete'
+import type { LhAutocompleteOption, LhAutocompleteFilterOptions } from '@lh-ui/share/core/autocomplete'
+```
+
+## Intention de conception
+
+**Les trois frontières du filtrage** (`filterSuggestions`) :
+
+- Une requête vide (vide après trim) renvoie **toutes les options** : le scénario déclenché au focus doit afficher tous les candidats ; l'affichage ou non du panneau à requête vide est décidé par la sémantique de trigger de la couche UI, cette fonction ne juge pas du masquage.
+- `trim` activé par défaut : les espaces de début et de fin ne participent pas à la correspondance ; passer explicitement `false` conserve la correspondance telle quelle.
+- Les options désactivées **restent** dans le résultat : le filtrage ne gère que la visibilité, le grisage et l'interdiction de sélection relèvent de la couche UI — filtrer les disabled ferait « voir la liste raccourcir sans raison ».
+
+**Id d'options déterministes** : `getAutocompleteOptionId(listboxId, index)` assemble `{listboxId}-option-{index}`. Quand l'élément en surbrillance change, le trigger n'a qu'à mettre à jour la valeur de `aria-activedescendant` pour que le lecteur d'écran annonce le nouvel élément en surbrillance, sans remonter le DOM. Indices négatifs / non entiers (-1 = pas de surbrillance) **ne produisent pas d'id** — sinon le trigger référencerait un élément inexistant.
+
+**Aria isomorphe à select** : `getAutocompleteTriggerAria` produit `role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant`, conforme au pattern combobox des APG ; la valeur soumise `value` et le libellé affiché `label` sont séparés (`getAutocompleteOptionValue` retombe sur label quand value n'est pas fourni).
+
+## Table des fonctions
+
+| Fonction | Signature | Retour | Rôle |
+| --- | --- | --- | --- |
+| `filterSuggestions` | `(options, query, opts?) => LhAutocompleteOption[]` | tableau d'options | Filtre selon la requête (casse / trim / matcher configurables) |
+| `getAutocompleteOptionId` | `(listboxId?, index) => string \| undefined` | id d'option | Assemblage déterministe, référencé par aria-activedescendant |
+| `getAutocompleteTriggerAria` | `(input: LhAutocompleteTriggerAriaInput) => LhAriaAttrs` | paquet d'attributs aria | Sémantique combobox du trigger |
+| `getAutocompleteListboxAria` | `(id?) => LhAriaAttrs` | paquet d'attributs aria | role + id de la listbox |
+| `getAutocompleteOptionAria` | `(input: LhAutocompleteOptionAriaInput) => LhAriaAttrs` | paquet d'attributs aria | role d'option + états sélectionné / désactivé |
+| `getAutocompleteOptionValue` | `(option: LhAutocompleteOption) => string \| number` | valeur soumise | value absent, repli sur label |
+
+## Définitions de types
+
+```ts
+export interface LhAutocompleteOption {
+  label: string
+  value?: string | number
+  disabled?: boolean
+}
+
+export interface LhAutocompleteFilterOptions {
+  caseSensitive?: boolean
+  trim?: boolean
+  /** Critère de correspondance personnalisé (par défaut : label contient la requête), renvoie true pour conserver */
+  matcher?: (option: LhAutocompleteOption, query: string) => boolean
+}
+
+export interface LhAutocompleteTriggerAriaInput {
+  visible: boolean
+  listboxId?: string
+  /** Indice de l'élément actuellement en surbrillance (-1 = aucun) */
+  highlightedIndex: number
+}
+
+export interface LhAutocompleteOptionAriaInput {
+  listboxId?: string
+  index: number
+  highlighted: boolean
+  disabled: boolean
+}
+```
+
+## Accessibilité
+
+Le pattern combobox complet est assemblé à partir de trois paquets d'attributs :
+
+- Trigger : `role="combobox"`, `aria-expanded` (ouverture du panneau), `aria-controls` (id de la listbox), `aria-activedescendant` (id de l'élément en surbrillance).
+- Listbox : `role="listbox"` + `id`.
+- Option : `role="option"`, `aria-selected` (= état en surbrillance), `aria-disabled`.
+
+La navigation clavier (↑↓ déplace la surbrillance, Enter sélectionne, Esc ferme) est implémentée par la couche UI qui met à jour `highlightedIndex` — core garantit la sémantique, l'interaction est portée par chaque plateforme.
+
+## Exemples d'utilisation
+
+```ts
+import { filterSuggestions, getAutocompleteTriggerAria } from '@lh-ui/share/core/autocomplete'
+
+filterSuggestions(
+  [{ label: 'Porcelaine bleue et blanche' }, { label: 'Encre de Chine' }, { label: 'Paysage bleu et vert' }],
+  'bleu',
+)
+// [{ label: 'Porcelaine bleue et blanche' }, { label: 'Paysage bleu et vert' }]
+
+// Correspondance par initiales de pinyin : à couvrir via le matcher
+filterSuggestions([{ label: 'Encre de Chine' }], 'ec', {
+  matcher: (option, query) => pinyinAbbr(option.label).startsWith(query),
+})
+```
+
+```vue
+<!-- Vue3 : l'input porte l'aria du trigger, la liste déroulante porte l'aria de listbox, la surbrillance passe par aria-activedescendant -->
+<input
+  role="combobox"
+  :aria-expanded="visible"
+  :aria-controls="listboxId"
+  :aria-activedescendant="highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined"
+  @input="query = $event.target.value"
+/>
+<ul v-bind="getAutocompleteListboxAria(listboxId)">
+  <li
+    v-for="(option, index) in filterSuggestions(options, query)"
+    :key="index"
+    :aria-selected="index === highlightedIndex"
+  >{{ option.label }}</li>
+</ul>
+```
+
+```tsx
+// React : surbrillance contrôlée + décomposition du paquet d'attributs
+<input {...getAutocompleteTriggerAria({ visible, listboxId, highlightedIndex })} />
+```
+
+```ts
+// uniapp : les mini-programmes n'ont pas de références d'id DOM réelles, les paquets d'attributs aria
+// ne sont transmis que côté h5 ; côté MP, seule la garde de désactivation de la navigation clavier
+// est conservée (pas d'événements clavier, voir le registre des différences de plateformes du document de plan)
+```
+
+## Styles et tokens
+
+| Classe | Sémantique |
+| --- | --- |
+| `.lh-autocomplete` | Classe de base : conteneur relative, largeur attendue 240px |
+| `.lh-autocomplete__inner` | Champ de saisie (bordure de couleur principale au focus/hover) |
+| `.lh-autocomplete__prefix` | Emplacement d'icône préfixe |
+| `.lh-autocomplete__clear` | Bouton d'effacement |
+| `.lh-autocomplete__dropdown` | Panneau déroulant (`--teleported` pour la forme montée sur le body) |
+| `.lh-autocomplete__option` | Option (`--highlighted` surbrillance / `--disabled` grisée) |
+| `.lh-autocomplete__empty` | État vide |
+| `.lh-autocomplete--small` / `--large` | Paliers de taille |
+| `.lh-autocomplete--disabled` | État désactivé |
+
+L'ouverture/fermeture du panneau passe par la transition `lh-autocomplete-fade` (fondu + léger décalage vers le bas, même rendu que select), avec dégradation `prefers-reduced-motion`. Toutes les couleurs en `var(--lh-*)`.
+
+## Remarques
+
+- Le filtrage est dans core, les requêtes dans l'UI : pour la recherche à distance, passez un `matcher` ou contrôlez vous-même le tableau d'options côté UI, core n'envoie aucune requête.
+- La sémantique d'`aria-selected` est « en surbrillance », pas « soumis » — en mode combobox monosélection les deux se confondent ; si la couche UI sépare les deux états, elle doit ajouter elle-même la logique d'`aria-selected`.
+- Les options désactivées ne sont ni filtrées ni interdites de surbrillance (après surbrillance, Enter est refusé par la couche UI), pour garantir que les utilisateurs clavier et souris voient la même liste.
+
+<FnPlayground module="autocomplete" fn="filterSuggestions" params='{"options": [{"label": "Porcelaine bleue et blanche"}, {"label": "Encre de Chine"}, {"label": "Paysage bleu et vert"}], "query": "bleu"}' />
