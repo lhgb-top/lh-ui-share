@@ -442,6 +442,7 @@
     "changeset": "changeset",
     "changeset:status": "changeset status",
     "changeset:version": "changeset version",
+    "changeset:publish": "changeset publish",
     "release": "changeset publish",
     "release:push": "node scripts/push-release.mjs",
     "prepublishOnly": "pnpm run build && pnpm run verify:dts && pnpm run verify:styles"

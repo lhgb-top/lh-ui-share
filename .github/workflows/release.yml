@@ -1,15 +1,25 @@
 name: Release
 
-# 触发条件：推送 @lh-ui/share@x.y.z 格式的 tag（由 pnpm release:push 完成）。
-# 注意：GitHub Actions 的 tag 过滤里 * 不匹配 /，带作用域的 tag 必须用 **。
+# 双通道（家族统一发包流程，见 docs/发包流程.md §4.3，与 plus 仓同构）：
 #
-# 留档的安装包直接取 npm 上已发布的原版 tarball（npm pack @lh-ui/share@<版本>），
-# 与用户 npm i 装到的内容逐字节一致；不检出旧提交、不重新构建——这样补建任意历史
-# 版本都不会因早期提交缺 pnpm-lock.yaml / 脚本而失败。构建与双 verify 已在本地
-# prepublishOnly（发 npm 前）与 ci.yml（每次推 master）里跑过。
-# workflow_dispatch 用于重跑某个已有 tag 的发行版创建（例如上次 Gitee 侧失败）。
+# ① 自动发版通道——推送到 master 且 changeset 或版本号有变动时自动执行 version + publish；
+#   没有待发布的 changeset 时 changesets/action 什么都不做，所以挂在 push 上是安全的。
+#   paths 另纳入 .github/workflows/**：发版链自身的修复需要能重跑发版。
+#   publish 完成后把 changeset publish 本地创建的 tag（@lh-ui/share@<版本>）推到 origin，
+#   触发 ② 留档通道。
+# ② 留档通道——推送 @lh-ui/share@x.y.z 格式的 tag（本地 pnpm release:push 或通道①）时，
+#   从 npm 拉已发布的原版 tarball 建 GitHub Release（与用户 npm i 装到的内容逐字节一致，
+#   不重新构建），再同步 tag 与发行版到 Gitee。
+#
+# 注意：GitHub Actions 的 tag 过滤里 * 不匹配 /，带作用域的 tag 必须用 **。
+# 也可在仓库 Actions 页面手动触发留档（workflow_dispatch 传入已有 tag，用于重跑）。
 on:
   push:
+    branches: [master]
+    paths:
+      - '.changeset/**'
+      - 'package.json'
+      - '.github/workflows/**'
     tags:
       - '@lh-ui/share@**'
   workflow_dispatch:
@@ -20,8 +30,65 @@ on:
 
 permissions:
   contents: write # gh release create 需要
+  id-token: write
+  # changesets/action 把 version 产物推到 changeset-release/master 并开 PR，
+  # 缺这个权限会报 "Resource not accessible by integration"，PR 建不出来
+  pull-requests: write
 
 jobs:
+  # ① 自动发版（push 到 master）
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
+    runs-on: ubuntu-latest
+
+    # dts 构建每个入口起一个 TS program，默认堆会 OOM
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build library
+        run: pnpm build && pnpm verify:dts && pnpm verify:styles
+
+      - name: Version and publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: pnpm changeset:version
+          publish: pnpm changeset:publish
+          commit: 'chore(release): 更新版本号'
+          title: 'chore(release): 版本发布'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # changeset publish 在本地创建了 @lh-ui/share@<版本> tag，推到 origin 触发留档通道
+      - name: 推送发版 tag
+        if: steps.changesets.outputs.published == 'true'
+        run: |
+          TAG="$(git tag --points-at HEAD | grep '^@lh-ui/share@' | head -n 1 || true)"
+          if [ -z "$TAG" ]; then echo '未找到 @lh-ui/share@* tag，跳过'; exit 0; fi
+          git push origin "$TAG"
+
+  # ② 留档（tag 推送或手动重跑）
   release:
     runs-on: ubuntu-latest
     steps:
